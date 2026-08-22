@@ -160,3 +160,50 @@ attempts:
       before writing any new cache record. The cache remains at 159 files across
       20 repository directories, the previously validated 19-entry canonical
       prefix is unchanged, and no lock exists or was published.
+
+  - id: all_metadata_window_4
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --all-metadata-only
+    started_at_utc: 2026-08-22T19:49:40Z
+    finished_at_utc: 2026-08-22T19:50:22Z
+    exit_code: 1
+    published_lock: false
+    completed_entries:
+      - mujoco
+      - mujoco_mpc
+      - mujoco_menagerie
+      - mink
+      - mjctrl
+      - hydrax
+      - curobo
+      - moveit2
+      - ros2_control
+      - ros2_controllers
+      - mujoco_ros2_control
+      - act
+      - lerobot
+      - openpi
+      - diffusion_policy
+      - behaviortree_cpp
+      - navigation2
+      - spark_dsg
+      - hydra_scene_graph
+    incomplete_entry: kimera
+    error: >-
+      GitHub rate limit exhausted for
+      https://api.github.com/repos/MIT-SPARK/Kimera/license?ref=fc33760636068ea0b2dca5e9d7958ee9a03888b1;
+      reset 1787431780
+    rate_limit_reset_utc: 2026-08-22T20:49:40Z
+    lock_absence_verified: true
+    cache_validation: >-
+      The resolver validated and replayed the same 19-entry canonical prefix, then
+      reached the first uncached pinned Kimera license endpoint. The shared
+      unauthenticated quota was already exhausted at the reset boundary, so no new
+      payload was cached. The cache remains at 159 files across 20 repository
+      directories and no lock exists or was published.
