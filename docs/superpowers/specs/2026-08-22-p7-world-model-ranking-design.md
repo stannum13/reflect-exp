@@ -318,15 +318,23 @@ LF, one NUL, then the concatenated `(8,50,2)` little-endian float64 C-order byte
 
 Projection kinds and exact byte payloads are:
 
-- `W0_IDS`: zero-length bytes;
-- `W1_GEOMETRY`: little-endian float64 vector in order `eef_xy, object_xyyaw,
-  geometry_onehot, geometry_dims, target_xyyaw, obstacle_present_xyxy,
-  workspace_xyxy, cost_weights`;
-- `PRIVILEGED_25`: end-effector `(x,y,vx,vy)`, object
-  `(x,y,yaw,vx,vy,omega)`, target `(x,y,yaw)`, mass, friction, geometry one-hot,
-  geometry dimensions, and obstacle present/endpoints; and
-- `RASTER_64`: uint8 C-order `(64,64,6)` raster, channels end effector, object, target,
-  obstacle, object-mask-times-sine-yaw, object-mask-times-cosine-yaw.
+| kind | raw selector | dtype | fixed shape | scalar indices / pixel order |
+|---|---|---|---|---|
+| `W0_IDS` | W0 | `\|u1` | `(0,)` | no bytes; identities and K=8 actions remain in the header/action artifact |
+| `W1_GEOMETRY_28` | W1 | `<f8` | `(28,)` | `0:2 eef(x,y)`; `2:5 object(x,y,yaw)`; `5:7 geometry(disk,rectangle)`; `7:10 dimensions(disk_radius,rectangle_half_x,rectangle_half_y)`; `10:13 target(x,y,yaw)`; `13:18 obstacle(present,x1,y1,x2,y2)`; `18:22 workspace(x_min,x_max,y_min,y_max)`; `22:28 cost(position,orientation,collision,energy,failure,success)` |
+| `PRIVILEGED_25` | W3/W4 | `<f8` | `(25,)` | `0:4 eef(x,y,vx,vy)`; `4:10 object(x,y,yaw,vx,vy,omega)`; `10:13 target(x,y,yaw)`; `13:15 mass,friction`; `15:17 geometry(disk,rectangle)`; `17:20 dimensions(disk_radius,rectangle_half_x,rectangle_half_y)`; `20:25 obstacle(present,x1,y1,x2,y2)` |
+| `RASTER_64` | W5 | `\|i1` | `(64,64,6)` C order | rows are world-y descending, columns world-x ascending, channels last in order end-effector, object, target, obstacle, quantized object-mask-times-`sin(yaw)`, quantized object-mask-times-`cos(yaw)` |
+
+Geometry encoding is exactly disk `(1.0,0.0)` with dimensions `(radius,0.0,0.0)` or
+rectangle `(0.0,1.0)` with dimensions `(0.0,half_x,half_y)`. Every padding value is
+positive `0.0`; negative zero is forbidden. An absent obstacle is exactly
+`(0.0,0.0,0.0,0.0,0.0)`. A present obstacle starts with `1.0`; its two endpoints are
+ordered lexicographically by `(x,y)` before serialization. Raster occupancy channels
+are signed-int8 values `0` or `1`. For `x=mask*sin(yaw)` or `mask*cos(yaw)`, the last two
+channels store `q(x)=sign(x)*floor(127*abs(x)+0.5)` as signed int8; `sign(0)=0`, so every
+background pixel is exact zero. Model preprocessing decodes them to float64 `q/127.0`.
+Pixel ownership uses the center-point rule with no antialiasing. Thus padding, signed
+yaw, and float-to-byte conversion have one platform-independent encoding.
 
 For every kind, `projection_sha256` hashes canonical JSON
 
@@ -355,6 +363,29 @@ canonical JSON
 ["exp06-fallback-input-v1",phase,scene_id,anchor_id,composition_id,
  w1_ranking_sha256,learned_ranking_sha256,fallback_threshold_sha256]
 ```
+
+The hash-field capability matrix is exact (`required` means a nonnull lowercase SHA-256
+of the complete canonical artifact bytes):
+
+| input | projection | generating model | preprocessing | PCA | calibration | fallback threshold |
+|---|---|---|---|---|---|---|
+| W0 raw, every phase | `W0_IDS` | null | null | null | null | null |
+| W1 raw, every phase | `W1_GEOMETRY_28` | required W1-config hash | null | null | null | null |
+| W3 NumPy tuning/validation | `PRIVILEGED_25` | required fitted-model hash | required | null | null | null |
+| W4 NumPy tuning/validation | `PRIVILEGED_25` | required fitted-model hash | required | null | null | null |
+| W5 NumPy tuning/validation | `RASTER_64` | required fitted-model hash | required | required | null | null |
+| W3 MuJoCo pilot/confirmation | `PRIVILEGED_25` | required composed-adapted-model hash | required | null | required | null |
+| W4 MuJoCo pilot/confirmation | `PRIVILEGED_25` | required composed-adapted-model hash | required | null | required | null |
+| W5 MuJoCo pilot/confirmation | `RASTER_64` | required composed-adapted-model hash | required | required | required | null |
+| W4F composition | null | null | null | null | null | required |
+| W5F composition | null | null | null | null | null | required |
+
+W4F/W5F are composition inputs, not raw `SelectorInput` rows: their two ranking hashes
+transitively bind the projection, actions, model, preprocessing, PCA, and calibration.
+Any nullability mismatch fails before inference. Every raw row requires the nonnull
+`cost_contract_sha256`; it is SHA-256 of canonical JSON
+`["exp06-cost-v1",1.0,0.10,2.0,0.01,4.0,1.0]`. W0/W1 have no learned artifacts; W1's
+configuration hash is identity/provenance, not a fitted-model capability.
 
 This makes the model/fallback boundary executable without an OS sandbox or capability
 container.
@@ -392,7 +423,40 @@ It writes no tuning or validation predictions. `numpy-select` subsequently loads
 nine immutable models and exactly the 24 tuning plus 24 validation scenes, writes one
 exact `numpy-evaluation.parquet`, and mechanically selects one configuration each for
 W3/W4/W5 using `regret, negative rank correlation, calibration error, model bytes,
-configuration ID`. No human or MuJoCo result chooses a configuration.
+configuration ID`. NumPy calibration error uses the clipped ensemble-mean probabilities
+directly; no adaptation map or temporary calibration fit exists in this phase. No human,
+training outcome, or MuJoCo result chooses a configuration.
+
+`numpy-evaluation.parquet` contains exactly `48*4*9*8 = 13,824` rows: 6,912 tuning and
+6,912 validation. No training row or statistic is present. All fields are nonnullable
+except `prediction_vector_sha256`, which is null for W3 and required for W4/W5. Its exact
+Arrow schema and column order are:
+
+```text
+partition:string, scene_id:string, anchor_id:string, observation_id:int64,
+selector_id:string, configuration_id:string, candidate_id:string, strategy_id:string,
+model_sha256:string, action_content_sha256:string, action_sha256:string,
+prediction_row_sha256:string, prediction_vector_sha256:string?,
+predicted_position_error_m:float64, predicted_orientation_error_rad:float64,
+predicted_collision_probability:float64, predicted_action_energy:float64,
+predicted_terminal_failure_probability:float64,
+predicted_unsafe_probability:float64, predicted_success_probability:float64,
+predicted_cost:float64, uncertainty:float64,
+actual_position_error_m:float64, actual_orientation_error_rad:float64,
+collision:bool, action_energy:float64, terminal_failure:bool, unsafe:bool,
+success:bool, actual_cost:float64, selected:bool
+```
+
+Row identity is the tuple `(partition,scene_id,anchor_id,selector_id,configuration_id,
+candidate_id)`. `partition` order is tuning then validation; rows then sort by scene ID,
+anchor ID, selector order W3/W4/W5, configuration ID, and candidate ID. Each
+`(partition,scene,anchor,selector,configuration)` group has exactly eight rows and exactly
+one `selected=true`, chosen by the universal predicted-cost/uncertainty/candidate-ID
+order, so exactly 1,728 rows are selected. The table joins only the immutable nine model
+artifacts and the 48 declared NumPy source-scene truth tables. A canonical
+`numpy-evaluation-vectors.npz` supplies the W4/W5 vectors; keys and hashes use the same
+prediction-ID rule as evidence. Unknown partitions, training IDs/ancestors, duplicate
+identities, missing vectors, or any count other than 13,824 are invalid.
 
 ### 6.4 Adaptation and calibration
 
@@ -638,7 +702,7 @@ uv run python experiments/06_world_model/run.py fit \
 
 uv run python experiments/06_world_model/run.py numpy-select \
   --run-id r1 --tuning-scenes 24 --validation-scenes 24 --models 9 \
-  --evaluation-rows 41472 --selected-models 3 --output results/06_world_model/r1
+  --evaluation-rows 13824 --selected-models 3 --output results/06_world_model/r1
 
 uv run python experiments/06_world_model/run.py mujoco-adapt \
   --run-id r1 --scenes 20 --selected-models 3 --adapted-models 3 \
@@ -694,6 +758,10 @@ evaluation/metrics/receipts/final output share 128 MiB; one current sibling temp
 96 MiB; checked-in config/manifests/report have 16 MiB. At most two protocol revisions
 may remain, with confirmation only on the final revision:
 
+`numpy-evaluation.parquet` plus `numpy-evaluation-vectors.npz` has a nonborrowing 32 MiB
+subcap inside the 128 MiB global bucket. Its projection is based on exactly 13,824 rows;
+no capacity is reserved for training predictions.
+
 ```text
 two revisions of 184 NumPy/pilot scenes
   plus 80 final confirmation scenes:
@@ -726,13 +794,17 @@ Tests must cover:
 - exact K=8 identities, strategy order, nominal-EEF update, distinct command bytes,
   independent regeneration, and both action hashes;
 - exact split ancestry/content isolation and the nonadaptive outcome-coverage gate;
-- projection/action-set encodings and digest preimages for W0/W1/W3/W4/W5;
+- every projection scalar index/dtype/shape, geometry padding/absent-obstacle sentinel,
+  signed-yaw raster quantization, action-set encoding, and digest preimage;
 - API-level hostile selector inputs proving no simulator/truth/W2/path/process/network
-  access, raw W4/W5 threshold absence, and composer-only threshold use;
+  access, the complete selector hash-field nullability matrix, raw W4/W5 threshold
+  absence, and composer-only threshold use;
 - preprocessing/PCA/model fit spies, one 32-component PCA with exact prefixes, scene
   bootstrap, primal/dual Cholesky, adaptation-only permitted heads, calibration operator
   identity, and unchanged W5 latent transition;
-- the separate nine-model fit and 41,472-row tuning/validation evaluation producer;
+- the separate nine-model fit and exact 13,824-row tuning/validation-only evaluation
+  producer, including 6,912 rows per partition, 1,728 selected rows, vector sidecar, row
+  identity/order, and rejection of every training ancestor;
 - terminal state/raster targets, exact candidate source/selected/truth-evaluated/executed
   fields, shared prediction adaptation with `inference_ms=0.0`, and replay with no
   executed control reference;
