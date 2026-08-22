@@ -685,3 +685,252 @@ attempts:
       The command exited zero after the production registry/candidate validators
       accepted the one-entry result. Its checksummed cache records are available
       for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_6_01_isaac_lab_arena
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - isaac_lab_arena
+      - --metadata-only
+    started_at_utc: 2026-08-22T21:50:17Z
+    finished_at_utc: 2026-08-22T21:50:22Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [isaac_lab_arena]
+    summary: >-
+      Resolved and validated the pinned isaac_lab_arena metadata entry into its
+      repository-scoped cache; stdout identified name isaac_lab_arena and metadata_status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the complete all-entry publication pass.
+
+  - id: single_metadata_window_6_02_uv
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - uv
+      - --metadata-only
+    started_at_utc: 2026-08-22T21:50:22Z
+    finished_at_utc: 2026-08-22T21:50:28Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [uv]
+    summary: >-
+      Resolved and validated the pinned uv metadata entry into its
+      repository-scoped cache; stdout identified name uv and metadata_status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the complete all-entry publication pass.
+
+  - id: single_metadata_window_6_03_hatchling
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - hatchling
+      - --metadata-only
+    started_at_utc: 2026-08-22T21:50:28Z
+    finished_at_utc: 2026-08-22T21:50:33Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [hatchling]
+    summary: >-
+      Resolved and validated the pinned hatchling metadata entry into its
+      repository-scoped cache; stdout identified name hatchling and metadata_status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the complete all-entry publication pass.
+
+  - id: single_metadata_window_6_04_pyyaml
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - pyyaml
+      - --metadata-only
+    started_at_utc: 2026-08-22T21:50:33Z
+    finished_at_utc: 2026-08-22T21:50:41Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [pyyaml]
+    summary: >-
+      Resolved and validated the pinned pyyaml metadata entry into its
+      repository-scoped cache; stdout identified name pyyaml and metadata_status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the complete all-entry publication pass.
+
+  - id: single_metadata_window_6_05_numpy
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - numpy
+      - --metadata-only
+    started_at_utc: 2026-08-22T21:50:41Z
+    finished_at_utc: 2026-08-22T21:50:56Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [numpy]
+    summary: >-
+      Resolved and validated the pinned numpy metadata entry into its
+      repository-scoped cache; stdout identified name numpy and metadata_status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the complete all-entry publication pass.
+
+  - id: single_metadata_window_6_06_pyarrow
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - pyarrow
+      - --metadata-only
+    started_at_utc: 2026-08-22T21:50:56Z
+    finished_at_utc: 2026-08-22T21:51:01Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [pyarrow]
+    summary: >-
+      Resolved and validated the pinned pyarrow metadata entry into its
+      repository-scoped cache; stdout identified name pyarrow and metadata_status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the complete all-entry publication pass.
+
+  - id: single_metadata_window_6_07_pytest
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - pytest
+      - --metadata-only
+    started_at_utc: 2026-08-22T21:51:01Z
+    finished_at_utc: 2026-08-22T21:51:06Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [pytest]
+    summary: >-
+      Resolved and validated the pinned pytest metadata entry into its
+      repository-scoped cache; stdout identified name pytest and metadata_status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the complete all-entry publication pass.
+
+  - id: all_metadata_window_6_live_refresh
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --all-metadata-only
+    started_at_utc: 2026-08-22T21:52:16Z
+    finished_at_utc: 2026-08-22T21:52:49Z
+    exit_code: 1
+    published_lock: false
+    completed_entries:
+      - mujoco
+      - mujoco_mpc
+      - mujoco_menagerie
+      - mink
+      - mjctrl
+      - hydrax
+      - curobo
+      - moveit2
+      - ros2_control
+      - ros2_controllers
+      - mujoco_ros2_control
+      - act
+    incomplete_entry: lerobot
+    error: >-
+      GitHub rate limit exhausted for https://api.github.com/repos/huggingface/lerobot/license?ref=7427f31801f944f5ec9ce53cda02862ce7d1638b; reset 1787439021
+    rate_limit_reset_utc: 2026-08-22T22:50:21Z
+    lock_absence_verified: true
+    cache_validation: >-
+      The live-first all-entry pass validated the canonical prefix through act,
+      refreshed lerobot's pinned commit and tree metadata, and then exhausted the
+      window before caching the pinned license response. No partial lock was
+      published; 45 repository directories and 357 cache files remain available.
+
+  - id: all_metadata_window_6_cache_retry
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --all-metadata-only
+    started_at_utc: 2026-08-22T21:52:58Z
+    finished_at_utc: 2026-08-22T21:53:01Z
+    exit_code: 1
+    published_lock: false
+    completed_entries:
+      - mujoco
+      - mujoco_mpc
+      - mujoco_menagerie
+      - mink
+      - mjctrl
+      - hydrax
+      - curobo
+      - moveit2
+      - ros2_control
+      - ros2_controllers
+      - mujoco_ros2_control
+      - act
+    incomplete_entry: lerobot
+    error: >-
+      GitHub rate limit remains active for https://api.github.com/repos/huggingface/lerobot/license?ref=7427f31801f944f5ec9ce53cda02862ce7d1638b; reset 1787439021
+    rate_limit_reset_utc: 2026-08-22T22:50:21Z
+    lock_absence_verified: true
+    cache_validation: >-
+      The immediate retry honored the active rate marker and replayed the
+      canonical prefix through act, but the newly pinned lerobot license response
+      was not present in cache. The command failed closed without network access or
+      partial publication; no lock exists. Further retries wait for the next window.
