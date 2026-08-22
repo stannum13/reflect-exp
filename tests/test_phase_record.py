@@ -99,7 +99,7 @@ def _p3_report_repository(
         "operations:\n"
         "  - operation_id: MUJOCO_PACKAGE_SMOKE\n"
         "    runtime_subject: package\n"
-        "    relative_path: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json\n"
+        "    relative_output: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json\n"
     ),
 ) -> tuple[Path, str, str]:
     publisher = importlib.import_module("scripts.publish_phase_record")
@@ -646,37 +646,37 @@ def test_p3_publisher_rejects_symlink_smoke_artifact(tmp_path: Path) -> None:
     [
         ("operations: []\n", "exactly one MUJOCO_PACKAGE_SMOKE"),
         (
-            "operations:\n"
-            "  - operation_id: MUJOCO_PACKAGE_SMOKE\n"
-            "    runtime_subject: package\n"
-            "    relative_path: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json\n"
-            "  - operation_id: MUJOCO_PACKAGE_SMOKE\n"
-            "    runtime_subject: package\n"
-            "    relative_path: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json\n",
+                "operations:\n"
+                "  - operation_id: MUJOCO_PACKAGE_SMOKE\n"
+                "    runtime_subject: package\n"
+                "    relative_output: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json\n"
+                "  - operation_id: MUJOCO_PACKAGE_SMOKE\n"
+                "    runtime_subject: package\n"
+                "    relative_output: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json\n",
             "exactly one MUJOCO_PACKAGE_SMOKE",
         ),
         (
-            "operations:\n"
-            "  - operation_id: MUJOCO_PACKAGE_SMOKE\n"
-            "    runtime_subject: source_checkout\n"
-            "    relative_path: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json\n",
+                "operations:\n"
+                "  - operation_id: MUJOCO_PACKAGE_SMOKE\n"
+                "    runtime_subject: source_checkout\n"
+                "    relative_output: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json\n",
             "runtime_subject",
         ),
         (
-            "operations:\n"
-            "  - operation_id: MUJOCO_PACKAGE_SMOKE\n"
-            "    runtime_subject: package\n"
-            "    relative_path: experiments/00_source_audit/results/fragments/other.json\n",
+                "operations:\n"
+                "  - operation_id: MUJOCO_PACKAGE_SMOKE\n"
+                "    runtime_subject: package\n"
+                "    relative_output: experiments/00_source_audit/results/fragments/other.json\n",
             "output identity",
         ),
         (
-            "operations:\n"
-            "  - operation_id: MUJOCO_PACKAGE_SMOKE\n"
-            "    runtime_subject: package\n"
-            "    relative_path: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json\n"
-            "  - operation_id: OTHER\n"
-            "    runtime_subject: source_checkout\n"
-            "    relative_path: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json\n",
+                "operations:\n"
+                "  - operation_id: MUJOCO_PACKAGE_SMOKE\n"
+                "    runtime_subject: package\n"
+                "    relative_output: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json\n"
+                "  - operation_id: OTHER\n"
+                "    runtime_subject: source_checkout\n"
+                "    relative_output: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json\n",
             "output collision",
         ),
     ],

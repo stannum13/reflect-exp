@@ -213,7 +213,7 @@ def _members_for_phase(root: Path, phase: str, implementation_sha: str) -> tuple
     for index, operation in enumerate(operations):
         if not isinstance(operation, dict):
             raise ValueError(f"P3 operations[{index}] must be a mapping")
-        required = {"operation_id", "runtime_subject", "relative_path"}
+        required = {"operation_id", "runtime_subject", "relative_output"}
         if not required.issubset(operation):
             raise ValueError(f"P3 operations[{index}] lacks its closed smoke identity")
         values = {key: operation[key] for key in required}
@@ -230,10 +230,10 @@ def _members_for_phase(root: Path, phase: str, implementation_sha: str) -> tuple
     match = matches[0]
     if match["runtime_subject"] != "package":
         raise ValueError("P3 smoke operation runtime_subject must be package")
-    if match["relative_path"] != _P3_SMOKE_PATH:
+    if match["relative_output"] != _P3_SMOKE_PATH:
         raise ValueError("P3 smoke operation output identity does not match the selector")
     if sum(
-        operation["relative_path"] == _P3_SMOKE_PATH
+        operation["relative_output"] == _P3_SMOKE_PATH
         for operation in normalized_operations
     ) != 1:
         raise ValueError("P3 smoke output collision in operations")
