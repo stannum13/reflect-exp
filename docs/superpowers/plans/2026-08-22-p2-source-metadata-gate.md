@@ -308,6 +308,8 @@ git commit -m "feat: audit locked source metadata"
 **Files:**
 - Create: `references/repos.lock.yaml`
 - Create: `references/p2-live-attempts.yaml`
+- Create: `reflect/p2_report.py`
+- Create: `reflect/_p2_report_io.py`
 - Create: `scripts/write_p2_report.py`
 - Create: `tests/test_p2_commands.py`
 - Modify: `docs/ASSUMPTIONS.md`
@@ -320,7 +322,9 @@ git commit -m "feat: audit locked source metadata"
 
 - [ ] **Step 1: Write failing command/report tests**
 
-Test that the checked-in lock covers the exact registry digest and 45 names, all
+Test duplicate-key-rejecting YAML, exact allowlisted resolver command arrays,
+canonical/global attempt chronology, the failed-attempt preservation union, safe
+no-follow regular-file snapshots, and unique final publication. Test that the checked-in lock covers the exact registry digest and 45 names, all
 entries are resolved, all paths have statuses, direct/adapter licenses are
 discovered, the report cites a clean implementation SHA and exact command outcomes,
 the resumable attempt log uses canonical UTC timestamps and proves every failed
@@ -332,6 +336,18 @@ audit passes.
 Run: `UV_CACHE_DIR=.cache/uv uv run pytest tests/test_p2_commands.py -q`
 
 Expected: failure because `references/repos.lock.yaml` and P2 report evidence do not exist.
+
+- [ ] **Step 2A: Implement strict evidence and report modules**
+
+`reflect/p2_report.py` owns immutable attempt/verification models, a PyYAML loader
+that rejects duplicate mapping keys, exact resolver-command allowlists, registry/
+lock/count/type/time/hash validation, global chronology, and Markdown rendering with
+HTML-escaped command output. `reflect/_p2_report_io.py` owns descriptor-anchored
+no-follow bounded snapshots, hardened local Git commands, tracked secret/artifact
+path checks, and mode-`0600` fsynced atomic report publication with cleanup.
+`scripts/write_p2_report.py` remains a thin safety-first CLI orchestrator. It rejects
+physical/remote enablement before running verification, strips ambient `GIT_*`,
+disables fsmonitor/hooks, and never invokes the live resolver.
 
 - [ ] **Step 3: Run the complete live metadata resolution**
 
@@ -376,6 +392,6 @@ lock, assumptions, manifest, report generator/test, and run report.
 - [ ] **Step 7: Commit Task 4**
 
 ```bash
-git add references/repos.lock.yaml references/p2-live-attempts.yaml scripts/write_p2_report.py tests/test_p2_commands.py docs/ASSUMPTIONS.md docs/RUN_MANIFEST.yaml RUN_REPORT.md
+git add references/repos.lock.yaml references/p2-live-attempts.yaml reflect/p2_report.py reflect/_p2_report_io.py scripts/write_p2_report.py tests/test_p2_commands.py docs/ASSUMPTIONS.md docs/RUN_MANIFEST.yaml RUN_REPORT.md
 git commit -m "chore: verify P2 source metadata gate"
 ```
