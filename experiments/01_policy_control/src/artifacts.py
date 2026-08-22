@@ -8,22 +8,27 @@ usable in a minimal analysis process.
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
+import ctypes
 from dataclasses import asdict, dataclass, fields, is_dataclass
+import errno
 import hashlib
 import json
 import math
 import os
 from pathlib import Path
 import re
-import shutil
+import stat
 import subprocess
-import tempfile
 from typing import Any
 
 import numpy as np
 
 from reflect.replay import ReplayResult, replay_rollout
 from reflect.rollout import RolloutArtifact, RolloutRecord, RolloutWriter, validate_rollout
+from reflect._rollout_io import (
+    cleanup_exact_directory, create_temporary_directory, path_matches_directory,
+)
+from reflect.source_evidence import open_directory_chain
 
 
 SCHEMA_VERSION = 1
@@ -587,10 +592,19 @@ def preflight_resources(
 
 
 def _git(root: Path, *arguments: str) -> bytes:
+    environment = {
+        "PATH": os.environ.get("PATH", ""), "LANG": "C", "LC_ALL": "C",
+        "GIT_CONFIG_NOSYSTEM": "1", "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_OPTIONAL_LOCKS": "0",
+    }
     try:
         return subprocess.run(
-            ["git", *arguments], cwd=root, check=True, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            [
+                "git", "--no-replace-objects", "-c", "core.hooksPath=/dev/null",
+                "-c", "core.fsmonitor=false", *arguments,
+            ],
+            cwd=root, env=environment, check=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
         ).stdout
     except subprocess.CalledProcessError as exc:
         raise ImplementationDriftError(exc.stderr.decode("utf-8", "replace").strip()) from exc
@@ -601,7 +615,7 @@ class ImplementationSnapshot:
     root: Path
     implementation_sha: str
     owned_paths: tuple[Path, ...]
-    committed_files: tuple[tuple[str, str], ...]
+    committed_files: tuple[tuple[str, str, str], ...]
 
     @classmethod
     def capture(cls, root: Path, implementation_sha: str, owned_paths: Sequence[Path]) -> "ImplementationSnapshot":
@@ -611,28 +625,61 @@ class ImplementationSnapshot:
         if not paths or any(item.is_absolute() or ".." in item.parts for item in paths):
             raise ImplementationDriftError("owned paths must be nonempty root-relative paths")
         _git(root, "cat-file", "-e", f"{implementation_sha}^{{commit}}")
-        names = _git(root, "ls-tree", "-r", "--name-only", implementation_sha, "--", *map(str, paths)).decode().splitlines()
-        committed = tuple(
-            (name, hashlib.sha256(_git(root, "show", f"{implementation_sha}:{name}")).hexdigest())
-            for name in sorted(names)
-        )
+        tree = _git(root, "ls-tree", "-r", "-z", implementation_sha, "--", *map(str, paths))
+        committed_rows: list[tuple[str, str, str]] = []
+        for encoded in tree.split(b"\0"):
+            if not encoded:
+                continue
+            metadata, encoded_name = encoded.split(b"\t", 1)
+            mode, kind, object_id = metadata.decode("ascii").split(" ")
+            name = encoded_name.decode("utf-8")
+            if kind != "blob" or mode not in {"100644", "100755"}:
+                raise ImplementationDriftError(f"implementation tree contains a nonregular entry: {name}")
+            payload = _git(root, "cat-file", "blob", object_id)
+            committed_rows.append((name, mode, hashlib.sha256(payload).hexdigest()))
+        committed = tuple(sorted(committed_rows))
         if not committed:
             raise ImplementationDriftError("implementation commit contains no owned files")
         return cls(root, implementation_sha, paths, committed)
 
-    def _current(self) -> tuple[tuple[str, str], ...]:
-        current: list[tuple[str, str]] = []
-        for name, _ in self.committed_files:
+    def _current(self) -> tuple[tuple[str, str, str], ...]:
+        expected_names = tuple(row[0] for row in self.committed_files)
+        indexed = tuple(sorted(filter(None, _git(
+            self.root, "ls-files", "--cached", "-z", "--", *map(str, self.owned_paths),
+        ).decode("utf-8").split("\0"))))
+        if indexed != expected_names:
+            raise ImplementationDriftError("tracked implementation inventory differs from bound commit")
+        filesystem: set[str] = set()
+        for relative in self.owned_paths:
+            root_entry = self.root / relative
+            if root_entry.is_symlink():
+                raise ImplementationDriftError(f"implementation inventory contains symlink: {relative}")
+            if root_entry.is_file():
+                filesystem.add(relative.as_posix())
+                continue
+            if not root_entry.is_dir():
+                raise ImplementationDriftError(f"implementation inventory entry is absent: {relative}")
+            for directory, directory_names, file_names in os.walk(root_entry, followlinks=False):
+                directory_path = Path(directory)
+                for name in tuple(directory_names):
+                    entry = directory_path / name
+                    if entry.is_symlink():
+                        raise ImplementationDriftError(f"implementation inventory contains symlink: {entry.relative_to(self.root)}")
+                for name in file_names:
+                    entry = directory_path / name
+                    relative_name = entry.relative_to(self.root).as_posix()
+                    value = entry.lstat()
+                    if not stat.S_ISREG(value.st_mode):
+                        raise ImplementationDriftError(f"implementation inventory contains nonregular entry: {relative_name}")
+                    filesystem.add(relative_name)
+        if tuple(sorted(filesystem)) != expected_names:
+            raise ImplementationDriftError("filesystem implementation inventory differs from bound commit")
+        current = []
+        for name, _, _ in self.committed_files:
             path = self.root / name
-            if path.is_symlink() or not path.is_file():
-                raise ImplementationDriftError(f"tracked implementation path changed: {name}")
-            current.append((name, hashlib.sha256(path.read_bytes()).hexdigest()))
-        untracked = _git(
-            self.root, "ls-files", "--others", "--exclude-standard", "--",
-            *map(str, self.owned_paths),
-        ).decode().splitlines()
-        if untracked:
-            raise ImplementationDriftError(f"untracked implementation path: {sorted(untracked)[0]}")
+            value = path.lstat()
+            mode = "100755" if value.st_mode & stat.S_IXUSR else "100644"
+            current.append((name, mode, hashlib.sha256(path.read_bytes()).hexdigest()))
         return tuple(current)
 
     def validate_before(self) -> "ImplementationSnapshot":
@@ -642,7 +689,7 @@ class ImplementationSnapshot:
 
     def validate_after(self, before: "ImplementationSnapshot | None" = None) -> "ImplementationSnapshot":
         self.validate_before()
-        if before is not None and before.committed_files != self.committed_files:
+        if before is not None and before != self:
             raise ImplementationDriftError("implementation snapshot changed during operation")
         return self
 
@@ -680,6 +727,7 @@ class RolloutSpec:
     configuration_hash: str
     protocol_sha256: str
     source_sha256: str
+    scenario_sha256: str
     max_bytes: int = ROLLOUT_RESERVATION_BYTES
 
     def __post_init__(self) -> None:
@@ -688,7 +736,7 @@ class RolloutSpec:
             raise ArtifactError("invalid stack_id")
         _exact_int(self.seed, "seed")
         _text(self.condition_id, "condition_id")
-        for name in ("configuration_hash", "protocol_sha256", "source_sha256"):
+        for name in ("configuration_hash", "protocol_sha256", "source_sha256", "scenario_sha256"):
             _hash(getattr(self, name), name)
         _exact_int(self.max_bytes, "max_bytes")
 
@@ -702,17 +750,25 @@ def _directory_bytes(path: Path) -> int:
     return total
 
 
+def _validate_declared_metrics(metrics: Mapping[str, object], spec: RolloutSpec) -> None:
+    bindings = (
+        ("stack_id", spec.stack_id), ("condition_id", spec.condition_id),
+        ("seed", spec.seed), ("protocol_sha256", spec.protocol_sha256),
+        ("source_sha256", spec.source_sha256),
+        ("scenario_identity_sha256", spec.scenario_sha256),
+    )
+    for key, expected in bindings:
+        if metrics.get(key) != expected:
+            raise ArtifactError(f"rollout {key} differs from its mandatory declaration")
+
+
 def _validate_record_binding(record: RolloutRecord, artifact: RolloutArtifact, spec: RolloutSpec) -> None:
     if artifact.path.name != spec.rollout_id or artifact.metadata.seed != spec.seed:
         raise ArtifactError("rollout identity/seed does not match its declaration")
     if artifact.metadata.task_config_hash != spec.configuration_hash:
         raise ArtifactError("rollout configuration hash differs from shard declaration")
-    if artifact.metrics.get("stack_id") != spec.stack_id or artifact.metrics.get("condition_id") != spec.condition_id:
-        raise ArtifactError("rollout stack/condition differs from shard declaration")
-    for key, expected in (("protocol_sha256", spec.protocol_sha256), ("source_sha256", spec.source_sha256)):
-        present = artifact.metrics.get(key)
-        if present is not None and present != expected:
-            raise ArtifactError(f"rollout {key} differs from shard declaration")
+    _validate_declared_metrics(record.metrics, spec)
+    _validate_declared_metrics(artifact.metrics, spec)
     expected_fields = (
         record.metadata, record.config, record.metrics, record.events, record.observations,
         record.actions, record.control_references, record.summary,
@@ -728,35 +784,89 @@ def _validate_record_binding(record: RolloutRecord, artifact: RolloutArtifact, s
         raise ArtifactError("terminal replay is incomplete")
 
 
+def _renameat_directory_noreplace(
+    source_descriptor: int, source_name: str,
+    destination_descriptor: int, destination_name: str,
+) -> None:
+    library = ctypes.CDLL(None, use_errno=True)
+    encoded_source, encoded_destination = os.fsencode(source_name), os.fsencode(destination_name)
+    if hasattr(library, "renameatx_np"):
+        result = library.renameatx_np(
+            source_descriptor, ctypes.c_char_p(encoded_source),
+            destination_descriptor, ctypes.c_char_p(encoded_destination), 0x00000004,
+        )
+    elif hasattr(library, "renameat2"):
+        result = library.renameat2(
+            source_descriptor, ctypes.c_char_p(encoded_source),
+            destination_descriptor, ctypes.c_char_p(encoded_destination), 0x00000001,
+        )
+    else:
+        raise ArtifactError("platform lacks a directory no-replace rename primitive")
+    if result != 0:
+        error = ctypes.get_errno()
+        if error in {errno.EEXIST, errno.ENOTEMPTY}:
+            raise ArtifactError("rollout destination already exists")
+        raise ArtifactError(f"no-replace rollout publication failed: {os.strerror(error)}")
+
+
+def _rename_directory_noreplace(source: Path, destination: Path) -> None:
+    source, destination = Path(source), Path(destination)
+    source_parent = open_directory_chain(source.parent, create=False)
+    destination_parent = open_directory_chain(destination.parent, create=False)
+    try:
+        _renameat_directory_noreplace(
+            source_parent, source.name, destination_parent, destination.name,
+        )
+    finally:
+        os.close(destination_parent)
+        os.close(source_parent)
+
+
 def publish_or_validate_skip(record: RolloutRecord, destination: Path, spec: RolloutSpec) -> str:
     destination = Path(destination)
     if destination.name != spec.rollout_id:
         raise ArtifactError("destination name differs from rollout specification")
-    if destination.exists():
-        artifact = validate_rollout(destination)
-        if _directory_bytes(destination) > spec.max_bytes:
-            raise ArtifactError("rollout exceeds its declared byte ceiling")
-        _validate_record_binding(record, artifact, spec)
-        return "validated-and-skipped"
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    staging_root = Path(tempfile.mkdtemp(prefix=f".{destination.name}.publish-", dir=destination.parent))
+    _validate_declared_metrics(record.metrics, spec)
+    parent_descriptor = open_directory_chain(destination.parent, create=True)
+    held = None
     try:
+        try:
+            existing = os.stat(destination.name, dir_fd=parent_descriptor, follow_symlinks=False)
+        except FileNotFoundError:
+            existing = None
+        if existing is not None:
+            if stat.S_ISLNK(existing.st_mode):
+                raise ArtifactError("rollout destination is a symlink")
+            if not stat.S_ISDIR(existing.st_mode):
+                raise ArtifactError("rollout destination is not a directory")
+            existing_path = destination
+            artifact = validate_rollout(existing_path)
+            if _directory_bytes(existing_path) > spec.max_bytes:
+                raise ArtifactError("rollout exceeds its declared byte ceiling")
+            _validate_record_binding(record, artifact, spec)
+            return "validated-and-skipped"
+        held = create_temporary_directory(parent_descriptor, f".{destination.name}.publish-")
+        staging_root = destination.parent / held.name
+        if not path_matches_directory(staging_root, held.identity):
+            raise ArtifactError("rollout staging directory identity drifted")
         staged = RolloutWriter(staging_root, destination.name).write(record)
+        if not path_matches_directory(staging_root, held.identity):
+            raise ArtifactError("rollout staging directory identity drifted during write")
         artifact = validate_rollout(staged)
         if _directory_bytes(staged) > spec.max_bytes:
             raise ArtifactError("rollout exceeds its declared byte ceiling")
         _validate_record_binding(record, artifact, spec)
-        try:
-            os.rename(staged, destination)
-        except FileExistsError as exc:
-            raise ArtifactError("rollout appeared concurrently") from exc
-        descriptor = os.open(destination.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
+        _renameat_directory_noreplace(
+            held.descriptor, destination.name, parent_descriptor, destination.name,
+        )
+        os.fsync(parent_descriptor)
     finally:
-        shutil.rmtree(staging_root, ignore_errors=True)
+        if held is not None:
+            cleanup_exact_directory(
+                parent_descriptor, held.descriptor, held.identity, held.name,
+            )
+            os.close(held.descriptor)
+        os.close(parent_descriptor)
     return "published"
 
 

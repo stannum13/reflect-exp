@@ -169,10 +169,14 @@ def test_publish_rollout_is_create_only_and_replay_validated(tmp_path: Path) -> 
         configuration_hash, {"arm": H64},
     )
     record = evaluate.run_episode(contracts.CommandStack.P1, condition, scenario_record, cfg, identity)
+    record = replace(record, metrics=dict(record.metrics) | {
+        "protocol_sha256": H64, "source_sha256": H64,
+    })
     destination = tmp_path / record.events[0].rollout_id
     spec = artifacts.RolloutSpec(
         destination.name, "P1", scenario.seed, condition.condition_id,
-        configuration_hash, H64, H64, 2 * 1024 * 1024,
+        configuration_hash, H64, H64, scenario_record.identity_sha256,
+        2 * 1024 * 1024,
     )
     assert artifacts.publish_or_validate_skip(record, destination, spec) == "published"
     assert artifacts.publish_or_validate_skip(record, destination, spec) == "validated-and-skipped"
@@ -184,6 +188,46 @@ def test_publish_rollout_is_create_only_and_replay_validated(tmp_path: Path) -> 
     (destination / "extra").write_bytes(b"x")
     with pytest.raises(Exception):
         artifacts.publish_or_validate_skip(record, destination, spec)
+
+
+def test_rollout_binding_is_mandatory_and_directory_publication_is_no_replace(
+    tmp_path: Path,
+) -> None:
+    cfg = contracts.load_config(Path(__file__).parents[1] / "configs/base.yaml")
+    scenario_record = evaluate.generate_scenario(19, cfg)
+    condition = evaluate.core_conditions(cfg)[0]
+    configuration_hash = evaluate.sha256_json(timing.scheduler_config(cfg))
+    identity = evaluate.EpisodeIdentity(
+        G40, True, None, H64, "test", "cpu", None, "3.11", {"mujoco": "3.12.0"},
+        configuration_hash, {"arm": H64},
+    )
+    unbound = evaluate.run_episode(
+        contracts.CommandStack.P1, condition, scenario_record, cfg, identity,
+    )
+    destination = tmp_path / unbound.events[0].rollout_id
+    spec = artifacts.RolloutSpec(
+        destination.name, "P1", scenario_record.seed, condition.condition_id,
+        configuration_hash, H64, H64, scenario_record.identity_sha256,
+    )
+    with pytest.raises(artifacts.ArtifactError, match="protocol_sha256"):
+        artifacts.publish_or_validate_skip(unbound, destination, spec)
+
+    source = tmp_path / "source"
+    source.mkdir()
+    existing = tmp_path / "existing"
+    existing.mkdir()
+    inode = existing.stat().st_ino
+    with pytest.raises(artifacts.ArtifactError, match="already exists"):
+        artifacts._rename_directory_noreplace(source, existing)
+    assert existing.stat().st_ino == inode and source.is_dir()
+
+    link = tmp_path / "linked-rollout"
+    link.symlink_to(existing, target_is_directory=True)
+    bound = replace(unbound, metrics=dict(unbound.metrics) | {
+        "protocol_sha256": H64, "source_sha256": H64,
+    })
+    with pytest.raises(artifacts.ArtifactError, match="symlink"):
+        artifacts.publish_or_validate_skip(bound, link, replace(spec, rollout_id=link.name))
 
 
 def test_implementation_snapshot_detects_tracked_and_untracked_drift(tmp_path: Path) -> None:
@@ -199,8 +243,42 @@ def test_implementation_snapshot_detects_tracked_and_untracked_drift(tmp_path: P
     snap = artifacts.ImplementationSnapshot.capture(tmp_path, sha, (Path("owned"),))
     snap.validate_before()
     (owned / "new.py").write_text("x = 1\n")
-    with pytest.raises(artifacts.ImplementationDriftError, match="untracked"):
+    with pytest.raises(artifacts.ImplementationDriftError, match="inventory"):
         snap.validate_after()
+
+
+def test_implementation_snapshot_rejects_replace_refs_staged_and_ignored_additions(
+    tmp_path: Path,
+) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+    owned = tmp_path / "owned"
+    owned.mkdir()
+    (owned / ".gitignore").write_text("ignored.py\n", encoding="utf-8")
+    (owned / "code.py").write_text("VALUE = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "owned"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    base_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=tmp_path, text=True).strip()
+    (owned / "code.py").write_text("VALUE = 2\n", encoding="utf-8")
+    subprocess.run(["git", "commit", "-am", "replacement", "-q"], cwd=tmp_path, check=True)
+    replacement_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=tmp_path, text=True).strip()
+    subprocess.run(["git", "replace", base_sha, replacement_sha], cwd=tmp_path, check=True)
+    replacement_guard = artifacts.ImplementationSnapshot.capture(tmp_path, base_sha, (Path("owned"),))
+    with pytest.raises(artifacts.ImplementationDriftError, match="differ"):
+        replacement_guard.validate_before()
+    subprocess.run(["git", "replace", "-d", base_sha], cwd=tmp_path, check=True)
+
+    current_guard = artifacts.ImplementationSnapshot.capture(tmp_path, replacement_sha, (Path("owned"),))
+    (owned / "staged.py").write_text("STAGED = True\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-f", "owned/staged.py"], cwd=tmp_path, check=True)
+    with pytest.raises(artifacts.ImplementationDriftError, match="inventory"):
+        current_guard.validate_before()
+    subprocess.run(["git", "reset", "--", "owned/staged.py"], cwd=tmp_path, check=True)
+    (owned / "staged.py").unlink()
+    (owned / "ignored.py").write_text("IGNORED = True\n", encoding="utf-8")
+    with pytest.raises(artifacts.ImplementationDriftError, match="inventory"):
+        current_guard.validate_after()
 
 
 def test_reconstruct_evidence_is_deterministic_and_manifest_last(tmp_path: Path) -> None:
