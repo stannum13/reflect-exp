@@ -129,10 +129,103 @@ class ExperimentConfig:
     arm: ArmConfig
     controller: ControllerConfig
     timing: TimingConfig
-    pilot: dict[str, Any]
-    confirmation: dict[str, Any]
+    kinematics: "KinematicsConfig"
+    mpc: "MPCConfig"
+    residual: "ResidualConfig"
+    conditions: "ConditionsConfig"
+    stacks: tuple["StackConfig", ...]
+    metrics: "MetricsConfig"
+    pilot: "PilotConfig"
+    confirmation: "ConfirmationConfig"
     resources: ResourceConfig
-    thresholds: dict[str, float]
+    thresholds: "ThresholdConfig"
+
+
+@dataclass(frozen=True)
+class KinematicsConfig:
+    posture_q: np.ndarray
+    absolute_solver_revision: str
+    differential_solver_revision: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "posture_q", frozen_vector(self.posture_q, "posture_q", shape=(3,)))
+
+
+@dataclass(frozen=True)
+class MPCConfig:
+    candidate_count: int
+    raw_direction_values: tuple[int, int, int]
+    magnitudes_rad_s: tuple[float, float, float]
+    error_scale_m: float
+    velocity_scale_rad_s: float
+    soft_joint_margin_rad: float
+    effort_weight: float
+    barrier_weight: float
+    transition_revision: str
+
+
+@dataclass(frozen=True)
+class ResidualConfig:
+    nominal_revision: str
+    nominal_duration_s: float
+    component_limit_rad: float
+
+
+@dataclass(frozen=True)
+class ConditionsConfig:
+    move_counts: tuple[int, int]
+    probe_ids: tuple[str, str]
+    control_id: str
+    core_fault_id: str
+
+
+@dataclass(frozen=True)
+class StackConfig:
+    stack_id: str
+    representation: str
+    action_columns: int
+    cardinality: str
+
+
+@dataclass(frozen=True)
+class MetricsConfig:
+    primary: str
+    secondary: tuple[str, ...]
+    percentile_revision: str
+
+
+@dataclass(frozen=True)
+class PilotConfig:
+    seed_count: int
+    tuning_seed_count: int
+    evaluation_seed_count: int
+    max_revisions: int
+    tuning_conditions: tuple[tuple[int, int, int], ...]
+
+
+@dataclass(frozen=True)
+class ConfirmationConfig:
+    scenario_count: int
+    candidate_count: int
+    bootstrap_resamples: int
+
+
+@dataclass(frozen=True)
+class ThresholdConfig:
+    success_radius_m: float
+    success_dwell_s: float
+    recovery_censor_s: float
+    pilot_easiest_recovery_s: float
+    worthwhile_s: float
+    noninferiority_s: float
+    easiest_recovery_fraction: float
+    core_recovery_fraction: float
+    clamp_fraction: float
+    saturation_fraction: float
+    smoothness_multiplier: float
+
+    def __getitem__(self, key: str) -> float:
+        return float(getattr(self, key))
 
 
 @dataclass(frozen=True)
@@ -153,6 +246,16 @@ class Scenario:
     two_move_path: np.ndarray
     stationary_path: np.ndarray
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "q0", frozen_vector(self.q0, "q0", shape=(3,)))
+        object.__setattr__(self, "initial_target", frozen_vector(self.initial_target, "initial_target", shape=(2,)))
+        for name in ("one_move_path", "two_move_path", "stationary_path"):
+            value = np.array(getattr(self, name), dtype=np.float64, order="C", copy=True)
+            if value.ndim != 2 or value.shape[1] != 2 or not np.isfinite(value).all():
+                raise ValueError(f"{name} must be a finite Nx2 array")
+            value.setflags(write=False)
+            object.__setattr__(self, name, value)
+
 
 @dataclass(frozen=True)
 class PolicyInput:
@@ -163,6 +266,10 @@ class PolicyInput:
     q_initial: np.ndarray
     q_initial_target: np.ndarray
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "q_initial", frozen_vector(self.q_initial, "q_initial", shape=(3,)))
+        object.__setattr__(self, "q_initial_target", frozen_vector(self.q_initial_target, "q_initial_target", shape=(3,)))
+
 
 @dataclass(frozen=True)
 class ExecutorState:
@@ -171,6 +278,10 @@ class ExecutorState:
     p5_qdot_previous: np.ndarray
     p5_planner_q_ref: np.ndarray
     p5_planner_enabled: bool
+
+    def __post_init__(self) -> None:
+        for name in ("latched_q_ref", "p5_qdot_previous", "p5_planner_q_ref"):
+            object.__setattr__(self, name, frozen_vector(getattr(self, name), name, shape=(3,)))
 
 
 @dataclass(frozen=True)
@@ -227,7 +338,7 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-_ROOT_KEYS = {"schema_version", "study_id", "arm", "controller", "timing", "pilot", "confirmation", "resources", "thresholds"}
+_ROOT_KEYS = {"schema_version", "study_id", "arm", "controller", "kinematics", "mpc", "residual", "timing", "conditions", "stacks", "metrics", "pilot", "confirmation", "resources", "thresholds"}
 
 
 def _require_keys(raw: dict[str, Any], expected: set[str], name: str) -> None:
@@ -238,18 +349,46 @@ def _require_keys(raw: dict[str, Any], expected: set[str], name: str) -> None:
         raise ValueError(f"{name} unknown keys: {sorted(unknown)}")
 
 
+class _UniqueLoader(yaml.SafeLoader):
+    pass
+
+
+def _construct_unique(loader: _UniqueLoader, node: yaml.MappingNode, deep: bool = False) -> dict[object, object]:
+    result: dict[object, object] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in result:
+            raise ValueError(f"duplicate YAML key: {key}")
+        result[key] = loader.construct_object(value_node, deep=deep)
+    return result
+
+
+_UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_unique)
+
+
+def _integer_tuple(value: object, name: str, *, length: int | None = None) -> tuple[int, ...]:
+    if not isinstance(value, list) or (length is not None and len(value) != length) or any(type(item) is not int for item in value):
+        raise ValueError(f"{name} must contain exact integers")
+    return tuple(value)
+
+
+def _mapping(raw: dict[str, Any], key: str, expected: set[str]) -> dict[str, Any]:
+    value = raw[key]
+    if not isinstance(value, dict):
+        raise ValueError(f"{key} must be a mapping")
+    _require_keys(value, expected, key)
+    return value
+
+
 def load_config(path: Path) -> ExperimentConfig:
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    raw = yaml.load(path.read_text(encoding="utf-8"), Loader=_UniqueLoader)
     if not isinstance(raw, dict):
         raise ValueError("configuration must be a mapping")
     _require_keys(raw, _ROOT_KEYS, "configuration")
-    arm = raw["arm"]
-    controller = raw["controller"]
-    timing = raw["timing"]
-    resources = raw["resources"]
-    for name, value in (("arm", arm), ("controller", controller), ("timing", timing), ("resources", resources)):
-        if not isinstance(value, dict):
-            raise ValueError(f"{name} must be a mapping")
+    arm = _mapping(raw, "arm", set(ArmConfig.__dataclass_fields__))
+    controller = _mapping(raw, "controller", set(ControllerConfig.__dataclass_fields__))
+    timing = _mapping(raw, "timing", set(TimingConfig.__dataclass_fields__))
+    resources = _mapping(raw, "resources", set(ResourceConfig.__dataclass_fields__))
     arm_cfg = ArmConfig(
         link_lengths_m=_tuple_floats(arm["link_lengths_m"], "link_lengths_m", 3),
         **{key: _number(arm, key) for key in ArmConfig.__dataclass_fields__ if key != "link_lengths_m"},
@@ -267,12 +406,12 @@ def load_config(path: Path) -> ExperimentConfig:
             if key not in {"pd_candidates", "ik_damping_candidates", "mpc_smoothness_candidates"}
         },
     )
-    rates = _tuple_floats(timing["policy_rates_hz"], "policy_rates_hz")
-    latencies = _tuple_floats(timing["latencies_ms"], "latencies_ms")
+    rates = _integer_tuple(timing["policy_rates_hz"], "policy_rates_hz")
+    latencies = _integer_tuple(timing["latencies_ms"], "latencies_ms")
     timing_cfg = TimingConfig(
         episode_ticks=int(_number(timing, "episode_ticks", integer=True)),
-        policy_rates_hz=tuple(int(x) for x in rates),
-        latencies_ms=tuple(int(x) for x in latencies),
+        policy_rates_hz=rates,
+        latencies_ms=latencies,
         chunk_horizon_s=float(_number(timing, "chunk_horizon_s")),
         expiry_periods=float(_number(timing, "expiry_periods")),
         telemetry_hz=int(_number(timing, "telemetry_hz", integer=True)),
@@ -282,20 +421,52 @@ def load_config(path: Path) -> ExperimentConfig:
         raise ValueError("schema_version must be integer 1")
     if not isinstance(raw["study_id"], str) or not raw["study_id"]:
         raise ValueError("study_id must be non-empty")
-    thresholds = raw["thresholds"]
-    if not isinstance(thresholds, dict):
-        raise ValueError("thresholds must be a mapping")
-    parsed_thresholds = {key: float(_number(thresholds, key)) for key in thresholds}
+    kinematics = _mapping(raw, "kinematics", set(KinematicsConfig.__dataclass_fields__))
+    mpc = _mapping(raw, "mpc", set(MPCConfig.__dataclass_fields__))
+    residual = _mapping(raw, "residual", set(ResidualConfig.__dataclass_fields__))
+    conditions = _mapping(raw, "conditions", set(ConditionsConfig.__dataclass_fields__))
+    metrics = _mapping(raw, "metrics", set(MetricsConfig.__dataclass_fields__))
+    pilot = _mapping(raw, "pilot", set(PilotConfig.__dataclass_fields__))
+    confirmation = _mapping(raw, "confirmation", set(ConfirmationConfig.__dataclass_fields__))
+    thresholds = _mapping(raw, "thresholds", set(ThresholdConfig.__dataclass_fields__))
+    stack_rows = raw["stacks"]
+    if not isinstance(stack_rows, list) or len(stack_rows) != 6:
+        raise ValueError("stacks must contain exactly six rows")
+    stacks: list[StackConfig] = []
+    for row in stack_rows:
+        if not isinstance(row, dict):
+            raise ValueError("stack row must be a mapping")
+        _require_keys(row, set(StackConfig.__dataclass_fields__), "stack")
+        if type(row["action_columns"]) is not int:
+            raise ValueError("action_columns must be integer")
+        stacks.append(StackConfig(**row))
+    if tuple(row.stack_id for row in stacks) != tuple(item.value for item in CommandStack):
+        raise ValueError("stack order must be exactly P1 through P6")
     return ExperimentConfig(
         schema_version=1,
         study_id=raw["study_id"],
         arm=arm_cfg,
         controller=controller_cfg,
         timing=timing_cfg,
-        pilot=dict(raw["pilot"]),
-        confirmation=dict(raw["confirmation"]),
+        kinematics=KinematicsConfig(np.asarray(kinematics["posture_q"]), str(kinematics["absolute_solver_revision"]), str(kinematics["differential_solver_revision"])),
+        mpc=MPCConfig(
+            int(_number(mpc, "candidate_count", integer=True)),
+            _integer_tuple(mpc["raw_direction_values"], "raw_direction_values", length=3),
+            _tuple_floats(mpc["magnitudes_rad_s"], "magnitudes_rad_s", 3),
+            *[float(_number(mpc, key)) for key in ("error_scale_m", "velocity_scale_rad_s", "soft_joint_margin_rad", "effort_weight", "barrier_weight")],
+            str(mpc["transition_revision"]),
+        ),
+        residual=ResidualConfig(str(residual["nominal_revision"]), float(_number(residual, "nominal_duration_s")), float(_number(residual, "component_limit_rad"))),
+        conditions=ConditionsConfig(_integer_tuple(conditions["move_counts"], "move_counts", length=2), tuple(conditions["probe_ids"]), str(conditions["control_id"]), str(conditions["core_fault_id"])),
+        stacks=tuple(stacks),
+        metrics=MetricsConfig(str(metrics["primary"]), tuple(metrics["secondary"]), str(metrics["percentile_revision"])),
+        pilot=PilotConfig(
+            *[int(_number(pilot, key, integer=True)) for key in ("seed_count", "tuning_seed_count", "evaluation_seed_count", "max_revisions")],
+            tuple(_integer_tuple(row, "tuning_conditions", length=3) for row in pilot["tuning_conditions"]),
+        ),
+        confirmation=ConfirmationConfig(**{key: int(_number(confirmation, key, integer=True)) for key in ConfirmationConfig.__dataclass_fields__}),
         resources=resource_cfg,
-        thresholds=parsed_thresholds,
+        thresholds=ThresholdConfig(**{key: float(_number(thresholds, key)) for key in ThresholdConfig.__dataclass_fields__}),
     )
 
 

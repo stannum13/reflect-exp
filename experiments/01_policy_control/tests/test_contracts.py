@@ -49,3 +49,41 @@ def test_strict_yaml_rejects_unknown_and_boolean_numeric(tmp_path: Path) -> None
     bad.write_text(raw.replace("episode_ticks: 3125", "episode_ticks: true"), encoding="utf-8")
     with pytest.raises(ValueError, match="episode_ticks"):
         _contracts().load_config(bad)
+
+
+def test_strict_yaml_rejects_duplicate_nested_unknown_and_float_integer(tmp_path: Path) -> None:
+    raw = BASE.read_text(encoding="utf-8")
+    duplicate = tmp_path / "duplicate.yaml"
+    duplicate.write_text(raw + "study_id: duplicate\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="duplicate"):
+        _contracts().load_config(duplicate)
+    nested = tmp_path / "nested.yaml"
+    nested.write_text(raw.replace("  episode_ticks: 3125", "  episode_ticks: 3125\n  surprise: 1"), encoding="utf-8")
+    with pytest.raises(ValueError, match="unknown"):
+        _contracts().load_config(nested)
+    float_rate = tmp_path / "float-rate.yaml"
+    float_rate.write_text(raw.replace("policy_rates_hz: [5, 10, 20]", "policy_rates_hz: [5.0, 10, 20]"), encoding="utf-8")
+    with pytest.raises(ValueError, match="policy_rates_hz"):
+        _contracts().load_config(float_rate)
+
+
+def test_complete_typed_protocol_and_array_copying() -> None:
+    contracts = _contracts()
+    cfg = contracts.load_config(BASE)
+    assert cfg.conditions.move_counts == (1, 2)
+    assert cfg.conditions.probe_ids == ("DROP", "OUT_OF_ORDER")
+    assert cfg.conditions.control_id == "STATIONARY_CONTROL"
+    assert tuple(item.representation for item in cfg.stacks) == (
+        "JOINT_POSITION", "JOINT_POSITION", "EEF_TRAJECTORY", "EEF_TRAJECTORY", "MPC_GOAL", "BOUNDED_RESIDUAL"
+    )
+    assert cfg.kinematics.posture_q.tolist() == [0.35, -0.70, 0.35]
+    assert cfg.mpc.candidate_count == 79 and cfg.mpc.magnitudes_rad_s == (0.25, 0.75, 1.50)
+    assert cfg.residual.nominal_revision == "MINIMUM_JERK_1S"
+    assert cfg.metrics.primary == "RECOVERY_TIME_S"
+    assert not cfg.kinematics.posture_q.flags.writeable
+
+    source = np.array([0.35, -0.70, 0.35])
+    state = contracts.ExecutorState(None, source, source, source, False)
+    source[:] = 9.0
+    assert state.latched_q_ref.tolist() == [0.35, -0.70, 0.35]
+    assert state.latched_q_ref.flags.c_contiguous and not state.latched_q_ref.flags.writeable
