@@ -78,8 +78,15 @@ def test_complete_typed_protocol_and_array_copying() -> None:
     )
     assert cfg.kinematics.posture_q.tolist() == [0.35, -0.70, 0.35]
     assert cfg.mpc.candidate_count == 79 and cfg.mpc.magnitudes_rad_s == (0.25, 0.75, 1.50)
+    assert (cfg.mpc.terminal_error_weight, cfg.mpc.stage_error_weight, cfg.mpc.smoothness_weight) == (1.0, 1.0, 0.02)
+    assert cfg.mpc.candidate_order_revision == "MAGNITUDE_THEN_LEXICOGRAPHIC_V1"
     assert cfg.residual.nominal_revision == "MINIMUM_JERK_1S"
+    assert cfg.residual.blend_coefficients == (10.0, -15.0, 6.0)
+    assert cfg.conditions.probe_policy_hz == 10 and cfg.conditions.probe_latency_ms == 300
+    assert cfg.conditions.probe_move_count == 2 and cfg.conditions.out_of_order_extra_ms == 102
+    assert cfg.conditions.stationary_first_seed_count == 4
     assert cfg.metrics.primary == "RECOVERY_TIME_S"
+    assert "COMMAND_DISCONTINUITY_MEAN" in cfg.metrics.secondary
     assert not cfg.kinematics.posture_q.flags.writeable
 
     source = np.array([0.35, -0.70, 0.35])
@@ -87,3 +94,20 @@ def test_complete_typed_protocol_and_array_copying() -> None:
     source[:] = 9.0
     assert state.latched_q_ref.tolist() == [0.35, -0.70, 0.35]
     assert state.latched_q_ref.flags.c_contiguous and not state.latched_q_ref.flags.writeable
+
+
+@pytest.mark.parametrize(
+    "old,new,match",
+    [
+        ("primary: RECOVERY_TIME_S", "primary: 7", "primary"),
+        ("probe_ids: [DROP, OUT_OF_ORDER]", "probe_ids: DROP", "probe_ids"),
+        ("representation: MPC_GOAL", "representation: UNKNOWN", "stack"),
+        ("cardinality: HORIZON", "cardinality: UNKNOWN", "stack"),
+        ("transition_revision: PREVIOUS_SELECTED_QDOT_V1", "transition_revision: ''", "transition_revision"),
+    ],
+)
+def test_closed_protocol_rejects_wrong_types_and_enums(tmp_path: Path, old: str, new: str, match: str) -> None:
+    path = tmp_path / "invalid.yaml"
+    path.write_text(BASE.read_text(encoding="utf-8").replace(old, new, 1), encoding="utf-8")
+    with pytest.raises(ValueError, match=match):
+        _contracts().load_config(path)

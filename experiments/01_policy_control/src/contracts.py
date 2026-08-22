@@ -161,6 +161,11 @@ class MPCConfig:
     soft_joint_margin_rad: float
     effort_weight: float
     barrier_weight: float
+    terminal_error_weight: float
+    stage_error_weight: float
+    smoothness_weight: float
+    cost_revision: str
+    candidate_order_revision: str
     transition_revision: str
 
 
@@ -169,6 +174,7 @@ class ResidualConfig:
     nominal_revision: str
     nominal_duration_s: float
     component_limit_rad: float
+    blend_coefficients: tuple[float, float, float]
 
 
 @dataclass(frozen=True)
@@ -177,6 +183,14 @@ class ConditionsConfig:
     probe_ids: tuple[str, str]
     control_id: str
     core_fault_id: str
+    probe_policy_hz: int
+    probe_latency_ms: int
+    probe_move_count: int
+    drop_trigger: str
+    out_of_order_extra_ms: int
+    stationary_policy_hz: int
+    stationary_latency_ms: int
+    stationary_first_seed_count: int
 
 
 @dataclass(frozen=True)
@@ -380,6 +394,20 @@ def _mapping(raw: dict[str, Any], key: str, expected: set[str]) -> dict[str, Any
     return value
 
 
+def _string(value: object, name: str, *, allowed: set[str] | None = None) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{name} must be a nonempty string")
+    if allowed is not None and value not in allowed:
+        raise ValueError(f"{name} has unsupported value {value}")
+    return value
+
+
+def _string_tuple(value: object, name: str, *, length: int | None = None) -> tuple[str, ...]:
+    if not isinstance(value, list) or (length is not None and len(value) != length):
+        raise ValueError(f"{name} must be a list of strings")
+    return tuple(_string(item, name) for item in value)
+
+
 def load_config(path: Path) -> ExperimentConfig:
     raw = yaml.load(path.read_text(encoding="utf-8"), Loader=_UniqueLoader)
     if not isinstance(raw, dict):
@@ -439,27 +467,59 @@ def load_config(path: Path) -> ExperimentConfig:
         _require_keys(row, set(StackConfig.__dataclass_fields__), "stack")
         if type(row["action_columns"]) is not int:
             raise ValueError("action_columns must be integer")
-        stacks.append(StackConfig(**row))
-    if tuple(row.stack_id for row in stacks) != tuple(item.value for item in CommandStack):
-        raise ValueError("stack order must be exactly P1 through P6")
-    return ExperimentConfig(
+        stacks.append(StackConfig(
+            _string(row["stack_id"], "stack_id"),
+            _string(row["representation"], "stack representation", allowed={"JOINT_POSITION", "EEF_TRAJECTORY", "MPC_GOAL", "BOUNDED_RESIDUAL"}),
+            row["action_columns"],
+            _string(row["cardinality"], "stack cardinality", allowed={"TARGET", "HORIZON"}),
+        ))
+    exact_stacks = (
+        ("P1", "JOINT_POSITION", 3, "TARGET"),
+        ("P2", "JOINT_POSITION", 3, "HORIZON"),
+        ("P3", "EEF_TRAJECTORY", 2, "TARGET"),
+        ("P4", "EEF_TRAJECTORY", 2, "HORIZON"),
+        ("P5", "MPC_GOAL", 2, "TARGET"),
+        ("P6", "BOUNDED_RESIDUAL", 3, "TARGET"),
+    )
+    if tuple((row.stack_id, row.representation, row.action_columns, row.cardinality) for row in stacks) != exact_stacks:
+        raise ValueError("stack rows must be the exact six protocols")
+    result = ExperimentConfig(
         schema_version=1,
-        study_id=raw["study_id"],
+        study_id=_string(raw["study_id"], "study_id"),
         arm=arm_cfg,
         controller=controller_cfg,
         timing=timing_cfg,
-        kinematics=KinematicsConfig(np.asarray(kinematics["posture_q"]), str(kinematics["absolute_solver_revision"]), str(kinematics["differential_solver_revision"])),
+        kinematics=KinematicsConfig(np.asarray(kinematics["posture_q"]), _string(kinematics["absolute_solver_revision"], "absolute_solver_revision", allowed={"ABSOLUTE_IK_12_DLS"}), _string(kinematics["differential_solver_revision"], "differential_solver_revision", allowed={"DIFFERENTIAL_IK_DLS"})),
         mpc=MPCConfig(
             int(_number(mpc, "candidate_count", integer=True)),
             _integer_tuple(mpc["raw_direction_values"], "raw_direction_values", length=3),
             _tuple_floats(mpc["magnitudes_rad_s"], "magnitudes_rad_s", 3),
-            *[float(_number(mpc, key)) for key in ("error_scale_m", "velocity_scale_rad_s", "soft_joint_margin_rad", "effort_weight", "barrier_weight")],
-            str(mpc["transition_revision"]),
+            *[float(_number(mpc, key)) for key in ("error_scale_m", "velocity_scale_rad_s", "soft_joint_margin_rad", "effort_weight", "barrier_weight", "terminal_error_weight", "stage_error_weight", "smoothness_weight")],
+            _string(mpc["cost_revision"], "cost_revision", allowed={"DIMENSIONLESS_INTEGRATED_V1"}),
+            _string(mpc["candidate_order_revision"], "candidate_order_revision", allowed={"MAGNITUDE_THEN_LEXICOGRAPHIC_V1"}),
+            _string(mpc["transition_revision"], "transition_revision", allowed={"PREVIOUS_SELECTED_QDOT_V1"}),
         ),
-        residual=ResidualConfig(str(residual["nominal_revision"]), float(_number(residual, "nominal_duration_s")), float(_number(residual, "component_limit_rad"))),
-        conditions=ConditionsConfig(_integer_tuple(conditions["move_counts"], "move_counts", length=2), tuple(conditions["probe_ids"]), str(conditions["control_id"]), str(conditions["core_fault_id"])),
+        residual=ResidualConfig(
+            _string(residual["nominal_revision"], "nominal_revision", allowed={"MINIMUM_JERK_1S"}),
+            float(_number(residual, "nominal_duration_s")),
+            float(_number(residual, "component_limit_rad")),
+            _tuple_floats(residual["blend_coefficients"], "blend_coefficients", 3),
+        ),
+        conditions=ConditionsConfig(
+            _integer_tuple(conditions["move_counts"], "move_counts", length=2),
+            _string_tuple(conditions["probe_ids"], "probe_ids", length=2),
+            _string(conditions["control_id"], "control_id", allowed={"STATIONARY_CONTROL"}),
+            _string(conditions["core_fault_id"], "core_fault_id", allowed={"NONE"}),
+            *[int(_number(conditions, key, integer=True)) for key in ("probe_policy_hz", "probe_latency_ms", "probe_move_count")],
+            _string(conditions["drop_trigger"], "drop_trigger", allowed={"FIRST_RESPONSE_AT_OR_AFTER_FIRST_DISPLACEMENT"}),
+            *[int(_number(conditions, key, integer=True)) for key in ("out_of_order_extra_ms", "stationary_policy_hz", "stationary_latency_ms", "stationary_first_seed_count")],
+        ),
         stacks=tuple(stacks),
-        metrics=MetricsConfig(str(metrics["primary"]), tuple(metrics["secondary"]), str(metrics["percentile_revision"])),
+        metrics=MetricsConfig(
+            _string(metrics["primary"], "primary", allowed={"RECOVERY_TIME_S"}),
+            _string_tuple(metrics["secondary"], "secondary"),
+            _string(metrics["percentile_revision"], "percentile_revision", allowed={"NEAREST_RANK"}),
+        ),
         pilot=PilotConfig(
             *[int(_number(pilot, key, integer=True)) for key in ("seed_count", "tuning_seed_count", "evaluation_seed_count", "max_revisions")],
             tuple(_integer_tuple(row, "tuning_conditions", length=3) for row in pilot["tuning_conditions"]),
@@ -468,6 +528,19 @@ def load_config(path: Path) -> ExperimentConfig:
         resources=resource_cfg,
         thresholds=ThresholdConfig(**{key: float(_number(thresholds, key)) for key in ThresholdConfig.__dataclass_fields__}),
     )
+    if result.conditions.probe_ids != ("DROP", "OUT_OF_ORDER"):
+        raise ValueError("probe_ids must be exactly DROP, OUT_OF_ORDER")
+    expected_secondary = (
+        "FINAL_ERROR_M", "MEAN_ERROR_M", "P95_ERROR_M", "ACTION_AGE_P95_S",
+        "JOINT_JERK_P95", "SATURATION_FRACTION", "COMMAND_DISCONTINUITY_MEAN",
+        "COMMAND_DISCONTINUITY_P95", "UNSAFE_COUNT", "CLAMP_FRACTION",
+        "COMPUTE_P50_NS", "COMPUTE_P95_NS",
+    )
+    if result.metrics.secondary != expected_secondary:
+        raise ValueError("secondary metrics must match the exact frozen order")
+    if result.mpc.candidate_count != 79 or result.mpc.raw_direction_values != (-1, 0, 1):
+        raise ValueError("MPC candidate grid must be the exact 79-candidate grid")
+    return result
 
 
 __all__ = [

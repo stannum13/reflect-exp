@@ -39,11 +39,17 @@ mpc:
   soft_joint_margin_rad: 0.15
   effort_weight: 0.01
   barrier_weight: 100.0
+  terminal_error_weight: 1.0
+  stage_error_weight: 1.0
+  smoothness_weight: 0.02
+  cost_revision: DIMENSIONLESS_INTEGRATED_V1
+  candidate_order_revision: MAGNITUDE_THEN_LEXICOGRAPHIC_V1
   transition_revision: PREVIOUS_SELECTED_QDOT_V1
 residual:
   nominal_revision: MINIMUM_JERK_1S
   nominal_duration_s: 1.0
   component_limit_rad: 0.25
+  blend_coefficients: [10.0, -15.0, 6.0]
 timing:
   episode_ticks: 3125
   policy_rates_hz: [5, 10, 20]
@@ -56,6 +62,14 @@ conditions:
   probe_ids: [DROP, OUT_OF_ORDER]
   control_id: STATIONARY_CONTROL
   core_fault_id: NONE
+  probe_policy_hz: 10
+  probe_latency_ms: 300
+  probe_move_count: 2
+  drop_trigger: FIRST_RESPONSE_AT_OR_AFTER_FIRST_DISPLACEMENT
+  out_of_order_extra_ms: 102
+  stationary_policy_hz: 10
+  stationary_latency_ms: 300
+  stationary_first_seed_count: 4
 stacks:
   - {stack_id: P1, representation: JOINT_POSITION, action_columns: 3, cardinality: TARGET}
   - {stack_id: P2, representation: JOINT_POSITION, action_columns: 3, cardinality: HORIZON}
@@ -65,7 +79,7 @@ stacks:
   - {stack_id: P6, representation: BOUNDED_RESIDUAL, action_columns: 3, cardinality: TARGET}
 metrics:
   primary: RECOVERY_TIME_S
-  secondary: [FINAL_ERROR_M, MEAN_ERROR_M, P95_ERROR_M, ACTION_AGE_P95_S, JOINT_JERK_P95, SATURATION_FRACTION, COMMAND_DISCONTINUITY_P95, UNSAFE_COUNT, CLAMP_FRACTION, COMPUTE_P50_NS, COMPUTE_P95_NS]
+  secondary: [FINAL_ERROR_M, MEAN_ERROR_M, P95_ERROR_M, ACTION_AGE_P95_S, JOINT_JERK_P95, SATURATION_FRACTION, COMMAND_DISCONTINUITY_MEAN, COMMAND_DISCONTINUITY_P95, UNSAFE_COUNT, CLAMP_FRACTION, COMPUTE_P50_NS, COMPUTE_P95_NS]
   percentile_revision: NEAREST_RANK
 pilot:
   seed_count: 8
