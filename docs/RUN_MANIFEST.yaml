@@ -1,0 +1,38 @@
+schema_version: 1
+goal: reflect_lite_research_program
+canonical_program: Reflect Lite Research Program.md
+design: docs/superpowers/specs/2026-08-22-reflect-lite-autonomous-run-design.md
+integration_branch: integration/autonomous-run
+scope: recommended
+current_pass: 0
+max_passes: 16
+budgets:
+  wall_hours_per_pass_max: 24
+  cpu_hours_max: 240
+  downloads_gb_max: 20
+  generated_artifacts_gb_max: 50
+  pilot_protocol_revisions_per_experiment_max: 2
+  tuning_configs_per_variant_revision_max: 3
+  pilot_episodes_per_variant_max: 256
+  confirmation_episodes_max: 1024
+safety:
+  physical_deployment_allowed: false
+  remote_enabled: false
+stages:
+  p0: in_progress
+  p1: pending
+  p2: pending
+  p3: pending
+  p4: pending
+  p5: pending
+  p6: pending
+  p7: pending
+  p8: pending
+  p9: pending
+  p10: pending
+lanes:
+  control: pending
+  world_state: pending
+  prediction_contact: pending
+  platform: pending
+  integration: pending
