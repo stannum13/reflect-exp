@@ -1,0 +1,10 @@
+schema_version: 1
+mode: check
+manifest: experiments/00_source_audit/configs/operation-manifest.yaml
+operations:
+  - CHECKOUT
+  - AST_PARSE
+  - HEADER_LAYOUT
+  - MANIFEST_LAYOUT
+  - ASSET_LICENSE_INVENTORY
+  - MUJOCO_PACKAGE_SMOKE

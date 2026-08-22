@@ -1,0 +1,104 @@
+schema_version: 1
+registry_sha256: d1598b83070b5c8578e79a64142ee24941a59743cdf9420efa8b3b9d588fb8af
+lock_sha256: 0000000000000000000000000000000000000000000000000000000000000000
+repositories:
+  - repository: mujoco
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: mujoco_mpc
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: mujoco_menagerie
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: mink
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: mjctrl
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: hydrax
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: curobo
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: moveit2
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: ros2_control
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: ros2_controllers
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: mujoco_ros2_control
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: act
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: lerobot
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: openpi
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: diffusion_policy
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: behaviortree_cpp
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: navigation2
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: spark_dsg
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: hydra_scene_graph
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: kimera
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: conceptgraphs
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: rerun
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: openusd
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: ifcopenshell
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: ifcopenshell_test_files
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: tdmpc2
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: dino_wm
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: vjepa2
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: lawam
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: libero
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: unitree_rl_mjlab
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: unitree_mujoco
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: unitree_sdk2
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: unifolm_vla
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: unifolm_wma
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: isaac_sim
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: isaac_lab
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: isaac_launchable
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: isaac_lab_arena
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: uv
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: hatchling
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: pyyaml
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: numpy
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: pyarrow
+    commit_sha: 0000000000000000000000000000000000000000
+  - repository: pytest
+    commit_sha: 0000000000000000000000000000000000000000
+operations:
+  - operation_id: MUJOCO_PACKAGE_SMOKE
+    repository: mujoco
+    operation: PACKAGE_RUNTIME
+    runtime_subject: package
+    relative_output: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json
+requirement_observations: []
+mujoco_smoke_output:
+  operation_id: MUJOCO_PACKAGE_SMOKE
+  relative_path: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json
