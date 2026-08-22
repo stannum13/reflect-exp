@@ -661,7 +661,8 @@ class PilotCandidate:
         if len({(item.stack_id, item.seed) for item in scores}) != len(scores):
             raise ValueError("stack/seed scores must be unique")
         object.__setattr__(self, "stack_seed_scores", scores)
-        if type(self.feasible) is not bool or type(self.tie_rank) is not int or self.tie_rank < 0:
+        expected_rank = _PILOT_STAGE_ORDER.index(self.stage) + 1
+        if type(self.feasible) is not bool or self.tie_rank != expected_rank:
             raise ValueError("candidate feasibility/tie rank is invalid")
         if self.feasible != (self.global_score is not None):
             raise ValueError("feasible candidate must have exactly one global score")
@@ -758,9 +759,37 @@ def evaluate_candidate(
     survivors: Sequence[str],
     episodes: Sequence[PilotEpisodeScore],
     *,
-    tie_rank: int,
     reuse_hashes: Sequence[str] = (),
+    predecessor_bundle_hashes: Sequence[str] = (),
 ) -> PilotCandidate:
+    stage = PilotStage(stage)
+    vector = dict(parameter_vector)
+    allowed_pd = ([80.0, 8.0], [60.0, 6.0], [100.0, 10.0])
+    allowed_ik = (0.01, 0.001, 0.05)
+    allowed_smoothness = (0.02, 0.01, 0.04)
+    stage_scalar = {
+        PilotStage.BASE: ([80.0, 8.0], 0.01, 0.02),
+        PilotStage.PD_60_6: ([60.0, 6.0], 0.01, 0.02),
+        PilotStage.PD_100_10: ([100.0, 10.0], 0.01, 0.02),
+        PilotStage.IK_0_001: (None, 0.001, 0.02),
+        PilotStage.IK_0_05: (None, 0.05, 0.02),
+        PilotStage.P5_0_01: (None, None, 0.01),
+        PilotStage.P5_0_04: (None, None, 0.04),
+        PilotStage.FINAL_FOUR: (None, None, None),
+    }[stage]
+    if (
+        set(vector) != {"pd", "ik", "p5_smoothness"}
+        or vector.get("pd") not in allowed_pd or vector.get("ik") not in allowed_ik
+        or vector.get("p5_smoothness") not in allowed_smoothness
+        or (stage_scalar[0] is not None and vector.get("pd") != stage_scalar[0])
+        or (stage_scalar[1] is not None and vector.get("ik") != stage_scalar[1])
+        or (stage_scalar[2] is not None and vector.get("p5_smoothness") != stage_scalar[2])
+    ):
+        raise ValueError("candidate parameter vector does not match the frozen stage")
+    reuse = tuple(reuse_hashes)
+    predecessor = tuple(predecessor_bundle_hashes)
+    if reuse != predecessor:
+        raise ValueError("candidate reuse hashes do not equal predecessor-selected bundle identities")
     fixed = tuple(survivors)
     rows = tuple(episodes)
     expected = {(stack, seed, condition) for stack in fixed for seed in range(4) for condition in _TUNING_CONDITION_IDS}
@@ -779,7 +808,6 @@ def evaluate_candidate(
                     key=lambda item: _TUNING_CONDITION_IDS.index(item.condition_id),
                 )
                 scores.append(StackSeedScore(stack, seed, tuple(item.bundle_sha256 for item in domain), float(np.mean([item.recovery_s for item in domain]))))
-    vector = dict(parameter_vector)
     global_score = None
     if not reasons:
         stack_means = [float(np.mean([item.score for item in scores if item.stack_id == stack])) for stack in fixed]
@@ -790,10 +818,10 @@ def evaluate_candidate(
         sha256_json(vector),
         fixed,
         not reasons,
-        tuple(reuse_hashes),
+        reuse,
         tuple(scores),
         global_score,
-        tie_rank,
+        _PILOT_STAGE_ORDER.index(stage) + 1,
         tuple(reasons),
     )
 
@@ -1010,6 +1038,41 @@ class StageTerminalDisposition:
     stage: PilotStage
     first_failing_shard_id: str
     reason: str
+    trigger_completion_sha256: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "stage", PilotStage(self.stage))
+        allowed = {
+            "DIMENSIONAL_MISMATCH", "NONFINITE_REFERENCE_OR_STATE",
+            "JOINT_LIMIT_ESCAPE", "UNSTABLE_DIVERGENCE",
+            "EASIEST_RECOVERY_FAILURE",
+        }
+        if not self.first_failing_shard_id or self.reason not in allowed:
+            raise ValueError("terminal disposition identity is incomplete")
+        _hash(self.trigger_completion_sha256, "trigger completion hash")
+
+
+@dataclass(frozen=True)
+class PilotShardCompletion:
+    stage: PilotStage
+    shard_id: str
+    completed_episode_ids: tuple[str, ...]
+    completion_sha256: str
+    scientific_failure: bool
+    reasons: tuple[str, ...] = ()
+    reuse_hashes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "stage", PilotStage(self.stage))
+        episodes = tuple(self.completed_episode_ids)
+        if not self.shard_id or not episodes or episodes != tuple(sorted(set(episodes))):
+            raise ValueError("completion episode inventory must be nonempty sorted and unique")
+        object.__setattr__(self, "completed_episode_ids", episodes)
+        _hash(self.completion_sha256, "completion hash")
+        if type(self.scientific_failure) is not bool or self.scientific_failure != bool(self.reasons):
+            raise ValueError("completion scientific failure and reasons are inconsistent")
+        object.__setattr__(self, "reasons", tuple(self.reasons))
+        object.__setattr__(self, "reuse_hashes", tuple(_hash(item, "completion reuse hash") for item in self.reuse_hashes))
 
 
 @dataclass(frozen=True)
@@ -1022,12 +1085,18 @@ class PilotDisposition:
     later_stage_commands: tuple[str, ...]
     remaining_final_four_stacks: tuple[str, ...]
     requires_final_four: bool
+    completed_shard_ids: tuple[str, ...]
+    completion_sha256s: tuple[str, ...]
+    survivor_stacks: tuple[str, ...]
+    killed_stacks: tuple[str, ...]
+    reuse_hashes: tuple[str, ...]
 
 
 def pilot_disposition(
     last_manifest: PilotManifest,
     *,
     prior_manifests: Sequence[PilotManifest] = (),
+    completions: Sequence[PilotShardCompletion],
     terminal_disposition: StageTerminalDisposition | None = None,
 ) -> PilotDisposition:
     manifests = tuple(prior_manifests) + (last_manifest,)
@@ -1039,18 +1108,50 @@ def pilot_disposition(
     for predecessor, current in zip(manifests, manifests[1:]):
         if current.predecessor_sha256 != hashlib.sha256(pilot_manifest_bytes(predecessor)).hexdigest():
             raise ValueError("pilot manifest predecessor hash chain is broken")
-    episode_ids = [episode for manifest in manifests for shard in manifest.shards for episode in shard.episode_ids]
+    declared = tuple((manifest.stage, shard) for manifest in manifests for shard in manifest.shards)
+    completed = tuple(completions)
+    if len({item.completion_sha256 for item in completed}) != len(completed):
+        raise ValueError("completion hashes must be unique")
+    if len(completed) > len(declared):
+        raise ValueError("completion inventory extends after the declared prefix")
+    for index, item in enumerate(completed):
+        stage, shard = declared[index]
+        if item.stage is not stage or item.shard_id != shard.shard_id or item.completed_episode_ids != shard.episode_ids:
+            raise ValueError("completion inventory does not equal the strict declared shard prefix")
+    episode_ids = [episode for item in completed for episode in item.completed_episode_ids]
     if len(episode_ids) != len(set(episode_ids)):
-        raise ValueError("executed pilot episodes cannot be counted twice")
+        raise ValueError("completed pilot episodes cannot be counted twice")
     total = len(episode_ids)
-    final_count = sum(len(shard.episode_ids) for manifest in manifests if manifest.stage is PilotStage.FINAL_FOUR for shard in manifest.shards)
+    final_count = sum(len(item.completed_episode_ids) for item in completed if item.stage is PilotStage.FINAL_FOUR)
+    base = tuple(item for item in completed if item.stage is PilotStage.BASE)
+    killed = tuple(stack for stack in _STACK_ORDER[1:] if any(item.shard_id.startswith(f"{stack}:") and item.scientific_failure for item in base))
+    survivors = tuple(stack for stack in _STACK_ORDER if stack not in killed)
+    reuse = tuple(dict.fromkeys(hash_value for manifest in manifests for hash_value in manifest.reuse_hashes))
+    completion_reuse = tuple(dict.fromkeys(hash_value for item in completed for hash_value in item.reuse_hashes))
+    if completion_reuse != reuse:
+        raise ValueError("completion reuse hashes differ from the manifest predecessor selection")
     if terminal_disposition is not None:
         if terminal_disposition.stage is not last_manifest.stage:
             raise ValueError("terminal disposition does not name the last stage")
-        matches = [item for item in last_manifest.shards if item.shard_id == terminal_disposition.first_failing_shard_id]
-        if len(matches) != 1 or matches[0].stack_id != "P1" or not matches[0].scientific_failure or matches[0] is not last_manifest.shards[-1]:
-            raise ValueError("terminal disposition must name the final completed failing P1 shard")
-        return PilotDisposition("STOPPED", "INCONCLUSIVE", last_manifest.stage, total, final_count, (), (), False)
+        if not completed:
+            raise ValueError("terminal disposition requires its completed trigger")
+        trigger = completed[-1]
+        if any(item.scientific_failure for item in completed[:-1]):
+            raise ValueError("completion exists after the first scientific failure trigger")
+        if (
+            trigger.shard_id != terminal_disposition.first_failing_shard_id
+            or trigger.completion_sha256 != terminal_disposition.trigger_completion_sha256
+            or not trigger.shard_id.startswith("P1:") or not trigger.scientific_failure
+            or terminal_disposition.reason not in trigger.reasons
+        ):
+            raise ValueError("terminal disposition must seal the final completed failing P1 trigger")
+        return PilotDisposition(
+            "STOPPED", "INCONCLUSIVE", last_manifest.stage, total, final_count,
+            (), (), False, tuple(item.shard_id for item in completed),
+            tuple(item.completion_sha256 for item in completed), survivors, killed, reuse,
+        )
+    if len(completed) != len(declared):
+        raise ValueError("nonterminal pilot disposition requires every declared completion inventory")
     return PilotDisposition(
         "COMPLETE" if last_manifest.stage is PilotStage.FINAL_FOUR else "RUNNING",
         "PENDING",
@@ -1060,6 +1161,11 @@ def pilot_disposition(
         tuple(stage.value for stage in _PILOT_STAGE_ORDER[_PILOT_STAGE_ORDER.index(last_manifest.stage) + 1 :]),
         (),
         last_manifest.stage is not PilotStage.FINAL_FOUR,
+        tuple(item.shard_id for item in completed),
+        tuple(item.completion_sha256 for item in completed),
+        survivors,
+        killed,
+        reuse,
     )
 
 
@@ -1096,13 +1202,21 @@ def candidate_evaluations_bytes(candidates: Sequence[PilotCandidate]) -> bytes:
 
 @dataclass(frozen=True)
 class SmoothnessEpisodeScore:
+    stack_id: str
+    stage: PilotStage
     seed: int
+    condition_id: str
     episode_id: str
     bundle_sha256: str
     jerk_p95: float
     discontinuity_p95: float
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "stage", PilotStage(self.stage))
+        if self.stack_id != "P1" or self.stage is not PilotStage.FINAL_FOUR:
+            raise ValueError("smoothness evidence must be P1 final-four evidence")
+        if not re.fullmatch(r"core-(05|10|20)-(000|100|300|700)-[12]", self.condition_id):
+            raise ValueError("smoothness evidence must name one exact core condition")
         if type(self.seed) is not int or self.seed < 0 or not isinstance(self.episode_id, str) or not self.episode_id:
             raise ValueError("smoothness episode identity is invalid")
         _hash(self.bundle_sha256, "smoothness bundle hash")
@@ -1124,7 +1238,11 @@ class P1SmoothnessBaseline:
 def compute_p1_smoothness_baseline(rows: Sequence[SmoothnessEpisodeScore]) -> P1SmoothnessBaseline:
     ordered = tuple(sorted(rows, key=lambda item: (item.seed, item.episode_id)))
     seeds = tuple(sorted({item.seed for item in ordered}))
-    if len(seeds) != 4 or any(sum(item.seed == seed for item in ordered) != 24 for seed in seeds):
+    expected_conditions = {
+        f"core-{rate:02d}-{latency:03d}-{moves}"
+        for rate in (5, 10, 20) for latency in (0, 100, 300, 700) for moves in (1, 2)
+    }
+    if len(seeds) != 4 or any({item.condition_id for item in ordered if item.seed == seed} != expected_conditions for seed in seeds):
         raise ValueError("P1 smoothness baseline requires 24 core episodes for each of four seeds")
     if len({item.episode_id for item in ordered}) != len(ordered):
         raise ValueError("P1 smoothness episode IDs must be unique")
@@ -1298,27 +1416,61 @@ _WIRE_BY_STACK = {
 }
 
 
+@dataclass(frozen=True)
+class ResourceCompletionEvidence:
+    phase: str
+    revision: int
+    disposition_sha256: str
+    complete: bool
+
+    def __post_init__(self) -> None:
+        if self.phase not in {"pilot", "confirmation"} or type(self.revision) is not int or self.revision <= 0:
+            raise ValueError("resource evidence phase/revision is invalid")
+        _hash(self.disposition_sha256, "resource disposition hash")
+        if type(self.complete) is not bool:
+            raise ValueError("resource evidence completion must be boolean")
+
+
+@dataclass(frozen=True)
+class PilotReproductionEvidence:
+    candidate_evaluations_sha256: str
+    smoothness_baseline_sha256: str
+    resource_disposition_sha256: str
+
+    def __post_init__(self) -> None:
+        for name in (
+            "candidate_evaluations_sha256", "smoothness_baseline_sha256",
+            "resource_disposition_sha256",
+        ):
+            _hash(getattr(self, name), name)
+
+
 def promotion_decision(
     bootstrap: BootstrapDecision,
     gates: Sequence[GateDecision],
     *,
     p1_valid: bool,
     negative_control_valid: bool,
-    resource_complete: bool = True,
+    resource_evidence: ResourceCompletionEvidence,
+    pilot_reproduction: PilotReproductionEvidence,
     killed_stacks: Sequence[str] = (),
 ) -> PromotionDecision:
     gate_by_stack = {item.stack_id: item for item in gates}
-    if not resource_complete or not p1_valid or not negative_control_valid or not gate_by_stack.get("P1", GateDecision("P1", False, (), 0, 0)).passes:
-        reasons = tuple(reason for reason, passed in (("RESOURCE_INCOMPLETE", resource_complete), ("P1_INVALID", p1_valid), ("NEGATIVE_CONTROL_INVALID", negative_control_valid)) if not passed)
+    if resource_evidence.phase != "confirmation":
+        raise ValueError("promotion requires confirmation resource disposition evidence")
+    if not isinstance(pilot_reproduction, PilotReproductionEvidence):
+        raise ValueError("promotion requires verified pilot reproduction evidence")
+    if not resource_evidence.complete or not p1_valid or not negative_control_valid or not gate_by_stack.get("P1", GateDecision("P1", False, (), 0, 0)).passes:
+        reasons = tuple(reason for reason, passed in (("RESOURCE_INCOMPLETE", resource_evidence.complete), ("P1_INVALID", p1_valid), ("NEGATIVE_CONTROL_INVALID", negative_control_valid)) if not passed)
         return PromotionDecision("INCONCLUSIVE", "STOPPED", (), (), (), reasons or ("P1_GATE_FAILED",))
     contrasts = {item.stack_id: item for item in bootstrap.contrasts}
     eligible = [item for item in gates if item.passes and item.stack_id != "P1" and item.stack_id in contrasts]
     superior = sorted((item.stack_id for item in eligible if contrasts[item.stack_id].upper_s <= -0.10), key=lambda stack: (contrasts[stack].upper_s, _STACK_ORDER.index(stack)))
     noninferior = sorted((item.stack_id for item in eligible if item.stack_id not in superior and contrasts[item.stack_id].upper_s <= 0.10), key=lambda stack: (contrasts[stack].upper_s, _STACK_ORDER.index(stack)))
-    ranking = superior + noninferior
-    if len(ranking) < 2:
-        ranking.append("P1")
-        ranking.sort(key=lambda stack: ((0.0 if stack == "P1" else contrasts[stack].upper_s), _STACK_ORDER.index(stack)))
+    ranking = sorted(
+        ("P1", *superior, *noninferior),
+        key=lambda stack: ((0.0 if stack == "P1" else contrasts[stack].upper_s), _STACK_ORDER.index(stack)),
+    )
     promoted = tuple(ranking[:2])
     wires = tuple(dict.fromkeys(_WIRE_BY_STACK[item] for item in promoted))
     if superior:
@@ -1332,28 +1484,40 @@ def promotion_decision(
 
 
 def verify_pilot_reproduction(
-    candidates: Sequence[PilotCandidate | "CandidateReproductionInput"],
+    candidates: Sequence["CandidateReproductionInput"],
     frozen_candidate_bytes: bytes,
     smoothness_rows: Sequence[SmoothnessEpisodeScore],
     frozen_baseline: P1SmoothnessBaseline,
-) -> None:
-    reproduced = tuple(
-        evaluate_candidate(
-            item.stage,
-            item.parameter_vector,
-            item.survivors,
-            item.episodes,
-            tie_rank=item.tie_rank,
-            reuse_hashes=item.reuse_hashes,
-        )
-        if isinstance(item, CandidateReproductionInput)
-        else item
-        for item in candidates
-    )
+    *,
+    resource_evidence: ResourceCompletionEvidence,
+) -> PilotReproductionEvidence:
+    if resource_evidence.phase != "pilot" or not resource_evidence.complete:
+        raise ValueError("pilot reproduction requires complete resource disposition evidence")
+    if not all(isinstance(item, CandidateReproductionInput) for item in candidates):
+        raise ValueError("pilot reproduction accepts only raw evidence-bearing inputs")
+    reproduced = tuple(evaluate_candidate(
+        item.stage, item.parameter_vector, item.survivors, item.episodes,
+        reuse_hashes=item.reuse_hashes,
+        predecessor_bundle_hashes=item.predecessor_selected_bundle_hashes,
+    ) for item in candidates)
     if candidate_evaluations_bytes(reproduced) != frozen_candidate_bytes:
         raise ValueError("candidate evaluations do not reproduce frozen bytes")
     if compute_p1_smoothness_baseline(smoothness_rows) != frozen_baseline:
         raise ValueError("P1 smoothness baseline does not reproduce frozen evidence")
+    baseline_bytes = canonical_json_bytes({
+        "seed_ids": list(frozen_baseline.seed_ids),
+        "episode_ids": list(frozen_baseline.episode_ids),
+        "episode_bundle_sha256s": list(frozen_baseline.episode_bundle_sha256s),
+        "jerk_episode_p95s": list(frozen_baseline.jerk_episode_p95s),
+        "discontinuity_episode_p95s": list(frozen_baseline.discontinuity_episode_p95s),
+        "jerk_p95": frozen_baseline.jerk_p95,
+        "discontinuity_p95": frozen_baseline.discontinuity_p95,
+    })
+    return PilotReproductionEvidence(
+        hashlib.sha256(frozen_candidate_bytes).hexdigest(),
+        hashlib.sha256(baseline_bytes).hexdigest(),
+        resource_evidence.disposition_sha256,
+    )
 
 
 @dataclass(frozen=True)
@@ -1362,8 +1526,8 @@ class CandidateReproductionInput:
     parameter_vector: Mapping[str, object]
     survivors: tuple[str, ...]
     episodes: tuple[PilotEpisodeScore, ...]
-    tie_rank: int
     reuse_hashes: tuple[str, ...] = ()
+    predecessor_selected_bundle_hashes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1414,6 +1578,18 @@ def _svg(title: str, x_label: str, y_label: str, series: Sequence[tuple[str, Seq
 def render_svg_plots(rows: Sequence[PlotRow], promoted_stacks: Sequence[str]) -> Mapping[str, bytes]:
     ordered = tuple(sorted((item for item in rows if item.valid), key=lambda item: (_STACK_ORDER.index(item.stack_id), item.seed, item.condition_id)))
     stacks = tuple(dict.fromkeys(("P1", *promoted_stacks)))
+    if not stacks or stacks[0] != "P1" or any(stack not in _STACK_ORDER for stack in stacks):
+        raise ValueError("plot stack domain must contain P1 and valid promoted stacks")
+    keys_by_stack = {
+        stack: {(item.seed, item.condition_id) for item in ordered if item.stack_id == stack}
+        for stack in stacks
+    }
+    shared = set.intersection(*(keys_by_stack[stack] for stack in stacks))
+    if not shared:
+        raise ValueError("plots require a shared seed/condition intersection across P1 and promoted stacks")
+    ordered = tuple(item for item in ordered if (item.seed, item.condition_id) in shared and item.stack_id in stacks)
+    if len({(item.stack_id, item.seed, item.condition_id) for item in ordered}) != len(ordered):
+        raise ValueError("plot rows duplicate a shared stack/seed/condition identity")
     plots: dict[str, bytes] = {}
     specs = (
         (_PLOT_NAMES[0], "Recovery vs latency", "latency (ms)", "recovery (s)", lambda item: (float(item.latency_ms), item.recovery_s)),
@@ -1423,9 +1599,12 @@ def render_svg_plots(rows: Sequence[PlotRow], promoted_stacks: Sequence[str]) ->
     )
     for filename, title, x_label, y_label, transform in specs:
         plots[filename] = _svg(title, x_label, y_label, tuple((stack, tuple(transform(item) for item in ordered if item.stack_id == stack)) for stack in stacks))
-    timeline_candidates = [item for item in ordered if item.stack_id in stacks and item.policy_hz == 10 and item.latency_ms == 300 and item.move_count == 2 and item.fault == "NONE" and item.timeline]
-    chosen_seed = min((item.seed for item in timeline_candidates), default=None)
-    plots[_PLOT_NAMES[4]] = _svg("Timeline", "sample", "error (m)", tuple((stack, tuple((float(index), value) for item in timeline_candidates if item.stack_id == stack and item.seed == chosen_seed for index, value in enumerate(item.timeline))) for stack in stacks))
+    timeline_candidates = [item for item in ordered if item.condition_id == "core-10-300-2" and item.policy_hz == 10 and item.latency_ms == 300 and item.move_count == 2 and item.fault == "NONE" and item.timeline]
+    intended_keys = sorted({(item.seed, item.condition_id) for item in timeline_candidates})
+    chosen = next((key for key in intended_keys if all(any(item.stack_id == stack and (item.seed, item.condition_id) == key for item in timeline_candidates) for stack in stacks)), None)
+    if chosen is None:
+        raise ValueError("timeline plot requires one shared exact intended condition")
+    plots[_PLOT_NAMES[4]] = _svg("Timeline", "sample", "error (m)", tuple((stack, tuple((float(index), value) for item in timeline_candidates if item.stack_id == stack and (item.seed, item.condition_id) == chosen for index, value in enumerate(item.timeline))) for stack in stacks))
     return MappingProxyType(plots)
 
 

@@ -29,16 +29,16 @@ def _candidate(stage, survivors, score, tie_rank, *, feasible=True, reuse=()):
         tuple(reuse),
         _scores(survivors, score) if feasible else (),
         score if feasible else None,
-        tie_rank,
+        evaluate.pilot_stage_order().index(stage) + 1,
         () if feasible else ("MISSING_BUNDLE",),
     )
 
 
-def _p1_manifest(stage, completed_shards, episodes_per_shard, predecessor_sha="1" * 64):
+def _p1_manifest(stage, shard_count, episodes_per_shard, predecessor_sha="1" * 64):
     shards = []
-    for seed in range(completed_shards):
+    for seed in range(shard_count):
         episodes = tuple(f"{stage.value}:P1:{seed}:{condition:02d}" for condition in range(episodes_per_shard))
-        shards.append(evaluate.PilotShard(f"P1:{stage.value}:{seed:03d}", "P1", seed, episodes, seed == completed_shards - 1))
+        shards.append(evaluate.PilotShard(f"P1:{stage.value}:{seed:03d}", "P1", seed, episodes))
     return evaluate.PilotManifest(
         1,
         stage,
@@ -48,6 +48,20 @@ def _p1_manifest(stage, completed_shards, episodes_per_shard, predecessor_sha="1
         "4" * 64,
         tuple(shards),
     )
+
+
+def _completions(manifests, *, final_count=None, terminal_failure=False):
+    shards = [(manifest.stage, shard) for manifest in manifests for shard in manifest.shards]
+    if final_count is not None:
+        shards = shards[:final_count]
+    result = []
+    for index, (stage, shard) in enumerate(shards):
+        failure = terminal_failure and index == len(shards) - 1
+        result.append(evaluate.PilotShardCompletion(
+            stage, shard.shard_id, shard.episode_ids, f"{8000 + index:064x}",
+            failure, ("EASIEST_RECOVERY_FAILURE",) if failure else (), (),
+        ))
+    return tuple(result)
 
 
 def _complete_tuning_prefix():
@@ -101,10 +115,11 @@ def test_base_qualification_fixes_survivors_and_anchor_failure_stops() -> None:
 
 
 def test_p1_shard_failure_stops_without_later_commands() -> None:
+    manifest = _p1_manifest(PilotStage.BASE, 4, 3)
     for completed_shards, expected_count in enumerate((3, 6, 9, 12), start=1):
-        manifest = _p1_manifest(PilotStage.BASE, completed_shards, 3)
-        terminal = evaluate.StageTerminalDisposition(PilotStage.BASE, manifest.shards[-1].shard_id, "P1_HARD_FAILURE")
-        disposition = evaluate.pilot_disposition(manifest, terminal_disposition=terminal)
+        completions = _completions((manifest,), final_count=completed_shards, terminal_failure=True)
+        terminal = evaluate.StageTerminalDisposition(PilotStage.BASE, completions[-1].shard_id, "EASIEST_RECOVERY_FAILURE", completions[-1].completion_sha256)
+        disposition = evaluate.pilot_disposition(manifest, completions=completions, terminal_disposition=terminal)
         assert disposition.scientific_result == "INCONCLUSIVE"
         assert disposition.lifecycle_state == "STOPPED"
         assert disposition.total_episode_count == expected_count
@@ -113,10 +128,16 @@ def test_p1_shard_failure_stops_without_later_commands() -> None:
 
 def test_final_four_p1_failure_stops_before_other_stack_shards() -> None:
     prefix, predecessor = _complete_tuning_prefix()
+    manifest = _p1_manifest(PilotStage.FINAL_FOUR, 4, 26, predecessor)
+    prefix_completions = _completions(prefix)
     for completed_shards, final_four_count in enumerate((26, 52, 78, 104), start=1):
-        manifest = _p1_manifest(PilotStage.FINAL_FOUR, completed_shards, 26, predecessor)
-        terminal = evaluate.StageTerminalDisposition(PilotStage.FINAL_FOUR, manifest.shards[-1].shard_id, "P1_HARD_FAILURE")
-        disposition = evaluate.pilot_disposition(manifest, prior_manifests=prefix, terminal_disposition=terminal)
+        final_completions = _completions((manifest,), final_count=completed_shards, terminal_failure=True)
+        completions = prefix_completions + tuple(
+            evaluate.PilotShardCompletion(item.stage, item.shard_id, item.completed_episode_ids, f"{9000 + index:064x}", item.scientific_failure, item.reasons, item.reuse_hashes)
+            for index, item in enumerate(final_completions)
+        )
+        terminal = evaluate.StageTerminalDisposition(PilotStage.FINAL_FOUR, completions[-1].shard_id, "EASIEST_RECOVERY_FAILURE", completions[-1].completion_sha256)
+        disposition = evaluate.pilot_disposition(manifest, prior_manifests=prefix, completions=completions, terminal_disposition=terminal)
         assert disposition.scientific_result == "INCONCLUSIVE" and disposition.lifecycle_state == "STOPPED"
         assert disposition.final_four_episode_count == final_four_count
         assert disposition.remaining_final_four_stacks == ()
@@ -158,11 +179,12 @@ def test_candidate_evaluator_uses_three_condition_then_seed_then_stack_means() -
         for condition_index, condition in enumerate(conditions)
     )
     vector = {"pd": [80.0, 8.0], "ik": 0.01, "p5_smoothness": 0.02}
-    candidate = evaluate.evaluate_candidate(PilotStage.BASE, vector, survivors, episodes, tie_rank=1)
+    candidate = evaluate.evaluate_candidate(PilotStage.BASE, vector, survivors, episodes)
     assert candidate.global_score == pytest.approx(3.0)
     invalid = list(episodes)
     invalid[-1] = evaluate.PilotEpisodeScore("P2", 3, conditions[-1], "9" * 64, None, False, "NONFINITE")
-    rejected = evaluate.evaluate_candidate(PilotStage.PD_60_6, vector, survivors, invalid, tie_rank=2)
+    pd_vector = dict(next(item.parameter_vector for item in evaluate.pilot_candidates() if item.stage is PilotStage.PD_60_6))
+    rejected = evaluate.evaluate_candidate(PilotStage.PD_60_6, pd_vector, survivors, invalid)
     assert not rejected.feasible and rejected.global_score is None and "NONFINITE" in rejected.reasons[0]
 
 
@@ -205,15 +227,16 @@ def test_stage_builders_bind_hashes_sort_episodes_and_final_four_runs_once() -> 
         seeds=(20, 21, 22, 23),
     )
     assert len(final.shards) == 24 and sum(len(item.episode_ids) for item in final.shards) == 624
-    disposition = evaluate.pilot_disposition(final, prior_manifests=prefix)
+    disposition = evaluate.pilot_disposition(final, prior_manifests=prefix, completions=_completions((*prefix, final)))
     assert disposition.total_episode_count == 1008 and disposition.final_four_episode_count == 624
 
 
 def test_p1_final_four_smoothness_baseline_is_two_stage_and_order_independent() -> None:
+    conditions = tuple(f"core-{rate:02d}-{latency:03d}-{moves}" for rate in (5, 10, 20) for latency in (0, 100, 300, 700) for moves in (1, 2))
     rows = [
-        evaluate.SmoothnessEpisodeScore(seed, f"P1:{seed}:{episode:02d}", f"{5000 + seed * 24 + episode:064x}", seed + episode, 2 * seed + episode)
+        evaluate.SmoothnessEpisodeScore("P1", PilotStage.FINAL_FOUR, seed, condition, f"P1:{seed}:{condition}", f"{5000 + seed * 24 + episode:064x}", seed + episode, 2 * seed + episode)
         for seed in range(4)
-        for episode in range(24)
+        for episode, condition in enumerate(conditions)
     ]
     first = evaluate.compute_p1_smoothness_baseline(rows)
     second = evaluate.compute_p1_smoothness_baseline(tuple(reversed(rows)))

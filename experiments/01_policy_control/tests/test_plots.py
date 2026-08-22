@@ -9,7 +9,7 @@ evaluate = importlib.import_module("experiments.01_policy_control.src.evaluate")
 def _rows():
     return tuple(
         evaluate.PlotRow(
-            stack, seed, f"condition-{seed}", 10, 300, 2, "NONE",
+            stack, seed, "core-10-300-2", 10, 300, 2, "NONE",
             0.5 + seed, 0.01 + seed, 2.0 + seed, 0.3, (0.1, 0.2, 0.15), True,
         )
         for stack in ("P1", "P2", "P3")
@@ -34,7 +34,7 @@ def test_write_plots_is_create_only_and_exact_reissue_skips(tmp_path) -> None:
     assert evaluate.write_svg_plots(tmp_path, tuple(reversed(_rows())), ("P2",)) == paths
     assert before == {path.name: path.read_bytes() for path in paths}
     changed = list(_rows())
-    changed[0] = evaluate.PlotRow("P1", 2, "condition-2", 10, 300, 2, "NONE", 9.0, 0.01, 2.0, 0.3, (0.1,), True)
+    changed[0] = evaluate.PlotRow("P1", 2, "core-10-300-2", 10, 300, 2, "NONE", 9.0, 0.01, 2.0, 0.3, (0.1,), True)
     try:
         evaluate.write_svg_plots(tmp_path, changed, ("P2",))
     except FileExistsError:
