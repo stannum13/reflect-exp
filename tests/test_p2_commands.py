@@ -765,3 +765,115 @@ def test_successful_cli_uses_only_allowlisted_verification_and_atomic_publish(
     assert (repository / "RUN_REPORT.md").stat().st_mode & 0o777 == 0o600
     assert invoked == list(report.REQUIRED_COMMANDS.values())
     assert all("scripts/fetch_reference.py" not in command for command in invoked)
+
+
+@pytest.mark.parametrize("dirt_kind", ["tracked", "untracked"])
+def test_cli_rechecks_clean_tree_immediately_before_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dirt_kind: str
+) -> None:
+    report = importlib.import_module("scripts.write_p2_report")
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    sha, _ = _write_fixture_repository(repository)
+    expected = _successful_results(report)
+    calls = 0
+
+    def dirtying_result(command: tuple[str, ...], *, root: Path):
+        nonlocal calls
+        calls += 1
+        if calls == len(report.REQUIRED_COMMANDS):
+            if dirt_kind == "tracked":
+                (root / "tracked.txt").write_text("dirty\n")
+            else:
+                (root / "small-untracked.txt").write_text("dirty\n")
+        name = next(
+            name
+            for name, required in report.REQUIRED_COMMANDS.items()
+            if required == command
+        )
+        return expected[name]
+
+    monkeypatch.setattr(report, "_run_verification", dirtying_result)
+    monkeypatch.setenv("PHYSICAL_DEPLOYMENT_ALLOWED", "false")
+    monkeypatch.setenv("REFLECT_REMOTE_ENABLED", "0")
+
+    with pytest.raises(RuntimeError, match="worktree must be clean"):
+        report.main(
+            ["--evidence-base-sha", sha],
+            root=repository,
+            expected_registry_entries=2,
+        )
+
+    assert not (repository / "RUN_REPORT.md").exists()
+
+
+@pytest.mark.parametrize("result_name", ["audit", "safety"])
+def test_verification_json_rejects_contradictory_duplicate_keys(
+    tmp_path: Path, result_name: str
+) -> None:
+    report = importlib.import_module("scripts.write_p2_report")
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    sha, _ = _write_fixture_repository(repository)
+    results = _successful_results(report)
+    current = results[result_name]
+    if result_name == "audit":
+        output = (
+            '{"ok":false,"registry_entries":2,"lock_entries":2,'
+            '"selected_paths":4,"discovered_licenses":1,"tracked_files":4,'
+            '"errors":[],"ok":true}'
+        )
+    else:
+        output = (
+            '{"simulation_only":true,"remote_enabled":true,'
+            '"remote_enabled":false}'
+        )
+    results[result_name] = report.CommandResult(
+        current.command, 0, output, current.stderr
+    )
+
+    with pytest.raises(RuntimeError, match=f"{result_name}.*duplicate"):
+        report.build_report(
+            project_root=repository,
+            implementation_sha=sha,
+            command_results=results,
+            physical_deployment_allowed=False,
+            remote_enabled=False,
+        )
+
+
+def test_every_attempt_requires_finished_at_utc() -> None:
+    report = importlib.import_module("reflect.p2_report")
+    raw = yaml.safe_load(_attempt_log(final=True))
+    del raw["attempts"][0]["finished_at_utc"]
+
+    with pytest.raises(ValueError, match="finished_at_utc.*required"):
+        report.parse_attempt_log(
+            yaml.safe_dump(raw, sort_keys=False),
+            expected_registry_sha256=REGISTRY_DIGEST,
+            registry_names=REGISTRY_NAMES,
+        )
+
+
+@pytest.mark.parametrize("implementation_sha", ["A" * 40, "a" * 64, "<script>"])
+def test_pure_report_builder_requires_lowercase_40_hex_sha(
+    tmp_path: Path, implementation_sha: str
+) -> None:
+    report = importlib.import_module("scripts.write_p2_report")
+    core = importlib.import_module("reflect.p2_report")
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _write_fixture_repository(repository)
+
+    with pytest.raises(ValueError, match="lowercase 40"):
+        core.build_report(
+            registry_bytes=(repository / "references" / "repos.yaml").read_bytes(),
+            lock_bytes=(repository / "references" / "repos.lock.yaml").read_bytes(),
+            attempt_bytes=(
+                repository / "references" / "p2-live-attempts.yaml"
+            ).read_bytes(),
+            implementation_sha=implementation_sha,
+            command_results=_successful_results(report),
+            physical_deployment_allowed=False,
+            remote_enabled=False,
+        )

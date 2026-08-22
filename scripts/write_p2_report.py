@@ -149,6 +149,7 @@ def main(
         remote_enabled=remote,
         expected_registry_entries=expected_registry_entries,
     )
+    validate_implementation_commit(project_root, implementation_sha)
     atomic_write_report(project_root, report)
     return 0
 

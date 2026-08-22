@@ -228,7 +228,7 @@ def validate_implementation_commit(root: Path, implementation_sha: str) -> str:
 
 
 def re_full_git_sha(value: object) -> bool:
-    if type(value) is not str or len(value) not in {40, 64}:
+    if type(value) is not str or len(value) != 40:
         return False
     return all(character in "0123456789abcdef" for character in value)
 

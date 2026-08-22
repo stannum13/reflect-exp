@@ -27,6 +27,7 @@ from reflect.sources import (
 
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_GIT_SHA40 = re.compile(r"[0-9a-f]{40}\Z")
 _UTC = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\Z")
 _TOP_KEYS = {"schema_version", "registry_sha256", "attempts"}
 _ATTEMPT_REQUIRED = {
@@ -382,14 +383,17 @@ def parse_attempt_log(
         reset = _optional_utc(
             item.get("rate_limit_reset_utc"), f"{label}.rate_limit_reset_utc"
         )
-        if finished is not None and finished < started:
+        if finished is None:
+            raise ValueError(f"{label}.finished_at_utc is required")
+        if finished < started:
             raise ValueError(f"{label}.finished_at_utc precedes started_at_utc")
         if reset is not None and (finished is None or reset <= finished):
             raise ValueError(f"{label}.rate-limit reset must be after finish")
         if parsed:
             prior = parsed[-1]
-            lower_bound = prior.finished_at_utc or prior.started_at_utc
-            if started < lower_bound:
+            if prior.finished_at_utc is None:
+                raise AssertionError("validated attempt lacks finish timestamp")
+            if started < prior.finished_at_utc:
                 raise ValueError(f"{label} violates global chronology")
         before = _sha256(
             item.get("lock_sha256_before"), f"{label}.lock_sha256_before", optional=True
@@ -541,10 +545,7 @@ def _validate_audit(
     discovered_licenses: int,
     tracked_files: int,
 ) -> None:
-    try:
-        audit = json.loads(output)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError("audit verification did not emit valid JSON") from exc
+    audit = _strict_json(output, "audit")
     if not isinstance(audit, dict) or set(audit) != _AUDIT_KEYS:
         raise RuntimeError("audit JSON must have exact keys")
     for field in (
@@ -573,6 +574,27 @@ def _validate_audit(
         raise RuntimeError("audit counts do not match current evidence")
     if audit["ok"] is not True or audit["errors"] != []:
         raise RuntimeError("audit did not prove a complete clean result")
+
+
+class _DuplicateJsonKey(ValueError):
+    pass
+
+
+def _strict_json(value: str, label: str) -> object:
+    def unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, item in pairs:
+            if key in result:
+                raise _DuplicateJsonKey(key)
+            result[key] = item
+        return result
+
+    try:
+        return json.loads(value, object_pairs_hook=unique_object)
+    except _DuplicateJsonKey as exc:
+        raise RuntimeError(f"{label} JSON contains duplicate key: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"{label} verification did not emit valid JSON") from exc
 
 
 def _validate_results(
@@ -617,10 +639,7 @@ def _validate_results(
     safety_lines = [
         line for line in results["safety"].stdout.splitlines() if line.strip()
     ]
-    try:
-        safety = json.loads(safety_lines[-1]) if safety_lines else None
-    except json.JSONDecodeError as exc:
-        raise RuntimeError("safety verification did not emit valid JSON") from exc
+    safety = _strict_json(safety_lines[-1], "safety") if safety_lines else None
     if (
         not isinstance(safety, dict)
         or set(safety) != {"simulation_only", "remote_enabled"}
@@ -709,6 +728,8 @@ def build_report(
         physical_deployment_allowed=physical_deployment_allowed,
         remote_enabled=remote_enabled,
     )
+    if type(implementation_sha) is not str or _GIT_SHA40.fullmatch(implementation_sha) is None:
+        raise ValueError("implementation SHA must be lowercase 40-character hexadecimal")
     evidence = validate_evidence(
         registry_bytes=registry_bytes,
         lock_bytes=lock_bytes,
