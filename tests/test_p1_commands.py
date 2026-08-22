@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import importlib
 import os
 from pathlib import Path
 import shutil
@@ -161,3 +162,12 @@ def test_p1_report_generator_uses_an_explicit_evidence_base() -> None:
     assert "--evidence-base-sha" in generator
     assert "P2 source auditing and empirical experiments have not run." in generator
     assert "tests/test_run_state.py" in generator
+
+
+def test_p1_report_normalizes_resolved_temporary_fixture_paths() -> None:
+    report_module = importlib.import_module("scripts.write_p1_report")
+
+    assert hasattr(report_module, "_normalized_fixture_output")
+    assert report_module._normalized_fixture_output(  # type: ignore[attr-defined]
+        "/private/var/folders/example/first/p1-fixture\n", "TEMP_ROOT_A"
+    ) == "<TEMP_ROOT_A>/p1-fixture"

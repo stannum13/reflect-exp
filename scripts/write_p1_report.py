@@ -67,6 +67,13 @@ def _last_nonempty_line(value: str) -> str:
     return lines[-1] if lines else "(no output)"
 
 
+def _normalized_fixture_output(value: str, root_label: str) -> str:
+    lines = [line for line in value.splitlines() if line.strip()]
+    if len(lines) != 1 or Path(lines[0]).name != ROLLOUT_ID:
+        raise RuntimeError("fixture command did not print exactly one rollout path")
+    return f"<{root_label}>/{ROLLOUT_ID}"
+
+
 def _validate_evidence_base(value: str) -> str:
     if GIT_SHA_PATTERN.fullmatch(value) is None:
         raise ValueError("--evidence-base-sha must be a 40- or 64-digit Git SHA")
@@ -147,11 +154,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         if (physical_root / ROLLOUT_ID).exists():
             raise RuntimeError("physical negative control created a rollout artifact")
 
-        fixture_output = first_fixture.stdout.strip().replace(
-            str(first_root), "<TEMP_ROOT_A>"
+        fixture_output = _normalized_fixture_output(
+            first_fixture.stdout, "TEMP_ROOT_A"
         )
-        second_fixture_output = second_fixture.stdout.strip().replace(
-            str(second_root), "<TEMP_ROOT_B>"
+        second_fixture_output = _normalized_fixture_output(
+            second_fixture.stdout, "TEMP_ROOT_B"
         )
 
     diff_check = _run(["git", "diff", "--check"])
