@@ -24,47 +24,29 @@ def _canonical(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode() + b"\n"
 
 
-def _manifest() -> dict[str, object]:
-    shards = [
-        {"shard_id": "P2:base:001", "stack_id": "P2", "configuration_hash": H64,
-         "seed": 1, "condition_ids": ["c2"], "episode_count": 1,
-         "output_identities": ["P2-c2-1"]},
-        {"shard_id": "P1:base:002", "stack_id": "P1", "configuration_hash": H64,
-         "seed": 2, "condition_ids": ["c2"], "episode_count": 1,
-         "output_identities": ["P1-c2-2"]},
-        {"shard_id": "P1:base:001", "stack_id": "P1", "configuration_hash": H64,
-         "seed": 1, "condition_ids": ["c1"], "episode_count": 1,
-         "output_identities": ["P1-c1-1"]},
-    ]
-    return {
-        "schema_version": 1, "study_id": "reflect-lite-policy-control", "phase": "pilot",
-        "revision": 1, "stage": "base", "implementation_sha": G40,
-        "predecessor_sha256": None, "config_sha256": H64, "p3_gate_sha256": H64,
-        "seed_manifest_sha256": H64, "parameter_vector": {}, "parameter_hash": H64,
-        "scenario_generator_hash": H64, "condition_hash": H64, "metric_hash": H64,
-        "gate_hash": H64, "resource_limits": {}, "shards": shards, "state": "READY",
-    }
-
-
 def test_iter_manifest_is_closed_canonical_and_p1_first(tmp_path: Path) -> None:
-    path = tmp_path / "manifest.json"
-    path.write_bytes(_canonical(_manifest()))
+    config = Path(__file__).parents[1] / "configs/base.yaml"
+    gate = tmp_path / "p3-gate.yaml"
+    gate.write_text("schema_version: 1\n", encoding="utf-8")
+    revision = tmp_path / "protocol" / "pilot-r1" / "revision-manifest.json"
+    artifacts.prepare_manifest("revision", None, revision, config, gate, implementation_sha=G40)
+    path = revision.with_name("base-manifest.json")
+    artifacts.prepare_manifest("base", revision, path, config, gate, implementation_sha=G40)
     rows = tuple(artifacts.iter_manifest(path))
-    assert tuple(row.shard_id for row in rows) == (
-        "P1:base:001", "P1:base:002", "P2:base:001",
-    )
-    assert rows[0].episode_count == 1
+    assert tuple(dict.fromkeys(row.stack_id for row in rows)) == ("P1", "P2", "P3", "P4", "P5", "P6")
+    assert rows[0].shard_id == "P1:base:000" and rows[0].episode_count == 3
+    original = path.read_bytes()
 
-    path.write_bytes(_canonical(_manifest()) + b" ")
+    path.write_bytes(original + b" ")
     with pytest.raises(artifacts.ArtifactError, match="canonical"):
         tuple(artifacts.iter_manifest(path))
 
-    duplicate = _canonical(_manifest()).replace(b'"state":"READY"', b'"state":"READY","state":"READY"')
+    duplicate = original.replace(b'"state":"READY"', b'"state":"READY","state":"READY"')
     path.write_bytes(duplicate)
     with pytest.raises(artifacts.ArtifactError, match="duplicate"):
         tuple(artifacts.iter_manifest(path))
 
-    unknown = _manifest() | {"unknown": 1}
+    unknown = json.loads(original) | {"unknown": 1}
     path.write_bytes(_canonical(unknown))
     with pytest.raises(artifacts.ArtifactError, match="unknown"):
         tuple(artifacts.iter_manifest(path))
@@ -72,21 +54,108 @@ def test_iter_manifest_is_closed_canonical_and_p1_first(tmp_path: Path) -> None:
 
 def test_preflight_uses_exact_caps_and_never_accepts_bool() -> None:
     mib = 1024 * 1024
+    confirmation_wave = 5_016 * mib
     allowed = artifacts.preflight_resources(
-        "confirmation", 14_576 * mib - 2 * mib, 0, 0, 2 * mib,
+        "confirmation", 14_576 * mib - confirmation_wave, 0, 0,
+        confirmation_wave,
         24 * 3600, 240 * 3600,
     )
     assert allowed.disposition == "ALLOW"
-    assert allowed.reserved_bytes == 2 * mib
+    assert allowed.reserved_bytes == confirmation_wave
     assert allowed.reasons == ()
     refused = artifacts.preflight_resources(
-        "confirmation", 14_576 * mib - 2 * mib + 1, 0, 0, 2 * mib,
+        "confirmation", 14_576 * mib - confirmation_wave + 1, 0, 0,
+        confirmation_wave - 1,
         24 * 3600 + 1, 240 * 3600,
     )
     assert refused.disposition == "REFUSE"
-    assert refused.reasons == ("PHASE_BYTES_EXCEEDED", "WALL_TIME_EXCEEDED")
+    assert refused.reasons == (
+        "INSUFFICIENT_FREE_BYTES", "PHASE_BYTES_EXCEEDED", "WALL_TIME_EXCEEDED",
+    )
     with pytest.raises(ValueError, match="integer"):
         artifacts.preflight_resources("pilot", True, 0, 0, 2 * mib, 0, 0)
+    pilot_buckets = artifacts.preflight_resources(
+        "pilot", 0, 32 * mib + 1, 64 * mib + 1, 54 * mib, 0, 0,
+    )
+    assert pilot_buckets.reasons == ("QUARANTINE_BYTES_EXCEEDED", "TEMP_BYTES_EXCEEDED")
+    confirmation_buckets = artifacts.preflight_resources(
+        "confirmation", 0, 32 * mib + 1, 64 * mib + 1,
+        confirmation_wave, 0, 0,
+    )
+    assert confirmation_buckets.reasons == ("QUARANTINE_BYTES_EXCEEDED", "TEMP_BYTES_EXCEEDED")
+
+    exact_shard = artifacts.preflight_resources(
+        "pilot", 0, 0, 0, 6 * mib, 0, 0, rollout_count=3,
+    )
+    assert exact_shard.disposition == "ALLOW" and exact_shard.reserved_bytes == 6 * mib
+    one_byte_short = artifacts.preflight_resources(
+        "pilot", 0, 0, 0, 6 * mib - 1, 0, 0, rollout_count=3,
+    )
+    assert one_byte_short.reasons == ("INSUFFICIENT_FREE_BYTES",)
+
+
+def test_prepare_revision_publishes_seed_partition_then_runnable_six_stack_base(
+    tmp_path: Path,
+) -> None:
+    config = Path(__file__).parents[1] / "configs/base.yaml"
+    gate = tmp_path / "p3-gate.yaml"
+    gate.write_text("schema_version: 1\n", encoding="utf-8")
+    destination = tmp_path / "protocol" / "pilot-r1" / "revision-manifest.json"
+    assert artifacts.prepare_manifest(
+        "revision", None, destination, config, gate, implementation_sha=G40,
+    ) == destination
+    seed_path = destination.with_name("pilot-seeds.json")
+    seed = artifacts.load_seed_manifest(seed_path)
+    assert seed["partition"] == {
+        "evaluation_seed_ids": [4, 5, 6, 7], "tuning_seed_ids": [0, 1, 2, 3],
+    }
+    assert seed["accepted_count"] == 8 and len(seed["scenarios"]) == 8
+    assert tuple(artifacts.iter_manifest(destination)) == ()
+    base = destination.with_name("base-manifest.json")
+    assert artifacts.prepare_manifest(
+        "base", destination, base, config, gate, implementation_sha=G40,
+    ) == base
+    shards = tuple(artifacts.iter_manifest(base))
+    assert len(shards) == 24
+    assert tuple(dict.fromkeys(item.stack_id for item in shards)) == ("P1", "P2", "P3", "P4", "P5", "P6")
+    assert {item.episode_count for item in shards} == {3}
+    assert artifacts.prepare_manifest(
+        "revision", None, destination, config, gate, implementation_sha=G40,
+    ) == destination
+
+
+def test_protocol_loader_rejects_unbound_stage_parameter_resource_and_seed_data(
+    tmp_path: Path,
+) -> None:
+    config = Path(__file__).parents[1] / "configs/base.yaml"
+    gate = tmp_path / "p3-gate.yaml"
+    gate.write_text("schema_version: 1\n", encoding="utf-8")
+    revision = tmp_path / "protocol" / "pilot-r1" / "revision-manifest.json"
+    artifacts.prepare_manifest("revision", None, revision, config, gate, implementation_sha=G40)
+    base = revision.with_name("base-manifest.json")
+    artifacts.prepare_manifest("base", revision, base, config, gate, implementation_sha=G40)
+    original = json.loads(base.read_text(encoding="utf-8"))
+
+    mutations = (
+        ("null predecessor", original | {"predecessor_sha256": None}),
+        ("predecessor chain", original | {"predecessor_sha256": "f" * 64}),
+        ("parameter hash", original | {"parameter_hash": "f" * 64}),
+        ("resource limits", original | {"resource_limits": {}}),
+        ("stage", original | {"stage": "invented"}),
+        ("seed manifest", original | {"seed_manifest_sha256": "f" * 64}),
+    )
+    for label, mutation in mutations:
+        candidate = base.with_name(f"bad-{label.replace(' ', '-')}.json")
+        candidate.write_bytes(_canonical(mutation))
+        with pytest.raises(artifacts.ArtifactError, match=label):
+            artifacts.load_protocol_manifest(candidate)
+
+    seed_path = revision.with_name("pilot-seeds.json")
+    seed = json.loads(seed_path.read_text(encoding="utf-8"))
+    seed["scenarios"][0]["scenario_sha256"] = "f" * 64
+    seed_path.write_bytes(_canonical(seed))
+    with pytest.raises(artifacts.ArtifactError, match="scenario"):
+        artifacts.load_protocol_manifest(base)
 
 
 def test_publish_rollout_is_create_only_and_replay_validated(tmp_path: Path) -> None:

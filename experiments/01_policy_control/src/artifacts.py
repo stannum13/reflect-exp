@@ -31,6 +31,17 @@ STUDY_ID = "reflect-lite-policy-control"
 MIB = 1024 * 1024
 ROLLOUT_RESERVATION_BYTES = 2 * MIB
 LIFECYCLE_LIMIT_BYTES = 14_576 * MIB
+PILOT_MAX_SHARD_ROLLOUTS = 27
+CONFIRMATION_WAVE_ROLLOUTS = 2_508
+_RESOURCE_LIMITS = {
+    "rollout_bytes": ROLLOUT_RESERVATION_BYTES,
+    "shard_wall_seconds": 3_600,
+    "pilot_wall_seconds": 28_800,
+    "confirmation_wall_seconds": 86_400,
+    "pilot_cpu_seconds": 288_000,
+    "confirmation_cpu_seconds": 864_000,
+    "phase_bytes": LIFECYCLE_LIMIT_BYTES,
+}
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _GIT_SHA = re.compile(r"[0-9a-f]{40}")
 _STACK_ORDER = {f"P{number}": number for number in range(1, 7)}
@@ -149,19 +160,56 @@ _SHARD_KEYS = frozenset({
     "shard_id", "stack_id", "configuration_hash", "seed", "condition_ids",
     "episode_count", "output_identities",
 })
+_PILOT_STAGES = (
+    "revision", "base", "pd_60_6", "pd_100_10", "ik_0_001", "ik_0_05",
+    "p5_0_01", "p5_0_04", "final_four",
+)
+
+
+def _parameter_hash(value: object) -> str:
+    return hashlib.sha256(canonical_json_bytes(value, newline=False)).hexdigest()
+
+
+def _validate_parameter_vector(value: object, digest: str) -> None:
+    row = _closed(value, frozenset({"pd", "ik", "p5_smoothness"}), "parameter vector")
+    pd = row["pd"]
+    scalars = (*pd, row["ik"], row["p5_smoothness"]) if isinstance(pd, list) and len(pd) == 2 else ()
+    if not scalars or any(type(item) not in {int, float} or not math.isfinite(float(item)) for item in scalars):
+        raise ArtifactError("parameter vector has invalid finite scalar fields")
+    if _parameter_hash(row) != digest:
+        raise ArtifactError("parameter hash does not bind parameter vector")
+
+
+def _validate_resource_limits(value: object) -> None:
+    row = _closed(value, frozenset(_RESOURCE_LIMITS), "resource limits")
+    if row != _RESOURCE_LIMITS:
+        raise ArtifactError("resource limits differ from the frozen contract")
 
 
 def load_protocol_manifest(path: Path) -> dict[str, Any]:
+    path = Path(path)
     manifest = load_canonical_json(path, _MANIFEST_KEYS)
     if _exact_int(manifest["schema_version"], "schema_version") != 1:
         raise ArtifactError("unsupported manifest schema_version")
-    _text(manifest["study_id"], "study_id")
+    if manifest["study_id"] != STUDY_ID:
+        raise ArtifactError("manifest study_id is invalid")
     if manifest["phase"] not in {"pilot", "confirmation"}:
         raise ArtifactError("phase must be pilot or confirmation")
-    _exact_int(manifest["revision"], "revision")
-    _text(manifest["stage"], "stage")
+    revision = _exact_int(manifest["revision"], "revision")
+    if revision not in (1, 2):
+        raise ArtifactError("manifest revision must be 1 or 2")
+    stage = _text(manifest["stage"], "stage")
+    if manifest["phase"] == "pilot" and stage not in _PILOT_STAGES:
+        raise ArtifactError("stage is outside the frozen pilot order")
+    if manifest["phase"] == "confirmation" and stage != "confirmation":
+        raise ArtifactError("stage is invalid for confirmation")
     _hash(manifest["implementation_sha"], "implementation_sha", _GIT_SHA)
-    if manifest["predecessor_sha256"] is not None:
+    if stage == "revision":
+        if manifest["predecessor_sha256"] is not None:
+            raise ArtifactError("revision is the sole null predecessor stage")
+    elif manifest["predecessor_sha256"] is None:
+        raise ArtifactError("null predecessor is accepted only for revision")
+    else:
         _hash(manifest["predecessor_sha256"], "predecessor_sha256")
     for key in (
         "config_sha256", "p3_gate_sha256", "seed_manifest_sha256",
@@ -169,11 +217,41 @@ def load_protocol_manifest(path: Path) -> dict[str, Any]:
         "metric_hash", "gate_hash",
     ):
         _hash(manifest[key], key)
-    if not isinstance(manifest["parameter_vector"], dict) or not isinstance(manifest["resource_limits"], dict):
-        raise ArtifactError("parameter_vector and resource_limits must be objects")
+    _validate_parameter_vector(manifest["parameter_vector"], manifest["parameter_hash"])
+    _validate_resource_limits(manifest["resource_limits"])
     if manifest["state"] != "READY" or not isinstance(manifest["shards"], list):
         raise ArtifactError("manifest must be READY with a shard array")
+    if manifest["phase"] == "pilot":
+        seed_path = path.with_name("pilot-seeds.json")
+        seed_manifest = load_seed_manifest(seed_path)
+        if seed_manifest["revision"] != revision or hashlib.sha256(seed_path.read_bytes()).hexdigest() != manifest["seed_manifest_sha256"]:
+            raise ArtifactError("seed manifest hash/revision binding is invalid")
+        if stage != "revision":
+            predecessor_matches = []
+            for candidate in path.parent.iterdir():
+                if candidate == path or candidate.suffix != ".json" or "manifest" not in candidate.name:
+                    continue
+                if candidate.is_symlink() or not candidate.is_file():
+                    raise ArtifactError("predecessor chain contains a nonregular candidate")
+                if hashlib.sha256(candidate.read_bytes()).hexdigest() == manifest["predecessor_sha256"]:
+                    predecessor_matches.append(candidate)
+            if len(predecessor_matches) != 1:
+                raise ArtifactError("predecessor chain does not resolve to exactly one sibling manifest")
+            predecessor = load_protocol_manifest(predecessor_matches[0])
+            expected_stage = _PILOT_STAGES[_PILOT_STAGES.index(stage) - 1]
+            if (
+                predecessor["stage"] != expected_stage
+                or predecessor["revision"] != revision
+                or predecessor["implementation_sha"] != manifest["implementation_sha"]
+                or predecessor["config_sha256"] != manifest["config_sha256"]
+                or predecessor["p3_gate_sha256"] != manifest["p3_gate_sha256"]
+                or predecessor["seed_manifest_sha256"] != manifest["seed_manifest_sha256"]
+            ):
+                raise ArtifactError("predecessor chain identity differs from the current stage")
+    else:
+        seed_manifest = None
     seen: set[str] = set()
+    ordered_keys: list[tuple[int, str]] = []
     for raw in manifest["shards"]:
         row = _closed(raw, _SHARD_KEYS, "shard")
         shard_id = _text(row["shard_id"], "shard_id")
@@ -181,6 +259,7 @@ def load_protocol_manifest(path: Path) -> dict[str, Any]:
         if stack not in _STACK_ORDER or not shard_id.startswith(f"{stack}:") or shard_id in seen:
             raise ArtifactError("shard identities must be unique and stack-prefixed")
         seen.add(shard_id)
+        ordered_keys.append((_STACK_ORDER[stack], shard_id))
         _hash(row["configuration_hash"], "configuration_hash")
         _exact_int(row["seed"], "seed")
         conditions = _sorted_unique_strings(row["condition_ids"], "condition_ids")
@@ -188,6 +267,30 @@ def load_protocol_manifest(path: Path) -> dict[str, Any]:
         count = _exact_int(row["episode_count"], "episode_count")
         if count == 0 or count != len(outputs) or count != len(conditions):
             raise ArtifactError("episode_count must equal declared conditions and outputs")
+        if not all(output == f"{stack}-{condition}-{row['seed']:08d}" for output, condition in zip(outputs, conditions)):
+            raise ArtifactError("shard outputs do not bind stack/condition/seed identities")
+    if ordered_keys != sorted(ordered_keys):
+        raise ArtifactError("manifest shards are not in canonical P1-P6 order")
+    if stage == "revision" and manifest["shards"]:
+        raise ArtifactError("revision manifest cannot declare runnable shards")
+    if manifest["phase"] == "pilot" and stage != "revision":
+        assert seed_manifest is not None
+        partition_key = "evaluation_seed_ids" if stage == "final_four" else "tuning_seed_ids"
+        expected_seeds = tuple(seed_manifest["partition"][partition_key])
+        expected_conditions = 26 if stage == "final_four" else 3
+        by_stack: dict[str, list[dict[str, Any]]] = {}
+        for row in manifest["shards"]:
+            by_stack.setdefault(row["stack_id"], []).append(row)
+        if not by_stack or any(
+            tuple(item["seed"] for item in rows) != expected_seeds
+            or any(item["episode_count"] != expected_conditions for item in rows)
+            for rows in by_stack.values()
+        ):
+            raise ArtifactError("pilot stage shard domain does not match its frozen seed/condition protocol")
+        if stage == "base" and tuple(by_stack) != tuple(_STACK_ORDER):
+            raise ArtifactError("base stage must contain all six stacks")
+        if stage in {"p5_0_01", "p5_0_04"} and tuple(by_stack) != ("P5",):
+            raise ArtifactError("P5 smoothness stage must contain only P5")
     return manifest
 
 
@@ -199,6 +302,192 @@ def iter_manifest(path: Path) -> Iterator[ShardSpec]:
             row["shard_id"], row["stack_id"], row["configuration_hash"], row["seed"],
             tuple(row["condition_ids"]), row["episode_count"], tuple(row["output_identities"]),
         )
+
+
+_SEED_MANIFEST_KEYS = frozenset({
+    "schema_version", "study_id", "phase", "revision", "rng_algorithm",
+    "rng_root", "partition", "candidate_count", "accepted_count",
+    "rejections", "scenarios",
+})
+_SEED_SCENARIO_KEYS = frozenset({
+    "seed", "proposal_index", "q0", "initial_target", "one_move_path",
+    "two_move_path", "stationary_path", "scenario_sha256",
+})
+_SEED_REJECTION_KEYS = frozenset({"candidate_seed", "proposal_index", "reason"})
+
+
+def load_seed_manifest(path: Path) -> dict[str, Any]:
+    value = load_canonical_json(path, _SEED_MANIFEST_KEYS)
+    if _exact_int(value["schema_version"], "schema_version") != 1 or value["study_id"] != STUDY_ID or value["phase"] != "pilot":
+        raise ArtifactError("seed manifest identity is invalid")
+    _exact_int(value["revision"], "revision")
+    if value["rng_algorithm"] != "PCG64_SHA256_NAMESPACED_V1":
+        raise ArtifactError("seed manifest RNG contract is invalid")
+    _hash(value["rng_root"], "rng_root")
+    partition = _closed(value["partition"], frozenset({"tuning_seed_ids", "evaluation_seed_ids"}), "pilot partition")
+    tuning = tuple(_exact_int(item, "tuning seed") for item in partition["tuning_seed_ids"])
+    evaluation = tuple(_exact_int(item, "evaluation seed") for item in partition["evaluation_seed_ids"])
+    if tuning != tuple(sorted(set(tuning))) or evaluation != tuple(sorted(set(evaluation))) or len(tuning) != 4 or len(evaluation) != 4 or set(tuning) & set(evaluation):
+        raise ArtifactError("pilot seed partition must contain two disjoint sorted four-seed sets")
+    candidate_count = _exact_int(value["candidate_count"], "candidate_count")
+    accepted_count = _exact_int(value["accepted_count"], "accepted_count")
+    if not isinstance(value["rejections"], list) or not isinstance(value["scenarios"], list):
+        raise ArtifactError("seed manifest rows must be arrays")
+    rejection_keys: list[tuple[int, int]] = []
+    for raw in value["rejections"]:
+        row = _closed(raw, _SEED_REJECTION_KEYS, "seed rejection")
+        key = (_exact_int(row["candidate_seed"], "candidate_seed"), _exact_int(row["proposal_index"], "proposal_index"))
+        _text(row["reason"], "rejection reason")
+        rejection_keys.append(key)
+    if rejection_keys != sorted(set(rejection_keys)):
+        raise ArtifactError("seed rejections must be sorted and unique")
+    scenario_seeds: list[int] = []
+    for raw in value["scenarios"]:
+        row = _closed(raw, _SEED_SCENARIO_KEYS, "seed scenario")
+        scenario_seeds.append(_exact_int(row["seed"], "scenario seed"))
+        _exact_int(row["proposal_index"], "proposal_index")
+        for key in ("q0", "initial_target", "one_move_path", "two_move_path", "stationary_path"):
+            if not isinstance(row[key], list):
+                raise ArtifactError(f"scenario {key} must be an array")
+        digest = _hash(row["scenario_sha256"], "scenario_sha256")
+        if hashlib.sha256(canonical_json_bytes({key: item for key, item in row.items() if key != "scenario_sha256"}, newline=False)).hexdigest() != digest:
+            raise ArtifactError("scenario hash does not bind its exact scenario fields")
+    if scenario_seeds != sorted(set(scenario_seeds)) or set(scenario_seeds) != set(tuning) | set(evaluation):
+        raise ArtifactError("seed scenarios do not exactly cover the pilot partition")
+    if accepted_count != len(scenario_seeds) or candidate_count != accepted_count + len(rejection_keys):
+        raise ArtifactError("seed candidate accounting is inconsistent")
+    return value
+
+
+def _publish_identical_or_create(path: Path, payload: bytes) -> None:
+    if path.exists():
+        if path.is_symlink() or not path.is_file() or path.read_bytes() != payload:
+            raise FileExistsError(f"immutable artifact conflicts: {path}")
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_create_only(path, payload)
+    descriptor = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def prepare_manifest(
+    stage: str,
+    predecessor: Path | None,
+    destination: Path,
+    config_path: Path,
+    gate_path: Path,
+    *,
+    implementation_sha: str | None = None,
+) -> Path:
+    """Publish the first runnable pilot manifest without executing physics.
+
+    Later adaptive stages deliberately remain unavailable until their predecessor
+    evidence can mechanically determine survivors and selected parameters.
+    """
+    if stage not in {"revision", "base"} or (stage == "revision") != (predecessor is None):
+        raise ArtifactError("revision is the sole no-predecessor preparation")
+    destination = Path(destination)
+    config_path, gate_path = Path(config_path), Path(gate_path)
+    if not config_path.is_file() or not gate_path.is_file():
+        raise ArtifactError("manifest preparation requires regular config and P3-gate files")
+    if implementation_sha is None:
+        implementation_sha = _git(Path(__file__).resolve().parents[3], "rev-parse", "HEAD").decode().strip()
+    _hash(implementation_sha, "implementation_sha", _GIT_SHA)
+    from dataclasses import asdict as dataclass_dict
+    from . import evaluate, timing
+    from .contracts import load_config
+
+    config = load_config(config_path)
+    seed_path = destination.with_name("pilot-seeds.json")
+    if stage == "revision":
+        scenarios = [evaluate.generate_scenario(seed, config) for seed in range(config.pilot.seed_count)]
+        rejections = []
+        scenario_rows = []
+        for record in scenarios:
+            accepted = next(item for item in record.proposals if item.disposition.value == "ACCEPTED")
+            for proposal in record.proposals:
+                if proposal.disposition.value != "ACCEPTED":
+                    rejections.append({
+                        "candidate_seed": record.scenario.seed,
+                        "proposal_index": proposal.proposal_index,
+                        "reason": proposal.disposition.value,
+                    })
+            scenario = record.scenario
+            scenario_row = {
+                "seed": scenario.seed, "proposal_index": accepted.proposal_index,
+                "q0": scenario.q0.tolist(), "initial_target": scenario.initial_target.tolist(),
+                "one_move_path": scenario.one_move_path.tolist(),
+                "two_move_path": scenario.two_move_path.tolist(),
+                "stationary_path": scenario.stationary_path.tolist(),
+            }
+            scenario_rows.append(scenario_row | {
+                "scenario_sha256": hashlib.sha256(canonical_json_bytes(scenario_row, newline=False)).hexdigest(),
+            })
+        seed_manifest = {
+            "schema_version": 1, "study_id": STUDY_ID, "phase": "pilot", "revision": 1,
+            "rng_algorithm": "PCG64_SHA256_NAMESPACED_V1",
+            "rng_root": hashlib.sha256(f"{STUDY_ID}:pilot:r1".encode()).hexdigest(),
+            "partition": {"tuning_seed_ids": [0, 1, 2, 3], "evaluation_seed_ids": [4, 5, 6, 7]},
+            "candidate_count": len(scenario_rows) + len(rejections),
+            "accepted_count": len(scenario_rows),
+            "rejections": sorted(rejections, key=lambda row: (row["candidate_seed"], row["proposal_index"])),
+            "scenarios": sorted(scenario_rows, key=lambda row: row["seed"]),
+        }
+        seed_payload = canonical_json_bytes(seed_manifest)
+        predecessor_sha256 = None
+        manifest_stage = "revision"
+    else:
+        assert predecessor is not None
+        predecessor = Path(predecessor)
+        prior = load_protocol_manifest(predecessor)
+        if prior["stage"] != "revision" or prior["shards"] or prior["implementation_sha"] != implementation_sha:
+            raise ArtifactError("base preparation requires the exact empty revision predecessor")
+        seed_path = predecessor.with_name("pilot-seeds.json")
+        seed_payload = seed_path.read_bytes()
+        seed_manifest = load_seed_manifest(seed_path)
+        predecessor_sha256 = hashlib.sha256(predecessor.read_bytes()).hexdigest()
+        manifest_stage = "base"
+    condition_ids = tuple(sorted(
+        f"tune-{rate:02d}-{latency:03d}-{moves}"
+        for rate, latency, moves in config.pilot.tuning_conditions
+    ))
+    configuration_hash = evaluate.sha256_json(timing.scheduler_config(config))
+    parameter = evaluate.pilot_candidates()[0]
+    shards = []
+    if stage == "base":
+        for stack in ("P1", "P2", "P3", "P4", "P5", "P6"):
+            for index, seed in enumerate(seed_manifest["partition"]["tuning_seed_ids"]):
+                outputs = sorted(f"{stack}-{condition_id}-{seed:08d}" for condition_id in condition_ids)
+                shards.append({
+                    "shard_id": f"{stack}:base:{index:03d}", "stack_id": stack,
+                    "configuration_hash": configuration_hash, "seed": seed,
+                    "condition_ids": list(condition_ids), "episode_count": len(condition_ids),
+                    "output_identities": outputs,
+                })
+    config_digest = hashlib.sha256(config_path.read_bytes()).hexdigest()
+    manifest = {
+        "schema_version": 1, "study_id": STUDY_ID, "phase": "pilot", "revision": 1,
+        "stage": manifest_stage, "implementation_sha": implementation_sha,
+        "predecessor_sha256": predecessor_sha256, "config_sha256": config_digest,
+        "p3_gate_sha256": hashlib.sha256(gate_path.read_bytes()).hexdigest(),
+        "seed_manifest_sha256": hashlib.sha256(seed_payload).hexdigest(),
+        "parameter_vector": dict(parameter.parameter_vector), "parameter_hash": parameter.parameter_hash,
+        "scenario_generator_hash": hashlib.sha256(Path(evaluate.__file__).read_bytes()).hexdigest(),
+        "condition_hash": hashlib.sha256(canonical_json_bytes(list(condition_ids))).hexdigest(),
+        "metric_hash": hashlib.sha256(canonical_json_bytes(dataclass_dict(config.metrics))).hexdigest(),
+        "gate_hash": hashlib.sha256(canonical_json_bytes(dataclass_dict(config.thresholds))).hexdigest(),
+        "resource_limits": dataclass_dict(config.resources), "shards": shards, "state": "READY",
+    }
+    manifest_payload = canonical_json_bytes(manifest)
+    if stage == "revision":
+        _publish_identical_or_create(seed_path, seed_payload)
+        load_seed_manifest(seed_path)
+    _publish_identical_or_create(destination, manifest_payload)
+    load_protocol_manifest(destination)
+    return destination
 
 
 _RESOURCE_REASONS = frozenset({
@@ -242,6 +531,9 @@ def preflight_resources(
     cpu_seconds: int,
     *,
     config: object | None = None,
+    rollout_count: int | None = None,
+    revision: int = 1,
+    confirmation_wave: int = 1,
 ) -> ResourceDisposition:
     values = {
         name: _exact_int(value, name)
@@ -253,21 +545,32 @@ def preflight_resources(
     }
     if stage not in {"pilot", "confirmation"}:
         raise ArtifactError("stage must be pilot or confirmation")
+    if revision not in (1, 2):
+        raise ArtifactError("resource revision must be 1 or 2")
+    if confirmation_wave not in (1, 2):
+        raise ArtifactError("confirmation wave must be 1 or 2")
+    if rollout_count is None:
+        rollout_count = PILOT_MAX_SHARD_ROLLOUTS if stage == "pilot" else CONFIRMATION_WAVE_ROLLOUTS
+    rollout_count = _exact_int(rollout_count, "rollout_count")
+    if rollout_count == 0 or (stage == "pilot" and rollout_count > PILOT_MAX_SHARD_ROLLOUTS) or (stage == "confirmation" and rollout_count > CONFIRMATION_WAVE_ROLLOUTS):
+        raise ArtifactError("rollout_count exceeds the complete shard/wave domain")
+    reserved_bytes = rollout_count * ROLLOUT_RESERVATION_BYTES
     if config is not None:
         resources = getattr(config, "resources", None)
-        if resources is None or getattr(resources, "rollout_bytes", None) != ROLLOUT_RESERVATION_BYTES or getattr(resources, "phase_bytes", None) != LIFECYCLE_LIMIT_BYTES:
-            raise ArtifactError("configuration resource ceilings differ from the frozen 2 MiB/14,576 MiB contract")
-    non_rollout_cap = (128 if stage == "pilot" else 256) * MIB
+        if resources is None or asdict(resources) != _RESOURCE_LIMITS:
+            raise ArtifactError("configuration resource ceilings differ from the frozen contract")
+    temp_cap = 32 * MIB
+    quarantine_cap = 64 * MIB
     wall_cap = (8 if stage == "pilot" else 24) * 3600
     cpu_cap = (80 if stage == "pilot" else 240) * 3600
     reasons: list[str] = []
-    if values["retained_bytes"] + ROLLOUT_RESERVATION_BYTES > LIFECYCLE_LIMIT_BYTES:
+    if values["retained_bytes"] + reserved_bytes > LIFECYCLE_LIMIT_BYTES:
         reasons.append("PHASE_BYTES_EXCEEDED")
-    if values["temp_bytes"] > non_rollout_cap:
+    if values["temp_bytes"] > temp_cap:
         reasons.append("TEMP_BYTES_EXCEEDED")
-    if values["quarantine_bytes"] > non_rollout_cap:
+    if values["quarantine_bytes"] > quarantine_cap:
         reasons.append("QUARANTINE_BYTES_EXCEEDED")
-    if values["free_bytes"] < ROLLOUT_RESERVATION_BYTES:
+    if values["free_bytes"] < reserved_bytes:
         reasons.append("INSUFFICIENT_FREE_BYTES")
     if values["wall_seconds"] > wall_cap:
         reasons.append("WALL_TIME_EXCEEDED")
@@ -276,8 +579,8 @@ def preflight_resources(
     closed = tuple(sorted(set(reasons)))
     assert set(closed) <= _RESOURCE_REASONS
     return ResourceDisposition(
-        1, STUDY_ID, stage, 1, values["retained_bytes"], values["temp_bytes"],
-        values["quarantine_bytes"], values["free_bytes"], ROLLOUT_RESERVATION_BYTES,
+        1, STUDY_ID, stage, revision, values["retained_bytes"], values["temp_bytes"],
+        values["quarantine_bytes"], values["free_bytes"], reserved_bytes,
         values["wall_seconds"], values["cpu_seconds"], 3600,
         "ALLOW" if not closed else "REFUSE", closed,
     )
