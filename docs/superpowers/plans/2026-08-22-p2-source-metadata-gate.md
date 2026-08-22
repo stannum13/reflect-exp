@@ -97,6 +97,9 @@ git commit -m "feat: materialize validated source registry"
 
 **Files:**
 - Create: `reflect/source_fetch.py`
+- Create: `reflect/_source_git.py`
+- Create: `reflect/_source_http.py`
+- Create: `reflect/_source_cache.py`
 - Create: `scripts/fetch_reference.py`
 - Create: `tests/test_source_fetch.py`
 - Create: `tests/fixtures/source_metadata/github-repository.json`
@@ -107,6 +110,13 @@ git commit -m "feat: materialize validated source registry"
 **Interfaces:**
 - Consumes: `SourceRegistry`, exact registry selectors, an injected `Runner.run_ls_remote(url)`, an injected `Transport.get(url)`, and an injected UTC clock.
 - Produces: `GitHubIdentity`, `HttpResponse`, `MetadataEvidence`, `resolve_entry(entry, transport, clock) -> LockedEntry`, `resolve_registry(registry, names, transport, clock) -> SourceLock`, `CacheStore`, and `atomic_write_lock(path, lock) -> None`.
+
+`reflect/source_fetch.py` owns endpoint derivation and resolution orchestration;
+`reflect/_source_git.py` owns isolated `ls-remote` execution/parsing;
+`reflect/_source_http.py` owns bounded HTTPS and rate-limit response handling; and
+`reflect/_source_cache.py` owns checksummed cache records and atomic publication.
+The underscored modules are internal and the public imports above remain available
+from `reflect.source_fetch`.
 
 - [ ] **Step 1: Write failing resolver tests**
 
@@ -206,7 +216,7 @@ Expected: all tests pass.
 - [ ] **Step 8: Commit Task 2**
 
 ```bash
-git add .gitignore reflect/source_fetch.py scripts/fetch_reference.py tests/test_source_fetch.py tests/fixtures/source_metadata
+git add .gitignore reflect/source_fetch.py reflect/_source_git.py reflect/_source_http.py reflect/_source_cache.py scripts/fetch_reference.py tests/test_source_fetch.py tests/fixtures/source_metadata
 git commit -m "feat: resolve source metadata atomically"
 ```
 

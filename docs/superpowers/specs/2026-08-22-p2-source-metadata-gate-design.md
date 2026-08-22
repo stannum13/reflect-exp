@@ -104,7 +104,10 @@ the process stores validated partial cache entries, reports the reset timestamp,
 exits without publishing the lock. A later invocation resumes from cache; it does
 not sleep for an unbounded interval or issue immediate forbidden retries.
 
-The resolver uses an injectable command runner, HTTPS transport, and clock. It
+The resolver uses an injectable command runner, HTTPS transport, and clock. Git
+execution/parsing, bounded HTTPS, checksummed caching/atomic publication, and
+resolution orchestration live in separate focused modules while
+`reflect.source_fetch` retains the small public facade. It
 accepts only derived `api.github.com` endpoint paths and rejects redirects that
 change the canonical owner/repository or pinned object identity. Unit
 tests use checked-in fixtures and make no network request. Network errors include
