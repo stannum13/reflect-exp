@@ -140,8 +140,10 @@ report-only commit and its postcommit validation.
 registry_sha256, p2_lock_sha256, run_manifest_capture_git_sha,
 run_manifest_capture_git_blob_id, p2_phase_record_sha256, p3_phase_record_sha256,
 p2_evidence_base_git_sha, p2_report_commit_git_sha, p2_report_git_blob_id,
-p2_report_sha256, p3_implementation_evidence_git_sha, p3_report_commit_git_sha,
-p3_report_git_blob_id, p3_report_sha256,
+p2_report_sha256, p2_state_index_commit_git_sha,
+p2_state_index_run_manifest_git_blob_id, p3_implementation_evidence_git_sha,
+p3_report_commit_git_sha, p3_report_git_blob_id, p3_report_sha256,
+p3_state_index_commit_git_sha, p3_state_index_run_manifest_git_blob_id,
 p3_operation_manifest_sha256, p3_compatibility_sha256, licenses_sha256,
 source_map_sha256, p3_results_sha256, p3_interface_findings_sha256,
 p3_mujoco_smoke_relative_path, p3_mujoco_smoke_sha256, p3_local_lane_open,
@@ -153,6 +155,25 @@ values (`implementation_evidence_git_sha`, `report_commit_git_sha`,
 corresponding P3 record values. The gate independently requires each record's
 `bound_evidence_git_sha` to equal its implementation field and reconstructs its
 `artifact_ledger_sha256` rather than copying either value without validation.
+The four state-index fields are derived rather than caller supplied. Starting at
+`run_manifest_capture_git_sha`, the gate walks at most 4,096 commits along the sole
+first-parent chain using the fixed local Git read surface. For each phase it must find
+exactly one chain commit whose only parent is that phase's report commit; that child is
+the state-index commit. Reaching a merge, the root, or the ceiling before finding both
+children is rejection, as is finding either report commit outside the capture ancestry.
+The derived child must change exactly `docs/RUN_MANIFEST.yaml`. Its recorded manifest
+blob ID is obtained from that child, and the blob is read and parsed with the same
+duplicate-key-rejecting loader used for the current manifest.
+
+For P2, the report-parent manifest must have no `phase_records.p2`, the state-index blob
+must introduce exactly the reconstructed canonical P2 record, and every other parsed
+manifest value must remain canonically equal. For P3, the report-parent manifest must
+have no `phase_records.p3`, its canonical P2 record must already equal the sealed P2
+record, the state-index blob must add exactly the reconstructed canonical P3 record, and
+every other value must remain canonically equal. Thus neither a later insertion nor a
+multi-path/nonadjacent commit can masquerade as the required index operation. These
+later P9-gate fields do not enter either phase record or artifact ledger and therefore
+introduce no self-reference.
 States must be `complete`, the lane boolean true, and all three authority booleans
 false. File hashes are lowercase 64-hex, Git SHAs lowercase 40-hex, and Git blob IDs
 the repository's validated object format. The P9 factory
@@ -164,9 +185,11 @@ freeze, report, check, state publication, and the umbrella command, reruns this 
 historical gate before it reads a checkout or creates output.
 
 Gate creation records the clean capture commit and Git blob of
-`docs/RUN_MANIFEST.yaml`, extracts both historical phase records, and validates every
-named Git commit/blob/content identity. Later commands validate the committed
-`p3-gate.json` seal and those historical objects. They also perform a separate
+`docs/RUN_MANIFEST.yaml`, extracts both historical phase records, derives and seals both
+state-index commit/manifest-blob pairs by the bounded procedure above, and validates
+every named Git commit/blob/content identity. Later commands validate the committed
+`p3-gate.json` seal, rederive both state-index pairs from the sealed capture ancestry,
+and revalidate those historical objects. They also perform a separate
 current-state non-regression check: the current run manifest must still contain
 canonical-record-equivalent P2/P3 phase records with both phases complete and safety booleans false,
 but later `current_pass`, stage, lane, P9, and report fields may advance. Current
@@ -773,8 +796,15 @@ each of the operation manifest, extraction rules, and reviewed mapping; freeze, 
 and byte-for-byte reproduction must reject every mutation.
 Historical-gate fixtures advance current pass/stage/lane/P9 fields and replace the root
 report after preserving the immutable P2/P3 phase records; every P9 command must still
-validate. They then mutate each phase record, historical report commit/blob/hash, or
-bound evidence SHA and require rejection before checkout read/output creation. Stage-0
+validate. They then mutate each phase record, historical report commit/blob/hash, bound
+evidence SHA, state-index commit SHA, or state-index manifest blob ID and require
+rejection before checkout read/output creation. Separate histories add an extra changed
+path to an index commit, give it a non-report parent, insert the record only in a later
+commit, alter an earlier phase record while adding the later one, place a report outside
+the sealed capture ancestry, introduce a merge in the derivation chain, and exceed the
+4,096-commit traversal ceiling; every case is rejected. Positive fixtures prove the
+unique adjacent P2 and P3 children, exact one-path diffs, exact canonical-record
+introductions, and preservation of all prior manifest values. Stage-0
 negative fixtures cover a missing unit/frame at every collection position, disconnected
 or cyclic frames, convention mismatch, nonintegral decimation, wall/undeclared clocks,
 timestamp-unit mismatch, and one-bit schema-version drift.
@@ -1105,7 +1135,9 @@ config, `--seed 0`, canonical output directory `experiments/08_unitree_r1/result
 `--max-episodes 0`; and rejects unknown or alternative values. It validates the sealed
 historical P2/P3 gate, current-state non-regression, published evidence/state commit
 chain, manifest, reports, safety, and resource ledger by calling pure audit-library
-functions in-process. Historical Git identities use only the fixed credential-free local
+functions in-process. This includes rederiving both state-index commits from the sealed
+capture ancestry and rechecking their manifest blobs, adjacency, exact one-path diffs,
+canonical record introductions, and prior-value preservation. Historical Git identities use only the fixed credential-free local
 `git rev-parse`, `git cat-file`, `git diff-tree`, and `git status` read commands with no
 remote argument; no other subprocess is permitted. It never calls `fetch_sources.py`,
 any author/discover/freeze/report/publication command, pytest, or a Git network/write
