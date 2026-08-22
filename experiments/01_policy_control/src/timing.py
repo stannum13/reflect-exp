@@ -13,7 +13,7 @@ from reflect.events import ExecutionEvent, ExecutionEventType
 from reflect.rollout import RolloutMetadata, RolloutRecord, sha256_json
 from reflect.types import ActionChunk, ControlReference, Observation
 
-from .contracts import CommandStack, ExecutorState, ExperimentConfig, frozen_vector
+from .contracts import ClampReport, CommandStack, ExecutorState, ExperimentConfig, frozen_vector
 from .representations import initial_executor_state, p5_transition, reference_for_tick
 
 
@@ -107,6 +107,7 @@ class SchedulerState:
     dq: np.ndarray
     queue: tuple[ScheduledResponse, ...]
     unmatched_requests: tuple[int, ...]
+    declared_dropped_requests: tuple[int, ...]
     rollout_id: str
     config_hash: str
     observations: tuple[Observation, ...] = ()
@@ -136,6 +137,12 @@ class SchedulerState:
         if any(type(item) is not int or item < 0 for item in unmatched) or len(unmatched) != len(set(unmatched)):
             raise ValueError("unmatched requests must be unique nonnegative integers")
         object.__setattr__(self, "unmatched_requests", unmatched)
+        declared = tuple(self.declared_dropped_requests)
+        if any(type(item) is not int or item < 0 for item in declared) or len(declared) != len(set(declared)):
+            raise ValueError("declared dropped requests must be unique nonnegative integers")
+        if not set(declared).issubset(unmatched):
+            raise ValueError("declared dropped requests must remain unmatched")
+        object.__setattr__(self, "declared_dropped_requests", declared)
         for name in ("rollout_id", "config_hash"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip():
@@ -145,6 +152,8 @@ class SchedulerState:
             raise ValueError("observations must be typed")
         if len({item.sequence_id for item in observations}) != len(observations):
             raise ValueError("observation IDs must be unique")
+        if any(left.sequence_id >= right.sequence_id for left, right in zip(observations, observations[1:])):
+            raise ValueError("observation IDs must be strictly increasing")
         object.__setattr__(self, "observations", observations)
         actions = tuple(self.actions)
         if not all(isinstance(item, ActionChunk) for item in actions):
@@ -165,7 +174,7 @@ class SchedulerState:
     def initial(cls, q: np.ndarray, config: ExperimentConfig, *, rollout_id: str) -> "SchedulerState":
         frozen = frozen_vector(q, "q", shape=(3,))
         return cls(
-            0, None, None, initial_executor_state(frozen), frozen, np.zeros(3), (), (),
+            0, None, None, initial_executor_state(frozen), frozen, np.zeros(3), (), (), (),
             rollout_id, sha256_json(scheduler_config(config)),
         )
 
@@ -177,6 +186,7 @@ class TickTransition:
     control_reference: ControlReference | None
     safe_hold: bool
     safe_hold_command: SafeHoldCommand | None
+    control_report: ClampReport | None
 
 
 def _jsonable(value: object) -> object:
@@ -239,7 +249,7 @@ def scheduler_rollout_record(state: SchedulerState, config: ExperimentConfig) ->
     return RolloutRecord(
         metadata,
         wire_config,
-        {"ticks": state.tick},
+        {"ticks": state.tick, "declared_dropped_requests": list(state.declared_dropped_requests)},
         state.events,
         state.observations,
         state.actions,
@@ -302,12 +312,14 @@ def transition_tick(
     extra_delay_ticks: int = 0,
     telemetry: Observation | None = None,
     planner_due: bool = False,
+    record_execution: bool = True,
 ) -> TickTransition:
     """Apply the complete deterministic scheduler/lifecycle transition for one 2 ms tick."""
     tick = state.tick
     now_ns = tick * int(round(config.arm.timestep_s * 1e9))
     queue = list(state.queue)
     unmatched = list(state.unmatched_requests)
+    declared_drops = list(state.declared_dropped_requests)
     observations = list(state.observations)
     actions = list(state.actions)
     events: list[ExecutionEvent] = []
@@ -349,6 +361,10 @@ def transition_tick(
             raise ValueError("observation received time must equal current virtual tick")
         if any(item.sequence_id == incoming_observation.sequence_id for item in observations):
             raise ValueError("observation ID was already stored")
+        if observations and incoming_observation.sequence_id <= observations[-1].sequence_id:
+            raise ValueError("observation IDs must be strictly increasing")
+        if incoming_observation.current_skill_id != "track" or incoming_observation.current_phase != "track_target":
+            raise ValueError("observation skill/phase must remain track/track_target")
         observations.append(incoming_observation)
         object_ids = tuple(item.entity_id for item in incoming_observation.object_beliefs)
         event(
@@ -380,6 +396,8 @@ def transition_tick(
             object_ids=object_ids,
         )
         unmatched.append(request.request_sequence)
+        if drop:
+            declared_drops.append(request.request_sequence)
         response = schedule_response(request, latency_ticks, drop=drop, extra_delay_ticks=extra_delay_ticks)
         if response is not None:
             if any((item.delivery_tick, item.request_sequence) == (response.delivery_tick, response.request_sequence) for item in queue):
@@ -449,24 +467,26 @@ def transition_tick(
 
     control_reference = None
     safe_hold_command = None
+    control_report = None
     if active is not None and now_ns >= active.expires_at_ns:
         active = None
         executor = ExecutorState(None, state.q, np.zeros(3), state.q, False)
     if active is not None:
         stack = CommandStack(active.metadata["stack_id"])
-        control_reference, executor, _ = reference_for_tick(stack, active, state.q, state.dq, now_ns, executor, config)
-        references.append(control_reference)
-        source = next(item for item in observations if item.sequence_id == active.source_observation_id)
-        event(
-            ExecutionEventType.ACTION_EXECUTED,
-            {
-                "source_chunk_id": active.chunk_id,
-                "source_observation_id": active.source_observation_id,
-                "time_ns": now_ns,
-            },
-            skill_id=active.skill_id,
-            object_ids=tuple(item.entity_id for item in source.object_beliefs),
-        )
+        control_reference, executor, control_report = reference_for_tick(stack, active, state.q, state.dq, now_ns, executor, config)
+        if record_execution:
+            references.append(control_reference)
+            source = next(item for item in observations if item.sequence_id == active.source_observation_id)
+            event(
+                ExecutionEventType.ACTION_EXECUTED,
+                {
+                    "source_chunk_id": active.chunk_id,
+                    "source_observation_id": active.source_observation_id,
+                    "time_ns": now_ns,
+                },
+                skill_id=active.skill_id,
+                object_ids=tuple(item.entity_id for item in source.object_beliefs),
+            )
     else:
         executor = ExecutorState(None, state.q, np.zeros(3), state.q, False)
         safe_hold_command = SafeHoldCommand(state.q, np.zeros(3))
@@ -479,6 +499,7 @@ def transition_tick(
         state.dq,
         tuple(queue),
         tuple(unmatched),
+        tuple(declared_drops),
         state.rollout_id,
         state.config_hash,
         tuple(observations),
@@ -486,11 +507,14 @@ def transition_tick(
         state.events + tuple(events),
         tuple(references),
     )
-    return TickTransition(tuple(events), next_state, control_reference, active is None, safe_hold_command)
+    return TickTransition(tuple(events), next_state, control_reference, active is None, safe_hold_command, control_report)
 
 
-def validate_terminal_state(state: SchedulerState, *, allowed_dropped_requests: tuple[int, ...] = ()) -> None:
+def validate_terminal_state(state: SchedulerState, *, allowed_dropped_requests: tuple[int, ...] | None = None) -> None:
     if state.queue:
         raise ValueError("terminal response queue must be empty")
-    if tuple(sorted(state.unmatched_requests)) != tuple(sorted(allowed_dropped_requests)):
+    allowed = state.declared_dropped_requests if allowed_dropped_requests is None else tuple(allowed_dropped_requests)
+    if tuple(sorted(allowed)) != tuple(sorted(state.declared_dropped_requests)):
+        raise ValueError("terminal allowed drops differ from declared drops")
+    if tuple(sorted(state.unmatched_requests)) != tuple(sorted(allowed)):
         raise ValueError("terminal unmatched requests differ from declared drops")

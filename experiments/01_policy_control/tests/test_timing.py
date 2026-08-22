@@ -35,7 +35,7 @@ def _initial(cfg=None, q=None, rollout_id="timing-test"):
 def _copy_state(state, **changes):
     values = {name: getattr(state, name) for name in (
         "tick", "last_accepted_observation_id", "active_chunk", "executor_state", "q", "dq",
-        "queue", "unmatched_requests", "rollout_id", "config_hash", "observations", "actions",
+        "queue", "unmatched_requests", "declared_dropped_requests", "rollout_id", "config_hash", "observations", "actions",
         "events", "control_references",
     )}
     values.update(changes)
@@ -77,10 +77,10 @@ def test_real_observation_precedes_request_and_coincidence_reuses_it() -> None:
         timing.transition_tick(_initial(cfg), cfg, request=request, telemetry=replace(request.observation))
 
 
-def test_total_tick_transition_accept_replace_and_rejection_is_noop() -> None:
+def test_total_tick_transition_accept_replace_and_rejection_is_noop(tmp_path) -> None:
     cfg = config()
     first = _request(contracts.CommandStack.P1, 2, 0)
-    accepted = timing.transition_tick(_initial(cfg), cfg, request=first)
+    accepted = timing.transition_tick(_initial(cfg, rollout_id="replacement-trace"), cfg, request=first)
     assert [event.event_type for event in accepted.events] == [
         ExecutionEventType.OBSERVATION_RECEIVED, ExecutionEventType.POLICY_REQUESTED,
         ExecutionEventType.POLICY_RESPONDED, ExecutionEventType.CHUNK_ACCEPTED,
@@ -89,20 +89,32 @@ def test_total_tick_transition_accept_replace_and_rejection_is_noop() -> None:
     second = _request(contracts.CommandStack.P1, 3, 1)
     replaced = timing.transition_tick(accepted.state, cfg, request=second)
     assert [event.event_type for event in replaced.events][2:5] == [ExecutionEventType.POLICY_RESPONDED, ExecutionEventType.CHUNK_REPLACED, ExecutionEventType.CHUNK_ACCEPTED]
-    stale = _request(contracts.CommandStack.P2, 1, replaced.state.tick)
-    uninterrupted = timing.transition_tick(replaced.state, cfg)
-    rejected = timing.transition_tick(replaced.state, cfg, request=stale)
+    path = RolloutWriter(tmp_path, "replacement-trace").write(
+        timing.scheduler_rollout_record(replaced.state, cfg)
+    )
+    validate_rollout(path)
+
+
+def test_delayed_older_response_is_rejected_with_monotonic_observation_store(tmp_path) -> None:
+    cfg = config()
+    older = _request(contracts.CommandStack.P2, 1, 0, response_tick=2)
+    delayed = timing.transition_tick(_initial(cfg, rollout_id="stale-trace"), cfg, request=older, extra_delay_ticks=2)
+    newer = _request(contracts.CommandStack.P1, 2, 1)
+    accepted = timing.transition_tick(delayed.state, cfg, request=newer)
+    uninterrupted = timing.transition_tick(_copy_state(accepted.state, queue=()), cfg)
+    rejected = timing.transition_tick(accepted.state, cfg)
     assert ExecutionEventType.CHUNK_REJECTED_OUT_OF_ORDER in [event.event_type for event in rejected.events]
-    assert rejected.state.active_chunk is replaced.state.active_chunk
+    assert [item.sequence_id for item in rejected.state.observations] == [1, 2]
+    assert rejected.state.active_chunk is accepted.state.active_chunk
     assert rejected.control_reference.q_ref.tobytes() == uninterrupted.control_reference.q_ref.tobytes()
-    assert rejected.control_reference.dq_ref.tobytes() == uninterrupted.control_reference.dq_ref.tobytes()
-    assert rejected.state.executor_state.latched_q_ref.tobytes() == uninterrupted.state.executor_state.latched_q_ref.tobytes()
+    path = RolloutWriter(tmp_path, "stale-trace").write(timing.scheduler_rollout_record(rejected.state, cfg))
+    validate_rollout(path)
 
 
-def test_expired_arrival_and_half_open_expiry_return_real_safe_hold() -> None:
+def test_expired_arrival_and_half_open_expiry_return_real_safe_hold(tmp_path) -> None:
     cfg = config()
     request = _request(contracts.CommandStack.P5, 1, 0)
-    accepted = timing.transition_tick(_initial(cfg), cfg, request=request, planner_due=True)
+    accepted = timing.transition_tick(_initial(cfg, rollout_id="expiry-trace"), cfg, request=request, planner_due=True)
     expiry_tick = request.payload.expires_at_ns // 2_000_000
     q = np.array([0.2, -0.1, 0.3])
     expired_state = _copy_state(accepted.state, tick=expiry_tick, q=q, dq=np.ones(3))
@@ -120,6 +132,10 @@ def test_expired_arrival_and_half_open_expiry_return_real_safe_hold() -> None:
     rejected = timing.transition_tick(expired.state, cfg, request=late)
     assert ExecutionEventType.CHUNK_REJECTED_EXPIRED in [event.event_type for event in rejected.events]
     assert rejected.safe_hold
+    path = RolloutWriter(tmp_path, "expiry-trace").write(
+        timing.scheduler_rollout_record(rejected.state, cfg)
+    )
+    validate_rollout(path)
 
 
 def test_p5_replacement_preserves_only_p5_to_p5_and_delivery_precedes_planner() -> None:
@@ -168,10 +184,30 @@ def test_terminal_validation_rejects_queue_and_allows_only_declared_drop() -> No
     response = timing.ScheduledResponse(2, 1, _request(contracts.CommandStack.P1, 1, 0).payload)
     with pytest.raises(ValueError, match="queue"):
         timing.validate_terminal_state(_copy_state(state, queue=(response,)))
-    dropped = _copy_state(state, tick=1, unmatched_requests=(4,))
+    dropped = _copy_state(state, tick=1, unmatched_requests=(4,), declared_dropped_requests=(4,))
     timing.validate_terminal_state(dropped, allowed_dropped_requests=(4,))
+    with pytest.raises(ValueError, match="allowed drops"):
+        timing.validate_terminal_state(dropped, allowed_dropped_requests=(5,))
+
+
+def test_phase_is_stable_and_drop_identity_is_exact_and_validatable(tmp_path) -> None:
+    cfg = config()
+    request = _request(contracts.CommandStack.P1, 1, 0)
+    wrong_phase = replace(request.observation, current_phase="other")
+    wrong_request = replace(request, observation=wrong_phase, payload=replace(request.payload, expected_phase="other"))
+    with pytest.raises(ValueError, match="skill/phase"):
+        timing.transition_tick(_initial(cfg), cfg, request=wrong_request)
+    with pytest.raises(ValueError, match="skill/phase"):
+        timing.transition_tick(_initial(cfg), cfg, telemetry=wrong_phase)
+
+    dropped = timing.transition_tick(_initial(cfg, rollout_id="drop-trace"), cfg, request=request, drop=True)
+    timing.validate_terminal_state(dropped.state)
+    assert dropped.state.declared_dropped_requests == (1,)
+    path = RolloutWriter(tmp_path, "drop-trace").write(timing.scheduler_rollout_record(dropped.state, cfg))
+    assert validate_rollout(path).metrics["declared_dropped_requests"] == (1,)
+    bad = _copy_state(dropped.state, unmatched_requests=(1, 9))
     with pytest.raises(ValueError, match="unmatched"):
-        timing.validate_terminal_state(dropped)
+        timing.validate_terminal_state(bad)
 
 
 def test_scheduler_trace_writes_and_passes_shared_rollout_validator(tmp_path) -> None:
