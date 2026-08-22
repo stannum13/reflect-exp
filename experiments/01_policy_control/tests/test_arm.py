@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib
 
 import numpy as np
-import pytest
 
 
 arm = importlib.import_module("experiments.01_policy_control.src.arm")
@@ -32,7 +31,7 @@ def test_equality_at_limits_is_not_a_clamp() -> None:
 
 
 def test_mujoco_runtime_matches_frozen_arm_and_analytic_fk() -> None:
-    pytest.importorskip("mujoco")
+    import mujoco
     cfg = contracts.load_config(contracts.Path(__file__).resolve().parents[1] / "configs/base.yaml")
     model = arm.PlanarArm(cfg)
     q = np.array([0.3, -0.5, 0.4])
@@ -40,4 +39,6 @@ def test_mujoco_runtime_matches_frozen_arm_and_analytic_fk() -> None:
     kin = importlib.import_module("experiments.01_policy_control.src.kinematics")
     assert model.model.opt.timestep == cfg.arm.timestep_s
     assert np.array_equal(model.model.jnt_range[:3], np.array([[cfg.arm.joint_min_rad, cfg.arm.joint_max_rad]] * 3))
+    assert np.array_equal(model.model.actuator_ctrlrange[:3], np.array([[cfg.arm.torque_min_nm, cfg.arm.torque_max_nm]] * 3))
     assert np.allclose(model.site_xy(), kin.forward_kinematics(q, cfg.arm.link_lengths_m), atol=1e-12)
+    assert mujoco.__version__ == "3.12.0"
