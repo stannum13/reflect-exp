@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import importlib
 from importlib import metadata
 import json
 from pathlib import Path
+import platform
 
+import mujoco
 import pytest
+import yaml
 
 from reflect.source_compat import (
-    ManifestOperation,
-    OperationManifest,
-    OutputSelector,
     source_lock_sha256,
 )
+from reflect.source_evidence import canonical_sha256
 from reflect.sources import (
     LicenseStatus,
     LockedEntry,
@@ -52,18 +52,35 @@ def complete_lock() -> tuple[object, SourceLock]:
     return registry, SourceLock(registry.registry_sha256, "2026-08-22T00:00:00Z", entries)
 
 
-def manifest(registry: object, lock: SourceLock) -> OperationManifest:
-    operation = ManifestOperation(
-        "MUJOCO_PACKAGE_SMOKE", "mujoco", "PACKAGE_RUNTIME", "package",
-        "experiments/00_source_audit/results/fragments/mujoco-package-smoke.json",
-    )
-    return OperationManifest(
-        1, registry.registry_sha256, source_lock_sha256(lock), (), (operation,), (),
-        OutputSelector(
-            "MUJOCO_PACKAGE_SMOKE",
-            "experiments/00_source_audit/results/fragments/mujoco-package-smoke.json",
-        ),
-    )
+def write_manifest(root: Path, registry: object, lock: SourceLock) -> Path:
+    output = "experiments/00_source_audit/results/fragments/mujoco-package-smoke.json"
+    payload = {
+        "schema_version": 1, "registry_sha256": registry.registry_sha256,
+        "lock_sha256": source_lock_sha256(lock),
+        "repositories": [
+            {"repository": item.name, "commit_sha": item.commit_sha,
+             "paths": [{"path": path, "status": status.value}
+                       for path, status in sorted(item.path_statuses.items())]}
+            for item in lock.entries
+        ],
+        "operations": [{
+            "operation_id": "MUJOCO_PACKAGE_SMOKE", "repository": "mujoco",
+            "operation": "PACKAGE_RUNTIME", "runtime_subject": "package",
+            "experiment": "01_policy_control", "selected_path": "python",
+            "command": ["mujoco", "headless-one-step"], "relative_output": output,
+            "platform": f"{platform.system().lower()}-{platform.machine().lower()}",
+            "python_requirement": ">=3.11,<3.12",
+            "compiler_or_runtime": f"mujoco-{metadata.version('mujoco')};python-{platform.python_version()}",
+            "timeout_seconds": 60, "download_ceiling_bytes": 0,
+            "disk_ceiling_bytes": 536870912, "no_copy": True, "no_models": True,
+            "package_name": "mujoco",
+        }],
+        "requirement_observations": [],
+        "mujoco_smoke_output": {"operation_id": "MUJOCO_PACKAGE_SMOKE", "relative_path": output},
+    }
+    path = root / "manifest.yaml"
+    path.write_text(yaml.safe_dump(payload, sort_keys=False))
+    return path
 
 
 def test_headless_one_step_smoke_binds_package_not_git_execution() -> None:
@@ -74,11 +91,27 @@ def test_headless_one_step_smoke_binds_package_not_git_execution() -> None:
     assert item.package_name == "mujoco"
     assert item.package_version == metadata.version("mujoco")
     assert item.package_artifact_sha256 is not None
+    assert item.package_lock_artifact_sha256 == "6d6a18976ea2664ddc38816d50138083dbec95f2d9087d6a6d89a85a083e19b5"
     assert item.exit_status == 0
-    assert findings["simulation_time"] > 0
-    assert findings["finite_time"] is True
-    assert findings["finite_qpos"] is True
-    assert findings["finite_qvel"] is True
+    artifact = findings["artifact"]
+    dynamics = findings["dynamics"]
+    assert artifact["installed_tree_sha256"] == item.package_artifact_sha256
+    assert artifact["record_entries"] == artifact["installed_files"] > 0
+    assert artifact["installed_bytes"] == item.disk_bytes > 0
+    model = mujoco.MjModel.from_xml_string(_smoke._XML)
+    data = mujoco.MjData(model)
+    data.ctrl[:] = [float.fromhex(value) for value in dynamics["control"]]
+    mujoco.mj_step(model, data)
+    qpos = [float(value).hex() for value in data.qpos]
+    qvel = [float(value).hex() for value in data.qvel]
+    assert dynamics["xml_sha256"] == dict(item.content_hashes)["inline-model.xml"]
+    assert dynamics["nq"] == model.nq and dynamics["nv"] == model.nv and dynamics["nu"] == model.nu
+    assert float.fromhex(dynamics["timestep"]) == model.opt.timestep
+    assert dynamics["post_step"]["time"] == float(data.time).hex()
+    assert dynamics["post_step"]["qpos"] == qpos
+    assert dynamics["post_step"]["qvel"] == qvel
+    assert dynamics["post_step"]["qpos_sha256"] == canonical_sha256(qpos)
+    assert dynamics["post_step"]["qvel_sha256"] == canonical_sha256(qvel)
     assert item.commit_sha not in item.command
     assert "viewer" not in " ".join(item.command).lower()
     second = run_mujoco_smoke(registry, lock)
@@ -91,18 +124,19 @@ def test_headless_one_step_smoke_binds_package_not_git_execution() -> None:
 
 def test_smoke_writer_uses_only_closed_manifest_output_and_refuses_overwrite(tmp_path: Path) -> None:
     registry, lock = complete_lock()
-    operation_manifest = manifest(registry, lock)
-    path = write_mujoco_smoke(operation_manifest, registry, lock, tmp_path)
-    assert path.relative_to(tmp_path).as_posix() == operation_manifest.mujoco_smoke_output.relative_path
+    (tmp_path / "uv.lock").write_bytes(Path("uv.lock").read_bytes())
+    manifest_path = write_manifest(tmp_path, registry, lock)
+    path = write_mujoco_smoke(manifest_path, registry, lock, tmp_path)
+    assert path.relative_to(tmp_path).as_posix() == "experiments/00_source_audit/results/fragments/mujoco-package-smoke.json"
     payload = json.loads(path.read_text())
     assert payload["package_version"] == metadata.version("mujoco")
     with pytest.raises(FileExistsError):
-        write_mujoco_smoke(operation_manifest, registry, lock, tmp_path)
-    invalid = replace(
-        operation_manifest,
-        mujoco_smoke_output=OutputSelector("MUJOCO_PACKAGE_SMOKE", "elsewhere.json"),
-    )
-    with pytest.raises(ValueError, match="selector"):
+        write_mujoco_smoke(manifest_path, registry, lock, tmp_path)
+    raw = yaml.safe_load(manifest_path.read_text())
+    raw["repositories"] = []
+    invalid = tmp_path / "invalid.yaml"
+    invalid.write_text(yaml.safe_dump(raw, sort_keys=False))
+    with pytest.raises(ValueError, match="every locked repository"):
         write_mujoco_smoke(invalid, registry, lock, tmp_path)
 
 
@@ -113,6 +147,8 @@ def test_smoke_writer_rejects_symlinked_output_parent(tmp_path: Path) -> None:
     experiment = tmp_path / "experiments" / "00_source_audit"
     experiment.mkdir(parents=True)
     (experiment / "results").symlink_to(outside, target_is_directory=True)
-    with pytest.raises(OSError):
-        write_mujoco_smoke(manifest(registry, lock), registry, lock, tmp_path)
+    (tmp_path / "uv.lock").write_bytes(Path("uv.lock").read_bytes())
+    manifest_path = write_manifest(tmp_path, registry, lock)
+    with pytest.raises((OSError, ValueError), match="symlink"):
+        write_mujoco_smoke(manifest_path, registry, lock, tmp_path)
     assert tuple(outside.iterdir()) == ()

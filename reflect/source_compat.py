@@ -64,7 +64,8 @@ _EVIDENCE_KEYS = {
     "python_requirement", "compiler_or_runtime", "command", "exit_status",
     "disk_bytes", "download_bytes", "license_status", "license_spdx", "blocker",
     "notes", "runtime_subject", "package_name", "package_version",
-    "package_artifact_sha256", "patch_artifact_sha256", "findings",
+    "package_artifact_sha256", "package_lock_artifact_sha256",
+    "patch_artifact_sha256", "findings",
     "content_hashes", "evidence_sha256",
 }
 _STATIC_FILE_KEYS = {
@@ -98,13 +99,52 @@ def _validate_raw_findings(
 ) -> None:
     raw = dict(findings)
     if operation == "PACKAGE_RUNTIME":
-        required = {"duration_ns", "finite_qpos", "finite_qvel", "finite_time", "simulation_time"}
+        required = {"duration_ns", "artifact", "dynamics"}
         if set(raw) != required or type(raw["duration_ns"]) is not int or raw["duration_ns"] < 0:
             raise ValueError("package smoke findings schema is invalid")
-        if any(type(raw[key]) is not bool for key in ("finite_qpos", "finite_qvel", "finite_time")):
-            raise ValueError("package smoke finite-state findings are invalid")
-        if type(raw["simulation_time"]) not in {int, float} or raw["simulation_time"] <= 0:
-            raise ValueError("package smoke simulation time is invalid")
+        artifact = raw["artifact"]
+        dynamics = raw["dynamics"]
+        if not isinstance(artifact, Mapping) or set(artifact) != {
+            "wheel_filename", "lock_artifact_sha256", "installed_tree_sha256",
+            "record_entries", "installed_files", "installed_bytes",
+        }:
+            raise ValueError("package artifact findings schema is invalid")
+        _string(artifact["wheel_filename"], "wheel filename")
+        _sha(artifact["lock_artifact_sha256"], "lock artifact sha256", 64)
+        _sha(artifact["installed_tree_sha256"], "installed tree sha256", 64)
+        if any(type(artifact[key]) is not int or artifact[key] <= 0 for key in ("record_entries", "installed_files", "installed_bytes")):
+            raise ValueError("package artifact inventory counts are invalid")
+        if artifact["record_entries"] != artifact["installed_files"]:
+            raise ValueError("package RECORD does not cover the complete installed inventory")
+        if not isinstance(dynamics, Mapping) or set(dynamics) != {
+            "xml_sha256", "control", "timestep", "nq", "nv", "nu", "post_step",
+        }:
+            raise ValueError("package dynamics findings schema is invalid")
+        _sha(dynamics["xml_sha256"], "dynamics XML sha256", 64)
+        if dict(content_hashes).get("inline-model.xml") != dynamics["xml_sha256"]:
+            raise ValueError("package dynamics XML hash is not content-bound")
+        for key in ("nq", "nv", "nu"):
+            if type(dynamics[key]) is not int or dynamics[key] <= 0:
+                raise ValueError("package dynamics dimensions are invalid")
+        if not isinstance(dynamics["control"], list) or len(dynamics["control"]) != dynamics["nu"]:
+            raise ValueError("package dynamics control shape is invalid")
+        if any(type(value) is not str or not float.fromhex(value) == float.fromhex(value) for value in dynamics["control"]):
+            raise ValueError("package dynamics control encoding is invalid")
+        if type(dynamics["timestep"]) is not str or float.fromhex(dynamics["timestep"]) <= 0:
+            raise ValueError("package dynamics timestep encoding is invalid")
+        post = dynamics["post_step"]
+        if not isinstance(post, Mapping) or set(post) != {"time", "qpos", "qvel", "qpos_sha256", "qvel_sha256"}:
+            raise ValueError("package post-step state schema is invalid")
+        if type(post["time"]) is not str or float.fromhex(post["time"]) <= 0:
+            raise ValueError("package post-step time encoding is invalid")
+        if not isinstance(post["qpos"], list) or not isinstance(post["qvel"], list) or len(post["qpos"]) != dynamics["nq"] or len(post["qvel"]) != dynamics["nv"]:
+            raise ValueError("package post-step state shape is invalid")
+        for key in ("qpos", "qvel"):
+            if any(type(value) is not str or not float.fromhex(value) == float.fromhex(value) for value in post[key]):
+                raise ValueError("package post-step state encoding is invalid")
+            _sha(post[f"{key}_sha256"], f"{key} sha256", 64)
+            if post[f"{key}_sha256"] != canonical_sha256(post[key]):
+                raise ValueError("package post-step state hash mismatch")
         return
     if operation not in _STATIC_FILE_KEYS or set(raw) != {"files", "summary"}:
         raise ValueError("static operation findings schema is invalid")
@@ -199,6 +239,7 @@ class CompatibilityEvidence:
     package_name: str | None
     package_version: str | None
     package_artifact_sha256: str | None
+    package_lock_artifact_sha256: str | None
     patch_artifact_sha256: str | None
     findings: tuple[tuple[str, Any], ...]
     content_hashes: tuple[tuple[str, str], ...]
@@ -269,16 +310,22 @@ class CompatibilityEvidence:
                 or self.package_name != "mujoco"
                 or self.command != ("mujoco", "headless-one-step")
                 or not self.package_version
+                or self.package_version != "3.12.0"
                 or self.package_artifact_sha256 is None
+                or self.package_lock_artifact_sha256 is None
             ):
                 raise ValueError("package runtime requires package identity and artifact hash")
             _sha(self.package_artifact_sha256, "package_artifact_sha256", 64)
+            _sha(self.package_lock_artifact_sha256, "package_lock_artifact_sha256", 64)
+            raw_artifact = dict(self.findings).get("artifact")
+            if not isinstance(raw_artifact, Mapping) or raw_artifact.get("installed_tree_sha256") != self.package_artifact_sha256 or raw_artifact.get("lock_artifact_sha256") != self.package_lock_artifact_sha256:
+                raise ValueError("package hashes are not bound to raw artifact findings")
         else:
             if self.operation not in _STATIC_FILE_KEYS:
                 raise ValueError("source checkout operation is not in the closed matrix")
             if self.command != (self.operation.lower(), self.selected_path):
                 raise ValueError("source checkout command does not match operation matrix")
-            if any(value is not None for value in (self.package_name, self.package_version, self.package_artifact_sha256)):
+            if any(value is not None for value in (self.package_name, self.package_version, self.package_artifact_sha256, self.package_lock_artifact_sha256)):
                 raise ValueError("source checkout cannot claim package identity")
         if self.patch_artifact_sha256 is not None:
             _sha(self.patch_artifact_sha256, "patch_artifact_sha256", 64)
@@ -306,6 +353,7 @@ class CompatibilityEvidence:
             "runtime_subject": self.runtime_subject, "package_name": self.package_name,
             "package_version": self.package_version,
             "package_artifact_sha256": self.package_artifact_sha256,
+            "package_lock_artifact_sha256": self.package_lock_artifact_sha256,
             "patch_artifact_sha256": self.patch_artifact_sha256,
             "findings": dict(self.findings),
             "content_hashes": [{"path": path, "sha256": digest} for path, digest in self.content_hashes],
@@ -499,7 +547,6 @@ def load_operation_manifest(path: Path, registry: SourceRegistry, lock: SourceLo
     outputs = [_safe_relative(item.relative_output, "operation output") for item in operations]
     if len(set(outputs)) != len(outputs):
         raise ValueError("operation output paths collide")
-    destination = root / selector.relative_path
     current = root
     for part in PurePosixPath(selector.relative_path).parts[:-1]:
         current = current / part

@@ -27,7 +27,7 @@ from reflect.source_ops import (
     run_source_operation,
     write_fragment_create_only,
 )
-from reflect.source_evidence import CheckoutEvidence
+from reflect.source_evidence import CheckoutEvidence, canonical_sha256
 from reflect.source_fetch import lock_yaml_bytes
 from scripts.source_audit import main as source_audit_main
 from reflect.sources import (
@@ -91,6 +91,7 @@ def evidence(**changes: object) -> CompatibilityEvidence:
         "package_name": None,
         "package_version": None,
         "package_artifact_sha256": None,
+        "package_lock_artifact_sha256": None,
         "patch_artifact_sha256": None,
         "findings": {
             "files": [{
@@ -208,11 +209,20 @@ def test_evidence_is_canonical_strict_and_package_truthful() -> None:
         repository="mujoco", selected_path="python",
         operation_id="MUJOCO_PACKAGE_SMOKE", operation="PACKAGE_RUNTIME",
         runtime_subject="package", package_name="mujoco",
-        package_version="3.3.5", package_artifact_sha256="b" * 64,
+        package_version="3.12.0", package_artifact_sha256="b" * 64,
+        package_lock_artifact_sha256="c" * 64,
         command=("mujoco", "headless-one-step"),
         findings={
-            "duration_ns": 1, "finite_qpos": True, "finite_qvel": True,
-            "finite_time": True, "simulation_time": 0.002,
+            "duration_ns": 1,
+            "artifact": {"wheel_filename": "mujoco.whl", "lock_artifact_sha256": "c" * 64,
+                         "installed_tree_sha256": "b" * 64, "record_entries": 1,
+                         "installed_files": 1, "installed_bytes": 1},
+            "dynamics": {"xml_sha256": "8" * 64, "control": [float(0.125).hex()],
+                         "timestep": float(0.002).hex(), "nq": 1, "nv": 1, "nu": 1,
+                         "post_step": {"time": float(0.002).hex(), "qpos": [float(0).hex()],
+                                       "qvel": [float(0).hex()],
+                                       "qpos_sha256": canonical_sha256([float(0).hex()]),
+                                       "qvel_sha256": canonical_sha256([float(0).hex()])}},
         },
         content_hashes={"inline-model.xml": "8" * 64},
     )

@@ -281,6 +281,7 @@ def run_source_operation(spec: OperationSpec, checkout_root: Path) -> Compatibil
         package_name=None,
         package_version=None,
         package_artifact_sha256=None,
+        package_lock_artifact_sha256=None,
         patch_artifact_sha256=None,
         findings={
             "files": file_findings,

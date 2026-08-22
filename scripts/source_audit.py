@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+import importlib
 import os
 from pathlib import Path
 import sys
@@ -54,12 +55,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     root = Path(arguments.root).resolve()
     registry = load_registry(_beneath(root, arguments.registry, "registry"))
     lock = load_lock(_beneath(root, arguments.lock, "lock"))
-    manifest = load_operation_manifest(_beneath(root, arguments.manifest, "manifest"), registry, lock, root)
+    manifest_path = _beneath(root, arguments.manifest, "manifest")
+    manifest = load_operation_manifest(manifest_path, registry, lock, root)
     if arguments.operate:
         matches = tuple(item for item in manifest.operations if item.operation_id == arguments.operate)
         if len(matches) != 1:
             raise ValueError("--operate requires one exact manifest operation ID")
         operation = matches[0]
+        if operation.operation == "PACKAGE_RUNTIME":
+            smoke = importlib.import_module("experiments.00_source_audit.src.smoke")
+            destination = smoke.write_mujoco_smoke(manifest_path, registry, lock, root)
+            sys.stdout.buffer.write(destination.read_bytes())
+            return 0
         if operation.operation not in {item.value for item in SourceOperation}:
             raise ValueError("--operate supports only bounded static manifest operations")
         sources = {item.name: item for item in registry.repositories}
