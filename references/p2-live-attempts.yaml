@@ -1,0 +1,65 @@
+schema_version: 1
+registry_sha256: d1598b83070b5c8578e79a64142ee24941a59743cdf9420efa8b3b9d588fb8af
+attempts:
+  - id: mujoco_probe
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - mujoco
+      - --metadata-only
+    started_at_utc: 2026-08-22T16:48:41Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [mujoco]
+    summary: >-
+      Resolved main at a7255075b003506ff5f34b512d88e02df12a73c6,
+      observed Apache-2.0, and verified python/model/sample/test as EXISTS.
+
+  - id: all_metadata_window_1
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --all-metadata-only
+    started_at_utc: 2026-08-22T16:48:58Z
+    finished_at_utc: 2026-08-22T16:49:36Z
+    exit_code: 1
+    published_lock: false
+    completed_entries:
+      - mujoco
+      - mujoco_mpc
+      - mujoco_menagerie
+      - mink
+      - mjctrl
+      - hydrax
+      - curobo
+      - moveit2
+      - ros2_control
+      - ros2_controllers
+      - mujoco_ros2_control
+      - act
+      - lerobot
+      - openpi
+      - diffusion_policy
+      - behaviortree_cpp
+      - navigation2
+      - spark_dsg
+    incomplete_entry: hydra_scene_graph
+    error: >-
+      GitHub rate limit exhausted for
+      https://api.github.com/repos/MIT-SPARK/Hydra/license?ref=2e58a35baea629eee8838409771876acff015daf;
+      reset 1787420919
+    rate_limit_reset_utc: 2026-08-22T17:48:39Z
+    lock_absence_verified: true
+    cache_validation: >-
+      Production CacheStore and offline resolver replay validated 19 complete
+      entries; Hydra branch/commit/tree validate and only its license endpoint is
+      absent. No cached recursive tree is truncated.
