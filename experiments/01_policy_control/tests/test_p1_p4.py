@@ -42,3 +42,18 @@ def test_reference_executor_returns_finite_joint_reference() -> None:
         )
         assert reference.q_ref is not None and reference.q_ref.shape == (3,)
         assert np.isfinite(reference.q_ref).all()
+
+
+def test_p1_p4_exact_values_expiry_and_closed_endpoints() -> None:
+    cfg = config()
+    value = policy_input(period_ns=100_000_000, response_ns=300_000_000)
+    kin = importlib.import_module("experiments.01_policy_control.src.kinematics")
+    target = value.skill.target_pose.position[:2]
+    p1, p2, p3, p4 = [representations.emit_chunk(stack, value, cfg) for stack in tuple(contracts.CommandStack)[:4]]
+    expected_q = kin.absolute_ik(target, value.observation.robot_state.q, cfg.arm.link_lengths_m, cfg.controller.ik_damping_candidates[0], cfg)
+    assert p1.actions[0].tobytes() == expected_q.tobytes()
+    assert p3.actions[0].tobytes() == target.tobytes()
+    assert p2.actions[0].tobytes() == value.observation.robot_state.q.tobytes()
+    assert p4.actions[0].tobytes() == kin.forward_kinematics(value.observation.robot_state.q, cfg.arm.link_lengths_m).tobytes()
+    assert p4.actions[-1].tobytes() == target.tobytes()
+    assert all(chunk.expires_at_ns == 550_000_000 for chunk in (p1, p2, p3, p4))

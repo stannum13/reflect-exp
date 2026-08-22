@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from .contracts import ExperimentConfig
+
 
 def _readonly(value: np.ndarray) -> np.ndarray:
     result = np.array(value, dtype=np.float64, order="C", copy=True)
@@ -41,15 +43,15 @@ def damped_pseudoinverse(j: np.ndarray, damping: float) -> np.ndarray:
     return _readonly(matrix.T @ np.linalg.inv(matrix @ matrix.T + damping * damping * np.eye(matrix.shape[0])))
 
 
-def absolute_ik(target: np.ndarray, q0: np.ndarray, links: tuple[float, float, float], damping: float) -> np.ndarray:
+def absolute_ik(target: np.ndarray, q0: np.ndarray, links: tuple[float, float, float], damping: float, config: ExperimentConfig) -> np.ndarray:
     q = np.array(q0, dtype=np.float64, copy=True)
-    posture = np.array([0.35, -0.70, 0.35])
-    for _ in range(12):
+    posture = config.kinematics.posture_q
+    for _ in range(config.controller.ik_iterations):
         j = jacobian(q, links)
         jh = damped_pseudoinverse(j, damping)
         null = np.eye(3) - jh @ j
-        update = jh @ (np.asarray(target) - forward_kinematics(q, links)) + 0.05 * null @ (posture - q)
-        q = np.clip(q + clip_norm(update, 0.10), -2.55, 2.55)
+        update = jh @ (np.asarray(target) - forward_kinematics(q, links)) + config.controller.ik_posture_gain * null @ (posture - q)
+        q = np.clip(q + clip_norm(update, config.controller.ik_step_norm_rad), config.arm.solver_joint_min_rad, config.arm.solver_joint_max_rad)
     return _readonly(q)
 
 
@@ -58,16 +60,16 @@ def differential_ik_reference(
     q: np.ndarray,
     links: tuple[float, float, float],
     damping: float,
-    dt_s: float = 0.002,
+    config: ExperimentConfig,
 ) -> np.ndarray:
     error = np.asarray(target) - forward_kinematics(q, links)
-    velocity = clip_norm(4.0 * error, 0.25)
+    velocity = clip_norm(config.controller.differential_gain * error, config.controller.differential_speed_m_s)
     j = jacobian(q, links)
     jh = damped_pseudoinverse(j, damping)
-    posture = np.array([0.35, -0.70, 0.35])
-    qdot = jh @ velocity + 0.20 * (np.eye(3) - jh @ j) @ (posture - q)
-    qdot = np.clip(qdot, -1.5, 1.5)
-    return _readonly(np.asarray(q) + qdot * dt_s)
+    posture = config.kinematics.posture_q
+    qdot = jh @ velocity + config.controller.null_gain * (np.eye(3) - jh @ j) @ (posture - q)
+    qdot = np.clip(qdot, -config.controller.qdot_limit_rad_s, config.controller.qdot_limit_rad_s)
+    return _readonly(np.asarray(q) + qdot * config.arm.timestep_s)
 
 
 def linear_knot_reference(knots: np.ndarray, time_ns: int, knot_period_ns: int) -> np.ndarray:

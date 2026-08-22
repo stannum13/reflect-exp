@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import itertools
 import math
+from typing import Sequence
 
 import numpy as np
 
@@ -35,7 +36,7 @@ def emit_chunk(stack: CommandStack, policy_input: PolicyInput, config: Experimen
     links = config.arm.link_lengths_m
     damping = config.controller.ik_damping_candidates[0]
     if stack is CommandStack.P1:
-        actions = absolute_ik(target, q_observed, links, damping)[None, :]
+        actions = absolute_ik(target, q_observed, links, damping, config)[None, :]
         representation = "JOINT_POSITION"
     elif stack is CommandStack.P2:
         start = forward_kinematics(q_observed, links)
@@ -43,7 +44,7 @@ def emit_chunk(stack: CommandStack, policy_input: PolicyInput, config: Experimen
         previous = q_observed
         for index in range(horizon):
             alpha = index / (horizon - 1)
-            previous = absolute_ik((1.0 - alpha) * start + alpha * target, previous, links, damping)
+            previous = absolute_ik((1.0 - alpha) * start + alpha * target, previous, links, damping, config)
             rows.append(previous)
         actions = np.vstack(rows)
         representation = "JOINT_POSITION"
@@ -58,8 +59,8 @@ def emit_chunk(stack: CommandStack, policy_input: PolicyInput, config: Experimen
         actions = target[None, :]
         representation = "MPC_GOAL"
     elif stack is CommandStack.P6:
-        nominal = minimum_jerk_nominal(policy_input.q_initial, policy_input.q_initial_target, policy_input.response_time_ns)
-        stale_target_q = absolute_ik(target, q_observed, links, damping)
+        nominal = minimum_jerk_nominal(policy_input.q_initial, policy_input.q_initial_target, policy_input.response_time_ns, config)
+        stale_target_q = absolute_ik(target, q_observed, links, damping, config)
         actions = np.clip(stale_target_q - nominal, -config.residual.component_limit_rad, config.residual.component_limit_rad)[None, :]
         representation = "BOUNDED_RESIDUAL"
     else:
@@ -83,7 +84,7 @@ def emit_chunk(stack: CommandStack, policy_input: PolicyInput, config: Experimen
              "torque_limit_nm": config.arm.torque_max_nm,
              "success_radius_m": config.thresholds["success_radius_m"]}
             if stack is CommandStack.P5 else (
-                {"stack_id": stack.value, "q_initial": policy_input.q_initial.tolist(), "q_initial_target": policy_input.q_initial_target.tolist(), "nominal_revision": config.residual.nominal_revision}
+                {"stack_id": stack.value, "q_initial": tuple(policy_input.q_initial.tolist()), "q_initial_target": tuple(policy_input.q_initial_target.tolist()), "nominal_revision": config.residual.nominal_revision}
                 if stack is CommandStack.P6 else {"stack_id": stack.value}
             )
         ),
@@ -113,14 +114,14 @@ def reference_for_tick(
         candidate = linear_knot_reference(chunk.actions, relative_ns, int(round(chunk.dt_s * 1e9)))
     elif stack in {CommandStack.P3, CommandStack.P4}:
         xy = chunk.actions[0] if stack is CommandStack.P3 else linear_knot_reference(chunk.actions, relative_ns, int(round(chunk.dt_s * 1e9)))
-        candidate = differential_ik_reference(xy, np.asarray(q), config.arm.link_lengths_m, config.controller.ik_damping_candidates[0], config.arm.timestep_s)
+        candidate = differential_ik_reference(xy, np.asarray(q), config.arm.link_lengths_m, config.controller.ik_damping_candidates[0], config)
     elif stack is CommandStack.P5:
         target = chunk.actions[0]
         planner_period_ns = int(round(config.controller.mpc_period_s * 1e9))
         planner_tick = relative_ns % planner_period_ns == 0
         if planner_tick or not state.p5_planner_enabled:
             selected = min(
-                mpc_candidates(),
+                mpc_candidates(config),
                 key=lambda qdot: mpc_cost(np.asarray(q), target, qdot, state.p5_qdot_previous, config, config.controller.mpc_smoothness_candidates[0]),
             )
             candidate = np.asarray(q) + config.controller.mpc_period_s * selected
@@ -133,7 +134,7 @@ def reference_for_tick(
     elif stack is CommandStack.P6:
         q_initial = np.asarray(chunk.metadata["q_initial"], dtype=np.float64)
         q_initial_target = np.asarray(chunk.metadata["q_initial_target"], dtype=np.float64)
-        candidate = minimum_jerk_nominal(q_initial, q_initial_target, time_ns) + chunk.actions[0]
+        candidate = minimum_jerk_nominal(q_initial, q_initial_target, time_ns, config) + chunk.actions[0]
     else:
         raise NotImplementedError(stack.value)
     bounded, did_slew = _slew(candidate, state.latched_q_ref, config)
@@ -149,22 +150,74 @@ def reference_for_tick(
     return reference, next_state, ClampReport(reference_clamped=did_slew)
 
 
-def minimum_jerk_nominal(q_initial: np.ndarray, q_target: np.ndarray, time_ns: int) -> np.ndarray:
-    s = float(np.clip(time_ns / 1_000_000_000, 0.0, 1.0))
-    h = 10.0 * s**3 - 15.0 * s**4 + 6.0 * s**5
+def minimum_jerk_nominal(q_initial: np.ndarray, q_target: np.ndarray, time_ns: int, config: ExperimentConfig) -> np.ndarray:
+    duration_ns = config.residual.nominal_duration_s * 1_000_000_000
+    s = float(np.clip(time_ns / duration_ns, 0.0, 1.0))
+    cubic, quartic, quintic = config.residual.blend_coefficients
+    h = cubic * s**3 + quartic * s**4 + quintic * s**5
     return frozen_vector(np.asarray(q_initial) + h * (np.asarray(q_target) - np.asarray(q_initial)), "nominal", shape=(3,))
 
 
-def mpc_candidates() -> tuple[np.ndarray, ...]:
+def p5_transition(
+    state: ExecutorState,
+    event: str,
+    *,
+    chunk_id: str | None = None,
+    active_still_valid: bool = False,
+    qdot: np.ndarray | None = None,
+    q_ref: np.ndarray | None = None,
+) -> ExecutorState:
+    if event == "REJECT":
+        return state
+    zero = np.zeros(3)
+    if event in {"EPISODE_START", "EXPIRY", "SAFE_HOLD"}:
+        return ExecutorState(None, state.latched_q_ref, zero, state.latched_q_ref, False)
+    if event == "ACCEPT":
+        if chunk_id is None:
+            raise ValueError("ACCEPT requires chunk_id")
+        previous = state.p5_qdot_previous if active_still_valid and state.p5_planner_enabled else zero
+        return ExecutorState(chunk_id, state.latched_q_ref, previous, state.p5_planner_q_ref, True)
+    if event == "PLANNER_SELECTED":
+        if qdot is None or q_ref is None or not state.p5_planner_enabled:
+            raise ValueError("PLANNER_SELECTED requires enabled state, qdot, and q_ref")
+        return ExecutorState(state.active_chunk_id, state.latched_q_ref, qdot, q_ref, True)
+    raise ValueError(f"unknown P5 transition: {event}")
+
+
+def mpc_candidates(config: ExperimentConfig) -> tuple[np.ndarray, ...]:
     result = [frozen_vector(np.zeros(3), "candidate", shape=(3,))]
-    directions = sorted(itertools.product((-1.0, 0.0, 1.0), repeat=3))
-    for magnitude in (0.25, 0.75, 1.50):
+    directions = sorted(itertools.product(config.mpc.raw_direction_values, repeat=3))
+    for magnitude in config.mpc.magnitudes_rad_s:
         for raw in directions:
             vector = np.asarray(raw, dtype=np.float64)
             norm = float(np.linalg.norm(vector))
             if norm:
                 result.append(frozen_vector(magnitude * vector / norm, "candidate", shape=(3,)))
     return tuple(result)
+
+
+def dimensionless_mpc_cost(
+    normalized_errors: Sequence[float],
+    terminal_error: float,
+    normalized_effort: float,
+    normalized_smoothness: float,
+    normalized_barriers: Sequence[float],
+    config: ExperimentConfig,
+    smoothness_weight: float,
+) -> float:
+    if len(normalized_errors) != config.controller.mpc_horizon_steps or len(normalized_barriers) != len(normalized_errors):
+        raise ValueError("MPC cost domains must match the frozen horizon")
+    integration = config.controller.mpc_period_s / (config.controller.mpc_period_s * config.controller.mpc_horizon_steps)
+    stages = sum(
+        integration * (
+            config.mpc.stage_error_weight * error * error
+            + config.mpc.effort_weight * normalized_effort * normalized_effort
+            + config.mpc.barrier_weight * barrier * barrier
+            + smoothness_weight * normalized_smoothness * normalized_smoothness
+        )
+        for error, barrier in zip(normalized_errors, normalized_barriers, strict=True)
+    )
+    return float(config.mpc.terminal_error_weight * terminal_error * terminal_error + stages)
 
 
 def mpc_cost(
@@ -177,15 +230,14 @@ def mpc_cost(
 ) -> float:
     current = np.array(q, dtype=np.float64, copy=True)
     velocity = np.asarray(qdot, dtype=np.float64)
-    stage = 0.0
-    effort = np.linalg.norm(velocity) / (math.sqrt(3.0) * 1.5)
-    smoothness = np.linalg.norm(velocity - np.asarray(qdot_previous)) / (math.sqrt(3.0) * 1.5)
-    for _ in range(10):
-        current = current + 0.02 * velocity
+    effort = np.linalg.norm(velocity) / (math.sqrt(3.0) * config.mpc.velocity_scale_rad_s)
+    smoothness = np.linalg.norm(velocity - np.asarray(qdot_previous)) / (math.sqrt(3.0) * config.mpc.velocity_scale_rad_s)
+    errors: list[float] = []
+    barriers: list[float] = []
+    for _ in range(config.controller.mpc_horizon_steps):
+        current = current + config.controller.mpc_period_s * velocity
         if np.any(np.abs(current) > config.arm.joint_max_rad):
             return math.inf
-        error = np.linalg.norm(np.asarray(target) - forward_kinematics(current, config.arm.link_lengths_m)) / 0.06
-        barrier = np.linalg.norm(np.maximum(0.0, np.abs(current) - 2.55)) / (math.sqrt(3.0) * 0.15)
-        stage += 0.1 * (error * error + 0.01 * effort * effort + 100.0 * barrier * barrier + smoothness_weight * smoothness * smoothness)
-    terminal = np.linalg.norm(np.asarray(target) - forward_kinematics(current, config.arm.link_lengths_m)) / 0.06
-    return float(terminal * terminal + stage)
+        errors.append(float(np.linalg.norm(np.asarray(target) - forward_kinematics(current, config.arm.link_lengths_m)) / config.mpc.error_scale_m))
+        barriers.append(float(np.linalg.norm(np.maximum(0.0, np.abs(current) - config.arm.solver_joint_max_rad)) / (math.sqrt(3.0) * config.mpc.soft_joint_margin_rad)))
+    return dimensionless_mpc_cost(errors, errors[-1], effort, smoothness, barriers, config, smoothness_weight)

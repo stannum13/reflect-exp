@@ -39,5 +39,6 @@ def policy_input(period_ns: int = 100_000_000, response_ns: int = 300_000_000):
     )
     q0 = np.array([0.35, -0.70, 0.35])
     kin = importlib.import_module("experiments.01_policy_control.src.kinematics")
-    q1 = kin.absolute_ik(target, q0, (0.30, 0.25, 0.20), 0.01)
+    cfg = config()
+    q1 = kin.absolute_ik(target, q0, cfg.arm.link_lengths_m, cfg.controller.ik_damping_candidates[0], cfg)
     return contracts.PolicyInput(observation, skill, response_ns, period_ns, q0, q1)
