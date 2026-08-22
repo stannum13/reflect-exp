@@ -30,6 +30,9 @@ from reflect.sources import LockedEntry, SourceLock
 
 
 _CACHE_COMPONENT = re.compile(r"[A-Za-z0-9_.-]+\Z")
+_CANONICAL_UTC_TIMESTAMP = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\Z"
+)
 
 
 @dataclass(frozen=True)
@@ -49,6 +52,16 @@ def _safe_component(value: str, label: str) -> str:
     ):
         raise SourceFetchError(f"cache {label} is not a safe path component")
     return value
+
+
+def _canonical_retrieved_at(value: object) -> bool:
+    if type(value) is not str or not _CANONICAL_UTC_TIMESTAMP.fullmatch(value):
+        return False
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError:
+        return False
+    return _timestamp(lambda: parsed) == value
 
 
 _DIRECTORY_FLAGS = (
@@ -274,7 +287,7 @@ class CacheStore:
         etag = metadata["etag"]
         if (
             metadata["endpoint"] != endpoint
-            or type(metadata["retrieved_at"]) is not str
+            or not _canonical_retrieved_at(metadata["retrieved_at"])
             or (etag is not None and type(etag) is not str)
             or type(metadata["sha256"]) is not str
             or not re.fullmatch(r"[0-9a-f]{64}", metadata["sha256"])

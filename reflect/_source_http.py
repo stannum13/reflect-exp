@@ -228,17 +228,27 @@ class UrllibTransport:
             ) from exc
 
 
-def _json_object(response: HttpResponse, endpoint: str) -> dict[str, Any]:
+def _validate_response_status(
+    response: HttpResponse,
+    endpoint: str,
+    *,
+    allowed_statuses: frozenset[int] = frozenset(),
+) -> None:
     if response.url != endpoint:
         raise SourceFetchError(f"GitHub response URL does not match requested endpoint: {endpoint}")
     remaining = response.headers.get("x-ratelimit-remaining")
-    reset = response.headers.get("x-ratelimit-reset", "unknown")
+    raw_reset = response.headers.get("x-ratelimit-reset", "")
+    reset = raw_reset if raw_reset.isdecimal() else "unknown"
     if remaining == "0":
         raise SourceFetchError(f"GitHub rate limit exhausted for {endpoint}; reset {reset}")
-    if response.status >= 400:
-        if response.status == 429:
-            raise SourceFetchError(f"GitHub rate limit response for {endpoint}; reset {reset}")
+    if response.status == 429:
+        raise SourceFetchError(f"GitHub rate limit response for {endpoint}; reset {reset}")
+    if response.status >= 400 and response.status not in allowed_statuses:
         raise SourceFetchError(f"GitHub request failed for {endpoint} with HTTP {response.status}")
+
+
+def _json_object(response: HttpResponse, endpoint: str) -> dict[str, Any]:
+    _validate_response_status(response, endpoint)
     try:
         result = json.loads(response.body)
     except (UnicodeError, json.JSONDecodeError) as exc:

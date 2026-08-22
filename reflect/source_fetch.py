@@ -28,6 +28,7 @@ from reflect._source_http import (
     _json_object,
     _require_sha,
     _timestamp,
+    _validate_response_status,
 )
 from reflect.sources import (
     LicenseStatus,
@@ -41,22 +42,10 @@ from reflect.sources import (
 )
 
 
-_PRIMARY_LICENSE_NAMES = (
-    "license",
-    "license.md",
-    "license.txt",
-    "copying",
-    "copying.md",
-    "copying.txt",
-    "copyright",
-)
-_SUFFIX_LICENSE_NAMES = (
-    "license-apache",
-    "license-apache.md",
-    "license-apache.txt",
-    "license-mit",
-    "license-mit.md",
-    "license-mit.txt",
+_CONVENTIONAL_LICENSE_NAME = re.compile(
+    r"(?:LICENSE|LICENCE|COPYING|COPYRIGHT)"
+    r"(?:[-_.][A-Z0-9]+(?:[-_.][A-Z0-9]+)*)?\Z",
+    re.ASCII | re.IGNORECASE,
 )
 
 
@@ -114,13 +103,14 @@ def _tree_response(
 
 
 def _root_licenses(entries: Sequence[_TreeEntry]) -> tuple[_TreeEntry, ...]:
-    blobs: dict[str, list[_TreeEntry]] = {}
-    for entry in entries:
-        if entry.kind == "blob" and "/" not in entry.path:
-            blobs.setdefault(entry.path.casefold(), []).append(entry)
-    discovered: list[_TreeEntry] = []
-    for candidate in (*_PRIMARY_LICENSE_NAMES, *_SUFFIX_LICENSE_NAMES):
-        discovered.extend(blobs.get(candidate, ()))
+    discovered = [
+        entry
+        for entry in entries
+        if entry.kind == "blob"
+        and "/" not in entry.path
+        and len(entry.path) <= 255
+        and _CONVENTIONAL_LICENSE_NAME.fullmatch(entry.path)
+    ]
     return tuple(
         sorted(discovered, key=lambda item: (item.path.casefold(), item.path))
     )
@@ -188,10 +178,7 @@ def _license_observation(
 ) -> tuple[str | None, LicenseStatus, str]:
     endpoint = identity.license_url(commit_sha)
     response = transport.get(endpoint)
-    if response.url != endpoint:
-        raise SourceFetchError(
-            f"GitHub response URL does not match requested endpoint: {endpoint}"
-        )
+    _validate_response_status(response, endpoint, allowed_statuses=frozenset({404}))
     if response.status == 404:
         return None, LicenseStatus.UNKNOWN, endpoint
     raw = _json_object(response, endpoint)

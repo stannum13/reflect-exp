@@ -396,6 +396,74 @@ def _license_response(
     ).encode()
 
 
+def _tree_with_license(path: str, *, kind: str = "blob") -> bytes:
+    tree = json.loads(_fixture("github-tree.json"))
+    tree["tree"] = [
+        item for item in tree["tree"] if item["path"] not in {"LICENSE", path}
+    ]
+    tree["tree"].append(
+        {"path": path, "mode": "100644", "type": kind, "sha": LICENSE_SHA}
+    )
+    return json.dumps(tree).encode()
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "LICENSE",
+        "licence",
+        "LICENSE-BSD",
+        "LICENSE-MPL-2.0",
+        "COPYING-GPL",
+        "LICENSE.rst",
+        "COPYRIGHT_notice",
+    ],
+)
+def test_conventional_root_license_name_is_discovered_case_insensitively(
+    filename: str,
+) -> None:
+    locked = resolve_entry(
+        _entry("README.md"),
+        FixtureTransport(
+            tree=_tree_with_license(filename),
+            license_response=_license_response(path=filename),
+        ),
+        _clock,
+    )
+    assert locked.license_status is LicenseStatus.DISCOVERED
+    assert locked.license_spdx == "MIT"
+
+
+@pytest.mark.parametrize(
+    ("filename", "kind"),
+    [
+        ("LICENSED", "blob"),
+        ("LICENSE-", "blob"),
+        ("LICENSE--MIT", "blob"),
+        ("LICENSE..rst", "blob"),
+        ("LICENSE MIT", "blob"),
+        ("LICENSE-\nMIT", "blob"),
+        ("docs/LICENSE", "blob"),
+        ("LICENSE/MIT", "blob"),
+        ("README.md", "blob"),
+        ("LICENSE-BSD", "tree"),
+    ],
+)
+def test_nonconventional_or_nonfile_license_name_is_rejected(
+    filename: str, kind: str
+) -> None:
+    locked = resolve_entry(
+        _entry("README.md"),
+        FixtureTransport(
+            tree=_tree_with_license(filename, kind=kind),
+            license_response=_license_response(path=filename),
+        ),
+        _clock,
+    )
+    assert locked.license_status is LicenseStatus.UNKNOWN
+    assert locked.license_spdx is None
+
+
 def test_license_noassertion_and_malformed_metadata_remain_unknown() -> None:
     for response in (
         _license_response(spdx="NOASSERTION"),
@@ -454,6 +522,21 @@ def test_absent_repository_license_response_is_unknown() -> None:
     assert locked.license_status is LicenseStatus.UNKNOWN
     assert locked.license_spdx is None
     assert locked.license_evidence_url == LICENSE_URL
+
+
+def test_license_404_with_exhausted_rate_limit_is_not_treated_as_absent() -> None:
+    limited_absence = HttpResponse(
+        url=LICENSE_URL,
+        status=404,
+        headers={"x-ratelimit-remaining": "0", "x-ratelimit-reset": "1787395200"},
+        body=b"not found",
+    )
+    with pytest.raises(SourceFetchError, match="rate limit.*1787395200"):
+        resolve_entry(
+            _entry("README.md"),
+            FixtureTransport(license_response=limited_absence),
+            _clock,
+        )
 
 
 def test_absent_root_license_is_unknown_with_license_api_evidence() -> None:
@@ -563,6 +646,52 @@ def test_cache_validates_endpoint_and_payload_checksum(tmp_path: Path) -> None:
     (tmp_path / "example" / "commit.payload").write_bytes(b"tampered")
     assert cache.load("example", "commit", endpoint=COMMIT_URL) is None
     assert cache.load("example", "commit", endpoint=TREE_URL) is None
+
+
+@pytest.mark.parametrize(
+    "retrieved_at",
+    [
+        "garbage",
+        "2026-08-22T10:11:12",
+        "2026-08-22T10:11:12+00:00",
+        "2026-08-22T15:41:12+05:30",
+        "2026-08-22T10:11:12.000000Z",
+        "2026-08-22t10:11:12z",
+    ],
+)
+def test_cache_rejects_noncanonical_retrieval_timestamp(
+    tmp_path: Path, retrieved_at: str
+) -> None:
+    cache = CacheStore(tmp_path)
+    cache.write(
+        "example",
+        "commit",
+        endpoint=COMMIT_URL,
+        payload=_fixture("github-repository.json"),
+        retrieved_at=retrieved_at,
+    )
+    assert cache.load("example", "commit", endpoint=COMMIT_URL) is None
+
+
+def test_invalid_cache_timestamp_cannot_be_used_as_live_failure_fallback(
+    tmp_path: Path,
+) -> None:
+    cache = CacheStore(tmp_path)
+    cache.write(
+        "example",
+        "commit",
+        endpoint=COMMIT_URL,
+        payload=_fixture("github-repository.json"),
+        retrieved_at="not-a-timestamp",
+    )
+
+    class FailingHttp:
+        def get(self, url: str) -> HttpResponse:
+            raise SourceFetchError("live failure")
+
+    transport = CachingTransport(FixtureTransport(), FailingHttp(), cache, _clock, "example")
+    with pytest.raises(SourceFetchError, match="live failure"):
+        transport.get(COMMIT_URL)
 
 
 def test_cache_rejects_dot_path_components(tmp_path: Path) -> None:
