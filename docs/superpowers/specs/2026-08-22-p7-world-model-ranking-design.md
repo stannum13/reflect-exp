@@ -15,7 +15,8 @@ physical sanity checks. It does not produce canonical co-primary evidence.
 
 The P3-pinned MuJoCo package, model bytes, version, source lock, and compatibility
 decision are mandatory prerequisites. MuJoCo is the sole exact rollout ground truth
-for the disjoint pilot that sets the common protocol and for unseen confirmation.
+for the disjoint pilot that fits only permitted output/calibration values and margins,
+and for unseen confirmation.
 Canonical W2, actual candidate costs, rank correlation, selection regret, safety
 labels, scientific decisions, and runtime authority all use pinned MuJoCo outcomes.
 This follows the program's explicit MuJoCo ground-truth choice
@@ -40,14 +41,15 @@ This removes simulator shift but makes every data-generation and debugging loop 
 on the heavier P3 environment. It is valid but needlessly expensive before candidate,
 leakage, model, and artifact contracts stabilize.
 
-### C. NumPy precursor, then MuJoCo pilot/freeze/confirmation — selected
+### C. Frozen precursor, then NumPy selection and MuJoCo pilot/confirmation — selected
 
 NumPy provides cheap exhaustive development data and deterministic contract tests. A
-disjoint MuJoCo pilot validates the final data/model/calibration path and sets all
-evidence-dependent values before one common freeze. Unseen MuJoCo confirmation then
-answers the claim. The extra transition is intentional: it makes simulator authority
-explicit and permits negative NumPy validity results to stop work before expensive
-MuJoCo evidence.
+pre-precursor contract freeze prevents either simulator from redefining the task after
+results. A disjoint MuJoCo pilot validates the selected model path, permits only the
+predeclared output-head refit/calibration, and sets margins/resources before one common
+evidence freeze. Unseen MuJoCo confirmation then answers the claim. The extra
+transition makes simulator authority explicit and permits negative NumPy validity
+results to stop work before expensive MuJoCo evidence.
 
 ## 3. Scientific unit, world, and candidates
 
@@ -93,15 +95,32 @@ planar velocity chunk for each strategy:
 7. `SLOW_CONSERVATIVE`: direct strategy with the frozen speed multiplier.
 8. `HOLD`: zero velocity for the whole horizon.
 
-Each action's SHA-256 covers canonical little-endian float64 shape, bytes, `dt_s`,
-horizon, command limits, strategy ID, scene ID, and anchor ID. The eight action hashes
-must be distinct. Before any branch runs, an independent regeneration pass reconstructs
-all actions from the sealed anchor/config and requires byte/hash equality. Duplicate,
-missing, reordered, or nondeterministically regenerated actions make the scene bundle
-`INVALID`; they are never dropped or resampled. This is the program's meaningful,
-non-Gaussian K=8 taxonomy (`Reflect Lite Research Program.md:1943-1956`).
+Each action has two digests. `action_content_sha256` covers only the canonical
+little-endian float64 command shape/bytes, `dt_s`, horizon, and command limits; it is
+independent of scene, anchor, strategy, candidate, and row position. `action_sha256`
+is the identity-bound cross-link digest over `action_content_sha256`, strategy ID,
+candidate ID, scene ID, and anchor ID. The eight candidates must have eight distinct
+content digests and eight bytewise-distinct command trajectories; distinct IDs cannot
+make duplicate commands valid. Before any branch runs, an independent regeneration
+pass reconstructs all actions from the sealed anchor/config and requires byte equality
+and both digest equalities. Duplicate content, missing/reordered candidates, or
+nondeterministic regeneration makes the scene bundle `INVALID`; candidates are never
+dropped, perturbed, or resampled. This is the program's meaningful, non-Gaussian K=8
+taxonomy (`Reflect Lite Research Program.md:1943-1956`).
 
 ## 4. NumPy precursor validity gate
+
+Before the first validity-gate run, a checked-in precursor protocol freezes the task
+and scene distributions, NumPy equations and MuJoCo state/action mapping, candidate
+factory/controller/timing/limits, K=8 IDs/order, actual/predicted cost components and
+weights, success/safety labels, W0 seed rule, the complete W1 formula/weights/ties,
+split sizes/roots, validity tolerances, and finite model/PCA configuration grids. The
+finite grids contain exactly three W3 configurations, three W4 configurations, and
+three W5 configurations, covering every allowed feature/degree/regularization/ensemble
+or channel/PCA-dimension/tolerance/latent-transition choice; neither
+NumPy outcomes nor MuJoCo pilot may add a choice. This is a contract freeze, not the
+later evidence freeze: learned coefficients, calibration values, effect margins, and
+measured resource ceilings do not exist yet.
 
 The NumPy simulator uses fixed-step semi-implicit integration, deterministic contact
 ordering, explicit terminal reasons, and immutable snapshots. It must pass all three
@@ -116,7 +135,7 @@ gate classes before data may train a model:
    branch remains finite and inside declared bounds.
 3. **Step-halving convergence:** every strategy in a frozen validation grid runs at
    `dt` and `dt/2`; endpoint state, each cost component, collision/failure label, and
-   candidate ordering must remain inside pilot-frozen tolerances. Order uses Kendall
+   candidate ordering must remain inside pre-precursor frozen tolerances. Order uses Kendall
    disagreement count with average-rank ties.
 
 Every invariant and candidate must pass. A failure makes the NumPy precursor
@@ -129,9 +148,11 @@ protocol, not an automatic workaround. Passing this gate still grants no authori
 
 NumPy uses 96 training, 24 tuning, and 24 validation scene seeds, with four anchors
 and K=8 branches per scene. Training fits preprocessing and models. Tuning chooses
-among the finite configuration grid. Validation selects one W3/W4/W5 checkpoint,
-calibration map, uncertainty threshold, and W1 fallback rule. These 144 seeds and
-their RNG ancestors are permanently excluded from MuJoCo pilot/confirmation.
+among the already frozen finite configuration grid. Validation mechanically selects
+one W3/W4/W5 checkpoint and the predeclared calibration/fallback *method*; it cannot
+fit the final calibration map or threshold, change W1, or add a configuration. These
+144 seeds and their RNG ancestors are permanently excluded from MuJoCo
+pilot/confirmation.
 
 ### 5.2 MuJoCo evidence partitions
 
@@ -141,10 +162,12 @@ adaptation seeds and the final four are untouched pilot-evaluation seeds. NumPy
 preprocessing, feature maps, PCA, model structures, regularization, and W1 freeze before
 MuJoCo pilot. On adaptation seeds only, W3/W4/W5 linear output coefficients are refit
 once on the union of NumPy training and MuJoCo adaptation rows; the feature/latent
-transition remains fixed. Calibration maps and fallback thresholds fit adaptation
-seeds only. Pilot-evaluation seeds validate state/action mapping and estimate margins/
-resources once; they cannot trigger refit, recalibration, or model selection. It is
-labelled exploratory and cannot support a claim.
+transition, input preprocessing, PCA, and feature heads remain fixed. Calibration maps
+and fallback thresholds fit adaptation seeds only under the already selected method.
+No other parameter may use MuJoCo adaptation. Pilot-evaluation seeds validate the
+state/action mapping and set only margins/resource ceilings once; they cannot trigger
+refit, recalibration, model selection, task/cost/W1 changes, or exclusions. The whole
+pilot is labelled exploratory and cannot support a claim.
 
 Only after implementation, model, calibration, P3 source, protocol, and MuJoCo pilot
 hashes freeze does the orchestrator generate a new unseen MuJoCo confirmation root.
@@ -169,15 +192,19 @@ weighted by row count.
 ### 5.3 Fail-closed ancestry rules
 
 The split manifest records RNG root/stream, scene seed, probe seed, rollout, anchor,
-candidate, parameter cell, state/render/action hashes, simulator, and partition. All
+candidate, parameter cell, state/render hashes, both action digests, simulator, and
+partition. All
 adjacent frames, candidates, augmentations, and simulator ports descended from one
 scene remain together. Any shared ancestor or content hash across train, tune,
 validation, MuJoCo pilot, or confirmation makes the dataset `INVALID`.
 
 Train-only statistics include normalization, feature maps, PCA, ensemble resamples,
-and class weights. Tuning alone ranks configurations. Validation alone selects NumPy
-checkpoints/fallback. MuJoCo pilot alone performs the one predeclared final calibration
-or refit. Confirmation is read once after freeze.
+and class weights. Tuning mechanically ranks only frozen-grid configurations by the
+frozen key; validation mechanically selects NumPy checkpoints and the declared
+fallback method by the same fixed rule. MuJoCo adaptation alone performs the one
+predeclared output-coefficient refit and calibration/threshold fit. MuJoCo pilot
+evaluation sets only margins and resource ceilings. Confirmation is read once after
+the evidence freeze.
 
 ## 6. W0-W5 and exact prediction envelope
 
@@ -244,7 +271,8 @@ both signs and equal-singular-value ordering across repeated CPU runs.
 W1/W3/W4/W5 emit one exact envelope per candidate:
 
 ```text
-observation_id, scene_id, anchor_id, candidate_id, strategy_id, action_sha256,
+observation_id, scene_id, anchor_id, candidate_id, strategy_id,
+action_content_sha256, action_sha256,
 model_id, model_sha256, horizon_s,
 predicted_position_error_m, predicted_orientation_error_rad,
 predicted_collision_probability, predicted_action_energy,
@@ -278,30 +306,42 @@ W1 uses `model_id=W1`, its frozen configuration hash as `model_sha256`, uncertai
 predicted-state hash and null latent hash; W5 requires a predicted-latent hash and null
 state hash. The envelope validator rejects any other nullability pattern.
 
-## 7. Training, PCA, calibration, and common freeze
+## 7. Contract freeze, mechanical selection, and evidence freeze
 
 The sequence is strict:
 
-1. Pass the NumPy validity gate.
-2. Fit preprocessing/W3-W5 on NumPy training only.
-3. Evaluate at most three preregistered configurations per variant on NumPy tuning.
-4. Select one checkpoint per variant on NumPy validation by regret, rank correlation,
-   model bytes, then configuration ID.
-5. Run the disjoint MuJoCo pilot. Apply the one predeclared final refit/calibration to
-   MuJoCo pilot only; never revisit NumPy selection.
-6. Freeze models, PCA, scalar cost, W1, uncertainty/fallback, strata, margins, budgets,
-   P3 MuJoCo identity, implementation, schemas, and all hashes in one protocol.
-7. Generate the unseen MuJoCo confirmation manifest and run once.
+1. **Precursor contract freeze:** freeze task/physics/mapping, scene/split roots,
+   candidates/actions, scalar cost, W0/W1, labels, validity gates/tolerances, schemas,
+   and every finite W3/W4/W5/PCA/calibration-method choice described in Section 4.
+2. Pass the NumPy validity gate without changing that contract.
+3. Fit each frozen-grid configuration's preprocessing/W3-W5 parameters on NumPy
+   training only.
+4. Mechanically rank the three frozen configurations per variant on NumPy tuning,
+   then mechanically select one checkpoint/method on NumPy validation by regret,
+   rank correlation, calibration error, model bytes, then configuration ID. No human
+   or pilot-dependent choice is admitted.
+5. Run the disjoint MuJoCo adaptation half. Apply only the predeclared linear output-
+   coefficient refit and calibration-map/fallback-threshold fit; never change inputs,
+   PCA, transitions, model structure, task, candidates, cost, W1, or NumPy selection.
+6. Run the untouched MuJoCo pilot-evaluation half. It may set only preregistered
+   effect/non-inferiority margins and measured latency/byte/time ceilings by Section
+   13 formulas. It cannot refit, recalibrate, exclude, or alter any prior contract.
+7. **Common evidence freeze:** freeze fitted output coefficients, calibration/fallback
+   values, margins/resources, P3 MuJoCo identity, implementation, schemas, manifests,
+   and all prior contract hashes in one protocol.
+8. Generate the unseen MuJoCo confirmation manifest after that freeze and run once.
 
-Any post-freeze change returns to Draft with a new protocol revision and new unseen
-MuJoCo pilot/confirmation roots. No pilot output can be `SUPPORTED`
+A change to steps 1-6 begins a new protocol revision with new disjoint MuJoCo pilot
+roots; a post-evidence-freeze change also requires a new unseen confirmation root. No
+pilot output can be `SUPPORTED`
 (`docs/superpowers/specs/2026-08-22-reflect-lite-autonomous-run-design.md:127-181`).
 
 ## 8. Uncertainty and authority-bearing fallback
 
 W3-W5 use deterministic scene-seed bootstrap ensembles. Cost uncertainty is ensemble
-variance; failure uncertainty is probability variance. MuJoCo pilot fits a frozen
-monotone calibration map and one uncertainty rejection threshold per learned variant.
+variance; failure uncertainty is probability variance. The MuJoCo adaptation half fits
+the preregistered monotone calibration map and one uncertainty rejection threshold per
+learned variant; pilot-evaluation outcomes cannot change either.
 
 The only authority-bearing W4/W5 selectors are compositions:
 
@@ -397,7 +437,8 @@ bundle invalid; resource exhaustion yields `INCONCLUSIVE`.
 
 ## 10. Separate states and ordered role mapping
 
-Lifecycle is `DRAFT -> NUMPY_PILOT -> MUJOCO_PILOT -> FROZEN -> CONFIRMATION ->
+Lifecycle is `DRAFT -> CONTRACT_FROZEN -> NUMPY_VALIDATED -> NUMPY_SELECTED ->
+MUJOCO_ADAPTATION -> MUJOCO_PILOT_EVALUATED -> EVIDENCE_FROZEN -> CONFIRMATION ->
 DECISION -> PROMOTED | STOPPED`. Artifact state is separately `VALID | INVALID`;
 scientific result is `SUPPORTED | NOT_SUPPORTED | INCONCLUSIVE`; prerequisite/resource
 state is `READY | BLOCKED`; promotion state is `PROMOTED | STOPPED`. Invalid evidence
@@ -426,14 +467,14 @@ bounded lesser role. `INCONCLUSIVE`, `INVALID`, or `BLOCKED` cannot promote. Onl
 `VALID + SUPPORTED + READY + CANDIDATE_SELECTOR` promotes selector authority; a valid
 critic gate may separately promote only the critic/veto interface.
 
-## 11. Atomic evidence bundle and replay
+## 11. Atomic scene evidence and separate training/aggregate bundles
 
 The canonical `RolloutWriter` remains unchanged. A sealed experiment-local assembler
 wraps its output after separately sealed generator truth and selector prediction
-components validate:
+components validate. Pilot-evaluation and confirmation use the exact evidence layout:
 
 ```text
-bundle/
+scene-evidence-bundle/
   rollouts/
     W1/
       metadata.json, config.json, metrics.json, events.jsonl
@@ -455,16 +496,41 @@ bundle/
   bundle-manifest.json
 ```
 
-Each subdirectory under `rollouts/` is an unchanged independently replayable canonical
+NumPy training/tuning/validation and MuJoCo adaptation must precede final selector
+outputs, so their scene key selects a different exact **source** layout rather than
+pretending W3/W4F/W5F already exist:
+
+```text
+scene-source-bundle/
+  rollout/generator/
+    metadata.json, config.json, metrics.json, events.jsonl
+    observations.npz, actions.parquet, summary.md
+  exp06/
+    anchors.parquet
+    candidate_actions.parquet
+    candidate_truth.parquet
+    replay.json
+  bundle-manifest.json
+```
+
+The source layout is valid only for `numpy-train`, `numpy-tuning`,
+`numpy-validation`, and `mujoco-pilot-adaptation`; the evidence layout is valid only
+for `mujoco-pilot-evaluation` and `mujoco-confirmation`. The phase-bound validator
+rejects missing selector outputs in an evidence scene and rejects predictions,
+selections, score metrics, or selector rollouts in a source scene. Both layouts remain
+scene-local and have the same 16 MiB cap.
+
+In the evidence layout, each subdirectory under `rollouts/` is an unchanged independently replayable canonical
 rollout. This prevents multiple selectors from emitting duplicate candidate IDs into
 one shared replay state. `candidate_actions.parquet` stores all K=8 IDs, strategy IDs,
-arrays, timing, and action hashes. `predictions.parquet` stores exact raw and composed
+arrays, timing, `action_content_sha256`, and identity-bound `action_sha256`.
+`predictions.parquet` stores exact raw and composed
 envelopes. `selections.parquet` stores W0/W1/W2/W3/raw W4/raw W5/W4F/W5F selections,
-uncertainty decision, selected candidate/action hash, and W1 fallback reason.
+uncertainty decision, selected candidate/both action hashes, and W1 fallback reason.
 `candidate_truth.parquet` is scorer-only MuJoCo truth with actual cost components/
 outcomes and W2 selection. Primary ranking-only canonical `actions.parquet` tables are
 empty; if the later short-prefix extension executes a selected `ActionChunk`, its
-metadata must match candidate/action hash exactly.
+metadata must match the candidate and both action hashes exactly.
 
 Within each W1/W3/W4F/W5F canonical rollout, exactly one `WORLD_MODEL_PREDICTED` event
 cross-links each globally unique candidate ID and one `WORLD_MODEL_SELECTED` per anchor
@@ -475,27 +541,29 @@ selection resolves to exactly one prediction—therefore remains usable
 validator additionally requires:
 
 The prediction event payload contains `scene_id`, `anchor_id`, `candidate_id`,
-`strategy_id`, `action_sha256`, `model_id`, and the prediction-envelope digest. The
+`strategy_id`, `action_content_sha256`, `action_sha256`, `model_id`, and the
+prediction-envelope digest. The
 selection event contains the same scene/anchor IDs plus selected `candidate_id`,
-`strategy_id`, `action_sha256`, `model_id`, selection-row digest, and fallback reason.
+`strategy_id`, both action digests, `model_id`, selection-row digest, and fallback reason.
 The values are copied from sealed sidecar rows; events cannot synthesize or normalize
 identities during publication.
 
-- exactly eight candidate/action/truth rows per anchor and eight distinct action hashes;
-- regenerated candidate bytes/hashes equal the stored action rows;
-- every prediction references one candidate/action hash/model hash;
-- every selection references one prediction and the same action hash;
-- every truth row references one candidate/action hash and pinned MuJoCo snapshot;
+- exactly eight candidate/action/truth rows per anchor, eight distinct content digests,
+  eight distinct identity hashes, and eight bytewise-distinct command trajectories;
+- regenerated candidate bytes and both hashes equal the stored action rows;
+- every prediction references one candidate/both action hashes/model hash;
+- every selection references one prediction and the same two action hashes;
+- every truth row references one candidate/both action hashes and pinned MuJoCo snapshot;
 - every prediction/selection event matches exactly one selector-specific sidecar row
   and ordering, with no candidate duplicated inside one canonical rollout;
-- any canonical executed action matches the selected candidate/action hash; and
+- any canonical executed action matches the selected candidate and both action hashes; and
 - all scene/anchor/candidate/strategy IDs and counts agree across files.
 
 Replay reconstructs observations, candidate actions, prediction envelopes, fallback
 decisions, selections, events, truth joins, W2, scores, and terminal cross-link state
 without rerunning physics or models. It verifies evidence, not counterfactual dynamics.
 
-The experiment-local boundary has three named responsibilities:
+The evidence-scene boundary has three named responsibilities:
 
 - `EvidenceBundleWriter` accepts only already sealed generator, selector, and scorer
   component descriptors; copies them into one sibling temporary tree; invokes all
@@ -519,35 +587,130 @@ SHA-256, excludes itself and temporary files, contains no field for its own dige
 is created last. Extra/missing files, a self-digest, cross-link mismatch, corruption,
 or overwrite attempt fail closed.
 
-## 12. Evidence commands, shards, resume, and resources
-
-One evidence command executes one shard keyed by
-`(protocol_revision, phase, stratum, scene_seed)`, for example
-`r1:mujoco-confirmation:MASS_OOD:0000000000000017`. Valid phases are
-`numpy-train`, `numpy-tuning`, `numpy-validation`, `mujoco-pilot`, and
-`mujoco-confirmation`. One scene shard contains four anchors and 32 candidate branches.
-
-The exact confirmation command is:
+The tree above is a **scene bundle only**. Training and aggregation have separate keys,
+roots, schemas, validators, and manifests; neither may contain a `rollouts/` tree or
+scene-local truth:
 
 ```text
-python experiments/06_world_model/run.py \
-  --protocol configs/frozen.yaml \
-  --shard-id r1:mujoco-confirmation:MASS_OOD:0000000000000017 \
-  --output-root results/06_world_model --headless \
-  --max-anchors 4 --max-candidates 32
+training-bundle/
+  preprocessing.json
+  pca.npz | empty marker
+  model.npz
+  evaluation-predictions.parquet
+  fit_metrics.json
+  training-input-manifest.json
+  training-manifest.json
+
+aggregate-bundle/
+  input-scene-manifest.json
+  aggregate_metrics.json
+  margins-resources.json | empty marker
+  adapted-models.npz | empty marker
+  calibration-output.npz | empty marker
+  decision.json | empty marker
+  aggregate-manifest.json
 ```
 
-Evidence rejects unknown/mismatched shard components, missing headless mode, a
-candidate/anchor limit other than the complete shard, unpinned MuJoCo identity, dirty
-implementation, network/CUDA/physical/remote enablement, or an output not derived from
-the shard key. Reissuing the identical command is the only resume operation: it fully
-validates and skips an exact sealed bundle, while mismatch/corruption/partial temporary
-state fails without overwrite or in-place repair.
+A training bundle may contain one variant/configuration fit and its input scene hashes;
+it cannot contain candidate truth, confirmation metrics, or another configuration. An
+aggregate bundle consumes sealed scene/training bundle descriptors and contains only
+the output appropriate to its named phase: NumPy selection, MuJoCo adaptation outputs,
+MuJoCo pilot-evaluation margins/resources, confirmation metrics, or final decision.
+Unused typed files are the declared empty marker so schemas never vary implicitly.
+Each writer uses its own sibling temporary directory, validates its own exact file set,
+fsyncs, then performs one absent-destination rename; every manifest excludes itself and
+is written last. Cross-type nesting, a mixed key, in-place repair, or overwrite is
+invalid.
 
-Each scene bundle has a 16 MiB ceiling and 60-minute wall ceiling. One model/config
-training shard has a 32 MiB ceiling; there are at most three configurations for W3,
-W4, and W5, nine per revision. With two allowed protocol revisions and confirmation
-only on the final revision, the retained maximum is:
+The phase dispatcher invokes exactly one closed pair:
+`SceneSourceBundleWriter/validate_scene_source_bundle`,
+`EvidenceBundleWriter/validate_evidence_bundle`,
+`TrainingBundleWriter/validate_training_bundle`, or
+`AggregateBundleWriter/validate_aggregate_bundle`. No writer imports another writer's
+schema or accepts a union-shaped payload. Scene replay is the only replay that returns
+anchor/candidate state; training replay returns fit/input hashes, and aggregate replay
+returns only its declared phase output and input-bundle hashes.
+
+## 12. Evidence commands, shards, resume, and resources
+
+The launcher requires `cwd` to equal the symlink-resolved project root returned by
+`git rev-parse --show-toplevel`; all CLI paths are project-root-relative, and absolute
+or `..` paths fail. Bundle types and keys are disjoint:
+
+- scene: `(scene, protocol_revision, phase, stratum, scene_seed)`, where phase is
+  `numpy-train | numpy-tuning | numpy-validation | mujoco-pilot-adaptation |
+  mujoco-pilot-evaluation | mujoco-confirmation`;
+- training: `(training, protocol_revision, variant, configuration)`, with variant
+  `W3 | W4 | W5` and one of the three frozen configuration IDs; and
+- aggregate: `(aggregate, protocol_revision, phase, aggregate_id)`, where phase is
+  `numpy-selection | mujoco-adaptation | mujoco-pilot-evaluation |
+  mujoco-confirmation | final-decision` and `aggregate_id=all`.
+
+One scene bundle contains exactly four anchors and 32 candidate branches. Exact command
+shapes, including derived roots, are:
+
+```text
+uv run python experiments/06_world_model/run_scene.py \
+  --protocol experiments/06_world_model/configs/frozen.yaml \
+  --bundle-key scene:r1:mujoco-confirmation:MASS_OOD:0000000000000017 \
+  --output-root results/06_world_model/scenes --headless \
+  --max-anchors 4 --max-candidates 32
+
+uv run python experiments/06_world_model/train.py \
+  --protocol experiments/06_world_model/configs/precursor-frozen.yaml \
+  --bundle-key training:r1:W4:CFG02 \
+  --scene-root results/06_world_model/scenes \
+  --output-root results/06_world_model/training --headless --max-configurations 1
+
+uv run python experiments/06_world_model/aggregate.py \
+  --protocol experiments/06_world_model/configs/pilot-evaluation.yaml \
+  --bundle-key aggregate:r1:mujoco-pilot-evaluation:all \
+  --scene-root results/06_world_model/scenes \
+  --training-root results/06_world_model/training \
+  --output-root results/06_world_model/aggregates --headless \
+  --max-training-bundles 0 --max-scenes 20 --max-input-aggregates 1
+```
+
+The same aggregate shape uses `--protocol
+experiments/06_world_model/configs/frozen.yaml` and `--max-scenes 80` for
+`aggregate:r1:mujoco-confirmation:all`, with zero training bundles and two input
+aggregates. Exact aggregate inputs are: NumPy selection,
+nine training bundles plus 24 tuning and 24 validation scene bundles; MuJoCo
+adaptation, 20 adaptation scene bundles plus the three selected NumPy training
+bundles; pilot evaluation, 20 evaluation scene bundles plus the one adaptation
+aggregate; confirmation, 80 confirmation scene bundles plus the adaptation and
+pilot-evaluation aggregates; final decision, the one confirmation aggregate. The CLI
+requires corresponding exact `--max-training-bundles`, `--max-scenes`, and
+`--max-input-aggregates` values, using zero for an inapplicable kind. Destinations
+derive respectively as
+`scenes/<revision>/<phase>/<stratum>/<seed>/`,
+`training/<revision>/<variant>/<configuration>/`, and
+`aggregates/<revision>/<phase>/all/`. A command cannot write another type's root or
+carry another type's flags. NumPy generation/training/selection require the checked-in
+`precursor-frozen.yaml`; MuJoCo adaptation/evaluation require the phase-bound pilot
+protocol whose parent is that precursor contract; only unseen confirmation/final
+decision use `frozen.yaml`. Parent hashes and allowed phase are validated, so a later
+protocol cannot be substituted retroactively.
+
+Every command rejects an unknown/mismatched key, wrong cwd/root, missing headless mode,
+incomplete exact count, unpinned MuJoCo where required, dirty implementation,
+network/CUDA/physical/remote enablement, or undeclared input. Reissuing the byte-identical
+command is the only resume operation: it validates the completed type-specific bundle
+and skips an exact match. A missing/extra file, corrupt/partial temporary tree, input-
+manifest mismatch, mixed bundle type, or existing invalid destination fails without
+overwrite, deletion, or in-place repair. All three writers use create-only sibling
+temporary publication and the atomic rules in Section 11.
+
+Each scene bundle has a 16 MiB/60-minute ceiling. Each training bundle has a 32
+MiB/60-minute ceiling; there are exactly three configurations for each of W3, W4, and
+W5, nine per revision. Every aggregate has a 60-minute wall ceiling. Aggregate byte
+maxima are exact: per revision NumPy selection is 32 MiB, MuJoCo adaptation is 64 MiB,
+and pilot evaluation is 64 MiB; final-revision confirmation is 96 MiB and final
+decision is 32 MiB. A separate 64 MiB temporary-
+scratch allowance yields `2*(32+64+64)+96+32+64 = 512 MiB`. The sibling publication
+tree occupies the eventual destination bundle's cap, not a second retained copy; the
+64 MiB allowance covers bounded writer scratch outside it. With two allowed
+protocol revisions and confirmation only on the final revision, retained maximum is:
 
 ```text
 two revisions of NumPy+MuJoCo pilot scenes:
@@ -556,36 +719,54 @@ final MuJoCo confirmation:
   80 * 16 MiB             = 1,280 MiB
 two revisions of training/config shards:
   2 * 9 * 32 MiB          =   576 MiB
-aggregate/model/decision allowance          = 512 MiB
+typed aggregate bundles plus temp allowance = 512 MiB
 -----------------------------------------------------
 maximum retained P7 total                  = 8,256 MiB
 ```
 
-The count includes truth, predictions, scorer output, and canonical rollout inside
-each atomic bundle; nothing is budgeted off-ledger. Before a phase starts, preflight
-adds all retained bytes, temporary directories, and the complete declared phase
-maximum, and requires both the 8,256 MiB experiment cap and inherited 10 GiB/free-disk
-ceilings. No shard is deleted until final decision. A cap/timeout yields `INCONCLUSIVE`,
-never evidence against a model.
+The scene count is `144 NumPy + 20 MuJoCo adaptation + 20 MuJoCo pilot evaluation =
+184` per revision, so the first line remains exact. The count includes truth,
+predictions, scorer output, and canonical rollout inside scene bundles and all fitted
+models/metrics inside training/aggregate bundles; nothing is off-ledger. Before any
+typed phase starts, preflight adds all retained bytes, existing temporary directories,
+the phase's complete declared bundle count times its per-type cap, and its one allowed
+bounded scratch allowance. It requires both the 8,256 MiB experiment cap and inherited 10
+GiB/free-disk ceilings. Nothing is deleted until final decision. A cap/timeout yields
+`INCONCLUSIVE`, never evidence against a model.
 
-## 13. Pilot-derived frozen numeric fields
+## 13. Frozen fields and pilot-derived margins/resources
 
-Finite NumPy grids exist before the precursor. MuJoCo pilot chooses and freezes, by
-recorded formulas/ties, every evidence-dependent value:
+The precursor contract freezes, before the NumPy validity gate, every value that
+defines the task or available hypothesis space:
 
-1. NumPy/MuJoCo step/contact tolerances and NumPy analytic/physical/step-halving gates;
+1. NumPy equations, pinned MuJoCo mapping, step/contact tolerances, and all analytic/
+   physical/step-halving validity thresholds;
 2. workspace, object, target, obstacle, mass, friction, and held-out parameter ranges;
-3. action sample interval, limits, phase fractions, offsets, and conservative speed;
-4. success tolerances and every scalar cost weight;
-5. probe policy and four-anchor selection rule;
-6. W1 weights and collision/line-intersection rule;
-7. W3/W4 features, regularization, ensemble size, and fixed-feature seed;
-8. W5 channels, PCA dimension/tolerance, latent/action dimensions, and regularization;
-9. final MuJoCo refit/calibration method, bins, uncertainty aggregation/threshold,
-   fallback coverage, and failure-critic gates;
-10. co-primary, held-out, W3, and W5-versus-W4 effect/NI margins;
-11. model/context/latency/training/resource ceilings and missing-output penalty; and
-12. bootstrap/configuration seeds and numeric solver tolerances.
+3. probe policy, four-anchor rule, action interval/limits/phases/offsets/speed, and all
+   identity/content digest encodings;
+4. success/safety labels, actual/predicted scalar-cost components and weights, missing-
+   output penalty, and all ties;
+5. the complete W0 seed rule and W1 formula, weights, collision rule, and fallback form;
+6. the three W3 and three W4 finite feature/degree/regularization/ensemble configurations;
+7. the three W5 channel/PCA-dimension/tolerance/latent-transition/
+   regularization configurations and PCA canonicalization;
+8. calibration family/bins, uncertainty aggregation, threshold-fitting algorithm,
+   fallback coverage rule, and failure-critic form;
+9. split counts/roots, strata/weights, bootstrap seeds/mechanics, numerical solver
+   tolerances, hard inherited resource caps, and every schema/command rule.
+
+NumPy tuning/validation then chooses configurations/checkpoints only by the frozen
+lexicographic key `regret, negative rank correlation, calibration error, model bytes,
+configuration ID`; it creates no new numeric option. MuJoCo adaptation may fit only
+selected linear output coefficients, the declared calibration-map coefficients, and
+fallback/critic thresholds by the frozen algorithms. Those fitted values are sealed
+before pilot evaluation.
+
+The 20 untouched MuJoCo pilot-evaluation scenes set only: (a) co-primary, held-out,
+W3, W5-versus-W4, calibration, and failure-critic effect/non-inferiority margins; and
+(b) measured model/context/inference-latency and scene-runtime ceilings. They cannot alter any
+field in the preceding lists, any fitted coefficient/threshold, exclusions, or metric
+definitions.
 
 For each scientific endpoint, margin is
 `ceil_to_unit(max(one_task_unit, 0.5 * paired_scene_sample_SD))`, computed only from
@@ -593,11 +774,10 @@ the 20 untouched MuJoCo pilot-evaluation scenes, with sample SD denominator `n-1
 `ceil_to_unit(x)=ceil(x/unit)*unit`. Rank-correlation unit is `0.001`; probability/rate
 unit is one anchor outcome over its fixed pilot denominator; regret/cost unit is the
 smallest positive frozen cost quantum; latency unit is 0.1 ms; and bytes round to
-1024. Resource limits use `ceil_to_unit(1.25 * maximum_usage)` across all 40 MuJoCo
-pilot scenes and must remain under inherited caps. Zero SD yields one unit;
-unattainable margins make the result `INCONCLUSIVE`, never clipped. Configuration
-selection is regret, rank, calibration, model bytes, then configuration ID; exact
-ties continue to the next key.
+1024. Resource limits use `ceil_to_unit(1.25 * maximum_usage)` across only those 20
+pilot-evaluation scenes and must remain under the already frozen inherited caps. Zero
+SD yields one unit; unattainable margins make the result `INCONCLUSIVE`, never clipped.
+No pilot-evaluation statistic enters configuration selection or fitting.
 
 ## 14. Verification design
 
@@ -605,12 +785,15 @@ Tests cover:
 
 - P3 pinned MuJoCo/source-lock prerequisite and refusal of alternate model/version;
 - NumPy analytic, physical, mirror, and step-halving gates with hand fixtures;
-- exact K=8 IDs, globally unique candidate IDs, eight distinct action hashes,
-  independent regeneration, and invalid duplicate/nondeterministic disposition;
+- exact K=8 IDs, globally unique candidate IDs, eight distinct ID-independent content
+  digests and bytewise trajectories, identity-bound cross-link hashes, independent
+  regeneration, and invalid duplicate/nondeterministic disposition;
 - immutable snapshots, named RNG independence, and byte-identical generation;
 - split ancestry/content leakage across all five partitions;
 - fit spies proving preprocessing/PCA/models/calibration see only allowed partitions;
-- MuJoCo pilot before common freeze and nonexistent unseen confirmation before freeze;
+- precursor contract freeze before NumPy validity, mechanical tuning/validation,
+  adaptation-only output refit/calibration, pilot-evaluation-only margins/resources,
+  and nonexistent unseen confirmation before the evidence freeze;
 - W0-W5 input boundaries and hostile oracle/simulator/path access;
 - exact prediction envelope fields, finite/range checks, scalar cost components,
   W3/W4/W5 derivation, and universal tie ordering;
@@ -621,11 +804,12 @@ Tests cover:
 - learned+W1 fallback as the sole authority-bearing result, with raw metrics descriptive;
 - ordered mutually exclusive roles and separate lifecycle/artifact/scientific/blocker/
   promotion states;
-- unchanged canonical rollout, exact sidecar schemas, every cross-link, prediction/
-  selection events, truth/action joins, replay, manifest self-exclusion, corruption,
-  and atomic publication;
-- exact shard parsing/CLI/case bounds, validate-and-skip resume, mismatch refusal,
-  8,256 MiB arithmetic, phase preflight, 60-minute/size ceilings; and
+- unchanged canonical rollout, exact scene sidecars/cross-links/replay, disjoint
+  scene/training/aggregate schemas and roots, manifest self-exclusion, corruption, and
+  per-type atomic publication;
+- exact repo-root scene/training/aggregate commands and keys, type-mixing refusal,
+  create-only validate-and-skip resume, 8,256 MiB arithmetic, phase preflight, and
+  per-type wall/size ceilings; and
 - serial latency, offline/no-network/no-CUDA/no-physical/no-remote, clean tree, full
   tests, source audit, secret scan, artifact size, and diff checks.
 
@@ -653,10 +837,12 @@ plots, and bundles remain experiment-local, matching the program's interface bou
 
 Preparation may use ownership-isolated world/candidate, dataset/split, baseline,
 learned-model, evaluator, and artifact/replay workstreams. Candidate/state schemas,
-IDs/hashes, scalar cost, bundle schemas, NumPy validity fixtures, and MuJoCo mapping
-freeze before parallel preparation. NumPy fitting may run after that contract freeze.
-MuJoCo pilot, common protocol freeze, confirmation-manifest generation, confirmation,
-serial latency, role decision, and promotion remain serial orchestrator operations.
+IDs/both action hashes, scalar cost, W1, finite model/PCA grids, typed bundle schemas,
+NumPy validity fixtures/tolerances, and MuJoCo mapping freeze before the validity gate
+or parallel fitting. NumPy mechanical selection may run after that contract freeze.
+MuJoCo adaptation, pilot evaluation, evidence freeze, confirmation-manifest generation,
+confirmation, serial latency, role decision, and promotion remain serial orchestrator
+operations.
 
 `WORLD_MODEL_DECISION.md` links immutable pilot/confirmation bundles and records the
 separate lifecycle, validity, blocker, scientific, role, and promotion states. It
