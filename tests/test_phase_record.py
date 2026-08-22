@@ -44,6 +44,7 @@ def _p2_report_repository(
     report_extra_path: bool = False,
     intervening_commit: bool = False,
     p2_member_symlink: bool = False,
+    p2_record_null: bool = False,
 ) -> tuple[Path, str, str]:
     repository = tmp_path / "repository"
     repository.mkdir()
@@ -62,6 +63,9 @@ def _p2_report_repository(
         member.unlink()
         member.symlink_to("repos.yaml")
     (repository / "docs").mkdir()
+    phase_records_text = (
+        "phase_records:\n  p2: null\n" if p2_record_null else "phase_records: {}\n"
+    )
     (repository / "docs" / "RUN_MANIFEST.yaml").write_text(
         "schema_version: 1\n"
         "safety:\n"
@@ -69,7 +73,7 @@ def _p2_report_repository(
         f"  remote_enabled: {str(remote_enabled).lower()}\n"
         "stages:\n"
         f"  p2: {p2_state}\n"
-        "phase_records: {}\n",
+        + phase_records_text,
         encoding="utf-8",
     )
     evidence_sha = _commit(repository, "evidence")
@@ -312,6 +316,91 @@ def test_publish_refuses_concurrent_manifest_drift(tmp_path: Path, monkeypatch: 
             manifest_path="docs/RUN_MANIFEST.yaml",
         )
     assert b"concurrent_key: true" in (repository / "docs/RUN_MANIFEST.yaml").read_bytes()
+
+
+def test_publish_refuses_concurrent_unrelated_worktree_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    publisher = importlib.import_module("scripts.publish_phase_record")
+    repository, evidence_sha, report_sha = _p2_report_repository(tmp_path)
+    original = publisher._atomic_write_manifest
+
+    def drift_then_write(*args: object, **kwargs: object) -> None:
+        (repository / "unrelated.txt").write_text("concurrent\n", encoding="utf-8")
+        original(*args, **kwargs)
+
+    monkeypatch.setattr(publisher, "_atomic_write_manifest", drift_then_write)
+    with pytest.raises(ValueError, match="clean worktree immediately before replacement"):
+        publisher.publish(
+            root=repository,
+            phase="p2",
+            implementation_sha=evidence_sha,
+            report_sha=report_sha,
+            manifest_path="docs/RUN_MANIFEST.yaml",
+        )
+
+
+def test_publish_refuses_present_null_phase_record(tmp_path: Path) -> None:
+    publisher = importlib.import_module("scripts.publish_phase_record")
+    repository, evidence_sha, report_sha = _p2_report_repository(
+        tmp_path, p2_record_null=True
+    )
+
+    with pytest.raises(ValueError, match="immutable and differs"):
+        publisher.publish(
+            root=repository,
+            phase="p2",
+            implementation_sha=evidence_sha,
+            report_sha=report_sha,
+            manifest_path="docs/RUN_MANIFEST.yaml",
+        )
+
+
+def test_publish_forces_all_untracked_files_visible(tmp_path: Path) -> None:
+    publisher = importlib.import_module("scripts.publish_phase_record")
+    repository, evidence_sha, report_sha = _p2_report_repository(tmp_path)
+    _git(repository, "config", "status.showUntrackedFiles", "no")
+    (repository / "hidden-by-local-config.txt").write_text("dirty\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="clean worktree"):
+        publisher.publish(
+            root=repository,
+            phase="p2",
+            implementation_sha=evidence_sha,
+            report_sha=report_sha,
+            manifest_path="docs/RUN_MANIFEST.yaml",
+        )
+
+
+def test_publish_ignores_blob_and_commit_replace_refs(tmp_path: Path) -> None:
+    publisher = importlib.import_module("scripts.publish_phase_record")
+    repository, evidence_sha, report_sha = _p2_report_repository(tmp_path)
+    original_blob = _git(repository, "rev-parse", f"{evidence_sha}:references/repos.yaml")
+    replacement = subprocess.run(
+        ["git", "hash-object", "-w", "--stdin"],
+        cwd=repository,
+        input=b"replacement: true\n",
+        check=True,
+        capture_output=True,
+    ).stdout.decode("ascii").strip()
+    _git(repository, "replace", original_blob, replacement)
+    _git(repository, "replace", report_sha, evidence_sha)
+
+    publisher.publish(
+        root=repository,
+        phase="p2",
+        implementation_sha=evidence_sha,
+        report_sha=report_sha,
+        manifest_path="docs/RUN_MANIFEST.yaml",
+    )
+    record = yaml.safe_load(
+        (repository / "docs/RUN_MANIFEST.yaml").read_text(encoding="utf-8")
+    )["phase_records"]["p2"]
+    true_bytes = _git_bytes(
+        repository, "--no-replace-objects", "cat-file", "blob", original_blob
+    )
+    assert true_bytes == b"repositories: []\n"
+    assert record["bound_evidence_git_sha"] == evidence_sha
 
 
 def test_publish_reissue_validates_equal_record_and_refuses_conflict(tmp_path: Path) -> None:

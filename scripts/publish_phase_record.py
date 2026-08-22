@@ -100,10 +100,17 @@ def canonical_record_bytes(value: Any) -> bytes:
 
 
 def _git(root: Path, *arguments: str) -> bytes:
+    environment = hardened_environment()
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
     completed = subprocess.run(
-        [*HARDENED_GIT_PREFIX, *arguments],
+        [
+            HARDENED_GIT_PREFIX[0],
+            "--no-replace-objects",
+            *HARDENED_GIT_PREFIX[1:],
+            *arguments,
+        ],
         cwd=root,
-        env=hardened_environment(),
+        env=environment,
         capture_output=True,
         check=False,
     )
@@ -416,7 +423,21 @@ def _recheck_manifest_snapshot(snapshot: _ManifestSnapshot) -> None:
         raise ValueError("run manifest changed during publication")
 
 
-def _atomic_write_manifest(snapshot: _ManifestSnapshot, content: bytes) -> None:
+def _worktree_status(
+    root: Path, *, allowed_untracked: frozenset[str] = frozenset()
+) -> bytes:
+    raw = _git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+    allowed_rows = {b"?? " + path.encode("utf-8") for path in allowed_untracked}
+    unexpected = [row for row in raw.split(b"\0") if row and row not in allowed_rows]
+    return b"\0".join(unexpected) + (b"\0" if unexpected else b"")
+
+
+def _atomic_write_manifest(
+    root: Path,
+    snapshot: _ManifestSnapshot,
+    content: bytes,
+    manifest_path: PurePosixPath,
+) -> None:
     directory_fd = snapshot.directory_fd
     temporary = f".{snapshot.filename}.phase-{secrets.token_hex(8)}"
     descriptor: int | None = None
@@ -437,6 +458,9 @@ def _atomic_write_manifest(snapshot: _ManifestSnapshot, content: bytes) -> None:
         os.close(descriptor)
         descriptor = None
         _recheck_manifest_snapshot(snapshot)
+        temporary_path = str(manifest_path.parent / temporary)
+        if _worktree_status(root, allowed_untracked=frozenset({temporary_path})):
+            raise ValueError("publish requires a clean worktree immediately before replacement")
         os.replace(
             temporary,
             snapshot.filename,
@@ -458,7 +482,7 @@ def publish(
 ) -> None:
     if _git_text(root, "rev-parse", "HEAD") != report_sha:
         raise ValueError("publish requires HEAD to equal the supplied report commit")
-    worktree_status = _git(root, "status", "--porcelain=v1", "-z")
+    worktree_status = _worktree_status(root)
     path = _manifest_relative_path(manifest_path)
     with _open_manifest_snapshot(root, path) as snapshot:
         manifest = _strict_yaml(snapshot.content, "run manifest")
@@ -480,8 +504,8 @@ def publish(
             manifest["phase_records"] = phase_records
         if not isinstance(phase_records, dict):
             raise ValueError("phase_records must be a mapping")
-        current = phase_records.get(phase)
-        if current is not None:
+        if phase in phase_records:
+            current = phase_records[phase]
             if canonical_record_bytes(current) != canonical_record_bytes(record):
                 raise ValueError(f"phase_records.{phase} is immutable and differs")
             allowed_reissue_status = f" M {manifest_path}\0".encode("utf-8")
@@ -499,7 +523,7 @@ def publish(
         reparsed = _strict_yaml(rendered, "rendered run manifest")
         if reparsed != manifest:
             raise RuntimeError("rendered run manifest changed canonical data")
-        _atomic_write_manifest(snapshot, rendered)
+        _atomic_write_manifest(root, snapshot, rendered, path)
 
 
 def validate(*, root: Path, phase: str, state_index_sha: str, manifest_path: str) -> None:
