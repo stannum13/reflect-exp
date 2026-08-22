@@ -42,6 +42,7 @@ class MetadataEvidence:
     etag: str | None
     sha256: str
     payload: bytes
+    status: int
 
 
 def _safe_component(value: str, label: str) -> str:
@@ -220,6 +221,7 @@ class CacheStore:
         payload: bytes,
         retrieved_at: str,
         etag: str | None = None,
+        status: int = 200,
     ) -> None:
         if not isinstance(payload, bytes) or len(payload) > self._max_payload_bytes:
             raise SourceFetchError("cache payload must be bounded bytes")
@@ -229,6 +231,10 @@ class CacheStore:
             raise SourceFetchError("cache retrieval timestamp must be a non-empty string")
         if etag is not None and type(etag) is not str:
             raise SourceFetchError("cache ETag must be text or null")
+        if type(status) is not int or status not in {200, 404}:
+            raise SourceFetchError("cache response status must be 200 or 404")
+        if status == 404 and _LICENSE_ENDPOINT.fullmatch(endpoint) is None:
+            raise SourceFetchError("only an absent license response may be cached")
         safe_name, payload_name, metadata_name = self._names(name, key)
         digest = hashlib.sha256(payload).hexdigest()
         metadata = json.dumps(
@@ -237,6 +243,7 @@ class CacheStore:
                 "etag": etag,
                 "retrieved_at": retrieved_at,
                 "sha256": digest,
+                "status": status,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -244,7 +251,10 @@ class CacheStore:
         root = repository = -1
         try:
             root, repository = self._repository_descriptor(safe_name, create=True)
-            validate = lambda: _verify_child_directory(root, safe_name, repository)
+
+            def validate() -> None:
+                _verify_child_directory(root, safe_name, repository)
+
             _atomic_cache_file_at(
                 repository, payload_name, payload, validate_directory=validate
             )
@@ -277,14 +287,17 @@ class CacheStore:
                 os.close(repository)
             if root >= 0:
                 os.close(root)
-        if not isinstance(metadata, dict) or set(metadata) != {
-            "endpoint",
-            "etag",
-            "retrieved_at",
-            "sha256",
+        legacy_keys = {"endpoint", "etag", "retrieved_at", "sha256"}
+        if not isinstance(metadata, dict):
+            return None
+        metadata_keys = frozenset(metadata)
+        if metadata_keys not in {
+            frozenset(legacy_keys),
+            frozenset((*legacy_keys, "status")),
         }:
             return None
         etag = metadata["etag"]
+        status = metadata.get("status", 200)
         if (
             metadata["endpoint"] != endpoint
             or not _canonical_retrieved_at(metadata["retrieved_at"])
@@ -292,6 +305,9 @@ class CacheStore:
             or type(metadata["sha256"]) is not str
             or not re.fullmatch(r"[0-9a-f]{64}", metadata["sha256"])
             or hashlib.sha256(payload).hexdigest() != metadata["sha256"]
+            or type(status) is not int
+            or status not in {200, 404}
+            or (status == 404 and _LICENSE_ENDPOINT.fullmatch(endpoint) is None)
         ):
             return None
         return MetadataEvidence(
@@ -300,6 +316,7 @@ class CacheStore:
             etag=etag,
             sha256=metadata["sha256"],
             payload=payload,
+            status=status,
         )
 
     def record_rate_limit(self, reset: str) -> None:
@@ -448,7 +465,7 @@ class CachingTransport:
                 )
             return HttpResponse(
                 url=url,
-                status=200,
+                status=cached.status,
                 headers={"x-cache": "rate-limit-resume"},
                 body=cached.payload,
             )
@@ -457,7 +474,12 @@ class CachingTransport:
         except SourceFetchError:
             if cached is None:
                 raise
-            return HttpResponse(url=url, status=200, headers={"x-cache": "fallback"}, body=cached.payload)
+            return HttpResponse(
+                url=url,
+                status=cached.status,
+                headers={"x-cache": "fallback"},
+                body=cached.payload,
+            )
         if response.url != url:
             raise SourceFetchError(f"GitHub response URL does not match requested endpoint: {url}")
         remaining = response.headers.get("x-ratelimit-remaining")
@@ -473,7 +495,22 @@ class CachingTransport:
             )
         if response.status >= 400:
             if cached is not None:
-                return HttpResponse(url=url, status=200, headers={"x-cache": "fallback"}, body=cached.payload)
+                return HttpResponse(
+                    url=url,
+                    status=cached.status,
+                    headers={"x-cache": "fallback"},
+                    body=cached.payload,
+                )
+            if response.status == 404 and _LICENSE_ENDPOINT.fullmatch(url) is not None:
+                self._cache.write(
+                    self._name,
+                    key,
+                    endpoint=url,
+                    payload=response.body,
+                    retrieved_at=_timestamp(self._clock),
+                    etag=response.headers.get("etag"),
+                    status=404,
+                )
             return response
         self._cache.write(
             self._name,

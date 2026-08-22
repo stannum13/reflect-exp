@@ -873,6 +873,41 @@ def test_active_rate_limit_cache_miss_makes_no_http_call(tmp_path: Path) -> None
     assert http.calls == 0
 
 
+def test_absent_license_is_cached_with_status_for_rate_limited_resume(
+    tmp_path: Path,
+) -> None:
+    cache = CacheStore(tmp_path)
+
+    class Runner:
+        def run_ls_remote(self, url: str) -> str:
+            return f"ref: refs/heads/main\tHEAD\n{COMMIT_SHA}\tHEAD\n"
+
+    class Live:
+        def get(self, url: str) -> HttpResponse:
+            if url == LICENSE_URL:
+                return HttpResponse(url=url, status=404, headers={}, body=b"not found")
+            fixtures = {
+                COMMIT_URL: _fixture("github-repository.json"),
+                TREE_URL: _fixture("github-tree.json"),
+            }
+            return HttpResponse(url=url, status=200, headers={}, body=fixtures[url])
+
+    first = CachingTransport(Runner(), Live(), cache, _clock, "example")
+    locked = resolve_entry(_entry("README.md"), first, _clock)
+    assert locked.license_status is LicenseStatus.UNKNOWN
+
+    cache.record_rate_limit("1787395200")
+
+    class NoHttp:
+        def get(self, url: str) -> HttpResponse:
+            raise AssertionError("active-marker replay must remain offline")
+
+    replay = CachingTransport(Runner(), NoHttp(), cache, _clock, "example")
+    resumed = resolve_entry(_entry("README.md"), replay, _clock)
+    assert resumed.license_status is LicenseStatus.UNKNOWN
+    assert resumed.license_evidence_url == LICENSE_URL
+
+
 def test_cache_rejects_symlinked_root_and_repository_directory(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
