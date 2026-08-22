@@ -13,8 +13,11 @@ selection of eight fixed planar-pushing candidates. NumPy supplies a determinist
 precursor used for generator/model development, training, tuning, validation, and
 physical sanity checks. It does not produce canonical co-primary evidence.
 
-The P3-pinned MuJoCo package, model bytes, version, source lock, and compatibility
-decision are mandatory prerequisites. MuJoCo is the sole exact rollout ground truth
+The P3-pinned MuJoCo package/version/distribution artifact, source lock, and compatibility
+decision are mandatory prerequisites. P3 does not supply or pin Experiment 06 model
+bytes. Section 13.1 instead defines the experiment-local deterministic Push-T MJCF
+generator and binds every generated model digest to the precursor and evidence
+protocols. MuJoCo is the sole exact rollout ground truth
 for the disjoint pilot that fits only permitted output/calibration values and margins,
 and for unseen confirmation.
 Canonical W2, actual candidate costs, rank correlation, selection regret, safety
@@ -230,7 +233,8 @@ state/action mapping and set only margins/resource ceilings once; they cannot tr
 refit, recalibration, model selection, task/cost/W1 changes, or exclusions. The whole
 pilot is labelled exploratory and cannot support a claim.
 
-Only after implementation, model, calibration, P3 source, protocol, and MuJoCo pilot
+Only after implementation, experiment-local model, calibration, P3 package/runtime
+provenance, protocol, and MuJoCo pilot
 hashes freeze does the orchestrator generate a new unseen MuJoCo confirmation root.
 Confirmation has five strata with 16 scene seeds each, 80 total. Confirmation data do
 not exist before freeze and cannot change parameters, preprocessing, models, cost,
@@ -275,11 +279,14 @@ paths. Each process receives only one sealed, variant-specific selector-input
 descriptor: W0 gets IDs/actions; W1 gets only c/g/e/object shape plus obstacle geometry
 and actions; W3/W4 get the exact ordered privileged vector and actions; and W5 gets
 only its raster/actions. Other projections have no inherited
-descriptor or discoverable path. For MuJoCo pilot-evaluation and confirmation,
-all selector outputs are validated and sealed before canonical branch truth exists.
-Only then does the orchestrator launch a separate pinned-MuJoCo truth process, and only
-after truth seals does it launch the scorer. A selector process is never alive while a
-truth descriptor or truth path exists. NumPy training and MuJoCo adaptation are the
+descriptor or discoverable path. For each complete MuJoCo pilot-evaluation or
+confirmation phase, all selectors for all declared scenes validate, seal, exit, and
+enter one create-only phase selector freeze before canonical branch truth for any
+scene is materialized. Only after that global freeze does the orchestrator materialize
+phase truth-source descriptors and permit per-scene pinned-MuJoCo truth/scoring. No
+selector process is ever launched again for that phase. Consequently a selector is
+never alive while a current- or prior-scene truth descriptor/path exists. NumPy
+training and MuJoCo adaptation are the
 only phases allowed to consume their own declared training targets; their fitted
 outputs seal before any evaluation selector runs.
 
@@ -628,8 +635,9 @@ For `VALID + READY` confirmation, exactly one role is chosen by first matching r
    precision/recall endpoints inside the one frozen 16-endpoint, two-head family with
    99.6875% marginal intervals, plus calibration, latency, and zero-unsafe-veto gates.
    Every lower bound must clear its frozen minimum. W4 is chosen before W5 if both
-   pass. A critic may only replace the learned choice with W1 and cannot rank or
-   introduce another action.
+   pass. The experiment records only the counterfactual occasions on which the critic
+   would replace a learned choice with W1; it cannot rank, introduce, veto, replace,
+   route, or execute an action in this experiment or downstream.
 3. `SHADOW_OBSERVER` if rules 1-2 fail and W4F or W5F passes its endpoints inside the
    one frozen 16-endpoint, two-composition 99.6875% family: upper bounds for held-out
    Brier and fixed-bin ECE in MASS_OOD, FRICTION_OOD, GEOMETRY_OOD, and OBSTACLE_OOD
@@ -649,9 +657,12 @@ because this benchmark does not test those claims. Rules 2-5 record the best bou
 lesser role but do not determine or overwrite the scientific result above: the same
 role may accompany `NOT_SUPPORTED` or `INCONCLUSIVE`. `INCONCLUSIVE`, `INVALID`, or
 `BLOCKED` cannot promote. Only `VALID + SUPPORTED + READY + CANDIDATE_SELECTOR` promotes
-selector authority. A valid critic gate may separately promote only the critic/veto
-interface when the independent candidate-ranking result is `NOT_SUPPORTED`; under an
-`INCONCLUSIVE` candidate-ranking result it is reported but remains unpromoted.
+any runtime authority. `FAILURE_CRITIC`, `SHADOW_OBSERVER`, and
+`OFFLINE_ANALYSIS_ONLY` remain descriptive/unpromoted under both `NOT_SUPPORTED` and
+`INCONCLUSIVE`; they cannot veto, replace, rank, select, route, or otherwise affect an
+action. Granting critic authority would require a separate reviewed experiment and
+preregistered claim. This preserves Experiment 06's hard rule that failure to beat W1
+on held-out regret/latency stops world-model authority.
 
 ## 11. Atomic scene evidence and separate training/aggregate bundles
 
@@ -770,19 +781,38 @@ The evidence-scene boundary has three named responsibilities:
   reconstructed selector/anchor state plus recorded metric inputs. It cannot load a
   simulator/model or change a score.
 
-For evidence scenes, the generator returns one canonical full snapshot as immutable
-bytes to the orchestrator. The orchestrator computes `generator_snapshot_sha256` in
-memory, derives each truth-free variant-specific selector projection, and seals each
-projection with exact fields `scene_id,anchor_id,projection_kind,projection_sha256,
-generator_snapshot_sha256,candidate_action_hashes`. The full snapshot bytes remain only
-in orchestrator-owned memory: no path or descriptor for them exists, and no selector
-inherits their buffer or file descriptor. Each selector receives only its one read-only
-projection descriptor plus an absent output descriptor, with `close_fds` and no
-simulator/truth import.
+Evidence phases use a mandatory global two-pass coordinator, never the former
+per-scene selector→truth sequence. In pass S, the generator visits every scene in the
+frozen phase manifest in canonical order and returns one canonical full snapshot as
+immutable bytes to the coordinator. The coordinator computes
+`generator_snapshot_sha256` in memory, derives each truth-free variant-specific
+selector projection, and seals each projection with exact fields
+`scene_id,anchor_id,projection_kind,projection_sha256,generator_snapshot_sha256,
+candidate_action_hashes`. Full snapshot bytes remain coordinator-owned and are neither
+published nor passed to a selector. Each selector receives only its one read-only
+projection descriptor plus an absent output descriptor, with `close_fds`, a sanitized
+environment, no results/truth root argument, and no simulator/truth import. Selector
+workers expose no generic path argument or file-loading API; attempts to open the
+repository result root, any pilot/confirmation truth path, another scene projection,
+MuJoCo, a socket, or a subprocess fail the component and phase.
 
-After every selector process exits, its output validates and seals, and every selector
-descriptor closes, the orchestrator create-only materializes a separate full truth
-descriptor from those retained bytes. `generator-snapshot.json` has exact keys
+Pass S completes only after every W0/W1/W3/W4/W5 output for all 20 pilot-evaluation or
+all 80 confirmation scenes validates, every selector exits, and every projection/output
+descriptor closes. It then publishes one create-only `selector-freeze.json` with exact
+keys `schema_version,phase,protocol_sha256,implementation_sha256,scene_manifest_sha256,
+scene_count,anchor_count,candidate_count,selector_ids,scene_selector_rows`. The last
+array is sorted by `(scene_id,anchor_id,selector_id)` and each exact-key row contains
+`scene_id,anchor_id,selector_id,projection_sha256,generator_snapshot_sha256,
+selector_output_sha256,component_path`. Unknown/duplicate/missing rows fail. The freeze
+must contain exactly `scene_count*4*5` rows and is create-only published, fsynced, and
+digest-bound by the truth-complete receipt before pass T. It remains ignored raw
+evidence rather than a Git commit. Once it
+exists, the launcher permanently refuses to execute a selector for that phase.
+
+Only pass T may materialize full truth-source descriptors. It regenerates each full
+snapshot from the frozen scene seed when necessary, requires its hash to equal the
+pass-S commitment, and then create-only writes the per-scene truth source.
+`generator-snapshot.json` has exact keys
 `schema_version,scene_id,simulator,anchor_ids,generator_snapshot_sha256,projection_sha256s,
 state_member_keys,state_layouts,model_sha256,p3_evidence_sha256`; `simulator` is exactly
 `NUMPY_PRECURSOR` or `MUJOCO_PINNED`. `generator-snapshot.npz` contains
@@ -793,7 +823,9 @@ contains the complete pinned-model qpos, qvel, act, mocap, userdata, time, and n
 physical-parameter arrays. `state_layouts` freezes the simulator-specific field names,
 offsets, shapes, and dtypes, so no implementation choice remains and cross-simulator
 reinterpretation fails. The JSON binds every projection hash. The validator reconstructs each
-projection from the full descriptor and requires byte/hash equality.
+projection from the full descriptor and requires byte/hash equality. The truth-source
+manifest additionally binds the phase selector-freeze digest, and the truth launcher
+refuses a source whose committed projection/output rows are incomplete.
 
 `projection_sha256s` is an array sorted by `(anchor_id,projection_kind)` whose rows have
 exact keys `anchor_id,projection_kind,sha256`. `state_member_keys` is an array sorted by
@@ -801,15 +833,24 @@ anchor ID whose rows have exact keys `anchor_id,member_key`; `state_layouts` is 
 in byte-offset order whose rows have exact keys `name,offset,count,shape,dtype`. Unknown
 keys, overlapping/gapped offsets, or a member length different from the layout fail.
 
-Only then does the orchestrator launch pinned MuJoCo with this full truth descriptor;
-it never launches truth from a selector projection. It seals candidate truth/W2 and
-finally launches the scorer with separate read-only selector and truth descriptors.
-Reversing this order, keeping a selector alive, materializing the truth descriptor
-early, or finding a current-scene truth path at selector launch invalidates the scene. On a crash
-before truth materialization the unpublished scene is rerun from its sealed seed; the
-in-memory snapshot is never recovered from selector output. The writer starts only
-after generator, selector, and scorer components validate, so co-location in the
-finalized evidence bundle cannot become a preselection truth channel.
+Only then does pass T launch pinned MuJoCo with this full truth descriptor; it never
+launches truth from a selector projection. It seals candidate truth/W2 and launches the
+scorer with separate read-only selector and truth descriptors. Reversing phase order,
+materializing any truth before the selector freeze publishes, running a selector after
+that freeze, or finding a phase truth path during pass S invalidates the whole phase.
+On a crash before selector freeze, no truth exists: same-process held components may be
+cleaned and the complete selector pass reruns. On restart after selector freeze, the
+freeze validates and only pass T may resume; selectors never rerun. A pass-T crash
+resumes only missing truth/scorer scenes through validate-and-skip. The writer starts
+only after generator, frozen selector, and scorer components validate, so co-location
+in the finalized evidence bundle cannot become a preselection truth channel.
+
+Pass-S selector components, pass-T truth sources, and the final scene destination are
+three mutually exclusive lifecycle states of the same per-scene 16 MiB allocation.
+Assembly descriptor-relatively moves the already sealed selector and truth components
+into the final absent scene bundle; it does not retain a copied staging tree. The small
+phase selector freeze lives inside the existing phase aggregate allowance. Thus the
+global two-pass boundary does not alter the Section 12 retained-byte arithmetic.
 
 The assembler writes a sibling temporary bundle, validates every canonical rollout and all
 sidecars, fsyncs files/directories, and atomically renames into an absent destination.
@@ -894,29 +935,215 @@ or `..` paths fail. Bundle types and keys are disjoint:
   `numpy-validity | numpy-selection | mujoco-adaptation | mujoco-pilot-evaluation |
   mujoco-confirmation | final-decision` and `aggregate_id=all`.
 
-One scene bundle contains exactly four anchors and 32 candidate branches. Exact command
-shapes, including derived roots, are:
+### 12.1 Exact lifecycle artifacts and publication commands
+
+Every lifecycle publisher is create-only, takes no network or simulator capability,
+uses the descriptor-relative writer in Section 11, and refuses a dirty tracked or
+untracked tree. It runs Git under the hardened environment in this section, requires
+the full `--expected-head` commit, proves the implementation allowlist byte-equal to
+the implementation SHA, and records both values. After publication, each small
+protocol/config/manifest is committed alone; the next publisher requires that clean
+commit. Raw scene/training/aggregate results remain ignored and are digest-bound inputs,
+not Git commits.
+
+`precursor-frozen.yaml` has exactly the top-level keys
+`schema_version,protocol_revision,implementation_sha256,implementation_paths,
+publication_parent_sha256,
+p2_lock_sha256,p3_gate_sha256,p3_mujoco_package,task,candidate_factory,numpy_simulator,
+mujoco_model_generator,cost,labels,w0,w1,model_grid,splits,validity_grid,schemas,
+numeric_profile,hard_budgets`. Every nested key/value is the frozen Section 13.1
+transcription; unknown/missing keys fail. Publish it exactly:
 
 ```text
-uv run python experiments/06_world_model/run_scene.py \
-  --protocol experiments/06_world_model/configs/frozen.yaml \
-  --bundle-key scene:r1:mujoco-confirmation:MASS_OOD:0000000000000017 \
-  --output-root results/06_world_model/scenes --headless \
-  --max-anchors 4 --max-candidates 32
+uv run python experiments/06_world_model/lifecycle.py freeze-precursor \
+  --base experiments/06_world_model/configs/base.yaml \
+  --validity-manifest experiments/06_world_model/manifests/numpy-validity-cases.json \
+  --p3-gate experiments/06_world_model/configs/p3-gate.yaml \
+  --expected-head "$(git rev-parse HEAD)" \
+  --output experiments/06_world_model/configs/precursor-frozen.yaml
+```
 
-uv run python experiments/06_world_model/train.py \
-  --protocol experiments/06_world_model/configs/precursor-frozen.yaml \
-  --bundle-key training:r1:W4:CFG02 \
+Each of the six `phase-protocol.json` files has exact keys
+`schema_version,protocol_id,revision,phase,implementation_sha256,
+publication_parent_sha256,parent_path,parent_sha256,p2_lock_sha256,p3_gate_sha256,
+config_path,config_sha256,input_manifest_path,input_manifest_sha256,exact_counts,
+budgets`. `exact_counts` always has exact integer keys
+`validity_cases,scene_bundles,training_bundles,input_aggregates`; the six rows are:
+
+| protocol path | phase | counts `(validity,scenes,training,aggregates)` |
+|---|---|---|
+| `protocols/r1/01-numpy-validity.json` | `numpy-validity` | `(80,0,0,0)` |
+| `protocols/r1/02-numpy-selection.json` | `numpy-selection` | `(0,144,9,1)` |
+| `protocols/r1/03-mujoco-adaptation.json` | `mujoco-adaptation` | `(0,20,3,1)` |
+| `protocols/r1/04-mujoco-pilot-evaluation.json` | `mujoco-pilot-evaluation` | `(0,20,0,1)` |
+| `protocols/r1/05-mujoco-confirmation.json` | `mujoco-confirmation` | `(0,80,0,2)` |
+| `protocols/r1/06-final-decision.json` | `final-decision` | `(0,0,0,1)` |
+
+The first three protocols publish serially with these exact commands; each parent must
+already validate and the named output is committed before the next command:
+
+```text
+uv run python experiments/06_world_model/lifecycle.py publish-phase --phase numpy-validity --config experiments/06_world_model/configs/precursor-frozen.yaml --parent experiments/06_world_model/configs/precursor-frozen.yaml --input-manifest experiments/06_world_model/manifests/numpy-validity-cases.json --validity-cases 80 --scene-bundles 0 --training-bundles 0 --input-aggregates 0 --expected-head "$(git rev-parse HEAD)" --output experiments/06_world_model/protocols/r1/01-numpy-validity.json
+uv run python experiments/06_world_model/lifecycle.py publish-phase --phase numpy-selection --config experiments/06_world_model/configs/precursor-frozen.yaml --parent results/06_world_model/aggregates/r1/numpy-validity/all/aggregate-manifest.json --input-manifest experiments/06_world_model/manifests/numpy-development.json --validity-cases 0 --scene-bundles 144 --training-bundles 9 --input-aggregates 1 --expected-head "$(git rev-parse HEAD)" --output experiments/06_world_model/protocols/r1/02-numpy-selection.json
+uv run python experiments/06_world_model/lifecycle.py publish-phase --phase mujoco-adaptation --config experiments/06_world_model/configs/precursor-frozen.yaml --parent results/06_world_model/aggregates/r1/numpy-selection/all/aggregate-manifest.json --input-manifest experiments/06_world_model/manifests/mujoco-pilot.json --validity-cases 0 --scene-bundles 20 --training-bundles 3 --input-aggregates 1 --expected-head "$(git rev-parse HEAD)" --output experiments/06_world_model/protocols/r1/03-mujoco-adaptation.json
+```
+
+The fourth protocol is permitted only after the third phase has executed and this exact
+create-only adapter has published and committed `pilot-evaluation.yaml`. That file has
+the precursor keys plus exact top-level `selected_model_hashes,adapted_output_heads,
+calibration_maps,fallback_thresholds,adaptation_input_hashes`; it contains no pilot-
+evaluation outcomes, margins, measured budgets, or confirmation root:
+
+```text
+uv run python experiments/06_world_model/lifecycle.py freeze-pilot-evaluation \
+  --precursor experiments/06_world_model/configs/precursor-frozen.yaml \
+  --numpy-selection results/06_world_model/aggregates/r1/numpy-selection/all/aggregate-manifest.json \
+  --adaptation results/06_world_model/aggregates/r1/mujoco-adaptation/all/aggregate-manifest.json \
+  --expected-head "$(git rev-parse HEAD)" \
+  --output experiments/06_world_model/configs/pilot-evaluation.yaml
+
+uv run python experiments/06_world_model/lifecycle.py publish-phase --phase mujoco-pilot-evaluation --config experiments/06_world_model/configs/pilot-evaluation.yaml --parent results/06_world_model/aggregates/r1/mujoco-adaptation/all/aggregate-manifest.json --input-manifest experiments/06_world_model/manifests/mujoco-pilot.json --validity-cases 0 --scene-bundles 20 --training-bundles 0 --input-aggregates 1 --expected-head "$(git rev-parse HEAD)" --output experiments/06_world_model/protocols/r1/04-mujoco-pilot-evaluation.json
+```
+
+After the pilot-evaluation aggregate validates, the common freeze command consumes only
+the already declared pilot outputs. `frozen.yaml` has the precursor keys plus exact
+top-level `selected_models,adapted_output_heads,calibration_maps,fallback_thresholds,
+pilot_margins,measured_budgets,pilot_input_hashes,confirmation_contract`; it cannot
+self-hash or contain a confirmation seed/root:
+
+```text
+uv run python experiments/06_world_model/lifecycle.py freeze-evidence \
+  --precursor experiments/06_world_model/configs/precursor-frozen.yaml \
+  --numpy-selection results/06_world_model/aggregates/r1/numpy-selection/all/aggregate-manifest.json \
+  --adaptation results/06_world_model/aggregates/r1/mujoco-adaptation/all/aggregate-manifest.json \
+  --pilot-evaluation results/06_world_model/aggregates/r1/mujoco-pilot-evaluation/all/aggregate-manifest.json \
+  --expected-head "$(git rev-parse HEAD)" --output experiments/06_world_model/configs/frozen.yaml
+```
+
+Only after that file is committed does the following command generate the unseen
+confirmation root and manifest. The manifest has exact keys
+`schema_version,protocol_sha256,generated_after_freeze_commit,rng_algorithm,rng_root,
+strata,scenes`; `strata` is the five names in frozen order, and `scenes` is exactly 80
+rows sorted by `(stratum,scene_id)` with exact keys
+`stratum,ordinal,scene_seed,scene_id,probe_seed,parameter_cell_sha256`. It rejects any
+pilot/NumPy ancestor or content hash:
+
+```text
+uv run python experiments/06_world_model/lifecycle.py generate-confirmation \
+  --frozen experiments/06_world_model/configs/frozen.yaml \
+  --expected-head "$(git rev-parse HEAD)" --strata 5 --scenes-per-stratum 16 \
+  --output experiments/06_world_model/manifests/mujoco-confirmation.json
+```
+
+Commit that manifest alone, then publish the last two protocols exactly:
+
+```text
+uv run python experiments/06_world_model/lifecycle.py publish-phase --phase mujoco-confirmation --config experiments/06_world_model/configs/frozen.yaml --parent experiments/06_world_model/configs/frozen.yaml --input-manifest experiments/06_world_model/manifests/mujoco-confirmation.json --validity-cases 0 --scene-bundles 80 --training-bundles 0 --input-aggregates 2 --expected-head "$(git rev-parse HEAD)" --output experiments/06_world_model/protocols/r1/05-mujoco-confirmation.json
+uv run python experiments/06_world_model/lifecycle.py publish-phase --phase final-decision --config experiments/06_world_model/configs/frozen.yaml --parent results/06_world_model/aggregates/r1/mujoco-confirmation/all/aggregate-manifest.json --input-manifest experiments/06_world_model/manifests/mujoco-confirmation.json --validity-cases 0 --scene-bundles 0 --training-bundles 0 --input-aggregates 1 --expected-head "$(git rev-parse HEAD)" --output experiments/06_world_model/protocols/r1/06-final-decision.json
+```
+
+The shell substitution must resolve to one literal full 40-hex SHA before the Python
+process starts; the CLI records and independently rechecks it. Any output, manifest,
+aggregate, or source change after its parent commit starts a new protocol revision.
+
+One scene bundle contains exactly four anchors and 32 candidate branches. Pilot-
+evaluation and confirmation selectors run only through the global pass-S commands
+below. Each command validates every named scene/component and publishes the phase
+selector freeze only after the complete exact count; neither command can import or
+materialize MuJoCo truth:
+
+Before those evidence passes, the two source-only phases execute through these exact
+manifest-wide commands. `run_sources.py` derives each create-only bundle key from the
+manifest row and phase (`scene:r1:<source-phase>:<stratum>:<16-lowercase-hex-seed>`),
+requires every expected key exactly once, and has no selector-output writer. The NumPy
+command creates exactly 96 train, 24 tuning, and 24 validation bundles; the MuJoCo
+command creates exactly the 20 rows whose frozen pilot partition is `adaptation`:
+
+```text
+uv run python experiments/06_world_model/run_sources.py \
+  --protocol experiments/06_world_model/protocols/r1/02-numpy-selection.json \
+  --scene-manifest experiments/06_world_model/manifests/numpy-development.json \
+  --phase numpy-selection --output-root results/06_world_model/scenes \
+  --headless --max-train-scenes 96 --max-tuning-scenes 24 \
+  --max-validation-scenes 24 --max-scenes 144
+
+uv run python experiments/06_world_model/run_sources.py \
+  --protocol experiments/06_world_model/protocols/r1/03-mujoco-adaptation.json \
+  --scene-manifest experiments/06_world_model/manifests/mujoco-pilot.json \
+  --partition adaptation --phase mujoco-adaptation \
+  --output-root results/06_world_model/scenes --headless \
+  --max-train-scenes 0 --max-tuning-scenes 0 --max-validation-scenes 0 \
+  --max-scenes 20
+```
+
+Any missing, extra, duplicate, wrongly partitioned, or differently keyed bundle fails
+the whole phase. `train_all.py` iterates the fixed ordered Cartesian product
+`{W3,W4,W5} x {CFG01,CFG02,CFG03}`, derives each key, and accepts only the 96 NumPy-train
+source descriptors named by protocol 02. Its only invocation is:
+
+```text
+uv run python experiments/06_world_model/train_all.py \
+  --protocol experiments/06_world_model/protocols/r1/02-numpy-selection.json \
   --scene-root results/06_world_model/scenes \
-  --output-root results/06_world_model/training --headless --max-configurations 1
+  --output-root results/06_world_model/training --headless \
+  --max-input-scenes 96 --max-configurations-per-variant 3 \
+  --max-variants 3 --max-training-bundles 9
+```
+
+The phase must contain exactly nine training bundle keys before NumPy selection
+aggregation; caller-supplied configuration names or bundle keys are rejected.
+
+```text
+uv run python experiments/06_world_model/run_selectors.py \
+  --protocol experiments/06_world_model/protocols/r1/04-mujoco-pilot-evaluation.json \
+  --scene-manifest experiments/06_world_model/manifests/mujoco-pilot.json \
+  --phase mujoco-pilot-evaluation \
+  --component-root results/06_world_model/phase-components \
+  --selector-freeze results/06_world_model/phase-components/r1/mujoco-pilot-evaluation/selector-freeze.json \
+  --headless --max-scenes 20 --max-anchors 80 --max-candidates 640 --max-selectors 5
+
+uv run python experiments/06_world_model/run_selectors.py \
+  --protocol experiments/06_world_model/protocols/r1/05-mujoco-confirmation.json \
+  --scene-manifest experiments/06_world_model/manifests/mujoco-confirmation.json \
+  --phase mujoco-confirmation \
+  --component-root results/06_world_model/phase-components \
+  --selector-freeze results/06_world_model/phase-components/r1/mujoco-confirmation/selector-freeze.json \
+  --headless --max-scenes 80 --max-anchors 320 --max-candidates 2560 --max-selectors 5
+```
+
+Pass T starts only after the matching selector freeze validates. `run_truth_phase.py`
+is the sole manifest iterator: in sorted manifest order it regenerates/materializes one
+scene truth source, runs W2/MuJoCo, scores, and create-only assembles that scene's final
+bundle without starting a selector. It derives the bundle key internally and rejects a
+caller-supplied key or arbitrary runner arguments. These are the exact two invocations;
+they require exactly 20 pilot-evaluation or 80 confirmation keys before aggregation:
+
+```text
+uv run python experiments/06_world_model/run_truth_phase.py \
+  --protocol experiments/06_world_model/protocols/r1/04-mujoco-pilot-evaluation.json \
+  --scene-manifest experiments/06_world_model/manifests/mujoco-pilot.json \
+  --partition pilot-evaluation --phase mujoco-pilot-evaluation \
+  --selector-freeze results/06_world_model/phase-components/r1/mujoco-pilot-evaluation/selector-freeze.json \
+  --component-root results/06_world_model/phase-components \
+  --output-root results/06_world_model/scenes --headless \
+  --max-scenes 20 --max-anchors-per-scene 4 --max-candidates-per-anchor 8
+
+uv run python experiments/06_world_model/run_truth_phase.py \
+  --protocol experiments/06_world_model/protocols/r1/05-mujoco-confirmation.json \
+  --scene-manifest experiments/06_world_model/manifests/mujoco-confirmation.json \
+  --phase mujoco-confirmation \
+  --selector-freeze results/06_world_model/phase-components/r1/mujoco-confirmation/selector-freeze.json \
+  --component-root results/06_world_model/phase-components \
+  --output-root results/06_world_model/scenes --headless \
+  --max-scenes 80 --max-anchors-per-scene 4 --max-candidates-per-anchor 8
 
 uv run python experiments/06_world_model/validate_numpy.py \
-  --protocol experiments/06_world_model/configs/precursor-frozen.yaml \
+  --protocol experiments/06_world_model/protocols/r1/01-numpy-validity.json \
   --bundle-key aggregate:r1:numpy-validity:all \
   --output-root results/06_world_model/aggregates --headless --max-cases 80
 
 uv run python experiments/06_world_model/aggregate.py \
-  --protocol experiments/06_world_model/configs/pilot-evaluation.yaml \
+  --protocol experiments/06_world_model/protocols/r1/04-mujoco-pilot-evaluation.json \
   --bundle-key aggregate:r1:mujoco-pilot-evaluation:all \
   --scene-root results/06_world_model/scenes \
   --training-root results/06_world_model/training \
@@ -924,14 +1151,20 @@ uv run python experiments/06_world_model/aggregate.py \
   --max-training-bundles 0 --max-scenes 20 --max-input-aggregates 1
 ```
 
+The iterator has no generic path or subprocess argument and a component exit other
+than zero fails the phase; it never skips a missing key. Its create-only receipt at
+`phase-components/r1/<phase>/truth-complete.json` has exact keys
+`schema_version,phase,protocol_sha256,selector_freeze_sha256,scene_count,
+ordered_bundle_keys,bundle_manifest_sha256s` and must validate before aggregation.
+
 The same aggregate shape uses `--protocol
-experiments/06_world_model/configs/frozen.yaml` and `--max-scenes 80` for
+experiments/06_world_model/protocols/r1/05-mujoco-confirmation.json` and `--max-scenes 80` for
 `aggregate:r1:mujoco-confirmation:all`, with zero training bundles and two input
 aggregates. Exact aggregate inputs are: NumPy validity, the frozen 80-case fixture and
 no prior bundle; NumPy selection, nine training bundles plus 24 tuning and 24
 validation scene bundles plus the one validity aggregate; MuJoCo
 adaptation, 20 adaptation scene bundles plus the three selected NumPy training
-bundles; pilot evaluation, 20 evaluation scene bundles plus the one adaptation
+bundles and the NumPy-selection aggregate; pilot evaluation, 20 evaluation scene bundles plus the one adaptation
 aggregate; confirmation, 80 confirmation scene bundles plus the adaptation and
 pilot-evaluation aggregates; final decision, the one confirmation aggregate. The CLI
 requires corresponding exact `--max-training-bundles`, `--max-scenes`, and
@@ -940,11 +1173,36 @@ derive respectively as
 `scenes/<revision>/<phase>/<stratum>/<seed>/`,
 `training/<revision>/<variant>/<configuration>/`, and
 `aggregates/<revision>/<phase>/all/`. A command cannot write another type's root or
-carry another type's flags. NumPy generation/training/selection require the checked-in
-`precursor-frozen.yaml`; MuJoCo adaptation/evaluation require the phase-bound pilot
-protocol whose parent is that precursor contract; only unseen confirmation/final
-decision use `frozen.yaml`. Parent hashes and allowed phase are validated, so a later
-protocol cannot be substituted retroactively.
+carry another type's flags. NumPy generation/training/selection require their
+checked-in phase protocols descending from `precursor-frozen.yaml`; MuJoCo adaptation/
+evaluation require their phase-bound protocols; confirmation/final decision require
+their protocols descending from `frozen.yaml`. Parent hashes and allowed phase are
+validated, so a later protocol cannot be substituted retroactively.
+
+All non-validity aggregate and final-report invocations are exact, not examples:
+
+```text
+uv run python experiments/06_world_model/aggregate.py --protocol experiments/06_world_model/protocols/r1/02-numpy-selection.json --bundle-key aggregate:r1:numpy-selection:all --scene-root results/06_world_model/scenes --training-root results/06_world_model/training --output-root results/06_world_model/aggregates --headless --max-training-bundles 9 --max-scenes 48 --max-input-aggregates 1
+uv run python experiments/06_world_model/aggregate.py --protocol experiments/06_world_model/protocols/r1/03-mujoco-adaptation.json --bundle-key aggregate:r1:mujoco-adaptation:all --scene-root results/06_world_model/scenes --training-root results/06_world_model/training --output-root results/06_world_model/aggregates --headless --max-training-bundles 3 --max-scenes 20 --max-input-aggregates 1
+uv run python experiments/06_world_model/aggregate.py --protocol experiments/06_world_model/protocols/r1/04-mujoco-pilot-evaluation.json --bundle-key aggregate:r1:mujoco-pilot-evaluation:all --scene-root results/06_world_model/scenes --training-root results/06_world_model/training --output-root results/06_world_model/aggregates --headless --max-training-bundles 0 --max-scenes 20 --max-input-aggregates 1
+uv run python experiments/06_world_model/aggregate.py --protocol experiments/06_world_model/protocols/r1/05-mujoco-confirmation.json --bundle-key aggregate:r1:mujoco-confirmation:all --scene-root results/06_world_model/scenes --training-root results/06_world_model/training --output-root results/06_world_model/aggregates --headless --max-training-bundles 0 --max-scenes 80 --max-input-aggregates 2
+uv run python experiments/06_world_model/aggregate.py --protocol experiments/06_world_model/protocols/r1/06-final-decision.json --bundle-key aggregate:r1:final-decision:all --scene-root results/06_world_model/scenes --training-root results/06_world_model/training --output-root results/06_world_model/aggregates --headless --max-training-bundles 0 --max-scenes 0 --max-input-aggregates 1
+uv run python experiments/06_world_model/report.py --protocol experiments/06_world_model/protocols/r1/06-final-decision.json --decision results/06_world_model/aggregates/r1/final-decision/all/decision.json --artifact-manifest results/06_world_model/aggregates/r1/final-decision/all/aggregate-manifest.json --output experiments/06_world_model/WORLD_MODEL_DECISION.md --headless
+```
+
+The final aggregate create-only publishes `decision.json` with exact keys
+`schema_version,protocol_sha256,confirmation_aggregate_sha256,lifecycle_status,
+artifact_status,blocker_status,scientific_result,authority_readiness,assigned_role,
+promotion_status,composition_results,endpoint_results,input_hashes`; its arrays use
+the frozen Section 10 order and unknown/duplicate/missing keys fail. The report command
+validates every upstream hash and create-only publishes the previously absent
+`WORLD_MODEL_DECISION.md` by sibling temporary file, fsync, rename-no-replace, and
+parent fsync; exact reissue validates-and-skips without rewriting bytes. The Markdown
+has exact headings `Provenance`, `Validity`, `Canonical co-primary results`, `Secondary
+results`, `Authority decision`, `Resources`, and `Artifacts`, in that order, and ends
+with the decision/artifact/config/protocol SHA-256 values. It records the separate
+lifecycle/artifact/blocker/scientific/role/promotion states and cannot promote any role
+unless the Section 10 selector rule permits it.
 
 The validity command alone accepts `--max-cases`, which must equal 80. Every other
 command rejects that flag. NumPy scene generation and training are blocked until the
@@ -965,6 +1223,15 @@ HEAD SHA and exact P2/P3 audit/compatibility hashes. The launcher checks HEAD an
 clean tracked/untracked worktree before spawning any component and repeats both checks
 after component exit immediately before publication. A mismatch discards only the
 same-process held temporary bundle and fails; it never publishes mixed-source evidence.
+The exact read-only sequence is `git rev-parse --verify HEAD`,
+`git status --porcelain=v1 --untracked-files=all`, and
+`git diff --exit-code <implementation_sha256> -- <implementation_paths...>` under that
+hardened environment. `implementation_paths` is the sorted, duplicate-free list of
+`pyproject.toml`, `uv.lock`, and every Experiment 06 source/test/asset/base-config path;
+it excludes only ignored results and later create-only protocol/report evidence. HEAD
+must equal the command's literal `--expected-head`, status and implementation diff must
+be empty, and SHA must be a real 40-lowercase-hex commit both before spawn and after
+component exit. No command runs after any failed check.
 
 Each scene bundle has a 16 MiB/60-minute ceiling. Each training bundle has a 32
 MiB/60-minute ceiling; there are exactly three configurations for each of W3, W4, and
@@ -1065,9 +1332,61 @@ no ancestor. W0 uses the separate literal root `exp06-r1-w0` (or `r2` for revisi
 The unseen confirmation root is generated only after freeze as already
 specified. The workspace is `[-1.0,1.0]^2`; end-effector radius is 0.04 m; command
 horizon is 1.0 s with 50 little-endian float64 planar-velocity rows at 0.02 s and
-component clamp `[-0.25,0.25] m/s`. MuJoCo uses the P3-pinned model, timestep 0.002 s,
-ten physics steps per command, the semi-implicit integrator, gravity disabled, and the
-same initial state/action/cost projection as NumPy.
+component clamp `[-0.25,0.25] m/s`. MuJoCo uses the experiment-local generated model
+below with the P3-pinned runtime, timestep 0.002 s, ten physics steps per command, the
+Euler semi-implicit integrator, gravity disabled, and the same initial state/action/cost
+projection as NumPy.
+
+**Experiment-local MuJoCo model.** P3 contributes only the validated MuJoCo runtime.
+Experiment 06 owns `assets/push_t_template.xml` and a pure
+`build_mjcf(scene_parameters) -> bytes` generator. The template and generator source
+hash freeze before NumPy validity. Output is UTF-8/LF with one trailing newline; element
+and attribute order are literal template order, all inserted finite floats use
+lowercase `format(value, ".17g")`, negative zero normalizes to `0`, and XML escaping is
+the standard five-character mapping. No XML pretty-printer or platform serializer may
+rewrite evidence bytes.
+
+The generated root is `mujoco model="exp06_push_t_v1"`. Its option is exactly
+`timestep="0.002" gravity="0 0 0" integrator="Euler" cone="pyramidal"
+jacobian="dense" solver="Newton" iterations="20" tolerance="0" impratio="1"`;
+coordinates are local, angles radians, and inertia derives from geoms. All dynamic
+joints have `damping="0" armature="0" limited="false"`. Contact geoms use
+`condim="3" solref="0.002 1" solimp="0.9 0.95 0.001"`, restitution zero,
+`contype="1" conaffinity="1"`, and friction tuple `(scene_friction,0.005,0.0001)`.
+There is no gravity, floor, hidden actuator, sensor, equality, tendon, plugin, or
+callback.
+
+The worldbody order is fixed: noncolliding target site; mocap end-effector; dynamic
+object; optional obstacle; walls `-x,+x,-y,+y`. The end effector is a vertical cylinder
+of radius `0.04`, half-height `0.02`, center z `0.02`. The object body has ordered joints
+`object_x` slide `(1,0,0)`, `object_y` slide `(0,1,0)`, and `object_yaw` hinge `(0,0,1)`;
+its geom is either a cylinder `(radius,0.02)` or box `(half_x,half_y,0.02)` with the
+sampled total mass. Slide-joint `frictionloss` is exactly
+`scene_friction*mass*9.81/sqrt(2)` and yaw `frictionloss` is
+`scene_friction*mass*9.81*max(h((1,0)),h((0,1)),0.01)`. An obstacle segment becomes one
+static box centered at the endpoint midpoint, half-size
+`(segment_length/2,0.02,0.02)`, yaw `atan2(dy,dx)`. The four static wall boxes have
+inner faces exactly at workspace `+/-1`, thickness `0.04`, and overlap corners by
+`0.04`. Target and all noncontact markers have `contype="0" conaffinity="0"`.
+
+There are no MuJoCo actuators (`nu=0`). At every 0.002-second physics step the executor
+holds the current 0.02-second action row, updates mocap x/y by `0.002*command`, leaves
+mocap z/quaternion fixed, then calls exactly one `mj_step`; thus each command row owns
+ten steps. Commands are never recomputed from resulting candidate state. The anchor
+restore first calls `mj_resetData`, then assigns time; qpos in exact order
+`object_x,object_y,object_yaw`; qvel in exact order
+`object_vx,object_vy,object_omega`; empty act; mocap position/quaternion; and userdata
+`mass,friction,geometry_code,dim_0,dim_1,dim_2,obstacle_present,model_revision`, then
+calls one `mj_forward`. Every candidate receives an independent byte-equal restored
+anchor; no `mjData` instance or contact cache crosses candidates.
+
+`model_sha256=SHA256(build_mjcf(scene_parameters))` is scene-specific. The precursor
+protocol binds template/generator hashes and the complete parameter-to-MJCF mapping;
+each scene manifest binds model bytes, digest, P3 package version/distribution hash,
+and restore-vector digest. Validation rebuilds bytes independently, loads them through
+the P3-pinned package, checks `nq=3,nv=3,nu=0,nmocap=1,nuserdata=8`, named joint/geom
+order, options, and round-trip restore before W2. Alternate, user-supplied, or P3-smoke
+model bytes are rejected.
 
 NumPy also steps at 0.002 s. The velocity-controlled end effector takes the commanded
 velocity exactly and updates position after contacts. Object linear speed loses
@@ -1212,7 +1531,8 @@ first validity run.
 
 Tests cover:
 
-- P3 pinned MuJoCo/source-lock prerequisite and refusal of alternate model/version;
+- P3 pinned MuJoCo package/runtime/source-lock prerequisite, refusal of an alternate
+  runtime, and refusal of any model bytes not rebuilt by the Section 13.1 generator;
 - exact `A00..A15/P00..P23/S00..S39` NumPy analytic, physical, mirror, and
   five-prototype step-halving gate, 64 MiB bundle, timeout behavior, and hand fixtures;
 - exact K=8 IDs, globally unique candidate IDs, eight distinct ID-independent content
@@ -1225,9 +1545,11 @@ Tests cover:
 - precursor contract freeze before NumPy validity, mechanical tuning/validation,
   adaptation-only output refit/calibration, pilot-evaluation-only margins/resources,
   and nonexistent unseen confirmation before the evidence freeze;
-- W0-W5 input boundaries, in-memory full-snapshot commitment, projection digest links,
-  absence of the full truth descriptor until every selector exits, and hostile oracle/
-  simulator/path/import access;
+- W0-W5 input boundaries, phase-global full-snapshot commitments, projection digest
+  links, exact 400/1,600-row pilot/confirmation selector freezes, absence of every
+  phase truth descriptor until all selectors exit, permanent no-selector-after-freeze,
+  selector-freeze restart and truth-only resume, and hostile access to current/prior-
+  scene truth, pilot/confirmation result roots, MuJoCo/import, socket, and subprocess;
 - exact global prediction IDs, prediction envelope fields, finite/range checks, scalar
   cost components, shared `WorldModelPrediction` round-trip/vector keys/hashes/events,
   ten-field W4 state and per-configuration W5 latent dimensions, W3/W4/W5 derivation,
@@ -1245,7 +1567,8 @@ Tests cover:
   scene/training/aggregate schemas and roots, manifest self-exclusion, corruption,
   descriptor-relative no-follow publication, same-process cleanup, restart quarantine,
   and foreign/ambiguous-temp refusal;
-- exact repo-root scene/training/aggregate commands and keys, type-mixing refusal,
+- exact repo-root lifecycle/selector/truth/scene/training/aggregate/report commands and
+  keys, six phase-protocol schemas/counts, type-mixing refusal,
   create-only validate-and-skip resume, 8,416 MiB arithmetic, phase preflight, and
   per-type wall/size ceilings; and
 - serial latency, offline/no-network/no-CUDA/no-physical/no-remote, clean tree, full
@@ -1255,13 +1578,17 @@ Tests cover:
 
 NumPy, PyArrow, and PyYAML remain the only model/data dependencies
 (`pyproject.toml:5-15`). MuJoCo is consumed only through the complete passing P3 pinned
-lock and compatibility output. A missing/failed P3 gate is `BLOCKED`; it cannot be
-replaced by NumPy confirmation.
+package/runtime lock and compatibility output; all Push-T MJCF/model bytes remain
+experiment-local and bind to the Section 13.1 generator. A missing/failed P3 gate is
+`BLOCKED`; it cannot be replaced by NumPy confirmation.
 
 Experiment 07 may reuse the frozen planar task, scenario/candidate factory, cost
 components, IDs, and metrics regardless of the P7 authority result
 (`docs/superpowers/specs/2026-08-22-reflect-lite-autonomous-run-design.md:102-106`).
-R1 transfer consumes only a separately promoted prediction/critic/selector protocol;
+R1 transfer consumes only a separately promoted prediction/critic/selector protocol,
+and no critic, shadow, or action-routing protocol can be promoted unless this
+experiment's canonical selector result is `SUPPORTED` as well as satisfying its own
+separately reviewed gate;
 W2 never transfers and W4 privileged input requires an explicit adapter. Mini-Reflect
 may enable only the exact role granted by the ordered decision, and executor validation
 and W1 fallback remain mandatory (`Reflect Lite Research Program.md:2454-2537`).
