@@ -2,7 +2,7 @@ UV := UV_CACHE_DIR=.cache/uv uv
 P1_OUTPUT_DIR ?= results/bootstrap
 P1_FIXTURE_METADATA := $(P1_OUTPUT_DIR)/p1-fixture/metadata.json
 
-.PHONY: install-local test safety-check p0-report p1-fixture p1-check replay
+.PHONY: install-local test safety-check p0-report p1-fixture p1-check replay source-metadata-audit
 
 install-local:
 	$(UV) sync --locked --python 3.11.13
@@ -28,3 +28,7 @@ p1-check: test p1-fixture
 replay:
 	@test -n "$(RUN)" || (echo "RUN is required" >&2; exit 2)
 	$(UV) run python -m reflect.rollout replay "$(RUN)"
+
+source-metadata-audit:
+	$(UV) run python scripts/fetch_reference.py --all-metadata-only
+	$(UV) run python scripts/audit_references.py --require-complete
