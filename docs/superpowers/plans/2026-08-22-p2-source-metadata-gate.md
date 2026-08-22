@@ -307,14 +307,15 @@ git commit -m "feat: audit locked source metadata"
 
 **Files:**
 - Create: `references/repos.lock.yaml`
-- Create: `references/p2-live-attempts.yaml`
-- Create: `reflect/p2_report.py`
-- Create: `reflect/_p2_report_io.py`
-- Create: `scripts/write_p2_report.py`
-- Create: `tests/test_p2_commands.py`
+- Modify: `references/p2-live-attempts.yaml`
 - Modify: `docs/ASSUMPTIONS.md`
 - Modify: `docs/RUN_MANIFEST.yaml`
-- Modify: `RUN_REPORT.md`
+- Modify: `tests/test_run_state.py`
+- Generate in a separate report-only commit: `RUN_REPORT.md`
+- Verify existing implementation: `reflect/p2_report.py`
+- Verify existing implementation: `reflect/_p2_report_io.py`
+- Verify existing implementation: `scripts/write_p2_report.py`
+- Verify existing tests: `tests/test_p2_commands.py`
 
 **Interfaces:**
 - Consumes: reviewed Tasks 1–3 at a clean implementation commit and live GitHub metadata.
@@ -360,38 +361,138 @@ command/error/reset evidence, reuse only validated cache entries, and keep
 independent P3-local baseline planning active; never fabricate a lock entry or wait
 inside one invocation for an unbounded reset interval.
 
-- [ ] **Step 4: Run the complete offline audit and verification suite**
+- [ ] **Step 3A: Complete the durable final-attempt evidence**
 
-Run:
+After the all-entry command exits zero and atomically publishes the complete lock,
+append exactly one unique final publication attempt as the last item in
+`references/p2-live-attempts.yaml`. Its `command` is the exact allowlisted array
+`[env, UV_CACHE_DIR=.cache/uv, uv, run, python,
+scripts/fetch_reference.py, --all-metadata-only]`; its canonical UTC
+`started_at_utc` and `finished_at_utc` bracket the lock's `generated_at`; its
+`exit_code` is integer zero; `published_lock` is boolean true; and
+`completed_entries` contains all 45 unique names in canonical registry order. Set
+`lock_sha256_after` to the lowercase SHA-256 of the exact published lock bytes and
+record only truthful `summary` and optional `cache_validation` text.
+
+The publication row contains none of the failure-only fields `incomplete_entry`,
+`error`, `rate_limit_reset_utc`, `lock_absence_verified`, or
+`lock_sha256_before`. It is the unique publication and remains the final attempt.
+Do not rewrite earlier attempts, reconstruct network history, or normalize away their
+exact command/error evidence.
+
+- [ ] **Step 4: Advance evidence/state and run the precommit suite**
+
+Before the evidence-base commit:
+
+1. add the P2/P3 split, literal root-glob semantics, GitHub-license caveat, and
+   bootstrap-entry merge to `docs/ASSUMPTIONS.md`;
+2. set `current_pass: 3`, `p2: complete`, and `p3: in_progress` in
+   `docs/RUN_MANIFEST.yaml`, leaving P4--P10 and every experiment lane pending; and
+3. update `tests/test_run_state.py` to assert that exact durable state.
+
+`docs/RUN_MANIFEST.yaml` is authoritative for `current_pass` and P2/P3 stage state.
+The existing deterministic P2 renderer does not read the manifest, so do not
+hand-edit those fields into `RUN_REPORT.md`. If the renderer is ever changed to
+include them, its implementation and tests require their own reviewed clean commit
+before this evidence-base sequence.
+
+Run from the repository root:
 
 ```bash
-UV_CACHE_DIR=.cache/uv uv run python scripts/audit_references.py --require-complete
-UV_CACHE_DIR=.cache/uv uv lock --check
-UV_CACHE_DIR=.cache/uv uv run pytest -q
+env UV_CACHE_DIR=.cache/uv uv run python scripts/audit_references.py --require-complete
+env UV_CACHE_DIR=.cache/uv uv lock --check
+env UV_CACHE_DIR=.cache/uv uv run pytest -q
 make safety-check
 git diff --check
 ```
 
-Expected: all commands exit zero; physical deployment is false; remote execution is false.
+Expected: all commands exit zero; physical deployment is false; remote execution is
+false; the complete lock passes the offline audit; the final attempt digest has been
+independently compared with the lock bytes; and the changed run-state test agrees
+with the manifest. The clean-HEAD reporter in Step 6 performs the authoritative
+combined registry/lock/attempt validation. Inspect `git status --short`, the tracked
+boundary, and files larger than 100 MiB. Resolve unrelated dirty work through its
+owner; never stage it into P2.
 
-- [ ] **Step 5: Bind evidence and advance state**
+- [ ] **Step 5: Create the clean evidence-base commit**
 
-Record the P2 implementation commit, registry digest, retrieval interval, entry/path/
-license counts, exact commands, failures/retries, and source-boundary scan in
-`RUN_REPORT.md`, consuming the durable `references/p2-live-attempts.yaml` rather
-than reconstructing network history. Add the P2/P3 split, root-glob semantics, GitHub-license caveat,
-and bootstrap-entry merge to `docs/ASSUMPTIONS.md`. Set `p2: complete`,
-`p3: in_progress`, `current_pass: 3`, and leave all experiment lanes pending.
-
-- [ ] **Step 6: Verify the final report commit changes evidence only**
-
-Run the full suite again, verify no secrets/large binaries/checkouts are tracked,
-verify the worktree is clean, and confirm the report/state commit contains only the
-lock, assumptions, manifest, report generator/test, and run report.
-
-- [ ] **Step 7: Commit Task 4**
+Stage exactly the immutable live evidence and durable state:
 
 ```bash
-git add references/repos.lock.yaml references/p2-live-attempts.yaml reflect/p2_report.py reflect/_p2_report_io.py scripts/write_p2_report.py tests/test_p2_commands.py docs/ASSUMPTIONS.md docs/RUN_MANIFEST.yaml RUN_REPORT.md
-git commit -m "chore: verify P2 source metadata gate"
+git add references/repos.lock.yaml references/p2-live-attempts.yaml docs/ASSUMPTIONS.md docs/RUN_MANIFEST.yaml tests/test_run_state.py
+git diff --cached --name-only
+git commit -m "chore: bind complete P2 source evidence"
 ```
+
+The cached name inventory must be exactly those five paths. Confirm the worktree is
+clean, then record the full lowercase output of `git rev-parse HEAD` as
+`EVIDENCE_BASE_SHA`. The already committed report implementation and tests are
+review inputs, not files to restage in this evidence commit. `RUN_REPORT.md` retains
+the prior report until the next step and is not staged here.
+
+- [ ] **Step 6: Generate the report against the clean evidence-base HEAD**
+
+With `EVIDENCE_BASE_SHA` still equal to current `HEAD` and with no tracked or
+untracked worktree changes, run exactly:
+
+```bash
+env PHYSICAL_DEPLOYMENT_ALLOWED=false REFLECT_REMOTE_ENABLED=0 UV_CACHE_DIR=.cache/uv uv run python scripts/write_p2_report.py --evidence-base-sha "$EVIDENCE_BASE_SHA"
+```
+
+The reporter first validates the stable registry/lock/attempt snapshot and the
+45-entry count. It then runs only its existing allowlisted offline audit, full test
+suite, lock check, safety check, hardened diff check, NUL-delimited tracked-path
+inventory, and bounded large-file inventory. It proves the evidence snapshot did not
+change and revalidates that the supplied commit is still clean current `HEAD`
+immediately before atomically replacing `RUN_REPORT.md`. It never invokes the live
+resolver.
+
+Inspect the generated report and verify that it binds the evidence-base SHA, registry
+and lock digests, retrieval interval, entry/path/license counts, exact durable attempt
+history, verification command results, source-boundary result, and P3 next action.
+
+- [ ] **Step 7: Create the report-only commit**
+
+```bash
+git status --short
+git add RUN_REPORT.md
+git diff --cached --name-only
+git commit -m "docs: publish P2 gate report"
+```
+
+Before committing, `RUN_REPORT.md` must be the only changed and cached path. This
+second commit intentionally contains the report only; it cannot contain its own SHA.
+The report's `Implementation/evidence-base Git SHA` remains the immediately preceding
+clean evidence-base commit.
+
+- [ ] **Step 8: Reverify the report commit without regenerating it**
+
+Run:
+
+```bash
+env UV_CACHE_DIR=.cache/uv uv run python scripts/audit_references.py --require-complete
+env UV_CACHE_DIR=.cache/uv uv lock --check
+env UV_CACHE_DIR=.cache/uv uv run pytest -q
+make safety-check
+git diff --check
+```
+
+Verify clean status, no tracked secret/model/checkout path, no unapproved file larger
+than 100 MiB, the exact five-path evidence-base commit, and the one-path report
+commit. Do not rerun `scripts/write_p2_report.py` after the report commit: the
+recorded evidence-base SHA no longer equals current `HEAD`, while substituting the
+report commit SHA would rewrite the report and recreate an impossible self-reference.
+A corrected report requires a newly reviewed evidence-base/report pair, never an
+amend or manual edit.
+
+- [ ] **Step 9: Run the whole-P2 path-scoped review**
+
+Review the canonical program Sections 7--9, 11--12, 27, 30, and 34--35; the approved
+autonomous design; this P2 design/plan; and the path-scoped P2 history after the final
+P1 evidence commit. Inspect the registry/bootstrap inputs; source model, Git, HTTP,
+cache, resolver, CLI, audit, and report modules; all source registry/fetch/audit/P2
+report/run-state tests and fixtures; the final lock and attempt log; assumptions and
+manifest; both closeout commits; and the generated report. Bind the review to the
+reporter's captured command outputs plus the post-report checks. Later unrelated
+design commits may share the integration ancestry, so use path-scoped diffs and
+commit history rather than describing the evidence-base SHA as a P2-only commit.
