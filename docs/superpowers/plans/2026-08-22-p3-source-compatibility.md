@@ -15,6 +15,7 @@
 - Initial source checkout is limited to the eight `SPARSE_REFERENCE` repositories used by Experiments 01–03.
 - Every checkout is detached at the locked 40-character SHA, sparse, clean, ignored below `external/`, and bounded by finite time/download/disk ceilings.
 - Existing dirty, mismatched, symlinked, or malformed destinations are refused and never overwritten.
+- The checkout root and every intermediate directory are opened without following symlinks; creation, inspection, rename, and cleanup remain descriptor-anchored inside that root.
 - Study-only Python is parsed without importing; ROS 2/CUDA/VLA servers/models/datasets/training are not installed or executed.
 - MuJoCo is the only required P3 runtime dependency and must pass a headless one-step simulation smoke.
 - Static parsing alone never earns `WORKS_LOCAL_M2`; compatibility uses only the nine canonical labels.
@@ -71,7 +72,10 @@ ambiguous names, empty selectors, and a selector that includes no eligible entry
 
 - [ ] **Step 4: Implement isolated sparse checkout**
 
-Create a sibling `.<name>.partial-<random>` directory with mode `0700`. Invoke fixed
+Open/create the checkout root one component at a time with no-follow directory
+descriptors and retain the root descriptor. Create a descriptor-relative sibling
+`.<name>.partial-<random>` directory with mode `0700`. Reject root/intermediate
+symlinks and verify inode identity before inspection, rename, or cleanup. Invoke fixed
 Git commands with disabled credentials/prompts/proxies/redirects and finite timeout:
 
 ```text
@@ -83,7 +87,8 @@ git -C <partial> sparse-checkout set --no-cone --stdin
 git -C <partial> checkout --quiet --detach <locked SHA>
 ```
 
-Pass patterns through stdin, never shell interpolation. Verify `rev-parse HEAD`,
+Pass patterns through stdin, never shell interpolation. Disable repository-local
+hooks and fsmonitor for every inspection command. Verify `rev-parse HEAD`,
 `status --porcelain=v1 -z`, sparse patterns, materialized existing paths/globs, and
 disk bytes before atomically renaming. If a clean existing destination matches all
 facts, return it unchanged; otherwise fail. Remove only the owned partial directory
@@ -120,6 +125,7 @@ git commit -m "feat: add pinned sparse source checkout"
 
 **Files:**
 - Create: `reflect/source_compat.py`
+- Create: `reflect/source_ops.py`
 - Create: `scripts/source_audit.py`
 - Create: `experiments/__init__.py`
 - Create: `experiments/00_source_audit/__init__.py`
@@ -136,13 +142,17 @@ git commit -m "feat: add pinned sparse source checkout"
 **Interfaces:**
 - Consumes: unchanged P2 registry/lock plus per-operation evidence fragments.
 - Produces: `CompatibilityClass`, `SmokeStatus`, `CompatibilityEvidence`, `validate_fragment`, `consolidate_compatibility`, `write_compatibility_outputs`, `scripts/source_audit.py --check|--write`, and `python -m experiments.00_source_audit.run --config ...`.
+- Produces operation interfaces: `SourceOperation`, `OperationSpec`, `run_source_operation(spec, checkout_root) -> CompatibilityEvidence`, and `write_fragment_create_only(path, evidence) -> None`.
 
 - [ ] **Step 1: Write failing contract/report tests**
 
 Test exact enums, strict fragment keys/types, SHA/path/license binding to the P2 lock,
 canonical JSON/hash behavior, duplicate/conflicting fragment rejection, complete
 row coverage, classification precedence, deterministic CSV/Markdown, and standard
-experiment CLI flags. Assert the CSV header is exactly:
+experiment CLI flags. Test bounded AST parsing, manifest/header layout checks,
+asset-license inventory, path containment, byte limits, captured normalized results,
+and create-only atomic fragment publication that refuses overwrite. Assert the CSV
+header is exactly:
 
 ```text
 repository,commit_sha,experiment,reuse_mode,selected_path,path_status,operation,platform,python_requirement,compiler_or_runtime,smoke_command,smoke_status,classification,license_status,license_spdx,disk_bytes,download_bytes,blocker,notes
@@ -160,11 +170,26 @@ Define the nine canonical compatibility labels and smoke states `NOT_RUN`, `PASS
 `FAIL`, `BLOCKED`. A fragment binds registry digest, repository, full SHA,
 experiment, requested selected path, operation, normalized platform/toolchain,
 relative command vector, exit status, byte counts, license observation, blocker,
-notes, and SHA-256 evidence hashes. Reject extra/missing keys, absolute paths,
+notes, runtime subject (`source_checkout` or `package`), exact package version and
+artifact hash when applicable, optional patch/remedy artifact SHA-256, structured
+platform-requirement evidence with provenance/hash, and SHA-256 evidence hashes.
+Reject extra/missing keys, absolute paths,
 nonfinite/negative counts, timestamps in comparison rows, lock mismatches, and any
-claim stronger than its operation supports.
+claim stronger than its operation supports. A package-runtime fragment retains the
+P2 Git SHA as registry provenance but never claims that SHA was executed.
 
-- [ ] **Step 4: Implement deterministic consolidation**
+- [ ] **Step 4: Implement the reproducible source-operation runner**
+
+`reflect/source_ops.py` implements only bounded read-only operations:
+`AST_PARSE`, `HEADER_LAYOUT`, `MANIFEST_LAYOUT`, and `ASSET_LICENSE_INVENTORY`.
+It resolves every path beneath a no-follow checkout descriptor, rejects symlinks,
+nonregular files, invalid UTF-8, escape, oversized inputs, and unrequested paths;
+uses `ast.parse` without import; and records normalized findings plus content hashes.
+`write_fragment_create_only` validates evidence first, writes mode `0600` with
+`O_EXCL`, fsyncs file/directory, and refuses an existing fragment. Expose the same
+operation through the Experiment 00 CLI for exactly one repository/operation.
+
+- [ ] **Step 5: Implement deterministic consolidation**
 
 Create one row for every registry repository × experiment × requested path, using an
 empty selected-path sentinel only for entries with no requested paths. Apply frozen
@@ -173,26 +198,28 @@ precedence:
 1. locked `MISSING` → `PATH_CHANGED`;
 2. required use with unknown/ambiguous license → `LICENSE_REVIEW_REQUIRED`;
 3. executed runtime smoke pass → `WORKS_LOCAL_M2`;
-4. executed patched CPU smoke pass → `WORKS_LOCAL_CPU_WITH_PATCH`;
+4. executed patched CPU smoke pass with patch/remedy artifact hash → `WORKS_LOCAL_CPU_WITH_PATCH`;
 5. `SPARSE_REFERENCE`/`PAPER_AND_CODE_REFERENCE` study evidence → `SOURCE_REFERENCE_ONLY`;
-6. explicit remote GPU/Linux requirement → matching remote label;
+6. explicit remote GPU/Linux requirement with frozen provenance/hash → matching remote label;
 7. archived evidence → `STALE_OR_ARCHIVED`;
 8. otherwise → `NOT_EVALUATED`.
 
-No fragment may promote a `REMOTE_ONLY` or `DEFERRED` source to local. Generate the
+Without required patch/platform evidence, use `NOT_EVALUATED`; do not infer from a
+mode name alone. No fragment may promote a `REMOTE_ONLY` or `DEFERRED` source to local. Generate the
 CSV, licenses table, source map, and experiment result/interface documents from
 sorted records with LF newlines and atomic writes.
 
-- [ ] **Step 5: Implement commands and canonical experiment skeleton**
+- [ ] **Step 6: Implement commands and canonical experiment skeleton**
 
 `scripts/source_audit.py --check` validates existing outputs without network;
-`--write` generates from fragments. The experiment module accepts `--config`,
+`--write` generates from fragments. `--operate NAME --operation OP --fragment PATH`
+runs the reviewed source-operation API and create-only writer. The experiment module accepts `--config`,
 `--seed`, `--output-dir`, `--dry-run`, `--max-episodes`, and `--headless`; because
 Experiment 00 has no episodes, nonzero `--max-episodes` is recorded but does not
 create repeated source operations. `--dry-run` prints the selected operations only.
 Add `make source-audit` as offline P2 audit followed by Experiment 00 `--check`.
 
-- [ ] **Step 6: Verify and commit**
+- [ ] **Step 7: Verify and commit**
 
 Run focused/full tests and `make safety-check`; expect all to pass with no network.
 Commit all Task 2 files atomically as `feat: add source compatibility evidence`.
@@ -210,14 +237,16 @@ Commit all Task 2 files atomically as `feat: add source compatibility evidence`.
 - Create: `tests/test_source_smoke.py`
 
 **Interfaces:**
-- Consumes: locked published MuJoCo 3.x package and P2 `mujoco` provenance.
+- Consumes: locked published MuJoCo 3.x package and separately recorded P2 `mujoco` source provenance.
 - Produces: `run_mujoco_smoke() -> SmokeEvidence` and a deterministic evidence fragment without rendering/viewer state.
 
 - [ ] **Step 1: Write failing smoke tests**
 
 Test a minimal two-body XML, headless `MjModel.from_xml_string`, `MjData`, one
 `mj_step`, finite time/state, no viewer/window/network, locked package version, and
-fragment binding to the P2 MuJoCo SHA/license. Prove RED before adding the dependency.
+fragment binding to the installed package name/version/artifact hash. Retain the P2
+MuJoCo Git SHA/license only in separate registry-provenance fields and assert the
+fragment does not claim that SHA was executed. Prove RED before adding the dependency.
 
 - [ ] **Step 2: Add and lock only MuJoCo**
 
@@ -229,7 +258,8 @@ or experiment policy dependencies.
 
 Use an inline XML with one world, plane, free body, joint, and actuator. Set a
 deterministic control, call one `mj_step`, assert finite `time/qpos/qvel`, and record
-package/Python/platform versions, command, duration, and hashes. Never create a
+package/Python/platform versions, installed-distribution artifact hash, command,
+duration, and hashes. Never create a
 viewer or load a downloaded model.
 
 - [ ] **Step 4: Verify and commit**
@@ -258,8 +288,10 @@ check, and safety check. Commit as `feat: add MuJoCo compatibility smoke`.
 
 - [ ] **Step 1: Freeze the operation manifest**
 
-Generate a deterministic manifest for the eight eligible sparse repositories plus
-the MuJoCo runtime smoke. Record exact locked SHAs, existing/missing paths,
+Generate a deterministic manifest covering all 45 repositories. Record exact locked
+SHAs, existing/missing paths, and frozen platform/archive requirement observations
+with canonical or official provenance and content hashes. Only the eight eligible
+sparse repositories plus the MuJoCo package smoke receive executable operations. Record
 operations, commands, platform/toolchain, per-command 60-minute maximum, 2 GB
 per-source and 5 GB pass download ceilings, and no-copy/no-model constraints. Hash
 and commit the manifest before source operations.
@@ -268,8 +300,9 @@ and commit the manifest before source operations.
 
 Dispatch non-overlapping workers for Experiment 01, 02, and 03 repositories. Each
 worker owns only its `external/<repo>` destinations and distinct fragment files.
-Run the explicit sparse command, AST-parse selected Python files, perform declared
-static manifest/header checks, record bytes and exact output, and stop after one
+Run the explicit sparse command, then invoke only the reviewed `--operate` command
+for declared AST/manifest/header/asset-license checks; it records bytes, normalized
+findings, content hashes, and exact command into a create-only fragment. Stop after one
 failure plus one materially different remedy. Do not import study-only projects.
 
 - [ ] **Step 3: Run the MuJoCo smoke serially**
@@ -294,11 +327,15 @@ four required outputs bind to the P2 lock and fragment hashes.
 
 - [ ] **Step 5: Apply the Experiment 00 claim and advance gate**
 
-Set the result to `SUPPORTED`, `NOT_SUPPORTED`, or `INCONCLUSIVE` based on the
-predeclared hypothesis and actual compatibility evidence—not on whether every
-optional source worked. Record exact claims/cannot-claims, selected source seams,
+Set the canonical comparative implementation-time hypothesis to `INCONCLUSIVE`
+because P3 does not run a counterfactual adoption-time study. Keep the operational
+advance decision separate and report only the canonical can-establish findings:
+revisions, compatibility, source seams, blockers, and reuse disposition. Record exact claims/cannot-claims, selected source seams,
 local fallbacks, Unitree implications, blockers, and next experiments. P3 advances
-only if MuJoCo and the approved project-local baseline can run cleanly on M2.
+only if the complete P2 audit passes, the MuJoCo package smoke passes, every
+installed dependency has matching license/smoke evidence, every eligible checkout
+is clean or explicitly dispositioned after its bounded attempts, all outputs
+validate, no checkout/model is tracked, and remote/physical execution remains off.
 
 - [ ] **Step 6: Verify repository boundaries and state**
 
