@@ -162,6 +162,38 @@ Before an evidence-bearing comparison, each experiment must freeze:
 - negative controls and anchor baselines;
 - artifact and configuration hashes.
 
+Every pilot and confirmation also freezes an evidence-fidelity contract. Results are
+invalid unless the retained evidence contains all of the following:
+
+- immutable raw per-trial rows/events before aggregation, with schema version,
+  experiment/protocol revision, condition and variant identity, scene/episode/anchor/
+  candidate identity, seed and RNG namespace, timestamps or ordered tick indices,
+  units, coordinate frames, validity/missingness flags, terminal state, and the exact
+  configuration, code, dependency, input, and output hashes needed for replay;
+- an append-only disposition record for every scheduled trial, including successful,
+  failed, timed-out, crashed, excluded, and declared-missing cases; exclusions never
+  delete or overwrite the raw case and carry a frozen reason code plus analysis
+  inclusion flags;
+- a deterministic annotated sample index containing at least one working and one
+  nonworking case per evaluated condition whenever each class exists, selected by a
+  preregistered rule rather than visual appeal, with labels, source row/event ranges,
+  relevant command output, and links to the immutable raw artifacts;
+- plot-ready tables that preserve the analysis unit and pairing keys, together with a
+  closed visualization recipe recording source artifact hashes, filters, transforms,
+  grouping, ordering, axes, units, coordinate conventions, binning/smoothing, summary
+  statistics, interval construction, palette/legend labels, image/raster dimensions,
+  and deterministic renderer/version/seed; and
+- a reconstruction check which regenerates every reported table, graph, raster, or
+  image from raw artifacts in a clean output directory and compares canonical table
+  bytes or declared numeric/pixel tolerances. Presentation files are derived views,
+  never the sole evidence.
+
+If a working or nonworking class does not occur, the sample index records
+`CLASS_NOT_OBSERVED` with the exact eligible denominator; it must not synthesize or
+hand-pick a substitute. Raw evidence remains bounded by the experiment's declared
+artifact budget through lossless typed/tabular/event encodings and content-addressed
+deduplication, never by dropping failed cases or reconstruction fields.
+
 Pilots choose task-specific numeric values using variance and feasibility evidence.
 Those values must freeze before confirmation. The default analysis unit is the
 scene/episode seed and the default contrast is the paired per-seed difference
