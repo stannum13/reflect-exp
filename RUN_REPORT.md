@@ -6,14 +6,14 @@ The deterministic simulation-only shared rollout harness passed the bounded P1 g
 
 ## Evidence base
 
-- Implementation/evidence-base Git SHA: `9c31d48ed55242bf54061bc485aa28799d942717`
+- Implementation/evidence-base Git SHA: `acdddca85e8651c0b137fd5d7460b7b437d10edc`
 - Report provenance: commands below were rerun against the current checkout; the SHA
   intentionally names the pre-report implementation commit because a report cannot
   contain the hash of a commit that includes itself.
 - Durable state: `p1: complete`, `p2: in_progress`, `current_pass: 2`.
 - Working tree observed during report generation: `clean`
 - Fixture provenance mode: `repository`.
-- Fixture Git SHA: `9c31d48ed55242bf54061bc485aa28799d942717`.
+- Fixture Git SHA: `acdddca85e8651c0b137fd5d7460b7b437d10edc`.
 - Fixture source registry artifact: `references/bootstrap-tools.yaml`
   with SHA-256 `ecb46f43ae4ed7e1006570eecbc4c5632809ca92719452b6d2c3ecc2be476151`.
 - Fixture model hashes: `{}`
@@ -30,11 +30,11 @@ Resolved 10 packages in 3ms
 exit: 0
 
 UV_CACHE_DIR=.cache/uv uv run pytest -q
-........................................................................ [ 32%]
-........................................................................ [ 65%]
-........................................................................ [ 98%]
-....                                                                     [100%]
-220 passed in 4.79s
+........................................................................ [ 30%]
+........................................................................ [ 61%]
+........................................................................ [ 92%]
+..................                                                       [100%]
+234 passed in 4.81s
 ```
 
 ## Fixture and replay
@@ -53,10 +53,10 @@ python scripts/write_p1_fixture.py --output-dir <TEMP_ROOT_B>
 The two independently generated fixture directories had identical SHA-256 hashes
 for every file:
 
-- `actions.parquet`: `0b475b6ea0781ecb1dbd3fb98acc1228bd0c13aad0da880dae60b4989f75332b`
+- `actions.parquet`: `11acd62c35b82e5ab1babd906c4e0188363fec43448a8ce0730e30e4d1736248`
 - `config.json`: `44089c047cb48ec317b59415a85d36665e2b31bfe0c1033970be397028f4dad2`
-- `events.jsonl`: `79f6accce88b8d4592cd2bee8a67c4faf2a243581ba6a2c11134bf4f5165dab1`
-- `metadata.json`: `daab3f5b9dd560eaeff85915c4066db7f9615324ee9b12792b0ac973475de2a2`
+- `events.jsonl`: `39b50ca64c3fa50af49dbb7438704dd865030e73fc2d76e00a2496c57169a084`
+- `metadata.json`: `c960b58cdec7bb9f59f66a7b26bdb1c64c679542335f5e6ac8f6079442fbb344`
 - `metrics.json`: `14dc951baf7efec7c9c14b7e759a5c9b0535c249d23e3738855f5873ed88a6fc`
 - `observations.npz`: `8cc1610201cf96b200be98c0a98c54b16bcec47c3510c1f3eea6ac8a7d4842b6`
 - `summary.md`: `973fb76a10691256c01ee34e4f561331bd0e7d91856d79ae01ca66506a124bd1`
