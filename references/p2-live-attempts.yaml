@@ -204,6 +204,9 @@ attempts:
     cache_validation: >-
       The resolver validated and replayed the same 19-entry canonical prefix, then
       reached the first uncached pinned Kimera license endpoint. The shared
-      unauthenticated quota was already exhausted at the reset boundary, so no new
-      payload was cached. The cache remains at 159 files across 20 repository
-      directories and no lock exists or was published.
+      unauthenticated window was consumed by the resolver's live-first refresh of
+      cached commit, tree, and license endpoints before it reached that first
+      missing endpoint, so no new payload was cached. The cache remains at 159 files
+      across 20 repository directories and no lock exists or was published. The
+      next window must use the allowlisted single-name command for the first
+      incomplete entry before resuming the all-entry publication command.
