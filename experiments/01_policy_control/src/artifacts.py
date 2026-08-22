@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping, Sequence
 import ctypes
 from dataclasses import asdict, dataclass, fields, is_dataclass
+from datetime import datetime, timezone
 import errno
 import hashlib
 import json
@@ -50,6 +51,15 @@ _RESOURCE_LIMITS = {
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _GIT_SHA = re.compile(r"[0-9a-f]{40}")
 _STACK_ORDER = {f"P{number}": number for number in range(1, 7)}
+_FAILURE_KEYS = frozenset({
+    "schema_version", "study_id", "phase", "revision", "shard_id", "stack_id",
+    "seed", "condition_id", "reason", "started_at_utc", "finished_at_utc",
+    "command_sha256", "readable_output_sha256", "details_sha256",
+})
+_FAILURE_REASONS = frozenset({
+    "PROCESS_TIMEOUT", "RESOURCE_EXHAUSTION", "MISSING_OUTPUT", "CORRUPT_OUTPUT",
+})
+_UTC_SECONDS = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
 
 
 class ArtifactError(ValueError):
@@ -893,6 +903,273 @@ def _media_type(name: str) -> str:
     return "application/jsonl" if name.endswith(".jsonl") else "application/json"
 
 
+_ROLLOUT_WIRE_KEYS = frozenset({
+    "metadata", "config", "metrics", "events", "observations", "actions",
+    "control_references", "summary", "replay",
+})
+_PLOT_ROW_KEYS = frozenset({
+    "stack_id", "seed", "condition_id", "policy_hz", "latency_ms", "move_count",
+    "fault", "recovery_s", "error_m", "jerk_p95", "age_p95_s", "timeline", "valid",
+})
+_PLOT_NAMES = (
+    "recovery-vs-latency.svg", "tracking-error-vs-rate.svg", "joint-jerk.svg",
+    "action-age.svg", "timeline.svg",
+)
+
+
+def _digest_state(value: object) -> str:
+    return hashlib.sha256(canonical_state_bytes(value)).hexdigest()
+
+
+def _rollout_wire(artifact: RolloutArtifact, replay: ReplayResult) -> dict[str, object]:
+    return _wire({
+        "metadata": artifact.metadata, "config": artifact.config,
+        "metrics": artifact.metrics, "events": artifact.events,
+        "observations": artifact.observations, "actions": artifact.actions,
+        "control_references": artifact.control_references,
+        "summary": artifact.summary, "replay": replay,
+    })  # type: ignore[return-value]
+
+
+def raw_evidence_from_rollout(
+    rollout_path: Path,
+    *,
+    revision: int,
+    variant_id: str,
+    anchor_id: str,
+    candidate_id: str,
+    rng_namespace: str,
+    policy_hz: int,
+    latency_ms: int,
+    move_count: int,
+    fault: str,
+) -> dict[str, object]:
+    """Derive one lossless raw row only from a validated immutable rollout."""
+    artifact = validate_rollout(Path(rollout_path))
+    replay = replay_rollout(Path(rollout_path))
+    if not replay.frames or canonical_state_bytes(replay.frames[-1].state) != canonical_state_bytes(replay.final_state):
+        raise ArtifactError("rollout replay does not reconstruct its terminal state")
+    metrics = artifact.metrics
+    stack_id = metrics.get("stack_id")
+    condition_id = metrics.get("condition_id")
+    seed = artifact.metadata.seed
+    if stack_id not in _STACK_ORDER or not isinstance(condition_id, str):
+        raise ArtifactError("rollout lacks its exact stack/condition identity")
+    for value, name in (
+        (revision, "revision"), (policy_hz, "policy_hz"), (latency_ms, "latency_ms"),
+        (move_count, "move_count"),
+    ):
+        _exact_int(value, name)
+    for value, name in (
+        (variant_id, "variant_id"), (anchor_id, "anchor_id"),
+        (candidate_id, "candidate_id"), (rng_namespace, "rng_namespace"),
+        (fault, "fault"),
+    ):
+        _text(value, name)
+    raw_tick = metrics.get("raw_500hz")
+    if not isinstance(raw_tick, Mapping) or not isinstance(raw_tick.get("tick"), tuple) or not raw_tick["tick"]:
+        raise ArtifactError("rollout lacks lossless ordered raw tick evidence")
+    ticks = tuple(raw_tick["tick"])
+    if any(type(item) is not int for item in ticks) or ticks != tuple(range(ticks[0], ticks[-1] + 1)):
+        raise ArtifactError("raw rollout ticks are not one complete ordered domain")
+    required_metrics = ("recovery_s", "final_error_m", "jerk_p95", "age_p95_s", "valid")
+    if any(key not in metrics for key in required_metrics):
+        raise ArtifactError("rollout lacks plot-ready metric inputs")
+    rollout = _rollout_wire(artifact, replay)
+    scenario_record = metrics.get("scenario_record")
+    scenario_hash = metrics.get("scenario_identity_sha256")
+    _hash(scenario_hash, "scenario_identity_sha256")
+    output_value = {
+        key: rollout[key]
+        for key in ("metrics", "events", "observations", "actions", "control_references", "summary")
+    }
+    status = artifact.metadata.status
+    disposition = "SUCCESS" if status == "pass" else "FAILED"
+    row = {
+        "schema_version": 1, "revision": revision, "stack_id": stack_id,
+        "condition_id": condition_id, "variant_id": variant_id,
+        "scene_id": f"scene-{seed:08d}", "episode_id": artifact.path.name,
+        "anchor_id": anchor_id, "candidate_id": candidate_id, "seed": seed,
+        "rng_namespace": rng_namespace, "tick_start": ticks[0], "tick_end": ticks[-1],
+        "units": {"position": "m", "time": "ns"},
+        "frames": {"target": "world"}, "validity": "VALID", "missingness": None,
+        "terminal_state": "COMPLETE",
+        "config_sha256": _digest_state(artifact.config),
+        "code_sha256": hashlib.sha256(artifact.metadata.git_sha.encode("ascii")).hexdigest(),
+        "dependency_sha256": _digest_state(artifact.metadata.dependency_versions),
+        "input_sha256": _digest_state((artifact.config, scenario_record, scenario_hash)),
+        "output_sha256": _digest_state(output_value),
+        "replay_sha256": _digest_state(rollout["replay"]),
+        "bundle_sha256": _digest_state(rollout), "disposition": disposition,
+        "reason": "NONE" if disposition == "SUCCESS" else "SCIENTIFIC_FAILURE",
+        "analysis_included": True, "rollout": rollout,
+        "plot": {
+            "stack_id": stack_id, "seed": seed, "condition_id": condition_id,
+            "policy_hz": policy_hz, "latency_ms": latency_ms,
+            "move_count": move_count, "fault": fault,
+            "recovery_s": float(metrics["recovery_s"]),
+            "error_m": float(metrics["final_error_m"]),
+            "jerk_p95": float(metrics["jerk_p95"]),
+            "age_p95_s": float(metrics["age_p95_s"]),
+            "timeline": [float(item) for item in raw_tick["error_m"]],
+            "valid": bool(metrics["valid"]),
+        },
+    }
+    return row
+
+
+def _sorted_raw_rows(raw_rows: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
+    return sorted(
+        (dict(row) for row in raw_rows),
+        key=lambda row: (
+            _STACK_ORDER.get(str(row.get("stack_id")), 99), int(row.get("seed", -1)),
+            str(row.get("condition_id")), str(row.get("episode_id")),
+        ),
+    )
+
+
+def _raw_payload_offsets(
+    raw_rows: Sequence[Mapping[str, object]],
+) -> tuple[list[dict[str, object]], bytes, dict[str, tuple[int, int]]]:
+    ordered = _sorted_raw_rows(raw_rows)
+    parts: list[bytes] = []
+    offsets: dict[str, tuple[int, int]] = {}
+    cursor = 0
+    for row in ordered:
+        episode_id = str(row.get("episode_id"))
+        if episode_id in offsets:
+            raise ArtifactError("raw episode identities must be unique")
+        payload = canonical_json_bytes(row)
+        parts.append(payload)
+        offsets[episode_id] = (cursor, cursor + len(payload))
+        cursor += len(payload)
+    return ordered, b"".join(parts), offsets
+
+
+def _command_output_bytes(row: Mapping[str, object]) -> bytes:
+    rollout = row.get("rollout")
+    if not isinstance(rollout, Mapping):
+        raise ArtifactError("raw row lacks retained rollout command output")
+    return canonical_state_bytes({
+        "actions": rollout.get("actions"),
+        "control_references": rollout.get("control_references"),
+    })
+
+
+def build_annotated_samples(
+    raw_rows: Sequence[Mapping[str, object]],
+) -> tuple[dict[str, object], ...]:
+    ordered, _, offsets = _raw_payload_offsets(raw_rows)
+    groups: dict[tuple[str, str, str], list[dict[str, object]]] = {}
+    for row in ordered:
+        groups.setdefault(
+            (str(row["stack_id"]), str(row["variant_id"]), str(row["condition_id"])), [],
+        ).append(row)
+    result = []
+    for (stack, variant, condition), rows in sorted(groups.items(), key=lambda item: (_STACK_ORDER[item[0][0]], item[0][1:])):
+        classes = {
+            "WORKING": [row for row in rows if row["disposition"] == "SUCCESS"],
+            "NONWORKING": [row for row in rows if row["disposition"] in {"FAILED", "TIMED_OUT", "CRASHED", "DECLARED_MISSING"}],
+        }
+        for target in ("WORKING", "NONWORKING"):
+            eligible = classes[target]
+            selected = eligible[0] if eligible else None
+            episode_id = str(selected["episode_id"]) if selected else None
+            span = offsets[episode_id] if episode_id else None
+            result.append({
+                "schema_version": 1, "revision": int(rows[0]["revision"]),
+                "stack_id": stack, "variant_id": variant, "condition_id": condition,
+                "target_class": target, "label": target if selected else "CLASS_NOT_OBSERVED",
+                "source_ranges": ([{"start": span[0], "end": span[1]}] if span else []),
+                "command_output_sha256": hashlib.sha256(
+                    _command_output_bytes(selected) if selected else b"",
+                ).hexdigest(),
+                "raw_links": ([episode_id] if episode_id else []),
+                "denominator": len(rows),
+            })
+    return tuple(result)
+
+
+def build_plot_recipes(
+    raw_rows: Sequence[Mapping[str, object]], promoted_stacks: Sequence[str],
+) -> tuple[dict[str, object], ...]:
+    _, raw_payload, _ = _raw_payload_offsets(raw_rows)
+    promoted = tuple(dict.fromkeys(promoted_stacks))
+    if any(stack not in _STACK_ORDER or stack == "P1" for stack in promoted):
+        raise ArtifactError("plot recipes contain an invalid promoted stack")
+    stacks = ("P1", *promoted)
+    digest = hashlib.sha256(raw_payload).hexdigest()
+    axes = {
+        "recovery-vs-latency.svg": {"x": "latency_ms", "y": "recovery_s"},
+        "tracking-error-vs-rate.svg": {"x": "policy_hz", "y": "error_m"},
+        "joint-jerk.svg": {"x": "seed", "y": "jerk_p95"},
+        "action-age.svg": {"x": "latency_ms", "y": "age_p95_s"},
+        "timeline.svg": {"x": "sample", "y": "error_m"},
+    }
+    revision_values = {int(row["revision"]) for row in raw_rows}
+    if len(revision_values) != 1:
+        raise ArtifactError("plot recipe inputs span revisions")
+    revision = next(iter(revision_values))
+    return tuple({
+        "schema_version": 1, "revision": revision, "plot": name,
+        "source_sha256": digest,
+        "filters": [{"field": "stack_id", "operator": "IN", "values": list(stacks)}],
+        "transforms": ["ROLLOUT_METRICS_TO_TASK11_PLOT_ROW"],
+        "group_by": ["stack_id"], "order_by": ["stack_id", "seed", "condition_id"],
+        "axes": axes[name], "units": {"x": "DECLARED", "y": "DECLARED"},
+        "frames": {"target": "world"}, "binning": "NONE", "summary": "RAW",
+        "interval": "NONE", "palette": ["#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e", "#17becf"],
+        "legend": True, "dimensions": {"width": 640, "height": 400},
+        "renderer_version": "TASK11_SVG_V1", "seed": 0,
+    } for name in _PLOT_NAMES)
+
+
+def _task11_svg(
+    title: str, x_label: str, y_label: str,
+    series: Sequence[tuple[str, Sequence[tuple[float, float]]]],
+) -> bytes:
+    colors = ("#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e", "#17becf")
+    all_points = tuple(point for _, points in series for point in points)
+    xs, ys = [item[0] for item in all_points] or [0.0], [item[1] for item in all_points] or [0.0]
+    xmin, xmax, ymin, ymax = min(xs), max(xs), min(ys), max(ys)
+    lines = ['<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">', '<rect width="640" height="400" fill="white"/>', f'<text x="20" y="28" font-family="sans-serif" font-size="16">{title}</text>', '<path d="M50 350H620M50 50V350" stroke="#222" fill="none"/>', f'<text x="300" y="390" font-family="sans-serif" font-size="12">{x_label}</text>', f'<text x="8" y="45" font-family="sans-serif" font-size="12">{y_label}</text>']
+    for index, (label, points) in enumerate(series):
+        ordered = tuple(points)
+        if not ordered:
+            continue
+        coords = " ".join(f"{50 + 550 * ((x - xmin) / (xmax - xmin) if xmax != xmin else 0.5):.3f},{350 - 280 * ((y - ymin) / (ymax - ymin) if ymax != ymin else 0.5):.3f}" for x, y in ordered)
+        lines.append(f'<polyline points="{coords}" fill="none" stroke="{colors[index % len(colors)]}" stroke-width="2"/>')
+        lines.append(f'<text x="500" y="{60 + 18 * index}" font-family="sans-serif" font-size="12" fill="{colors[index % len(colors)]}">{label}</text>')
+    lines.append("</svg>")
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def _render_task11_plots(
+    plot_rows: Sequence[Mapping[str, object]], promoted_stacks: Sequence[str],
+) -> dict[str, bytes]:
+    stacks = tuple(dict.fromkeys(("P1", *promoted_stacks)))
+    ordered = tuple(sorted((dict(row) for row in plot_rows if row["valid"]), key=lambda row: (_STACK_ORDER[str(row["stack_id"])], int(row["seed"]), str(row["condition_id"]))))
+    keys_by_stack = {stack: {(row["seed"], row["condition_id"]) for row in ordered if row["stack_id"] == stack} for stack in stacks}
+    shared = set.intersection(*(keys_by_stack[stack] for stack in stacks))
+    if not shared:
+        raise ArtifactError("plots require shared P1/promoted stack seed-condition evidence")
+    ordered = tuple(row for row in ordered if row["stack_id"] in stacks and (row["seed"], row["condition_id"]) in shared)
+    specs = (
+        (_PLOT_NAMES[0], "Recovery vs latency", "latency (ms)", "recovery (s)", lambda row: (float(row["latency_ms"]), float(row["recovery_s"]))),
+        (_PLOT_NAMES[1], "Tracking error vs rate", "policy rate (Hz)", "error (m)", lambda row: (float(row["policy_hz"]), float(row["error_m"]))),
+        (_PLOT_NAMES[2], "Joint jerk", "seed", "jerk (rad/s^3)", lambda row: (float(row["seed"]), float(row["jerk_p95"]))),
+        (_PLOT_NAMES[3], "Action age", "latency (ms)", "age (s)", lambda row: (float(row["latency_ms"]), float(row["age_p95_s"]))),
+    )
+    rendered = {name: _task11_svg(title, x_label, y_label, tuple((stack, tuple(transform(row) for row in ordered if row["stack_id"] == stack)) for stack in stacks)) for name, title, x_label, y_label, transform in specs}
+    timeline = [row for row in ordered if row["condition_id"] == "core-10-300-2" and row["policy_hz"] == 10 and row["latency_ms"] == 300 and row["move_count"] == 2 and row["fault"] == "NONE" and row["timeline"]]
+    keys = sorted({(row["seed"], row["condition_id"]) for row in timeline})
+    chosen = next((key for key in keys if all(any(row["stack_id"] == stack and (row["seed"], row["condition_id"]) == key for row in timeline) for stack in stacks)), None)
+    if chosen is None:
+        raise ArtifactError("timeline requires one shared exact intended condition")
+    rendered[_PLOT_NAMES[4]] = _task11_svg("Timeline", "sample", "error (m)", tuple((stack, tuple((float(index), float(value)) for row in timeline if row["stack_id"] == stack and (row["seed"], row["condition_id"]) == chosen for index, value in enumerate(row["timeline"]))) for stack in stacks))
+    return rendered
+
+
 def _publication_payloads(
     raw_rows: Sequence[Mapping[str, object]],
     annotated_index: Sequence[Mapping[str, object]],
@@ -905,6 +1182,7 @@ def _publication_payloads(
         "missingness", "terminal_state", "config_sha256", "code_sha256",
         "dependency_sha256", "input_sha256", "output_sha256", "replay_sha256",
         "bundle_sha256", "disposition", "reason", "analysis_included",
+        "rollout", "plot",
     })
     index_keys = frozenset({
         "schema_version", "revision", "stack_id", "variant_id", "condition_id",
@@ -962,6 +1240,54 @@ def _publication_payloads(
             raise ArtifactError("excluded episode disposition requires a reason and analysis exclusion")
         if (disposition == "SUCCESS") != (row["reason"] == "NONE"):
             raise ArtifactError("episode disposition and reason are inconsistent")
+        rollout = _closed(row["rollout"], _ROLLOUT_WIRE_KEYS, "retained rollout")
+        plot = _closed(row["plot"], _PLOT_ROW_KEYS, "plot row")
+        metadata = rollout["metadata"]
+        metrics = rollout["metrics"]
+        if not isinstance(metadata, dict) or not isinstance(metrics, dict):
+            raise ArtifactError("retained rollout metadata/metrics must be objects")
+        raw_tick = metrics.get("raw_500hz")
+        if not isinstance(raw_tick, dict) or raw_tick.get("tick") != list(range(start, end + 1)):
+            raise ArtifactError("retained raw tick evidence differs from declared range")
+        if (
+            metadata.get("seed") != row["seed"]
+            or metrics.get("stack_id") != row["stack_id"]
+            or metrics.get("condition_id") != row["condition_id"]
+            or plot["stack_id"] != row["stack_id"]
+            or plot["seed"] != row["seed"]
+            or plot["condition_id"] != row["condition_id"]
+        ):
+            raise ArtifactError("retained rollout identity differs from raw evidence row")
+        expected_plot = {
+            "stack_id": row["stack_id"], "seed": row["seed"],
+            "condition_id": row["condition_id"], "policy_hz": plot["policy_hz"],
+            "latency_ms": plot["latency_ms"], "move_count": plot["move_count"],
+            "fault": plot["fault"], "recovery_s": metrics.get("recovery_s"),
+            "error_m": metrics.get("final_error_m"), "jerk_p95": metrics.get("jerk_p95"),
+            "age_p95_s": metrics.get("age_p95_s"),
+            "timeline": raw_tick.get("error_m"), "valid": metrics.get("valid"),
+        }
+        if plot != expected_plot:
+            raise ArtifactError("plot row does not reconstruct from retained rollout metrics")
+        if any(type(plot[key]) is not int for key in ("policy_hz", "latency_ms", "move_count")) or type(plot["valid"]) is not bool:
+            raise ArtifactError("plot row integer/boolean fields are not exact")
+        if any(not math.isfinite(float(plot[key])) for key in ("recovery_s", "error_m", "jerk_p95", "age_p95_s")) or not isinstance(plot["timeline"], list) or any(not math.isfinite(float(item)) for item in plot["timeline"]):
+            raise ArtifactError("plot row numeric fields are not finite")
+        output_value = {key: rollout[key] for key in ("metrics", "events", "observations", "actions", "control_references", "summary")}
+        expected_hashes = {
+            "config_sha256": _digest_state(rollout["config"]),
+            "code_sha256": hashlib.sha256(str(metadata.get("git_sha", "")).encode("ascii")).hexdigest(),
+            "dependency_sha256": _digest_state(metadata.get("dependency_versions")),
+            "input_sha256": _digest_state((rollout["config"], metrics.get("scenario_record"), metrics.get("scenario_identity_sha256"))),
+            "output_sha256": _digest_state(output_value),
+            "replay_sha256": _digest_state(rollout["replay"]),
+            "bundle_sha256": _digest_state(rollout),
+        }
+        if any(row[key] != expected for key, expected in expected_hashes.items()):
+            raise ArtifactError("raw evidence digest does not reconstruct from retained rollout")
+        replay = rollout["replay"]
+        if not isinstance(replay, dict) or not replay.get("frames") or replay["frames"][-1].get("state") != replay.get("final_state"):
+            raise ArtifactError("retained replay does not reconstruct its terminal state")
         normalized_raw.append(row)
     normalized_index: list[dict[str, object]] = []
     for source in annotated_index:
@@ -1022,7 +1348,7 @@ def _publication_payloads(
         normalized_recipes.append(row)
     def jsonl(rows: Sequence[dict[str, object]]) -> bytes:
         return b"".join(canonical_json_bytes(row) for row in rows)
-    sorted_raw = sorted(normalized_raw, key=lambda row: (str(row["stack_id"]), int(row["seed"]), str(row["condition_id"]), str(row["episode_id"])))
+    sorted_raw, raw_payload, raw_offsets = _raw_payload_offsets(normalized_raw)
     raw_groups: dict[tuple[str, str, str], list[dict[str, object]]] = {}
     for row in normalized_raw:
         raw_groups.setdefault((str(row["stack_id"]), str(row["variant_id"]), str(row["condition_id"])), []).append(row)
@@ -1047,31 +1373,44 @@ def _publication_payloads(
                 raise ArtifactError("annotated sample denominator differs from eligible raw rows")
             if eligible:
                 expected_link = [eligible[0]["episode_id"]]
-                if annotation["label"] != target or annotation["raw_links"] != expected_link:
+                expected_span = raw_offsets[str(expected_link[0])]
+                expected_ranges = [{"start": expected_span[0], "end": expected_span[1]}]
+                expected_command = hashlib.sha256(_command_output_bytes(eligible[0])).hexdigest()
+                if (
+                    annotation["label"] != target
+                    or annotation["raw_links"] != expected_link
+                    or annotation["source_ranges"] != expected_ranges
+                    or annotation["command_output_sha256"] != expected_command
+                ):
                     raise ArtifactError("annotated sample does not use the deterministic first eligible raw case")
-            elif annotation["label"] != "CLASS_NOT_OBSERVED" or annotation["raw_links"] or annotation["source_ranges"]:
+            elif (
+                annotation["label"] != "CLASS_NOT_OBSERVED"
+                or annotation["raw_links"] or annotation["source_ranges"]
+                or annotation["command_output_sha256"] != hashlib.sha256(b"").hexdigest()
+            ):
                 raise ArtifactError("absent working/nonworking class must be CLASS_NOT_OBSERVED")
     sorted_index = sorted(normalized_index, key=lambda row: (str(row["stack_id"]), str(row["variant_id"]), str(row["condition_id"]), str(row["target_class"])))
-    sorted_recipes = sorted(normalized_recipes, key=lambda row: str(row["plot"]))
-    raw_payload = jsonl(sorted_raw)
+    if tuple(row["plot"] for row in normalized_recipes) != _PLOT_NAMES:
+        raise ArtifactError("plot recipes must cover the exact Task11 outputs in order")
+    first_filter = normalized_recipes[0]["filters"]
+    if not isinstance(first_filter, list) or len(first_filter) != 1 or not isinstance(first_filter[0], dict):
+        raise ArtifactError("plot recipe has no closed stack filter")
+    stack_values = first_filter[0].get("values")
+    if not isinstance(stack_values, list) or not stack_values or stack_values[0] != "P1":
+        raise ArtifactError("plot recipe stack filter must begin with P1")
+    promoted = tuple(stack_values[1:])
+    expected_recipes = build_plot_recipes(sorted_raw, promoted)
+    if tuple(normalized_recipes) != expected_recipes:
+        raise ArtifactError("plot recipe differs from the closed Task11 reconstruction contract")
+    sorted_recipes = list(normalized_recipes)
+    plot_rows = [dict(row["plot"]) for row in sorted_raw]
     payloads = {
         "raw-evidence.jsonl": raw_payload,
         "annotated-samples.jsonl": jsonl(sorted_index),
         "plot-recipes.json": canonical_json_bytes(sorted_recipes),
-        "derived-table.json": canonical_json_bytes({"rows": sorted_raw}),
+        "derived-table.json": canonical_json_bytes({"rows": plot_rows}),
     }
-    raw_digest = hashlib.sha256(raw_payload).hexdigest()
-    for recipe in sorted_recipes:
-        if recipe["source_sha256"] != raw_digest:
-            raise ArtifactError("plot recipe source_sha256 does not bind raw evidence")
-        recipe_digest = hashlib.sha256(canonical_json_bytes(recipe)).hexdigest()
-        width, height = recipe["dimensions"].get("width"), recipe["dimensions"].get("height")
-        if type(width) is not int or type(height) is not int or width <= 0 or height <= 0:
-            raise ArtifactError("plot dimensions require positive exact integers")
-        payloads[str(recipe["plot"])] = (
-            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
-            f'data-raw-sha256="{raw_digest}" data-recipe-sha256="{recipe_digest}"></svg>\n'
-        ).encode("utf-8")
+    payloads.update(_render_task11_plots(plot_rows, promoted))
     return payloads
 
 
@@ -1087,6 +1426,97 @@ def _artifact_manifest(payloads: Mapping[str, bytes], protocol_sha256: str) -> d
     }
 
 
+def _publication_boundary(_name: str) -> None:
+    """Fault-injection seam immediately after one durable publication boundary."""
+
+
+def _read_regular_at(directory_descriptor: int, name: str) -> bytes:
+    try:
+        value = os.stat(name, dir_fd=directory_descriptor, follow_symlinks=False)
+    except OSError as exc:
+        raise ArtifactError(f"publication entry is unreadable: {name}") from exc
+    if not stat.S_ISREG(value.st_mode):
+        raise ArtifactError(f"publication entry is not regular: {name}")
+    descriptor = os.open(
+        name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
+        dir_fd=directory_descriptor,
+    )
+    try:
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        if os.fstat(descriptor).st_size != sum(map(len, chunks)):
+            raise ArtifactError(f"publication entry changed while reading: {name}")
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
+def _write_at_create_only(directory_descriptor: int, name: str, payload: bytes) -> None:
+    if Path(name).name != name:
+        raise ArtifactError("publication filename must be one basename")
+    descriptor = os.open(
+        name,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
+        0o600,
+        dir_fd=directory_descriptor,
+    )
+    try:
+        offset = 0
+        while offset < len(payload):
+            offset += os.write(descriptor, payload[offset:])
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _quarantine_partial_publication(
+    directory_descriptor: int, payloads: Mapping[str, bytes],
+) -> None:
+    names = sorted(name for name in os.listdir(directory_descriptor) if name != ".quarantine")
+    if not names:
+        return
+    for name in names:
+        if name not in payloads or _read_regular_at(directory_descriptor, name) != payloads[name]:
+            raise ArtifactError("ambiguous partial evidence publication")
+    try:
+        os.mkdir(".quarantine", 0o700, dir_fd=directory_descriptor)
+    except FileExistsError:
+        pass
+    quarantine_descriptor = os.open(
+        ".quarantine",
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+        dir_fd=directory_descriptor,
+    )
+    try:
+        for name in names:
+            digest = hashlib.sha256(payloads[name]).hexdigest()
+            suffix = 0
+            while True:
+                candidate = f"{digest}-{suffix:04d}-{name}"
+                try:
+                    os.stat(candidate, dir_fd=quarantine_descriptor, follow_symlinks=False)
+                except FileNotFoundError:
+                    break
+                suffix += 1
+            _renameat_directory_noreplace(
+                directory_descriptor, name, quarantine_descriptor, candidate,
+            )
+        os.fsync(quarantine_descriptor)
+        os.fsync(directory_descriptor)
+        total = sum(
+            os.stat(name, dir_fd=quarantine_descriptor, follow_symlinks=False).st_size
+            for name in os.listdir(quarantine_descriptor)
+        )
+        if total > 64 * MIB:
+            raise ArtifactError("evidence quarantine exceeds its frozen byte ceiling")
+    finally:
+        os.close(quarantine_descriptor)
+
+
 def reconstruct_evidence(
     output_dir: Path,
     raw_rows: Sequence[Mapping[str, object]],
@@ -1099,22 +1529,24 @@ def reconstruct_evidence(
     payloads = _publication_payloads(raw_rows, annotated_index, plot_recipes)
     manifest = _artifact_manifest(payloads, protocol_sha256)
     marker = canonical_json_bytes(manifest)
-    if output_dir.exists():
-        if (output_dir / "artifact-manifest.json").is_file():
+    descriptor = open_directory_chain(output_dir, create=True)
+    try:
+        names = set(os.listdir(descriptor))
+        if "artifact-manifest.json" in names:
             existing = validate_evidence_publication(output_dir)
-            if existing != manifest or any((output_dir / name).read_bytes() != data for name, data in payloads.items()):
+            if existing != manifest or any(_read_regular_at(descriptor, name) != data for name, data in payloads.items()):
                 raise FileExistsError("immutable evidence publication conflicts")
             return existing
-        if any(output_dir.iterdir()):
-            raise ArtifactError("ambiguous partial evidence publication")
-    else:
-        output_dir.mkdir(parents=True)
-    for name, payload in sorted(payloads.items()):
-        _write_create_only(output_dir / name, payload)
-    _write_create_only(output_dir / "artifact-manifest.json", marker)
-    descriptor = os.open(output_dir, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
+        _quarantine_partial_publication(descriptor, payloads)
+        for name, payload in sorted(payloads.items()):
+            _write_at_create_only(descriptor, name, payload)
+            _publication_boundary(f"file:{name}")
+            os.fsync(descriptor)
+            _publication_boundary(f"directory-fsync:{name}")
+        _write_at_create_only(descriptor, "artifact-manifest.json", marker)
+        _publication_boundary("marker:artifact-manifest.json")
         os.fsync(descriptor)
+        _publication_boundary("directory-fsync:artifact-manifest.json")
     finally:
         os.close(descriptor)
     return manifest
@@ -1124,8 +1556,8 @@ def load_artifact_manifest(path: Path) -> dict[str, Any]:
     manifest = load_canonical_json(path, _ARTIFACT_MANIFEST_KEYS)
     if _exact_int(manifest["schema_version"], "schema_version") != 1:
         raise ArtifactError("unsupported artifact manifest")
-    _text(manifest["study_id"], "study_id")
-    _text(manifest["phase"], "phase")
+    if manifest["study_id"] != STUDY_ID or manifest["phase"] != "analysis":
+        raise ArtifactError("artifact manifest study_id/phase differs")
     _hash(manifest["protocol_sha256"], "protocol_sha256")
     _exact_int(manifest["total_bytes"], "total_bytes")
     if not isinstance(manifest["files"], list):
@@ -1151,8 +1583,16 @@ def validate_evidence_publication(output_dir: Path) -> dict[str, Any]:
     manifest = load_artifact_manifest(output_dir / "artifact-manifest.json")
     expected = {"artifact-manifest.json"} | {row["path"] for row in manifest["files"]}
     actual = {entry.name for entry in output_dir.iterdir()}
-    if actual != expected or any(entry.is_symlink() or not entry.is_file() for entry in output_dir.iterdir()):
+    allowed = expected | ({".quarantine"} if ".quarantine" in actual else set())
+    if actual != allowed or any(entry.is_symlink() or (entry.name != ".quarantine" and not entry.is_file()) for entry in output_dir.iterdir()):
         raise ArtifactError("publication contains missing, extra, or nonregular entries")
+    quarantine = output_dir / ".quarantine"
+    if quarantine.exists():
+        if quarantine.is_symlink() or not quarantine.is_dir():
+            raise ArtifactError("publication quarantine is not a regular directory")
+        entries = tuple(quarantine.iterdir())
+        if any(entry.is_symlink() or not entry.is_file() for entry in entries) or sum(entry.stat().st_size for entry in entries) > 64 * MIB:
+            raise ArtifactError("publication quarantine is invalid or oversized")
     for row in manifest["files"]:
         payload = (output_dir / row["path"]).read_bytes()
         if len(payload) != row["bytes"] or hashlib.sha256(payload).hexdigest() != row["sha256"]:
@@ -1160,23 +1600,91 @@ def validate_evidence_publication(output_dir: Path) -> dict[str, Any]:
     return manifest
 
 
-def publish_failure_disposition(value: Mapping[str, object], destination: Path) -> str:
-    payload = canonical_json_bytes(dict(value))
+def _failure_time(value: object, name: str) -> datetime:
+    text = _text(value, name)
+    if _UTC_SECONDS.fullmatch(text) is None:
+        raise ArtifactError(f"{name} must be canonical UTC whole seconds")
+    try:
+        parsed = datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError as exc:
+        raise ArtifactError(f"{name} is not a real UTC timestamp") from exc
+    return parsed
+
+
+def _failure_row(value: object) -> dict[str, Any]:
+    row = _closed(value, _FAILURE_KEYS, "failure disposition")
+    if row["schema_version"] != SCHEMA_VERSION or row["study_id"] != STUDY_ID:
+        raise ArtifactError("failure disposition schema/study differs")
+    if row["phase"] not in {"pilot", "confirmation"}:
+        raise ArtifactError("failure disposition phase differs")
+    revision = _exact_int(row["revision"], "revision")
+    stack_id = _text(row["stack_id"], "stack_id")
+    if stack_id not in _STACK_ORDER:
+        raise ArtifactError("failure disposition stack_id differs")
+    seed = _exact_int(row["seed"], "seed")
+    expected_shard = f"{stack_id}:base:{seed:03d}"
+    if revision != 1 or row["shard_id"] != expected_shard:
+        raise ArtifactError("failure disposition revision/shard differs")
+    _text(row["condition_id"], "condition_id")
+    if row["reason"] not in _FAILURE_REASONS:
+        raise ArtifactError("failure disposition reason differs")
+    started = _failure_time(row["started_at_utc"], "started_at_utc")
+    finished = _failure_time(row["finished_at_utc"], "finished_at_utc")
+    if finished < started:
+        raise ArtifactError("failure disposition finishes before it starts")
+    _hash(row["command_sha256"], "command_sha256")
+    if row["readable_output_sha256"] is not None:
+        _hash(row["readable_output_sha256"], "readable_output_sha256")
+    _hash(row["details_sha256"], "details_sha256")
+    return row
+
+
+def publish_failure_disposition(
+    value: Mapping[str, object] | Sequence[Mapping[str, object]], destination: Path,
+) -> str:
+    values = (value,) if isinstance(value, Mapping) else tuple(value)
+    if not values:
+        raise ArtifactError("failure dispositions must not be empty")
+    rows = tuple(_failure_row(dict(item)) for item in values)
+    identities = tuple((row["condition_id"], row["reason"]) for row in rows)
+    if identities != tuple(sorted(set(identities))):
+        raise ArtifactError("failure dispositions must be sorted and unique")
+    shard_identity = {
+        (row["phase"], row["revision"], row["shard_id"], row["stack_id"], row["seed"])
+        for row in rows
+    }
+    if len(shard_identity) != 1:
+        raise ArtifactError("failure dispositions must describe one shard")
+    payload = b"".join(canonical_json_bytes(row) for row in rows)
     destination = Path(destination)
-    if destination.exists():
-        if destination.is_file() and destination.read_bytes() == payload:
-            return "validated-and-skipped"
-        raise FileExistsError("failure disposition conflicts")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    _write_create_only(destination, payload)
-    return "published"
+    if destination.name != "failure-disposition.jsonl":
+        raise ArtifactError("failure disposition destination differs")
+    descriptor = open_directory_chain(destination.parent, create=True)
+    try:
+        try:
+            os.stat(destination.name, dir_fd=descriptor, follow_symlinks=False)
+        except FileNotFoundError:
+            existing = None
+        else:
+            existing = _read_regular_at(descriptor, destination.name)
+        if existing is not None:
+            if existing == payload:
+                return "validated-and-skipped"
+            raise FileExistsError("failure disposition conflicts")
+        _write_at_create_only(descriptor, destination.name, payload)
+        os.fsync(descriptor)
+        return "published"
+    finally:
+        os.close(descriptor)
 
 
 __all__ = [
     "ArtifactError", "ImplementationDriftError", "ImplementationSnapshot",
     "ResourceDisposition", "RolloutSpec", "ShardSpec", "canonical_json_bytes",
     "canonical_state_bytes", "iter_manifest", "load_artifact_manifest",
-    "load_canonical_json", "load_protocol_manifest", "preflight_resources",
+    "load_canonical_json", "load_protocol_manifest", "load_seed_manifest",
+    "prepare_manifest", "preflight_resources", "raw_evidence_from_rollout",
+    "build_annotated_samples", "build_plot_recipes",
     "publish_failure_disposition", "publish_or_validate_skip", "reconstruct_evidence",
     "replay_rollout", "validate_evidence_publication", "validate_rollout",
 ]

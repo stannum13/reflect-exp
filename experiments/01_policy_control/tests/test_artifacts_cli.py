@@ -230,6 +230,24 @@ def test_rollout_binding_is_mandatory_and_directory_publication_is_no_replace(
         artifacts.publish_or_validate_skip(bound, link, replace(spec, rollout_id=link.name))
 
 
+def test_failure_disposition_is_closed_sorted_create_only_and_fsynced(tmp_path: Path) -> None:
+    destination = tmp_path / "P1:base:000" / "failure-disposition.jsonl"
+    base = {
+        "schema_version": 1, "study_id": "reflect-lite-policy-control", "phase": "pilot",
+        "revision": 1, "shard_id": "P1:base:000", "stack_id": "P1", "seed": 0,
+        "condition_id": "core-10-300-2", "reason": "MISSING_OUTPUT",
+        "started_at_utc": "2026-08-23T00:00:00Z", "finished_at_utc": "2026-08-23T00:00:01Z",
+        "command_sha256": H64, "readable_output_sha256": None, "details_sha256": H64,
+    }
+    assert artifacts.publish_failure_disposition((base,), destination) == "published"
+    assert artifacts.publish_failure_disposition((base,), destination) == "validated-and-skipped"
+    with pytest.raises(artifacts.ArtifactError, match="keys"):
+        artifacts.publish_failure_disposition((base | {"extra": True},), tmp_path / "bad.jsonl")
+    duplicate = (base, dict(base))
+    with pytest.raises(artifacts.ArtifactError, match="sorted and unique"):
+        artifacts.publish_failure_disposition(duplicate, tmp_path / "duplicate.jsonl")
+
+
 def test_implementation_snapshot_detects_tracked_and_untracked_drift(tmp_path: Path) -> None:
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
@@ -281,72 +299,113 @@ def test_implementation_snapshot_rejects_replace_refs_staged_and_ignored_additio
         current_guard.validate_after()
 
 
-def test_reconstruct_evidence_is_deterministic_and_manifest_last(tmp_path: Path) -> None:
-    def make_raw(stack: str, seed: int, validity: str) -> dict[str, object]:
-        disposition = "SUCCESS" if validity == "VALID" else "DECLARED_MISSING"
-        return {
-            "schema_version": 1, "revision": 1, "stack_id": stack, "condition_id": "c",
-            "variant_id": "base", "scene_id": f"scene-{seed}", "episode_id": f"episode-{seed}",
-            "anchor_id": "anchor", "candidate_id": "candidate", "seed": seed,
-            "rng_namespace": "confirmation", "tick_start": 0, "tick_end": 3125,
-            "units": {"time": "ns", "position": "m"}, "frames": {"target": "world"},
-            "validity": validity, "missingness": None if validity == "VALID" else "ACCIDENTAL",
-            "terminal_state": "COMPLETE", "config_sha256": H64, "code_sha256": H64,
-            "dependency_sha256": H64, "input_sha256": H64, "output_sha256": H64,
-            "replay_sha256": H64 if validity == "VALID" else None,
-            "bundle_sha256": H64 if validity == "VALID" else None,
-            "disposition": disposition, "reason": "NONE" if validity == "VALID" else "MISSING_OUTPUT",
-            "analysis_included": validity == "VALID",
-        }
+def test_rollout_derived_reconstruction_joins_annotations_renders_task11_and_resumes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = contracts.load_config(Path(__file__).parents[1] / "configs/base.yaml")
+    condition = next(item for item in evaluate.core_conditions(cfg) if item.condition_id == "core-10-300-2")
+    scenario_record = evaluate.generate_scenario(23, cfg)
+    configuration_hash = evaluate.sha256_json(timing.scheduler_config(cfg))
+    raw_rows = []
+    expected_plot_rows = []
+    for stack in (contracts.CommandStack.P1, contracts.CommandStack.P2):
+        identity = evaluate.EpisodeIdentity(
+            G40, True, None, H64, "test", "cpu", None, "3.11", {"mujoco": "3.12.0"},
+            configuration_hash, {"arm": H64},
+        )
+        record = evaluate.run_episode(stack, condition, scenario_record, cfg, identity)
+        status = "fail" if stack is contracts.CommandStack.P1 else "pass"
+        record = replace(
+            record, metadata=replace(record.metadata, status=status),
+            metrics=dict(record.metrics) | {"protocol_sha256": H64, "source_sha256": H64},
+        )
+        destination = tmp_path / "rollouts" / record.events[0].rollout_id
+        spec = artifacts.RolloutSpec(
+            destination.name, stack.value, scenario_record.seed, condition.condition_id,
+            configuration_hash, H64, H64, scenario_record.identity_sha256,
+        )
+        artifacts.publish_or_validate_skip(record, destination, spec)
+        raw = artifacts.raw_evidence_from_rollout(
+            destination, revision=1, variant_id="base", anchor_id="P1",
+            candidate_id=stack.value, rng_namespace="confirmation",
+            policy_hz=condition.policy_hz, latency_ms=condition.latency_ms,
+            move_count=condition.move_count, fault=condition.fault.value,
+        )
+        raw_rows.append(raw)
+        expected_plot_rows.append(evaluate.PlotRow(
+            stack.value, scenario_record.seed, condition.condition_id,
+            condition.policy_hz, condition.latency_ms, condition.move_count,
+            condition.fault.value, float(record.metrics["recovery_s"]),
+            float(record.metrics["final_error_m"]), float(record.metrics["jerk_p95"]),
+            float(record.metrics["age_p95_s"]),
+            tuple(float(item) for item in record.metrics["raw_500hz"]["error_m"]), True,
+        ))
 
-    raw = (
-        make_raw("P2", 2, "VALID"), make_raw("P1", 1, "DECLARED_INVALID"),
+    annotations = artifacts.build_annotated_samples(raw_rows)
+    recipes = artifacts.build_plot_recipes(raw_rows, ("P2",))
+    clean = tmp_path / "clean"
+    manifest = artifacts.reconstruct_evidence(
+        clean, raw_rows, annotations, recipes, protocol_sha256=H64,
     )
-    index = (
-        {"schema_version": 1, "revision": 1, "stack_id": "P1", "variant_id": "base",
-         "condition_id": "c", "target_class": "WORKING", "label": "CLASS_NOT_OBSERVED",
-         "source_ranges": [], "command_output_sha256": H64, "raw_links": [], "denominator": 1},
-        {"schema_version": 1, "revision": 1, "stack_id": "P1", "variant_id": "base",
-         "condition_id": "c", "target_class": "NONWORKING", "label": "NONWORKING",
-         "source_ranges": [{"start": 0, "end": 20}], "command_output_sha256": H64,
-         "raw_links": ["episode-1"], "denominator": 1},
-        {"schema_version": 1, "revision": 1, "stack_id": "P2", "variant_id": "base",
-         "condition_id": "c", "target_class": "WORKING", "label": "WORKING",
-         "source_ranges": [{"start": 0, "end": 20}], "command_output_sha256": H64,
-         "raw_links": ["episode-2"], "denominator": 1},
-        {"schema_version": 1, "revision": 1, "stack_id": "P2", "variant_id": "base",
-         "condition_id": "c", "target_class": "NONWORKING", "label": "CLASS_NOT_OBSERVED",
-         "source_ranges": [], "command_output_sha256": H64, "raw_links": [], "denominator": 1},
+    assert artifacts.validate_evidence_publication(clean) == manifest
+    raw_payload = (clean / "raw-evidence.jsonl").read_bytes()
+    annotation_rows = [json.loads(line) for line in (clean / "annotated-samples.jsonl").read_bytes().splitlines()]
+    for annotation in (row for row in annotation_rows if row["label"] != "CLASS_NOT_OBSERVED"):
+        span = annotation["source_ranges"][0]
+        linked = json.loads(raw_payload[span["start"]:span["end"]])
+        assert linked["episode_id"] == annotation["raw_links"][0]
+        assert linked["rollout"]["observations"]
+    expected_svgs = evaluate.render_svg_plots(expected_plot_rows, ("P2",))
+    assert {name: (clean / name).read_bytes() for name in expected_svgs} == dict(expected_svgs)
+    reordered = tmp_path / "reordered"
+    reordered_manifest = artifacts.reconstruct_evidence(
+        reordered, tuple(reversed(raw_rows)), tuple(reversed(annotations)), recipes,
+        protocol_sha256=H64,
     )
-    raw_source = b"".join(_canonical(row) for row in sorted(raw, key=lambda row: (row["stack_id"], row["seed"], row["condition_id"], row["episode_id"])))
-    recipes = ({
-        "schema_version": 1, "revision": 1, "plot": "recovery-vs-latency.svg",
-        "source_sha256": hashlib.sha256(raw_source).hexdigest(), "filters": [], "transforms": [], "group_by": ["stack_id"],
-        "order_by": ["stack_id", "seed"], "axes": {"x": "seed", "y": "validity"},
-        "units": {"x": "count", "y": "category"}, "frames": {}, "binning": "NONE",
-        "summary": "COUNT", "interval": "NONE", "palette": ["#000000"], "legend": True,
-        "dimensions": {"width": 640, "height": 480}, "renderer_version": "SVG_V1", "seed": 0,
-    },)
-    first = artifacts.reconstruct_evidence(tmp_path / "first", raw, index, recipes, protocol_sha256=H64)
-    second = artifacts.reconstruct_evidence(tmp_path / "second", tuple(reversed(raw)), tuple(reversed(index)), recipes, protocol_sha256=H64)
-    assert first == second
-    assert (tmp_path / "first" / "derived-table.json").read_bytes() == (tmp_path / "second" / "derived-table.json").read_bytes()
-    assert (tmp_path / "first" / "recovery-vs-latency.svg").read_bytes() == (tmp_path / "second" / "recovery-vs-latency.svg").read_bytes()
-    assert (tmp_path / "first" / "artifact-manifest.json").exists()
-    assert [p.name for p in sorted((tmp_path / "first").iterdir())][-1] != "artifact-manifest.json"  # ordering is carried by manifest, not directory order
-    manifest = artifacts.load_artifact_manifest(tmp_path / "first" / "artifact-manifest.json")
-    assert "artifact-manifest.json" not in {row["path"] for row in manifest["files"]}
-    assert artifacts.validate_evidence_publication(tmp_path / "first") == manifest
-    (tmp_path / "first" / "extra.json").write_bytes(b"{}\n")
-    with pytest.raises(artifacts.ArtifactError, match="extra"):
-        artifacts.validate_evidence_publication(tmp_path / "first")
-    (tmp_path / "first" / "extra.json").unlink()
-    with pytest.raises((FileExistsError, artifacts.ArtifactError)):
-        artifacts.reconstruct_evidence(tmp_path / "first", raw + (make_raw("P3", 3, "VALID"),), index, recipes, protocol_sha256=H64)
+    assert reordered_manifest == manifest
+    for row in manifest["files"]:
+        assert (reordered / row["path"]).read_bytes() == (clean / row["path"]).read_bytes()
 
-    contradictory = dict(raw[0]) | {"disposition": "TIMED_OUT", "analysis_included": True}
-    with pytest.raises(artifacts.ArtifactError, match="disposition"):
-        artifacts.reconstruct_evidence(tmp_path / "contradictory", (contradictory, raw[1]), index, recipes, protocol_sha256=H64)
-    incomplete_index = tuple(row for row in index if not (row["stack_id"] == "P2" and row["target_class"] == "NONWORKING"))
+    tampered = json.loads(json.dumps(raw_rows[0]))
+    tampered["rollout"]["metrics"]["recovery_s"] += 1.0
+    with pytest.raises(artifacts.ArtifactError, match="plot row|digest"):
+        artifacts.reconstruct_evidence(
+            tmp_path / "tampered", (tampered, raw_rows[1]), annotations, recipes,
+            protocol_sha256=H64,
+        )
     with pytest.raises(artifacts.ArtifactError, match="working/nonworking"):
-        artifacts.reconstruct_evidence(tmp_path / "incomplete-index", raw, incomplete_index, recipes, protocol_sha256=H64)
+        artifacts.reconstruct_evidence(
+            tmp_path / "incomplete-index", raw_rows, annotations[:-1], recipes,
+            protocol_sha256=H64,
+        )
+    changed_recipe = list(recipes)
+    changed_recipe[0] = dict(changed_recipe[0]) | {"transforms": ["CALLER_DEFINED"]}
+    with pytest.raises(artifacts.ArtifactError, match="closed Task11"):
+        artifacts.reconstruct_evidence(
+            tmp_path / "changed-recipe", raw_rows, annotations, changed_recipe,
+            protocol_sha256=H64,
+        )
+
+    interrupted = tmp_path / "interrupted"
+    count = 0
+
+    def crash_after_second_boundary(name: str) -> None:
+        nonlocal count
+        count += 1
+        if count == 2:
+            raise RuntimeError(f"injected crash at {name}")
+
+    monkeypatch.setattr(artifacts, "_publication_boundary", crash_after_second_boundary)
+    with pytest.raises(RuntimeError, match="injected crash"):
+        artifacts.reconstruct_evidence(
+            interrupted, raw_rows, annotations, recipes, protocol_sha256=H64,
+        )
+    assert not (interrupted / "artifact-manifest.json").exists()
+    monkeypatch.setattr(artifacts, "_publication_boundary", lambda _name: None)
+    resumed = artifacts.reconstruct_evidence(
+        interrupted, raw_rows, annotations, recipes, protocol_sha256=H64,
+    )
+    assert resumed == manifest and (interrupted / ".quarantine").is_dir()
+    assert artifacts.validate_evidence_publication(interrupted) == manifest
+    for row in manifest["files"]:
+        assert (interrupted / row["path"]).read_bytes() == (clean / row["path"]).read_bytes()
