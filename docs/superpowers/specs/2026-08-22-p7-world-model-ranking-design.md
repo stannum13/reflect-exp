@@ -268,9 +268,10 @@ adjacent frames, candidates, augmentations, and simulator ports descended from o
 scene remain together. Any shared ancestor or content hash across train, tune,
 validation, MuJoCo pilot, or confirmation makes the dataset `INVALID`.
 
-Train-only statistics include normalization, feature maps, PCA, ensemble resamples,
-and class weights. Tuning mechanically ranks only frozen-grid configurations by the
-frozen key; validation mechanically selects NumPy checkpoints and the declared
+Train-only statistics include normalization, feature maps, PCA, and ensemble resamples;
+every fit row has weight exactly `1.0` and no class weighting is permitted. Tuning
+mechanically ranks only frozen-grid configurations by the frozen key; validation
+mechanically selects NumPy checkpoints and the declared
 fallback method by the same fixed rule. MuJoCo adaptation alone performs the one
 predeclared output-coefficient refit and calibration/threshold fit. MuJoCo pilot
 evaluation sets only margins and resource ceilings. Confirmation is read once after
@@ -602,8 +603,11 @@ ordered_unchanged_member_keys,ordered_unchanged_member_sha256s]`. Validation res
 changed members from the adaptation archive and every unchanged member from the
 selected NumPy model, recomputes both ordered sets, and requires W5 `latent_next` to be
 in the unchanged set with byte/hash equality. `calibration-output.npz` uses exactly
-`<variant>/{breakpoints,values,fallback_threshold,critic_threshold}.npy`. Duplicate,
-missing, extra, wrong-shape, or non-little-endian members fail validation.
+`<variant>/<probability-head>/{breakpoints,values}.npy` for the ordered heads
+`collision,terminal_failure,unsafe,success`, plus
+`<variant>/{fallback_threshold,critic_threshold}.npy`. Breakpoint/value shapes and
+semantics are exactly Section 13.1; duplicate, missing, extra, wrong-shape, or
+non-little-endian members fail validation.
 
 `preprocessing.json` has exact keys `schema_version,variant,configuration,
 feature_names,mean,scale,zero_variance,training_rows_sha256`; arrays match the frozen
@@ -615,7 +619,9 @@ exactly `member,root_sha256,row_count,losses`. `training-manifest.json` has exac
 `schema_version,bundle_key,protocol_sha256,variant,configuration,preprocessing_sha256,
 pca_sha256,model_sha256,evaluation_predictions_sha256,fit_metrics_sha256,
 training_input_sha256,feature_count,output_heads,ensemble_count,pca_dimension,
-model_members,total_bytes`; each model-member row has exactly
+bootstrap_draws,model_members,total_bytes`; `bootstrap_draws` is member-ordinal order
+with exact-key rows `member,scene_ordinals`, each containing the exact 96 uint64-valued
+draws serialized as JSON integers; each model-member row has exactly
 `member_key,dtype,shape,sha256`. Every JSON loader rejects aliases, duplicate, missing,
 unknown, bool-as-int, nonfinite, noncanonical, or wrongly ordered set-like arrays.
 
@@ -651,8 +657,10 @@ pilot output can be `SUPPORTED`
 
 ## 8. Uncertainty and authority-bearing fallback
 
-W3-W5 use deterministic scene-seed bootstrap ensembles. Cost uncertainty is ensemble
-variance; failure uncertainty is probability variance. The MuJoCo adaptation half fits
+W3-W5 use the exact deterministic scene-seed bootstrap ensembles in Section 13.1. Cost
+uncertainty is member-cost population variance and each failure uncertainty is
+member-probability population variance, always dividing by the complete ensemble count.
+The MuJoCo adaptation half fits
 the preregistered monotone calibration map and one uncertainty rejection threshold per
 learned variant; pilot-evaluation outcomes cannot change either.
 
@@ -909,15 +917,63 @@ The shared `ActionChunk` is exact: `chunk_id` equals
 `source_observation_time_ns+300_000_000`; `expires_at_ns` equals
 `valid_from_ns+250_000_000`; `dt_s=0.1`; `actions` equal the adapted `(9,2)` absolute
 knots; `representation="EEF_TRAJECTORY"`; and `expected_phase="track_target"`. Metadata has exactly
-`adapter_sha256,protocol_sha256,scene_id,anchor_id,candidate_id,strategy_id,
+`adapter_sha256,request_sha256,protocol_sha256,scene_id,anchor_id,candidate_id,strategy_id,
 prediction_id,model_sha256,source_action_content_sha256,source_action_sha256,
 adapted_action_sha256,p4_frozen_sha256,p4_artifact_digests_sha256`. These values apply
 P4's `dt_s=policy_period`, `ceil(2.5*period)` expiry, absolute-EEF trajectory semantics,
 and stable phase rather than relabelling velocity bytes.
-The request-side shared `Observation` uses that anchor ID/time, immutable planar state,
-`current_skill_id="exp06-planar-push"`, and `current_phase="track_target"`; its paired
-`SkillSpec` uses the same skill ID, target pose, P4-frozen workspace constraints,
-timeout, and zero retry budget. Neither object can read postrequest state or truth.
+
+The request-side shared contracts are constructed field-by-field, with no adapter
+choice. Let `o` be the Section 6.5 integer `observation_id`, `t` the anchor's exact
+monotonic source time in nanoseconds, `e=(eef_x,eef_y)`, `de=(eef_vx,eef_vy)`,
+`theta=object_yaw`, `omega=object_omega`, `g=(target_x,target_y)`, and
+`psi=target_yaw`. Define `target_entity_id=scene_id+"/target"` and
+`target_pose7=[g_x,g_y,0.0,cos(psi/2),0.0,0.0,sin(psi/2)]`, all canonical float64.
+The exact `Observation` is:
+
+```text
+sequence_id       = o
+source_time_ns    = t
+received_time_ns  = t
+robot_state.q     = float64[eef_x,eef_y,theta]
+robot_state.dq    = float64[eef_vx,eef_vy,omega]
+object_beliefs    = (ObjectBelief(
+  entity_id=target_entity_id, label="target", pose=target_pose7,
+  pose_confidence=1.0, state={"role":"target"}, state_confidence=1.0,
+  last_seen_ns=t, provenance=(scene_id,anchor_id,p4_frozen_sha256)),)
+current_skill_id  = "exp06-planar-push"
+current_phase     = "track_target"
+```
+
+The three-value robot vectors are a schema carrier for this planar conformance test;
+they are never interpreted as P4-arm joint truth or used to score Experiment 06. The
+exact paired `SkillSpec` is:
+
+```text
+skill_id          = "exp06-planar-push"
+skill_type        = "PLANAR_PUSH"
+target_entities   = (target_entity_id,)
+target_pose       = Pose(position=float64[g_x,g_y,0.0],
+                         quaternion_wxyz=float64[cos(psi/2),0.0,0.0,sin(psi/2)])
+constraints       = exact ordered Constraint tuple copied from the validated promoted
+                    P4 profile in frozen.yaml, without normalization
+success_predicate = Predicate(kind="EEF_DWELL",
+                              parameters={"error_m":0.025,"dwell_s":0.10})
+timeout_s         = 2.0
+retry_budget      = 0
+```
+
+The adapter validates every copied P4 constraint and both complete shared contracts.
+`request_sha256` hashes canonical JSON
+`["exp06-p4-request-v1",scene_id,anchor_id,observation_fields,skill_spec_fields]`, where
+each `*_fields` value is an array of `[field_name,value]` pairs in dataclass declaration
+order, nested dataclasses use the same representation, tuples become arrays, mappings
+use sorted keys, and every NumPy vector becomes a finite float list under Section 6.4's
+numeric encoding. `adapter_sha256` covers both action and request construction in
+`p4_adapter.py`. An independent test invokes the promoted P4 `PolicyInput` reference
+constructor from its frozen implementation on the same scalar inputs and requires
+field equality, canonical-byte equality, `request_sha256` equality, and acceptance by
+the current shared validator. Neither construction may read postrequest state or truth.
 
 The current shared validator plus the frozen P4 request/response, expiry, accept/reject,
 replacement, and event-order semantics must accept the chunk before the experiment-local
@@ -953,8 +1009,10 @@ has exact keys `schema_version,decision_sha256,selector_protocol_sha256,p4_froze
 p4_artifact_digests_sha256,manifest_sha256,
 scene_count,ordered_scene_bundle_sha256s,action_chunk_schema_sha256,event_schema_sha256,
 adapter_sha256,p4_profile_sha256,ordered_source_action_sha256s,
-ordered_adapted_action_sha256s,
+ordered_adapted_action_sha256s,ordered_request_sha256s,
 passed_count,failed_count,status`; only `20,20,0,ACTION_ROUTING_ELIGIBLE` is a pass.
+The four ordered hash arrays use the manifest's ascending scene-ID order and each has
+exactly 20 entries; every request hash equals the accepted chunk's metadata value.
 Each conformance scene is create-only and at most 4 MiB, so the conditional extension
 adds an exact 80 MiB retained maximum already reserved by P7 preflight.
 
@@ -1721,11 +1779,21 @@ checked-in validity/development/pilot/confirmation manifests, sandbox profiles, 
 the conditional prefix manifest plus `WORLD_MODEL_DECISION.md`; their actual regular-file bytes are measured before and
 after every publication. Nothing is off-ledger.
 
-Before any typed phase starts, preflight adds all retained bytes, every recognized
-building tree, every quarantine entry, the phase's complete declared bundle count times
-its per-type cap, both applicable 96 MiB slots, and the remaining tracked-evidence
-allowance. It requires both the 8,688 MiB experiment cap and inherited 10 GiB/free-disk
-ceilings. No published artifact is deleted until final decision; closing anonymous
+Before any typed phase starts or resumes, preflight computes projected occupancy without
+double charging. It adds: (a) actual bytes of every finalized bundle outside the current
+phase; (b) actual bytes of every validated finalized current-phase key; (c) the per-type
+cap once for each exact current-phase key still missing; (d) the full 96 MiB live-writer
+slot and full 96 MiB retained-orphan/quarantine slot exactly once each, regardless of
+their current occupancy; and (e) actual tracked-evidence bytes plus only its remaining
+32 MiB allowance. A recognized building tree occupies the live-writer slot and a
+quarantine entry occupies the retained-orphan slot; its actual bytes are validated
+against that slot but are never added again. Multiple building trees, multiple retained
+orphans, an entry over its slot, or an unknown key fail closed. The exact projected
+formula and every actual/missing key are written to preflight evidence. It requires both
+the 8,688 MiB experiment cap and inherited 10 GiB/free-disk ceilings. Thus initial and
+resumed preflights have the same maximum projection, and a completed key replaces rather
+than supplements its reserved cap. No published artifact is deleted until final
+decision; closing anonymous
 adaptation truth after its aggregate seals is the sole named transient-capability
 exception, and its exact regeneration is required after selector freeze. A cap or
 timeout yields `INCONCLUSIVE`, never evidence against a model.
@@ -2014,6 +2082,102 @@ The failure-critic threshold grid is exactly `0.00,0.05,...,1.00`; choose maximu
 subject to precision >=0.90 and zero unsafe veto, then higher threshold. Empty-positive
 precision is zero.
 
+**Exact fit, ensemble, adaptation, and calibration compiler.** A training row is one
+candidate branch. The 96 NumPy training scene IDs sort ascending and each scene expands
+to its 32 rows in `(anchor_id,candidate_id)` order. Global preprocessing and PCA fit once
+on those 3,072 unique rows; population mean/variance use divisor `N`, scale is
+`sqrt(variance)`, and an exactly zero scale maps the complete standardized column to
+zero. No tuning, validation, or MuJoCo row enters those statistics. For W3, CFG01 is the
+intercept plus its 51 ordered base columns, CFG02 adds every `x_i*x_j` for `i<=j`, and
+CFG03 adds those terms plus every `x_i^3`; term order is the W4 rule. W4 and W5 use the
+exact terms already stated above.
+
+For member ordinal `m`, the bootstrap seed is the first 16 big-endian bytes of
+`SHA256(canonical_json(["exp06-model-bootstrap-v1",protocol_sha256,variant,
+configuration,m]))`. A fresh `Generator(PCG64(seed))` makes exactly one vectorized call
+`integers(0,96,size=96,endpoint=False,dtype=uint64)`. Draw order is retained; each drawn
+scene occurrence contributes all 32 rows in canonical intra-scene order. There is no
+row bootstrap, stratification, deduplication, balancing, rejection, or second draw.
+The draw vector is serialized in `training-manifest.json` and independently regenerated.
+
+For feature matrix `X` with `n` rows and `p` columns, ordered multi-output target matrix
+`Y`, and positive frozen ridge value `lambda`, let `xbar` and `ybar` be float64
+arithmetic means over the member's ordered row multiset, `Xc=X-xbar`, and `Yc=Y-ybar`.
+Fit by the smaller exact ridge system. For `p<=n`, compute
+
+```text
+A = Xc.T @ Xc + lambda*identity(p)
+L = numpy.linalg.cholesky(A)
+coef = solve(L.T, solve(L, Xc.T @ Yc))
+```
+
+For `p>n`, compute the dual system
+
+```text
+A = Xc @ Xc.T + lambda*identity(n)
+L = numpy.linalg.cholesky(A)
+alpha = solve(L.T, solve(L, Yc))
+coef = Xc.T @ alpha
+```
+
+and in both cases finish with
+
+```text
+intercept = ybar - xbar @ coef
+```
+
+Operations occur in that written left-to-right matrix order with float64 identity and
+arrays. A nonpositive/nonfinite Cholesky diagonal or factorization failure invalidates
+the fit; no jitter or solver substitution is allowed. The KKT residual
+`R=Xc.T@(Xc@coef-Yc)+lambda*coef` must satisfy
+`max(abs(R)) <= 1e-9*max(1,max(abs(Xc.T@Yc)))`. There is no `rcond`, pseudoinverse,
+iterative solver, class weight, or regularization on the intercept. Inputs and outputs
+must be finite, shapes must match the manifest, and two fresh processes under the frozen
+BLAS/CPU/thread profile must produce byte-identical coefficient/intercept arrays or the
+environment is invalid.
+Continuous heads retain their finite ridge values. Each binary-head member output is
+clipped once to `[0,1]` before calibration; the four probability heads are independent
+and are not renormalized to sum to one.
+
+MuJoCo adaptation preserves each selected member's original 96-entry NumPy bootstrap
+draw vector. For that member it appends each of the 20 adaptation scenes exactly once in
+ascending scene-ID order, with all 32 rows per scene, yielding 116 equal-weight scene
+occurrences and 3,712 ordered rows. It then reruns the exact centered-SVD formula using
+the frozen NumPy preprocessing and refits only the Section 5 permitted heads. It does
+not bootstrap adaptation scenes, rebalance domains/classes, or change a member root.
+W5 `latent_next` and every other forbidden member remain byte-identical. Thus “union”
+means one fixed NumPy member multiset followed by one copy of every adaptation scene,
+not an implementation-selected mixture.
+
+Before calibration, a probability prediction is the arithmetic mean of the memberwise
+clipped values. CFG01's map is exact identity with float64 breakpoints `[0.0,1.0]` and
+values `[0.0,1.0]`. For CFG02/CFG03 and each variant/probability head, sort the 640
+adaptation rows by `(precalibration_probability,scene_id,anchor_id,candidate_id)` and
+split by stable row position into respectively 8 bins of 80 or 16 bins of 40. Each bin
+starts as `(mean_probability,mean_binary_label,row_count)`. Merge adjacent equal-x bins
+first using count-weighted x/y means. Then run weighted PAV left-to-right: while the
+preceding y is strictly greater than the following y, replace the pair by their
+count-weighted x/y mean and summed count and step back; equality does not merge.
+The remaining x values are strictly increasing. Serialize them as breakpoints and the
+fitted y values as values, prepending `0.0` with the first value and/or appending `1.0`
+with the last value when absent. If one PAV block remains, serialize breakpoints
+`[0.0,1.0]` with its value repeated. Calibration is exactly
+`numpy.interp(clip(p,0,1),breakpoints,values,left=values[0],right=values[-1])`.
+No smoothing, tie jitter, cross-head pooling, or extrapolation is allowed.
+
+At evaluation, apply the head-specific frozen map to each clipped member probability,
+then take the arithmetic member mean. Vector/continuous predictions are arithmetic
+member means. Each member's calibrated heads and continuous/vector values produce its
+own scalar cost by Section 6.2. The envelope `uncertainty` is the population variance
+`sum((cost_i-mean_cost)^2)/M`; per-head failure uncertainties use the same divisor and
+are descriptive sidecar fields. All reductions run in member-ordinal order. The
+fallback threshold uses only envelope cost uncertainty. The critic score is
+`max(collision,terminal_failure,unsafe)` after calibration, with a positive label when
+any corresponding binary truth is true. Final calibration maps and fallback/critic
+thresholds fit only adaptation rows. NumPy tuning/validation configuration keys use
+the uncalibrated clipped ensemble probabilities for their frozen calibration-error term;
+they fit no temporary or final calibration map.
+
 **Validity and calibration constants.** Analytic absolute/relative tolerance is
 `1e-12`; mirror endpoint tolerance is `1e-10`; maximum penetration is `0.002 m`;
 unforced energy increase tolerance is `1e-12 J`; step-halving endpoint L-infinity
@@ -2041,8 +2205,12 @@ Tests cover:
   tolerance-group PCA, canonical JSON/Parquet/NPZ, and fresh-process byte identity;
 - split ancestry/content leakage across all five partitions;
 - fit spies proving preprocessing/PCA/models/calibration see only allowed partitions,
-  exact permitted adaptation heads, byte-identical W5 `latent_next`, composed adapted
-  model hashes, and absence of unchanged heads from the adaptation archive;
+  exact scene-bootstrap PCG64 draws, centered primal/dual Cholesky ridge bytes and KKT
+  bound, equal scene/row weights,
+  member-preserving adaptation union, population ensemble reductions, per-head
+  clip/equal-bin/PAV/interpolation calibration, exact permitted adaptation heads,
+  byte-identical W5 `latent_next`, composed adapted model hashes, and absence of
+  unchanged heads from the adaptation archive;
 - precursor contract freeze before NumPy validity, mechanical tuning/validation,
   adaptation-only output refit/calibration, pilot-evaluation-only margins/resources,
   and nonexistent unseen confirmation before the evidence freeze;
@@ -2067,7 +2235,9 @@ Tests cover:
   equality boundaries, and missing rules;
 - learned+W1 fallback as the sole selector-protocol result, raw metrics descriptive,
   exact promoted-P4 `10 Hz, 300 ms` eligibility, velocity-to-absolute-EEF adapter
-  bytes/IDs/hashes/timing, and no action authority before all 20 conditional
+  bytes/IDs/hashes/timing, field-exact shared Observation/ObjectBelief/RobotState/
+  SkillSpec/Pose/Predicate request bytes against the promoted P4 reference factory,
+  and no action authority before all 20 conditional
   prefix-conformance cases pass;
 - scientific endpoint pass/reject/unresolved boundaries and joint classification before
   the mechanically ordered mutually exclusive selector/critic/shadow/offline roles,
@@ -2080,7 +2250,8 @@ Tests cover:
   keys, six phase-protocol schemas/counts, type-mixing refusal,
   create-only validate-and-skip resume, single-root sibling evidence staging, exact
   32/64 MiB configuration-specific training caps, adaptation coefficient arithmetic,
-  8,688 MiB retained arithmetic, phase preflight, and per-type wall/size ceilings; and
+  8,688 MiB retained arithmetic, initial/resumed missing-key preflight without current-
+  phase or scratch-slot double charging, and per-type wall/size ceilings; and
 - exact five-warmup/20-repetition single/K=8 latency timing and nearest-rank gates,
   serial latency, offline/no-network/no-CUDA/no-physical/no-remote, clean tree, full
   tests, source audit, secret scan, artifact size, and diff checks.
