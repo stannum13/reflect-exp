@@ -285,15 +285,60 @@ enter one create-only phase selector freeze before canonical branch truth for an
 scene is materialized. Only after that global freeze does the orchestrator materialize
 phase truth-source descriptors and permit per-scene pinned-MuJoCo truth/scoring. No
 selector process is ever launched again for that phase. Consequently a selector is
-never alive while a current- or prior-scene truth descriptor/path exists. NumPy
+never alive while current-phase truth exists, and no current- or prior-phase truth
+descriptor/path is visible or reachable inside its OS sandbox. Prior published truth
+may remain in the parent namespace solely for audit and scoring. NumPy
 training and MuJoCo adaptation are the
 only phases allowed to consume their own declared training targets; their fitted
 outputs seal before any evaluation selector runs.
 
+Omitting a path argument and setting `close_fds` are not the isolation boundary. P7
+implements an experiment-local `p7-selector-fs-v1` sandbox with the same host-contract
+terminology as P6 but imports no P6 code or generic sandbox framework. Linux uses a
+checked-in Landlock ruleset plus seccomp filter; macOS uses a checked-in Seatbelt
+profile. The exact policy paths are
+`experiments/06_world_model/sandbox/p7-selector-fs-v1.linux.json` and
+`experiments/06_world_model/sandbox/p7-selector-fs-v1.sb`. Their source, compiled
+policy bytes, selected OS key, kernel enforcement probe, interpreter, and selector
+zipapp hashes freeze before MuJoCo adaptation. An unavailable backend, policy mismatch,
+or failed denial probe makes P7 `BLOCKED` before any selector.
+
+The parent launches each selector from an empty mode-0700 broker working directory.
+The only experiment data inherited are one prevalidated read-only projection descriptor
+and one create-exclusive absent output descriptor in fixed descriptor slots 3 and 4.
+The sandbox permits read-only interpreter/dependency/selector-zipapp mappings and those
+descriptors, but denies repository/result/private-root traversal, all other file opens,
+descriptor discovery, network, process creation, ptrace, and simulator loading. After
+installing the policy the child drops setup capability. Selector callbacks receive
+decoded immutable values, never a descriptor, path, loader, environment handle, or
+generic file API.
+
+MuJoCo adaptation truth is generated into regular files opened with
+`O_CLOEXEC|O_NOFOLLOW` in a broker-private mode-0700 directory, fsynced, reopened
+read-only, and unlinked before fitting. The privileged adaptation controller alone keeps
+those anonymous descriptors while it fits the predeclared output heads/calibration and
+seals the adapted aggregate. No descriptor is inherited by a selector. It then closes
+them, so no adaptation truth path or descriptor exists during pilot-evaluation pass S.
+After the phase-global selector freeze, pass T deterministically regenerates the 20
+adaptation source bundles from the frozen manifest, requires byte/hash equality with the
+adaptation aggregate's committed input hashes, and publishes them for audit before
+pilot-evaluation truth. This regeneration cannot refit or alter any sealed output.
+
+Hostile pilot-evaluation and confirmation tests run after earlier truth has existed.
+They enumerate arguments, environment, cwd/parents, imports, and descriptors and attempt
+absolute, relative, symlink, hard-link, `/proc`/`/dev/fd`, inherited-FD, socket,
+subprocess, ptrace, repository-result, private-root, current/prior truth, scorer,
+aggregate, and decision access. Every attempt must receive an OS denial while the
+declared projection read and output write still succeed.
+
 ### W0 — random
 
-Counter-based PCG64 chooses uniformly from K=8 using only W0 root, scene ID, and anchor
-ID. W0 emits a selection, not a prediction order.
+A fresh per-anchor PCG64 generator chooses uniformly from K=8. Its 128-bit seed is the
+first 16 bytes, interpreted big-endian, of
+`SHA256(canonical_json(["exp06-w0-v1", w0_root_hex, scene_id, anchor_id]))`; it makes
+exactly one `Generator(PCG64(seed)).integers(0,8,endpoint=False,dtype=uint64)` call and
+maps that integer into frozen candidate order. PCG64 is treated as a stateful bit
+generator, not called counter-based. W0 emits a selection, not a prediction order.
 
 ### W1 — strong heuristic and fallback
 
@@ -442,13 +487,124 @@ records NumPy/PyArrow/Python versions, BLAS identity, thread profile, and CPU
 architecture; a mismatch is a new protocol environment, never a resume.
 
 Canonical JSON is UTF-8, NFKC, sorted-key, compact-separator, finite-only, and ends in
-one newline. Parquet uses the pinned PyArrow version, explicit schema/column order,
+one newline. Integers use base-10 without leading zeros; float negative zero normalizes
+to `0.0` and other floats use CPython 3.11's shortest round-trip representation with
+lowercase `e` and no `+` exponent sign. Parquet uses the pinned PyArrow version, explicit schema/column order,
 frozen row order, one full-table row group, no dictionary encoding, no compression,
 no statistics, and data-page version 1.0. Canonical NPZ is a lexicographically ordered
 ZIP_STORED archive: every member is an explicit little-endian C-order `.npy` v2.0
 stream with timestamp `1980-01-01T00:00:00`, mode `0600`, no extra/comment fields, and
 no duplicate names. Golden fixtures require byte identity across two fresh processes;
 any mismatch invalidates the environment before evidence generation.
+
+### 6.5 Exact sidecar schemas and digest preimages
+
+Every Arrow field below is nonnullable unless marked `?`; strings are UTF-8 `string`,
+hashes are validated lowercase 64-hex strings, and no dictionary or extension type is
+permitted. Exact schemas and column order are:
+
+```text
+anchors.parquet:
+  scene_id:string, anchor_id:string, observation_id:int64, anchor_index:int16,
+  source_time_ns:int64, generator_snapshot_sha256:string,
+  state_member_key:string, privileged_vector_sha256:string
+candidate_actions.parquet:
+  scene_id:string, anchor_id:string, candidate_id:string, strategy_id:string,
+  dt_s:float64, horizon_s:float64, command_rows:int16,
+  commands:fixed_size_list<float64>[100],
+  command_min:fixed_size_list<float64>[2], command_max:fixed_size_list<float64>[2],
+  action_content_sha256:string, action_sha256:string
+predictions.parquet:
+  prediction_id:string, observation_id:int64, scene_id:string, anchor_id:string,
+  candidate_id:string, strategy_id:string, action_content_sha256:string,
+  action_sha256:string, model_id:string, model_sha256:string, horizon_s:float64,
+  predicted_progress:float64, predicted_position_error_m:float64,
+  predicted_orientation_error_rad:float64, predicted_collision_probability:float64,
+  predicted_action_energy:float64, failure_collision:float64,
+  failure_terminal:float64, failure_unsafe:float64,
+  predicted_success_probability:float64, predicted_state_sha256:string?,
+  predicted_latent_sha256:string?, vector_member_key:string?, uncertainty:float64,
+  inference_ms:float64, predicted_cost:float64
+selections.parquet:
+  selector_id:string, observation_id:int64, scene_id:string, anchor_id:string,
+  selected_prediction_id:string?, candidate_id:string, strategy_id:string,
+  action_content_sha256:string, action_sha256:string, selected_model_id:string?,
+  selected_row_sha256:string, used_fallback:bool, fallback_reason:string?
+candidate_truth.parquet:
+  scene_id:string, anchor_id:string, candidate_id:string, strategy_id:string,
+  action_content_sha256:string, action_sha256:string, model_sha256:string,
+  terminal_position_error_m:float64, terminal_orientation_error_rad:float64,
+  collision:bool, action_energy:float64, terminal_failure:bool, success:bool,
+  unsafe:bool, actual_cost:float64, w2_selected:bool
+evaluation-predictions.parquet:
+  partition:string, scene_id:string, anchor_id:string, candidate_id:string,
+  model_id:string, model_sha256:string, prediction_row_sha256:string,
+  actual_cost:float64, predicted_cost:float64, selected:bool
+```
+
+Rows sort by `(scene_id,anchor_id,candidate_id,model_id)` after omitting inapplicable
+suffixes: anchors stop at anchor, actions/truth at candidate, and selections sort by
+selector then candidate. `observation_id` is exactly `4*scene_ordinal+anchor_index`, with
+zero-based manifest `scene_ordinal` and `anchor_index`; anchors require a bijection and
+every prediction, selection, event, and shared contract uses that integer. W0/W2 alone
+have null prediction/model IDs; W1 fallback has `used_fallback=true` and a nonnull
+reason; all other selection nullability is rejected. Prediction vector nullability
+remains exactly Section 6.2. Arrow metadata is empty.
+
+`action_content_sha256` is SHA-256 of canonical JSON header
+`["exp06-action-content-v1",[50,2],"<f8",dt_s,horizon_s,command_min,command_max]`
+without its trailing LF, followed by one NUL byte and the 800 C-order command bytes.
+`action_sha256` hashes canonical JSON
+`["exp06-action-identity-v1",action_content_sha256,strategy_id,candidate_id,scene_id,
+anchor_id]`. A prediction ID is
+`candidate_id + "/prediction/" + model_sha256`; a prediction-row digest hashes canonical
+JSON of every scalar/ID field in schema order plus the referenced vector digest, never
+the Parquet bytes. The privileged-vector digest hashes canonical JSON
+`["exp06-anchor-vector-v1",scene_id,anchor_id,"<f8",shape]` without its LF, one NUL,
+then the little-endian C-order vector bytes. The generator-snapshot digest hashes
+canonical JSON `["exp06-generator-snapshot-v1",scene_id,simulator,state_layouts,
+ordered_state_member_keys,ordered_state_member_sha256s]`; each member digest hashes its
+exact canonical NPY member bytes. Selection and truth row digests hash their complete
+schema-ordered scalar fields excluding only their own digest field, prefixed respectively
+by `exp06-selection-v1` and `exp06-truth-v1`. Event-link digests hash the complete exact
+event-link schema prefixed by `exp06-event-link-v1`. A model, PCA, preprocessing,
+calibration, or adapted-model digest is SHA-256 over its complete canonical file bytes;
+the training manifest binds those digests but is not itself in any of their preimages.
+All preimages use NFKC strings, exact schema order, finite JSON numbers, and no implicit
+concatenation. A validator recomputes every digest from bytes rather than trusting a
+stored digest, and any self-reference, omitted field, alternate prefix, or ambiguity is
+invalid.
+
+`prediction-vectors.npz` contains exactly one member
+`sha256(prediction_id).hexdigest()+".npy"` for each W4/W5 prediction and no other member.
+For W5, `pca.npz` has exactly `mean.npy` shape `(24576,)`, `components.npy` shape
+`(d,24576)`, and `singular_values.npy` shape `(d,)`; W3/W4 use the exact zero-byte marker
+named by the training manifest. `model.npz` member names are exactly
+`member/<two-digit-member>/<head>/{coef,intercept}.npy`; coefficients are float64 with
+shape `(feature_count,output_count)` and intercepts `(output_count,)`. Head order is W3
+`position,orientation,collision,energy,terminal_failure,unsafe,success`; W4
+`state_delta,collision,terminal_failure,unsafe,success`; and W5
+`latent_next,position,orientation,collision,energy,terminal_failure,unsafe,success`.
+The derived feature/output counts, ensemble count, selected PCA dimension, every member
+shape/dtype/hash, and ordered training-input hashes are exact rows in
+`training-manifest.json`; `adapted-models.npz` uses the same names prefixed by
+`<variant>/`, and `calibration-output.npz` uses exactly
+`<variant>/{breakpoints,values,fallback_threshold,critic_threshold}.npy`. Duplicate,
+missing, extra, wrong-shape, or non-little-endian members fail validation.
+
+`preprocessing.json` has exact keys `schema_version,variant,configuration,
+feature_names,mean,scale,zero_variance,training_rows_sha256`; arrays match the frozen
+feature order and length. `training-input-manifest.json` has exact keys
+`schema_version,protocol_sha256,partition,ordered_scene_bundle_sha256s,row_count,
+input_sha256`. `fit_metrics.json` has exact keys `schema_version,variant,configuration,
+member_metrics,training_cpu_ns,model_bytes`; member rows sort by ordinal and contain
+exactly `member,root_sha256,row_count,losses`. `training-manifest.json` has exact keys
+`schema_version,bundle_key,protocol_sha256,variant,configuration,preprocessing_sha256,
+pca_sha256,model_sha256,evaluation_predictions_sha256,fit_metrics_sha256,
+training_input_sha256,feature_count,output_heads,ensemble_count,pca_dimension,
+model_members,total_bytes`; each model-member row has exactly
+`member_key,dtype,shape,sha256`. Every JSON loader rejects aliases, duplicate, missing,
+unknown, bool-as-int, nonfinite, noncanonical, or wrongly ordered set-like arrays.
 
 ## 7. Contract freeze, mechanical selection, and evidence freeze
 
@@ -594,13 +750,59 @@ Brier/ECE `1`, critic precision/recall `0`, and a latency-gate failure. Missing 
 without the declared timeout disposition or any integrity breach invalidates the
 bundle; phase resource exhaustion yields `INCONCLUSIVE`.
 
+### 9.6 Exact serial latency contract
+
+Latency is measured inside the same OS-isolated selector worker and pinned numeric/thread
+profile used for evidence, on the CPU architecture bound by the protocol. For every
+pilot-evaluation and confirmation anchor and each W3/W4F/W5F selector, the worker first
+performs five unrecorded warmups, then exactly 20 single-candidate repetitions for each
+candidate in candidate-ID order and 20 K=8 batch repetitions. Repetition order is
+`single repetition, candidate 0..7`, then `batch repetition`, repeated 20 times. W1 is
+run identically as the nonlearned reference but has no authority threshold.
+
+The timed single-candidate boundary begins immediately before projection decoding and
+ends after model inference, component/envelope construction, shared-contract validation,
+calibration, uncertainty/fallback decision, and canonical row construction. The batch
+boundary begins before decoding the shared projection and ends after all eight rows,
+calibration/fallback, universal sorting, and final selection. It excludes IPC, file I/O,
+process startup, sandbox setup, warmup, truth, and artifact serialization. The worker
+uses `time.perf_counter_ns`, disables cyclic GC only for each timed block, restores it
+afterward, performs no parallel work, and records nonnegative integer nanoseconds plus
+the clock implementation/resolution and process/user/system CPU deltas.
+
+Durations sort as integers; nearest-rank p50/p95 use index `ceil(p*n)-1`. The hard
+single and batch values are the p95 over all measured repetitions in the phase, reported
+also per stratum and scene. Pilot ceilings are separately
+`ceil_to_100000ns(1.25*pilot_p95_ns)` and must be no greater than the precursor-frozen
+1,000,000,000 ns emergency bound. Confirmation passes equality and fails strictly above
+either frozen ceiling. One call crossing the emergency bound is terminated and receives
+the declared timeout treatment in Section 9.5; any undeclared missing duration,
+negative/boolean duration, count drift, clock change, thread drift, or parallel overlap
+makes the latency artifact invalid.
+
+`latency.json` has exact keys `schema_version,phase,protocol_sha256,cpu_identity,
+clock_implementation,clock_resolution_ns,warmup_count,repetition_count,
+scene_latency_sha256s,
+single_p50_ns,single_p95_ns,batch_p50_ns,batch_p95_ns,cpu_user_ns,cpu_system_ns,
+timeout_count`. Each sorted scene row has exact keys `scene_id,row_count,sha256` and
+requires `row_count=2880`. The referenced per-scene `latency-rows.jsonl` row has exact
+keys `selector_id,stratum,scene_id,anchor_id,
+candidate_id,single_ns,batch_ns`; a single row has nonnull candidate/single and null
+batch, while a batch row has null candidate/single and nonnull batch. Rows use
+the execution order above: 180 rows per anchor/selector, exactly 57,600 pilot rows and
+230,400 confirmation rows across W1/W3/W4F/W5F. Each JSONL row is canonical compact
+JSON plus one LF; the small global JSON is sealed and digest-bound by the selector
+freeze before truth exists without duplicating the per-scene rows.
+
 ## 10. Separate states and ordered role mapping
 
 Lifecycle is `DRAFT -> CONTRACT_FROZEN -> NUMPY_VALIDATED -> NUMPY_SELECTED ->
 MUJOCO_ADAPTATION -> MUJOCO_PILOT_EVALUATED -> EVIDENCE_FROZEN -> CONFIRMATION ->
-DECISION -> PROMOTED | STOPPED`. Artifact state is separately `VALID | INVALID`;
+DECISION -> SELECTOR_PROTOCOL_PROMOTED | STOPPED`. Artifact state is separately `VALID | INVALID`;
 scientific result is `SUPPORTED | NOT_SUPPORTED | INCONCLUSIVE`; prerequisite/resource
-state is `READY | BLOCKED`; promotion state is `PROMOTED | STOPPED`. Invalid evidence
+state is `READY | BLOCKED`; P7 promotion state is
+`SELECTOR_PROTOCOL_PROMOTED | STOPPED`. The separate conditional conformance receipt
+may derive `ACTION_ROUTING_ELIGIBLE` but never changes this lifecycle. Invalid evidence
 has no scientific result, and a blocker is not negative evidence.
 
 Scientific classification is computed before and independently of the role ladder.
@@ -656,13 +858,57 @@ For `VALID + READY` confirmation, exactly one role is chosen by first matching r
 because this benchmark does not test those claims. Rules 2-5 record the best bounded
 lesser role but do not determine or overwrite the scientific result above: the same
 role may accompany `NOT_SUPPORTED` or `INCONCLUSIVE`. `INCONCLUSIVE`, `INVALID`, or
-`BLOCKED` cannot promote. Only `VALID + SUPPORTED + READY + CANDIDATE_SELECTOR` promotes
-any runtime authority. `FAILURE_CRITIC`, `SHADOW_OBSERVER`, and
+`BLOCKED` cannot promote. `VALID + SUPPORTED + READY + CANDIDATE_SELECTOR` promotes only
+the frozen prediction-envelope and candidate-selector protocol as eligible for the
+program's conditional extension; it grants no action-affecting runtime authority.
+`FAILURE_CRITIC`, `SHADOW_OBSERVER`, and
 `OFFLINE_ANALYSIS_ONLY` remain descriptive/unpromoted under both `NOT_SUPPORTED` and
 `INCONCLUSIVE`; they cannot veto, replace, rank, select, route, or otherwise affect an
 action. Granting critic authority would require a separate reviewed experiment and
 preregistered claim. This preserves Experiment 06's hard rule that failure to beat W1
 on held-out regret/latency stops world-model authority.
+
+After, and only after, that selector-protocol result is committed, a separate
+create-only `executor-prefix-conformance` manifest may generate 20 new scenes, four per
+stratum, from a new domain-separated root. It performs no fitting, margin change, or
+new scientific claim. At the first anchor it regenerates all eight chunks, ranks with
+the promoted selector, and constructs one shared `ActionChunk` with
+`representation="EEF_TRAJECTORY"`, `dt_s=0.02`, the selected `(50,2)` action bytes,
+source observation ID/time equal to the anchor observation, `generated_time_ns` and
+`valid_from_ns` equal to policy response time, `expires_at_ns=valid_from_ns+1_000_000_000`,
+`expected_phase="push_candidate"`, and metadata containing protocol, scene, anchor,
+candidate, strategy, prediction/model, and both action hashes. The current shared
+validator plus the frozen P4 request/response, expiry, accept/reject, replacement, and
+event-order semantics must accept it before an experiment-local planar executor runs
+exactly the first ten rows (0.20 s). A byte/regeneration mismatch, expired or rejected
+chunk, lifecycle/event mismatch, unsafe state, nonfinite state, or failure to execute
+exactly that prefix stops action authority. All 20 must pass; there is no exclusion or
+retry. Only its sealed conformance receipt may change promotion state from
+`SELECTOR_PROTOCOL_PROMOTED` to `ACTION_ROUTING_ELIGIBLE`; this is a derived downstream
+state over the immutable decision plus receipt, never a rewrite of `decision.json`.
+Downstream integration still requires its own reviewed adapter. This test never enters
+the Experiment 06 co-primary family or retroactively changes `SUPPORTED`.
+
+The extension is absent unless the final decision is selector-supported. Its only two
+operator commands are:
+
+```text
+uv run python experiments/06_world_model/lifecycle.py generate-prefix-manifest --decision results/06_world_model/aggregates/r1/final-decision/all/decision.json --p4-frozen experiments/01_policy_control/configs/frozen.yaml --p4-artifact-digests experiments/01_policy_control/protocol/confirmation/artifact-digests.json --scenes-per-stratum 4 --expected-head "$(git rev-parse HEAD)" --output experiments/06_world_model/manifests/executor-prefix.json
+uv run python experiments/06_world_model/run_executor_prefix.py --manifest experiments/06_world_model/manifests/executor-prefix.json --selector-protocol experiments/06_world_model/configs/frozen.yaml --output-root results/06_world_model/executor-prefix --headless --max-scenes 20 --max-candidates-per-scene 8 --max-prefix-rows 10 --max-bytes-per-scene 4194304 --expected-head "$(git rev-parse HEAD)"
+```
+
+The manifest is committed alone before the second command. Its RNG root follows the
+confirmation entropy/derivation rule with `exp06-executor-prefix-v1` replacing the
+confirmation domain. It has exact keys `schema_version,decision_sha256,
+selector_protocol_sha256,p4_frozen_sha256,p4_artifact_digests_sha256,
+generated_after_decision_commit,rng_algorithm,rng_root,strata,scenes`; scenes are 20
+sorted rows with the confirmation row schema and no earlier ancestor. The receipt
+has exact keys `schema_version,decision_sha256,selector_protocol_sha256,p4_frozen_sha256,
+p4_artifact_digests_sha256,manifest_sha256,
+scene_count,ordered_scene_bundle_sha256s,action_chunk_schema_sha256,event_schema_sha256,
+passed_count,failed_count,status`; only `20,20,0,ACTION_ROUTING_ELIGIBLE` is a pass.
+Each conformance scene is create-only and at most 4 MiB, so the conditional extension
+adds an exact 80 MiB retained maximum already reserved by P7 preflight.
 
 ## 11. Atomic scene evidence and separate training/aggregate bundles
 
@@ -771,9 +1017,11 @@ without rerunning physics or models. It verifies evidence, not counterfactual dy
 
 The evidence-scene boundary has three named responsibilities:
 
-- `EvidenceBundleWriter` accepts only already sealed generator, selector, and scorer
-  component descriptors; copies them into one sibling temporary tree; invokes all
-  validators; writes the manifest; fsyncs; and performs one absent-destination rename.
+- `EvidenceBundleWriter` owns one create-exclusive sibling staging tree from selector
+  projection through final publication. It never copies or separately materializes a
+  second component tree. It advances only through the sealed states below, invokes all
+  validators, writes the final manifest last, fsyncs, and performs one absent-destination
+  rename.
 - `validate_evidence_bundle` validates every canonical rollout first, then exact
   sidecar schemas, hashes, IDs, counts, action regeneration, event ordering, oracle
   isolation attestations, and all cross-links. Validation has no repair mode.
@@ -800,7 +1048,8 @@ Pass S completes only after every W0/W1/W3/W4/W5 output for all 20 pilot-evaluat
 all 80 confirmation scenes validates, every selector exits, and every projection/output
 descriptor closes. It then publishes one create-only `selector-freeze.json` with exact
 keys `schema_version,phase,protocol_sha256,implementation_sha256,scene_manifest_sha256,
-scene_count,anchor_count,candidate_count,selector_ids,scene_selector_rows`. The last
+sandbox_profile_sha256,latency_sha256,scene_count,anchor_count,candidate_count,
+selector_ids,scene_selector_rows`. The last
 array is sorted by `(scene_id,anchor_id,selector_id)` and each exact-key row contains
 `scene_id,anchor_id,selector_id,projection_sha256,generator_snapshot_sha256,
 selector_output_sha256,component_path`. Unknown/duplicate/missing rows fail. The freeze
@@ -811,7 +1060,8 @@ exists, the launcher permanently refuses to execute a selector for that phase.
 
 Only pass T may materialize full truth-source descriptors. It regenerates each full
 snapshot from the frozen scene seed when necessary, requires its hash to equal the
-pass-S commitment, and then create-only writes the per-scene truth source.
+pass-S commitment, and then create-only writes the per-scene truth source inside that
+scene's validated `SELECTORS_SEALED` building tree.
 `generator-snapshot.json` has exact keys
 `schema_version,scene_id,simulator,anchor_ids,generator_snapshot_sha256,projection_sha256s,
 state_member_keys,state_layouts,model_sha256,p3_evidence_sha256`; `simulator` is exactly
@@ -845,15 +1095,26 @@ resumes only missing truth/scorer scenes through validate-and-skip. The writer s
 only after generator, frozen selector, and scorer components validate, so co-location
 in the finalized evidence bundle cannot become a preselection truth channel.
 
-Pass-S selector components, pass-T truth sources, and the final scene destination are
-three mutually exclusive lifecycle states of the same per-scene 16 MiB allocation.
-Assembly descriptor-relatively moves the already sealed selector and truth components
-into the final absent scene bundle; it does not retain a copied staging tree. The small
-phase selector freeze lives inside the existing phase aggregate allowance. Thus the
-global two-pass boundary does not alter the Section 12 retained-byte arithmetic.
+Each evidence scene has one descriptor-held create-exclusive
+`.scene-<bundle-key>.building` tree and an exact monotone state machine:
+`CREATED -> SELECTORS_SEALED -> TRUTH_SEALED -> BUNDLE_SEALED -> PUBLISHED`. Pass S
+writes only the `selectors/` subtree plus `stage-state.json`, whose exact keys are
+`schema_version,bundle_key,protocol_sha256,state,selector_manifest_sha256,
+selector_freeze_sha256,truth_manifest_sha256,bundle_manifest_sha256,total_bytes`.
+It fsyncs the subtree/tree and seals `SELECTORS_SEALED`; the combined projections,
+outputs, and latency rows are at most 4 MiB per scene. The global selector freeze binds
+all those stage-state and selector-manifest digests.
 
-The assembler writes a sibling temporary bundle, validates every canonical rollout and all
-sidecars, fsyncs files/directories, and atomically renames into an absent destination.
+Pass T reopens that same tree descriptor-relatively, validates `SELECTORS_SEALED` and
+the global freeze, then writes truth, scorer, canonical rollouts, and final-layout files
+directly beside the immutable selector subtree. These additions are jointly at most
+12 MiB, so the complete building tree and final scene bundle are always at most 16 MiB.
+There is never a separate truth tree, component copy, hard link, or second staging copy.
+After `TRUTH_SEALED`, the writer validates every canonical rollout and sidecar, writes
+the manifest and `BUNDLE_SEALED` marker last, fsyncs all files/directories, and atomically
+renames the same tree into the absent destination before the parent fsync and
+`PUBLISHED` receipt.
+
 `bundle-manifest.json` lists every other immutable file with path/media type/bytes/
 SHA-256, excludes itself and temporary files, contains no field for its own digest, and
 is created last. Extra/missing files, a self-digest, cross-link mismatch, corruption,
@@ -866,7 +1127,7 @@ scene-local truth:
 ```text
 training-bundle/
   preprocessing.json
-  pca.npz | empty marker
+  pca.npz | pca.empty
   model.npz
   evaluation-predictions.parquet
   fit_metrics.json
@@ -876,10 +1137,10 @@ training-bundle/
 aggregate-bundle/
   input-scene-manifest.json
   aggregate_metrics.json
-  margins-resources.json | empty marker
-  adapted-models.npz | empty marker
-  calibration-output.npz | empty marker
-  decision.json | empty marker
+  margins-resources.json | margins-resources.empty
+  adapted-models.npz | adapted-models.empty
+  calibration-output.npz | calibration-output.empty
+  decision.json | decision.empty
   aggregate-manifest.json
 ```
 
@@ -902,14 +1163,17 @@ changes, unexpected link counts, and path re-resolution fail. Temporary creation
 mode 0700 and a create-exclusive name; publication uses descriptor-relative
 rename-no-replace followed by parent fsync. No safety decision relies on `Path.resolve`.
 
-During the creating process, cleanup may remove only the temporary tree whose descriptor
-and inode have been continuously held since its exclusive creation. After restart,
-held-inode continuity is impossible: recovery opens one exact owned temporary entry
-no-follow, validates its owner/key/manifest prefix without following descendants, and
-renames it descriptor-relatively into an absent `quarantine/<bundle-key>.<nonce>`.
-Restart never deletes or publishes an orphan. Foreign, malformed, multiple, symlinked,
-or changing entries fail closed. Quarantine remains evidence-bearing and byte-accounted;
-no new phase begins until an explicit review disposition is recorded.
+During the creating process, cleanup may remove only an unsealed temporary tree whose
+descriptor and inode have been continuously held since exclusive creation. A restart
+may resume an evidence building tree only when its exact protocol-derived name, inode,
+strict stage-state bytes, completed-state manifest, global-freeze relation, and complete
+prefix all validate; it may only advance to the next state and never rewrite a sealed
+file. Any other temporary entry, including an incomplete state transition, is opened
+no-follow and descriptor-relatively renamed into absent
+`quarantine/<bundle-key>.<nonce>`. Restart never deletes or publishes an orphan.
+Foreign, malformed, multiple, symlinked, or changing entries fail closed. Quarantine
+remains evidence-bearing and byte-accounted; no new phase begins until an explicit
+review disposition is recorded.
 
 The phase dispatcher invokes exactly one closed pair:
 `SceneSourceBundleWriter/validate_scene_source_bundle`,
@@ -951,7 +1215,8 @@ not Git commits.
 publication_parent_sha256,
 p2_lock_sha256,p3_gate_sha256,p3_mujoco_package,task,candidate_factory,numpy_simulator,
 mujoco_model_generator,cost,labels,w0,w1,model_grid,splits,validity_grid,schemas,
-numeric_profile,hard_budgets`. Every nested key/value is the frozen Section 13.1
+sandbox_profiles,latency_contract,executor_prefix_contract,numeric_profile,hard_budgets`.
+Every nested key/value is the frozen Section 13.1
 transcription; unknown/missing keys fail. Publish it exactly:
 
 ```text
@@ -1035,12 +1300,22 @@ uv run python experiments/06_world_model/lifecycle.py generate-confirmation \
   --output experiments/06_world_model/manifests/mujoco-confirmation.json
 ```
 
-Commit that manifest alone, then publish the last two protocols exactly:
+Commit that manifest alone, then publish protocol 05 exactly:
 
 ```text
 uv run python experiments/06_world_model/lifecycle.py publish-phase --phase mujoco-confirmation --config experiments/06_world_model/configs/frozen.yaml --parent experiments/06_world_model/configs/frozen.yaml --input-manifest experiments/06_world_model/manifests/mujoco-confirmation.json --validity-cases 0 --scene-bundles 80 --training-bundles 0 --input-aggregates 2 --expected-head "$(git rev-parse HEAD)" --output experiments/06_world_model/protocols/r1/05-mujoco-confirmation.json
+```
+
+Commit protocol 05, run its complete selector freeze, truth phase, and confirmation
+aggregate, and validate that aggregate without report or decision access. Only then may
+protocol 06 bind the now-existing confirmation aggregate and publish exactly:
+
+```text
 uv run python experiments/06_world_model/lifecycle.py publish-phase --phase final-decision --config experiments/06_world_model/configs/frozen.yaml --parent results/06_world_model/aggregates/r1/mujoco-confirmation/all/aggregate-manifest.json --input-manifest experiments/06_world_model/manifests/mujoco-confirmation.json --validity-cases 0 --scene-bundles 0 --training-bundles 0 --input-aggregates 1 --expected-head "$(git rev-parse HEAD)" --output experiments/06_world_model/protocols/r1/06-final-decision.json
 ```
+
+Commit protocol 06 alone before final-decision aggregation. A protocol 06 file that
+predates, does not hash, or does not name the complete confirmation aggregate is invalid.
 
 The shell substitution must resolve to one literal full 40-hex SHA before the Python
 process starts; the CLI records and independently rechecks it. Any output, manifest,
@@ -1052,12 +1327,15 @@ below. Each command validates every named scene/component and publishes the phas
 selector freeze only after the complete exact count; neither command can import or
 materialize MuJoCo truth:
 
-Before those evidence passes, the two source-only phases execute through these exact
-manifest-wide commands. `run_sources.py` derives each create-only bundle key from the
+Before those evidence passes, NumPy source generation and the privileged MuJoCo
+adaptation controller execute through these exact manifest-wide commands.
+`run_sources.py` derives each create-only bundle key from the
 manifest row and phase (`scene:r1:<source-phase>:<stratum>:<16-lowercase-hex-seed>`),
 requires every expected key exactly once, and has no selector-output writer. The NumPy
-command creates exactly 96 train, 24 tuning, and 24 validation bundles; the MuJoCo
-command creates exactly the 20 rows whose frozen pilot partition is `adaptation`:
+command creates exactly 96 train, 24 tuning, and 24 validation bundles. The adaptation
+controller runs only after NumPy selection, generates exactly the 20 adaptation rows
+into the unlinked capabilities in Section 6, consumes the three selected training
+bundles, fits only permitted outputs, and directly publishes the adaptation aggregate:
 
 ```text
 uv run python experiments/06_world_model/run_sources.py \
@@ -1065,18 +1343,21 @@ uv run python experiments/06_world_model/run_sources.py \
   --scene-manifest experiments/06_world_model/manifests/numpy-development.json \
   --phase numpy-selection --output-root results/06_world_model/scenes \
   --headless --max-train-scenes 96 --max-tuning-scenes 24 \
-  --max-validation-scenes 24 --max-scenes 144
+  --max-validation-scenes 24 --max-scenes 144 --expected-head "$(git rev-parse HEAD)"
 
-uv run python experiments/06_world_model/run_sources.py \
+uv run python experiments/06_world_model/run_adaptation.py \
   --protocol experiments/06_world_model/protocols/r1/03-mujoco-adaptation.json \
   --scene-manifest experiments/06_world_model/manifests/mujoco-pilot.json \
   --partition adaptation --phase mujoco-adaptation \
-  --output-root results/06_world_model/scenes --headless \
-  --max-train-scenes 0 --max-tuning-scenes 0 --max-validation-scenes 0 \
-  --max-scenes 20
+  --training-root results/06_world_model/training \
+  --numpy-selection results/06_world_model/aggregates/r1/numpy-selection/all/aggregate-manifest.json \
+  --private-root .private/06_world_model/r1/adaptation \
+  --output-root results/06_world_model/aggregates --headless \
+  --max-scenes 20 --max-training-bundles 3 --max-input-aggregates 1 \
+  --max-output-aggregates 1 --expected-head "$(git rev-parse HEAD)"
 ```
 
-Any missing, extra, duplicate, wrongly partitioned, or differently keyed bundle fails
+Any missing, extra, duplicate, wrongly partitioned, or differently keyed input fails
 the whole phase. `train_all.py` iterates the fixed ordered Cartesian product
 `{W3,W4,W5} x {CFG01,CFG02,CFG03}`, derives each key, and accepts only the 96 NumPy-train
 source descriptors named by protocol 02. Its only invocation is:
@@ -1087,7 +1368,7 @@ uv run python experiments/06_world_model/train_all.py \
   --scene-root results/06_world_model/scenes \
   --output-root results/06_world_model/training --headless \
   --max-input-scenes 96 --max-configurations-per-variant 3 \
-  --max-variants 3 --max-training-bundles 9
+  --max-variants 3 --max-training-bundles 9 --expected-head "$(git rev-parse HEAD)"
 ```
 
 The phase must contain exactly nine training bundle keys before NumPy selection
@@ -1100,7 +1381,8 @@ uv run python experiments/06_world_model/run_selectors.py \
   --phase mujoco-pilot-evaluation \
   --component-root results/06_world_model/phase-components \
   --selector-freeze results/06_world_model/phase-components/r1/mujoco-pilot-evaluation/selector-freeze.json \
-  --headless --max-scenes 20 --max-anchors 80 --max-candidates 640 --max-selectors 5
+  --headless --max-scenes 20 --max-anchors 80 --max-candidates 640 --max-selectors 5 \
+  --expected-head "$(git rev-parse HEAD)"
 
 uv run python experiments/06_world_model/run_selectors.py \
   --protocol experiments/06_world_model/protocols/r1/05-mujoco-confirmation.json \
@@ -1108,13 +1390,33 @@ uv run python experiments/06_world_model/run_selectors.py \
   --phase mujoco-confirmation \
   --component-root results/06_world_model/phase-components \
   --selector-freeze results/06_world_model/phase-components/r1/mujoco-confirmation/selector-freeze.json \
-  --headless --max-scenes 80 --max-anchors 320 --max-candidates 2560 --max-selectors 5
+  --headless --max-scenes 80 --max-anchors 320 --max-candidates 2560 --max-selectors 5 \
+  --expected-head "$(git rev-parse HEAD)"
 ```
 
+Immediately after the pilot-evaluation selector freeze and before any pass-T truth, the
+privileged controller republishes adaptation inputs for audit by deterministic
+regeneration; this is not run for confirmation:
+
+```text
+uv run python experiments/06_world_model/publish_adaptation_sources.py \
+  --protocol experiments/06_world_model/protocols/r1/04-mujoco-pilot-evaluation.json \
+  --scene-manifest experiments/06_world_model/manifests/mujoco-pilot.json \
+  --adaptation-aggregate results/06_world_model/aggregates/r1/mujoco-adaptation/all/aggregate-manifest.json \
+  --selector-freeze results/06_world_model/phase-components/r1/mujoco-pilot-evaluation/selector-freeze.json \
+  --output-root results/06_world_model/scenes --headless --max-scenes 20 \
+  --expected-head "$(git rev-parse HEAD)"
+```
+
+It publishes exactly the 20 `mujoco-pilot-adaptation` source bundles only after all
+pilot selectors exit; every regenerated input hash must equal the sealed adaptation
+aggregate row. It has no model/calibration output and cannot import selector code.
+
 Pass T starts only after the matching selector freeze validates. `run_truth_phase.py`
-is the sole manifest iterator: in sorted manifest order it regenerates/materializes one
-scene truth source, runs W2/MuJoCo, scores, and create-only assembles that scene's final
-bundle without starting a selector. It derives the bundle key internally and rejects a
+is the sole manifest iterator: in sorted manifest order it opens one validated
+selector-sealed building tree, regenerates/materializes its truth source, runs W2/MuJoCo,
+scores, and advances that same tree to the final bundle without starting a selector. It
+derives the bundle key internally and rejects a
 caller-supplied key or arbitrary runner arguments. These are the exact two invocations;
 they require exactly 20 pilot-evaluation or 80 confirmation keys before aggregation:
 
@@ -1126,7 +1428,8 @@ uv run python experiments/06_world_model/run_truth_phase.py \
   --selector-freeze results/06_world_model/phase-components/r1/mujoco-pilot-evaluation/selector-freeze.json \
   --component-root results/06_world_model/phase-components \
   --output-root results/06_world_model/scenes --headless \
-  --max-scenes 20 --max-anchors-per-scene 4 --max-candidates-per-anchor 8
+  --max-scenes 20 --max-anchors-per-scene 4 --max-candidates-per-anchor 8 \
+  --expected-head "$(git rev-parse HEAD)"
 
 uv run python experiments/06_world_model/run_truth_phase.py \
   --protocol experiments/06_world_model/protocols/r1/05-mujoco-confirmation.json \
@@ -1135,12 +1438,14 @@ uv run python experiments/06_world_model/run_truth_phase.py \
   --selector-freeze results/06_world_model/phase-components/r1/mujoco-confirmation/selector-freeze.json \
   --component-root results/06_world_model/phase-components \
   --output-root results/06_world_model/scenes --headless \
-  --max-scenes 80 --max-anchors-per-scene 4 --max-candidates-per-anchor 8
+  --max-scenes 80 --max-anchors-per-scene 4 --max-candidates-per-anchor 8 \
+  --expected-head "$(git rev-parse HEAD)"
 
 uv run python experiments/06_world_model/validate_numpy.py \
   --protocol experiments/06_world_model/protocols/r1/01-numpy-validity.json \
   --bundle-key aggregate:r1:numpy-validity:all \
-  --output-root results/06_world_model/aggregates --headless --max-cases 80
+  --output-root results/06_world_model/aggregates --headless --max-cases 80 \
+  --expected-head "$(git rev-parse HEAD)"
 
 uv run python experiments/06_world_model/aggregate.py \
   --protocol experiments/06_world_model/protocols/r1/04-mujoco-pilot-evaluation.json \
@@ -1148,7 +1453,8 @@ uv run python experiments/06_world_model/aggregate.py \
   --scene-root results/06_world_model/scenes \
   --training-root results/06_world_model/training \
   --output-root results/06_world_model/aggregates --headless \
-  --max-training-bundles 0 --max-scenes 20 --max-input-aggregates 1
+  --max-training-bundles 0 --max-scenes 20 --max-input-aggregates 1 \
+  --expected-head "$(git rev-parse HEAD)"
 ```
 
 The iterator has no generic path or subprocess argument and a component exit other
@@ -1163,8 +1469,10 @@ experiments/06_world_model/protocols/r1/05-mujoco-confirmation.json` and `--max-
 aggregates. Exact aggregate inputs are: NumPy validity, the frozen 80-case fixture and
 no prior bundle; NumPy selection, nine training bundles plus 24 tuning and 24
 validation scene bundles plus the one validity aggregate; MuJoCo
-adaptation, 20 adaptation scene bundles plus the three selected NumPy training
-bundles and the NumPy-selection aggregate; pilot evaluation, 20 evaluation scene bundles plus the one adaptation
+adaptation, 20 anonymous adaptation inputs plus the three selected NumPy training
+bundles and the NumPy-selection aggregate in the single adaptation controller; its 20
+later regenerated scene bundles are audit copies and cannot alter that aggregate;
+pilot evaluation, 20 evaluation scene bundles plus the one adaptation
 aggregate; confirmation, 80 confirmation scene bundles plus the adaptation and
 pilot-evaluation aggregates; final decision, the one confirmation aggregate. The CLI
 requires corresponding exact `--max-training-bundles`, `--max-scenes`, and
@@ -1182,20 +1490,28 @@ validated, so a later protocol cannot be substituted retroactively.
 All non-validity aggregate and final-report invocations are exact, not examples:
 
 ```text
-uv run python experiments/06_world_model/aggregate.py --protocol experiments/06_world_model/protocols/r1/02-numpy-selection.json --bundle-key aggregate:r1:numpy-selection:all --scene-root results/06_world_model/scenes --training-root results/06_world_model/training --output-root results/06_world_model/aggregates --headless --max-training-bundles 9 --max-scenes 48 --max-input-aggregates 1
-uv run python experiments/06_world_model/aggregate.py --protocol experiments/06_world_model/protocols/r1/03-mujoco-adaptation.json --bundle-key aggregate:r1:mujoco-adaptation:all --scene-root results/06_world_model/scenes --training-root results/06_world_model/training --output-root results/06_world_model/aggregates --headless --max-training-bundles 3 --max-scenes 20 --max-input-aggregates 1
-uv run python experiments/06_world_model/aggregate.py --protocol experiments/06_world_model/protocols/r1/04-mujoco-pilot-evaluation.json --bundle-key aggregate:r1:mujoco-pilot-evaluation:all --scene-root results/06_world_model/scenes --training-root results/06_world_model/training --output-root results/06_world_model/aggregates --headless --max-training-bundles 0 --max-scenes 20 --max-input-aggregates 1
-uv run python experiments/06_world_model/aggregate.py --protocol experiments/06_world_model/protocols/r1/05-mujoco-confirmation.json --bundle-key aggregate:r1:mujoco-confirmation:all --scene-root results/06_world_model/scenes --training-root results/06_world_model/training --output-root results/06_world_model/aggregates --headless --max-training-bundles 0 --max-scenes 80 --max-input-aggregates 2
-uv run python experiments/06_world_model/aggregate.py --protocol experiments/06_world_model/protocols/r1/06-final-decision.json --bundle-key aggregate:r1:final-decision:all --scene-root results/06_world_model/scenes --training-root results/06_world_model/training --output-root results/06_world_model/aggregates --headless --max-training-bundles 0 --max-scenes 0 --max-input-aggregates 1
-uv run python experiments/06_world_model/report.py --protocol experiments/06_world_model/protocols/r1/06-final-decision.json --decision results/06_world_model/aggregates/r1/final-decision/all/decision.json --artifact-manifest results/06_world_model/aggregates/r1/final-decision/all/aggregate-manifest.json --output experiments/06_world_model/WORLD_MODEL_DECISION.md --headless
+uv run python experiments/06_world_model/aggregate.py --protocol experiments/06_world_model/protocols/r1/02-numpy-selection.json --bundle-key aggregate:r1:numpy-selection:all --scene-root results/06_world_model/scenes --training-root results/06_world_model/training --output-root results/06_world_model/aggregates --headless --max-training-bundles 9 --max-scenes 48 --max-input-aggregates 1 --expected-head "$(git rev-parse HEAD)"
+uv run python experiments/06_world_model/aggregate.py --protocol experiments/06_world_model/protocols/r1/04-mujoco-pilot-evaluation.json --bundle-key aggregate:r1:mujoco-pilot-evaluation:all --scene-root results/06_world_model/scenes --training-root results/06_world_model/training --output-root results/06_world_model/aggregates --headless --max-training-bundles 0 --max-scenes 20 --max-input-aggregates 1 --expected-head "$(git rev-parse HEAD)"
+uv run python experiments/06_world_model/aggregate.py --protocol experiments/06_world_model/protocols/r1/05-mujoco-confirmation.json --bundle-key aggregate:r1:mujoco-confirmation:all --scene-root results/06_world_model/scenes --training-root results/06_world_model/training --output-root results/06_world_model/aggregates --headless --max-training-bundles 0 --max-scenes 80 --max-input-aggregates 2 --expected-head "$(git rev-parse HEAD)"
+```
+
+The confirmation command must complete before the Section 12.1 protocol-06 publisher;
+protocol 06 is then committed alone. Only after that barrier are these exact commands
+allowed:
+
+```text
+uv run python experiments/06_world_model/aggregate.py --protocol experiments/06_world_model/protocols/r1/06-final-decision.json --bundle-key aggregate:r1:final-decision:all --scene-root results/06_world_model/scenes --training-root results/06_world_model/training --output-root results/06_world_model/aggregates --headless --max-training-bundles 0 --max-scenes 0 --max-input-aggregates 1 --expected-head "$(git rev-parse HEAD)"
+uv run python experiments/06_world_model/report.py --protocol experiments/06_world_model/protocols/r1/06-final-decision.json --decision results/06_world_model/aggregates/r1/final-decision/all/decision.json --artifact-manifest results/06_world_model/aggregates/r1/final-decision/all/aggregate-manifest.json --output experiments/06_world_model/WORLD_MODEL_DECISION.md --headless --expected-head "$(git rev-parse HEAD)"
 ```
 
 The final aggregate create-only publishes `decision.json` with exact keys
 `schema_version,protocol_sha256,confirmation_aggregate_sha256,lifecycle_status,
 artifact_status,blocker_status,scientific_result,authority_readiness,assigned_role,
 promotion_status,composition_results,endpoint_results,input_hashes`; its arrays use
-the frozen Section 10 order and unknown/duplicate/missing keys fail. The report command
-validates every upstream hash and create-only publishes the previously absent
+the frozen Section 10 order and unknown/duplicate/missing keys fail. The aggregate sets
+`promotion_status=SELECTOR_PROTOCOL_PROMOTED` only for the exact supported selector
+case and `STOPPED` otherwise; `ACTION_ROUTING_ELIGIBLE` is forbidden in this decision.
+The report command validates every upstream hash and create-only publishes the previously absent
 `WORLD_MODEL_DECISION.md` by sibling temporary file, fsync, rename-no-replace, and
 parent fsync; exact reissue validates-and-skips without rewriting bytes. The Markdown
 has exact headings `Provenance`, `Validity`, `Canonical co-primary results`, `Secondary
@@ -1227,7 +1543,9 @@ The exact read-only sequence is `git rev-parse --verify HEAD`,
 `git status --porcelain=v1 --untracked-files=all`, and
 `git diff --exit-code <implementation_sha256> -- <implementation_paths...>` under that
 hardened environment. `implementation_paths` is the sorted, duplicate-free list of
-`pyproject.toml`, `uv.lock`, and every Experiment 06 source/test/asset/base-config path;
+`pyproject.toml`, `uv.lock`, `reflect/types.py`, `reflect/events.py`,
+`reflect/rollout.py`, `reflect/replay.py`, their direct contract tests, and every
+Experiment 06 source/test/asset/sandbox/base-config path;
 it excludes only ignored results and later create-only protocol/report evidence. HEAD
 must equal the command's literal `--expected-head`, status and implementation diff must
 be empty, and SHA must be a real 40-lowercase-hex commit both before spawn and after
@@ -1239,10 +1557,12 @@ W5, nine per revision. Every aggregate has a 60-minute wall ceiling. Aggregate b
 maxima are exact: per revision NumPy validity is 64 MiB, NumPy selection is 32 MiB,
 MuJoCo adaptation is 64 MiB,
 and pilot evaluation is 64 MiB; final-revision confirmation is 96 MiB and final
-decision is 32 MiB. A separate 96 MiB scratch/quarantine allowance yields
-`2*(64+32+64+64)+96+32+96 = 672 MiB`. The sibling publication tree occupies the eventual
-destination bundle's cap, not a second retained copy; the 96 MiB allowance covers the
-largest bounded writer scratch or one quarantined orphan outside it. With two allowed
+decision is 32 MiB. Checked-in generated lifecycle/config/manifest/report evidence has
+a separate create-only 32 MiB total allowance. Scratch/quarantine has two nonborrowing
+96 MiB slots: one live largest-writer/staging slot and one retained prior-revision orphan
+slot. This yields `2*(64+32+64+64)+96+32+192+32 = 800 MiB`. The evidence scene's
+4 MiB selector prefix and 12 MiB truth/scorer/final suffix share its one 16 MiB cap;
+neither is charged twice. With two allowed
 protocol revisions and confirmation only on the final revision, retained maximum is:
 
 ```text
@@ -1250,22 +1570,33 @@ two revisions of NumPy+MuJoCo pilot scenes:
   2 * (144 + 40) * 16 MiB = 5,888 MiB
 final MuJoCo confirmation:
   80 * 16 MiB             = 1,280 MiB
-two revisions of training/config shards:
+two revisions of training shards:
   2 * 9 * 32 MiB          =   576 MiB
-all typed aggregates plus scratch/quarantine = 672 MiB
+typed aggregates + two scratch/quarantine slots
+  + tracked lifecycle/report evidence       =   800 MiB
+conditional executor-prefix conformance:
+  20 * 4 MiB                                =    80 MiB
 -----------------------------------------------------
-maximum retained P7 total                  = 8,416 MiB
+maximum retained P7 total                  = 8,624 MiB
 ```
 
 The scene count is `144 NumPy + 20 MuJoCo adaptation + 20 MuJoCo pilot evaluation =
 184` per revision, so the first line remains exact. The count includes truth,
 predictions, scorer output, and canonical rollout inside scene bundles and all fitted
-models/metrics inside training/aggregate bundles; nothing is off-ledger. Before any
-typed phase starts, preflight adds all retained bytes, existing temporary directories,
-the phase's complete declared bundle count times its per-type cap, and its one allowed
-bounded scratch/quarantine allowance. It requires both the 8,416 MiB experiment cap
-and inherited 10 GiB/free-disk ceilings. Nothing is deleted until final decision. A cap/timeout yields
-`INCONCLUSIVE`, never evidence against a model.
+models/metrics inside training/aggregate bundles. The 32 MiB tracked bucket charges
+`precursor-frozen.yaml`, `pilot-evaluation.yaml`, `frozen.yaml`, all six protocols, all
+checked-in validity/development/pilot/confirmation manifests, sandbox profiles, and
+the conditional prefix manifest plus `WORLD_MODEL_DECISION.md`; their actual regular-file bytes are measured before and
+after every publication. Nothing is off-ledger.
+
+Before any typed phase starts, preflight adds all retained bytes, every recognized
+building tree, every quarantine entry, the phase's complete declared bundle count times
+its per-type cap, both applicable 96 MiB slots, and the remaining tracked-evidence
+allowance. It requires both the 8,624 MiB experiment cap and inherited 10 GiB/free-disk
+ceilings. No published artifact is deleted until final decision; closing anonymous
+adaptation truth after its aggregate seals is the sole named transient-capability
+exception, and its exact regeneration is required after selector freeze. A cap or
+timeout yields `INCONCLUSIVE`, never evidence against a model.
 
 ## 13. Frozen fields and pilot-derived margins/resources
 
@@ -1307,9 +1638,10 @@ For each scientific endpoint, margin is
 the 20 untouched MuJoCo pilot-evaluation scenes, with sample SD denominator `n-1`;
 `ceil_to_unit(x)=ceil(x/unit)*unit`. Rank-correlation unit is `0.001`; probability/rate
 unit is one anchor outcome over its fixed pilot denominator; regret/cost unit is the
-smallest positive frozen cost quantum; latency unit is 0.1 ms; and bytes round to
-1024. Resource limits use `ceil_to_unit(1.25 * maximum_usage)` across only those 20
-pilot-evaluation scenes and must remain under the already frozen inherited caps. Zero
+smallest positive frozen cost quantum and bytes round to 1024. The two latency ceilings
+use Section 9.6's separate p95 formula and 0.1 ms unit. Other measured resource limits
+use `ceil_to_unit(1.25 * maximum_usage)` across only those 20 pilot-evaluation scenes and
+must remain under the already frozen inherited caps. Zero
 SD yields one unit; unattainable margins make the result `INCONCLUSIVE`, never clipped.
 No pilot-evaluation statistic enters configuration selection or fitting.
 
@@ -1336,6 +1668,34 @@ component clamp `[-0.25,0.25] m/s`. MuJoCo uses the experiment-local generated m
 below with the P3-pinned runtime, timestep 0.002 s, ten physics steps per command, the
 Euler semi-implicit integrator, gravity disabled, and the same initial state/action/cost
 projection as NumPy.
+
+**Exact seed and draw compiler.** A named literal root is the first 16 bytes of
+`SHA256(UTF8(literal))`, interpreted big-endian. After evidence freeze the controller
+calls `os.urandom(16)` exactly once for confirmation entropy, rejects a short/error
+result, derives the root as the first 16 bytes of
+`SHA256(canonical_json(["exp06-confirmation-root-v1",entropy.hex()]))`, destroys the
+entropy, and publishes only the derived root in the committed confirmation manifest. No fallback
+clock, UUID, PID, or library-global RNG is allowed. For every partition/stratum/ordinal,
+the 64-bit `scene_seed` is the first eight bytes of
+`SHA256(canonical_json(["exp06-scene-id-v1",root_hex,partition,stratum,ordinal]))`;
+`scene_id` is its 16-lowercase-hex encoding. `probe_seed` uses the same tuple with domain
+`exp06-probe-v1`. Any seed/ID collision invalidates the manifest rather than advancing
+or resampling.
+
+Each proposal ordinal `0..31` gets a fresh PCG64 seed from the first 16 big-endian bytes
+of `SHA256(canonical_json(["exp06-scene-parameters-v1",root_hex,partition,stratum,
+ordinal,proposal_ordinal]))`. The generator makes exactly these float64 calls in order:
+`object_x, object_y, target_bearing, target_distance, target_yaw, mass_u, friction_u,
+geometry_choice, disk_radius_u, rectangle_half_x_u, rectangle_half_y_u,
+obstacle_choice, obstacle_side, object_yaw`; continuous draws use one
+`Generator.random(dtype=float64)` and `low+(high-low)*u`, while choices use one
+`integers(0,n,endpoint=False,dtype=uint64)`. Both disk and rectangle dimension draws and
+both obstacle draws are consumed even when inapplicable. The named OOD stratum changes
+only the stated interval/forced choice; every other call and position remains identical.
+The first feasible proposal wins, all rejected proposal ordinals/reasons are recorded,
+and exhaustion is `INVALID`. Candidate generation, bootstrap, ensemble members, and W0
+each use their separately specified domain and a fresh generator; no generator object or
+state crosses a scene, proposal, model member, anchor, or phase.
 
 **Experiment-local MuJoCo model.** P3 contributes only the validated MuJoCo runtime.
 Experiment 06 owns `assets/push_t_template.xml` and a pure
@@ -1538,7 +1898,8 @@ Tests cover:
 - exact K=8 IDs, globally unique candidate IDs, eight distinct ID-independent content
   digests and bytewise trajectories, identity-bound cross-link hashes, independent
   regeneration, and invalid duplicate/nondeterministic disposition;
-- immutable snapshots, named RNG independence, pinned numeric/thread environment,
+- immutable snapshots, exact domain-separated scene/probe/proposal/W0 PCG64 calls and
+  collision refusal, named RNG independence, pinned numeric/thread environment,
   tolerance-group PCA, canonical JSON/Parquet/NPZ, and fresh-process byte identity;
 - split ancestry/content leakage across all five partitions;
 - fit spies proving preprocessing/PCA/models/calibration see only allowed partitions;
@@ -1548,10 +1909,14 @@ Tests cover:
 - W0-W5 input boundaries, phase-global full-snapshot commitments, projection digest
   links, exact 400/1,600-row pilot/confirmation selector freezes, absence of every
   phase truth descriptor until all selectors exit, permanent no-selector-after-freeze,
-  selector-freeze restart and truth-only resume, and hostile access to current/prior-
+  selector-freeze restart and truth-only resume, Linux Landlock/seccomp and macOS
+  Seatbelt enforcement probes, anonymous adaptation truth/regeneration equality, and
+  hostile absolute/relative/symlink/hard-link/descriptor/ptrace access to current/prior-
   scene truth, pilot/confirmation result roots, MuJoCo/import, socket, and subprocess;
 - exact global prediction IDs, prediction envelope fields, finite/range checks, scalar
-  cost components, shared `WorldModelPrediction` round-trip/vector keys/hashes/events,
+  cost components, all exact Arrow types/order/nullability, NPZ/model member grammars,
+  domain-separated digest preimages, observation-ID bijection, shared
+  `WorldModelPrediction` round-trip/vector keys/hashes/events,
   ten-field W4 state and per-configuration W5 latent dimensions, W3/W4/W5 derivation,
   and universal tie ordering;
 - PCA sign and equal-singular-subspace canonicalization;
@@ -1559,19 +1924,21 @@ Tests cover:
 - exact 16-draw-per-stratum 0.20 bootstrap aggregation,
   co-primary/held-out/W3/W5-vs-W4/shadow/offline families, all percentile indices,
   equality boundaries, and missing rules;
-- learned+W1 fallback as the sole authority-bearing result, with raw metrics descriptive;
+- learned+W1 fallback as the sole selector-protocol result, raw metrics descriptive,
+  no action authority before all 20 conditional prefix-conformance cases pass;
 - scientific endpoint pass/reject/unresolved boundaries and joint classification before
   the mechanically ordered mutually exclusive selector/critic/shadow/offline roles,
   with separate lifecycle/artifact/scientific/blocker/promotion states;
 - unchanged canonical rollout, exact scene sidecars/cross-links/replay, disjoint
   scene/training/aggregate schemas and roots, manifest self-exclusion, corruption,
-  descriptor-relative no-follow publication, same-process cleanup, restart quarantine,
-  and foreign/ambiguous-temp refusal;
+  the single 4+12 MiB monotone evidence staging tree, descriptor-relative no-follow
+  publication, exact restart continuation/quarantine, and foreign/ambiguous-temp refusal;
 - exact repo-root lifecycle/selector/truth/scene/training/aggregate/report commands and
   keys, six phase-protocol schemas/counts, type-mixing refusal,
-  create-only validate-and-skip resume, 8,416 MiB arithmetic, phase preflight, and
+  create-only validate-and-skip resume, 8,624 MiB arithmetic, phase preflight, and
   per-type wall/size ceilings; and
-- serial latency, offline/no-network/no-CUDA/no-physical/no-remote, clean tree, full
+- exact five-warmup/20-repetition single/K=8 latency timing and nearest-rank gates,
+  serial latency, offline/no-network/no-CUDA/no-physical/no-remote, clean tree, full
   tests, source audit, secret scan, artifact size, and diff checks.
 
 ## 15. Dependencies and downstream boundaries
@@ -1582,6 +1949,12 @@ package/runtime lock and compatibility output; all Push-T MJCF/model bytes remai
 experiment-local and bind to the Section 13.1 generator. A missing/failed P3 gate is
 `BLOCKED`; it cannot be replaced by NumPy confirmation.
 
+P4 is not a prerequisite for the Experiment 06 ranking claim. It becomes a mandatory
+immutable input only to the postdecision executor-prefix conformance extension, which
+binds P4's frozen protocol and artifact digests and otherwise remains absent. A missing,
+stopped, changed, or incompatible P4 output leaves action routing ineligible without
+altering P7's already sealed scientific result.
+
 Experiment 07 may reuse the frozen planar task, scenario/candidate factory, cost
 components, IDs, and metrics regardless of the P7 authority result
 (`docs/superpowers/specs/2026-08-22-reflect-lite-autonomous-run-design.md:102-106`).
@@ -1590,8 +1963,10 @@ and no critic, shadow, or action-routing protocol can be promoted unless this
 experiment's canonical selector result is `SUPPORTED` as well as satisfying its own
 separately reviewed gate;
 W2 never transfers and W4 privileged input requires an explicit adapter. Mini-Reflect
-may enable only the exact role granted by the ordered decision, and executor validation
-and W1 fallback remain mandatory (`Reflect Lite Research Program.md:2454-2537`).
+may consume a promoted selector protocol only as shadow output until the exact
+executor-prefix conformance receipt exists; even then, action routing requires a
+separately reviewed integration adapter. Executor validation and W1 fallback remain
+mandatory (`Reflect Lite Research Program.md:2454-2537`).
 
 Only the smallest validated prediction envelope and selector/critic invariant may be
 promoted. NumPy/MuJoCo environments, candidates, costs, models, PCA, thresholds,
