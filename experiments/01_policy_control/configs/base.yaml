@@ -1,0 +1,65 @@
+schema_version: 1
+study_id: exp01-policy-control
+arm:
+  link_lengths_m: [0.30, 0.25, 0.20]
+  joint_min_rad: -2.70
+  joint_max_rad: 2.70
+  solver_joint_min_rad: -2.55
+  solver_joint_max_rad: 2.55
+  joint_damping: 0.10
+  torque_min_nm: -12.0
+  torque_max_nm: 12.0
+  timestep_s: 0.002
+  episode_duration_s: 6.25
+controller:
+  pd_candidates: [[80.0, 8.0], [60.0, 6.0], [100.0, 10.0]]
+  ik_damping_candidates: [0.01, 0.001, 0.05]
+  mpc_smoothness_candidates: [0.02, 0.01, 0.04]
+  reference_slew_rad_s: 1.5
+  ik_iterations: 12
+  ik_step_norm_rad: 0.10
+  ik_posture_gain: 0.05
+  differential_gain: 4.0
+  differential_speed_m_s: 0.25
+  null_gain: 0.20
+  qdot_limit_rad_s: 1.5
+  mpc_period_s: 0.02
+  mpc_horizon_steps: 10
+  residual_limit_rad: 0.25
+timing:
+  episode_ticks: 3125
+  policy_rates_hz: [5, 10, 20]
+  latencies_ms: [0, 100, 300, 700]
+  chunk_horizon_s: 0.8
+  expiry_periods: 2.5
+  telemetry_hz: 100
+pilot:
+  seed_count: 8
+  tuning_seed_count: 4
+  evaluation_seed_count: 4
+  max_revisions: 2
+  tuning_conditions: [[5, 700, 2], [10, 300, 2], [20, 0, 1]]
+confirmation:
+  scenario_count: 32
+  candidate_count: 64
+  bootstrap_resamples: 10000
+resources:
+  rollout_bytes: 1048576
+  shard_wall_seconds: 3600
+  pilot_wall_seconds: 28800
+  confirmation_wall_seconds: 86400
+  pilot_cpu_seconds: 288000
+  confirmation_cpu_seconds: 864000
+  phase_bytes: 7910457344
+thresholds:
+  success_radius_m: 0.025
+  success_dwell_s: 0.10
+  recovery_censor_s: 2.0
+  pilot_easiest_recovery_s: 1.0
+  worthwhile_s: 0.10
+  noninferiority_s: 0.10
+  easiest_recovery_fraction: 0.95
+  core_recovery_fraction: 0.90
+  clamp_fraction: 0.01
+  saturation_fraction: 0.05
+  smoothness_multiplier: 1.5
