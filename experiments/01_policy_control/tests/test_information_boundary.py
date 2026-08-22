@@ -50,14 +50,14 @@ def test_retained_external_mutation_cannot_change_full_valid_and_safehold_sequen
 
     def sequence(stack, retained):
         chunk = rep.emit_chunk(stack, retained, cfg)
-        state = timing.SchedulerState.initial(retained.q_initial)
+        state = timing.SchedulerState.initial(retained.q_initial, cfg, rollout_id=f"barrier-{stack.value}")
         references = []
         safe_holds = []
         for tick in range(cfg.timing.episode_ticks):
             request = None
             if tick == 0:
                 request = timing.PolicyRequest(
-                    chunk.source_observation_id,
+                    retained.observation,
                     tick,
                     retained.policy_period_ns // 2_000_000,
                     chunk,
@@ -72,11 +72,14 @@ def test_retained_external_mutation_cannot_change_full_valid_and_safehold_sequen
                     )
                 )
             if transition.safe_hold:
+                assert transition.safe_hold_command is not None
+                assert np.array_equal(transition.safe_hold_command.q_ref, transition.state.q)
+                assert np.array_equal(transition.safe_hold_command.dq_ref, np.zeros_like(transition.state.dq))
                 safe_holds.append(
                     (
-                        transition.safe_hold,
-                        transition.state.executor_state.latched_q_ref.tobytes(),
-                        np.zeros(3, dtype=np.float64).tobytes(),
+                        transition.safe_hold_command.disposition,
+                        transition.safe_hold_command.q_ref.tobytes(),
+                        transition.safe_hold_command.dq_ref.tobytes(),
                     )
                 )
         return chunk.actions.tobytes(), tuple(references), tuple(safe_holds), state
@@ -91,5 +94,10 @@ def test_retained_external_mutation_cannot_change_full_valid_and_safehold_sequen
         assert before[2]
         if stack is contracts.CommandStack.P5:
             assert not after[3].executor_state.p5_planner_enabled
-    assert "target" not in inspect.signature(rep.emit_chunk).parameters
-    assert "scenario" not in inspect.signature(rep.reference_for_tick).parameters
+    forbidden = {"target", "scenario", "target_owner", "live_target"}
+    emit_parameters = set(inspect.signature(rep.emit_chunk).parameters)
+    reference_parameters = set(inspect.signature(rep.reference_for_tick).parameters)
+    assert emit_parameters == {"stack", "policy_input", "config"}
+    assert reference_parameters == {"stack", "chunk", "q", "dq", "time_ns", "state", "config"}
+    assert forbidden.isdisjoint(emit_parameters)
+    assert forbidden.isdisjoint(reference_parameters)
