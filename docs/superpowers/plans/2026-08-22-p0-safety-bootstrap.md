@@ -14,7 +14,8 @@
 - `PHYSICAL_DEPLOYMENT_ALLOWED=false` is invariant for this program.
 - No Unitree DDS, SDK2 control, motor mode, non-loopback deployment, host discovery, paid resource, or credential use.
 - Python is exactly 3.11.13; project compatibility is `>=3.11,<3.12`.
-- Set `UV_CACHE_DIR=.cache/uv`; keep `.venv/`, `.cache/`, `external/`, and `.worktrees/` inside the writable repository and ignored.
+- Set `UV_CACHE_DIR=.cache/uv`; keep `.venv/`, `.cache/`, `.superpowers/`,
+  `external/`, and `.worktrees/` inside the writable repository and ignored.
 - Remote execution defaults off and requires every allowlist and positive-budget field defined by the design.
 - Keep lifecycle state, scientific result, blocker, maturity label, and hardware-validation status separate.
 - Use `apply_patch` for file edits, explicit `git add -- <paths>`, deterministic tests, and atomic commits.
@@ -168,7 +169,14 @@ def test_default_environment_is_simulation_only() -> None:
 
 def test_generated_and_sensitive_paths_are_ignored() -> None:
     ignored = set((ROOT / ".gitignore").read_text().splitlines())
-    assert {".venv/", ".cache/", ".worktrees/", "external/", ".env"} <= ignored
+    assert {
+        ".venv/",
+        ".cache/",
+        ".superpowers/",
+        ".worktrees/",
+        "external/",
+        ".env",
+    } <= ignored
 
 
 def test_bootstrap_tools_are_registered_before_install() -> None:
@@ -209,6 +217,7 @@ Create `.gitignore`:
 .env
 .venv/
 .cache/
+.superpowers/
 .pytest_cache/
 __pycache__/
 *.py[cod]
