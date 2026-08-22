@@ -32,7 +32,11 @@
 | `experiments/01_policy_control/src/evaluate.py` | scenarios/episodes/metrics/pilot/inference/plots | Tasks 9→10→11 serial |
 | `experiments/01_policy_control/src/artifacts.py`, `experiments/01_policy_control/run.py` | manifests/artifacts/CLI/freeze/report | Task 12 serial integration |
 
-After Tasks 1-2, Tasks 3, 4, and 8 may run in parallel because their files are disjoint. All later arrows are hard dependencies. Live evidence is serial orchestrator ownership.
+For subagent-driven development, all implementers run serially with a fresh review gate:
+Tasks 1→2→3→4→5→6→7→8→9→10→11→12. Task 4 depends on Task 3 because
+its MuJoCo comparison and GREEN command consume the reviewed arm/MJCF fixture. Task 8
+has disjoint files but remains serial under the required workflow. Live evidence is
+serial orchestrator ownership after Task 12.
 
 ---
 
@@ -189,7 +193,7 @@ git commit -m "feat: add deterministic planar arm"
 
 - [ ] RED: compare Jacobian to centered `1e-7` differences and FK to MuJoCo; repeated IK bytes equal; closed interpolation endpoints exact.
 
-Run: `MUJOCO_GL=disable UV_CACHE_DIR=.cache/uv uv run pytest experiments/01_policy_control/tests/test_kinematics.py -q`
+Run only after Task 3 has passed review: `MUJOCO_GL=disable UV_CACHE_DIR=.cache/uv uv run pytest experiments/01_policy_control/tests/test_kinematics.py -q`
 
 Expected: collection FAIL with missing `kinematics`.
 - [ ] GREEN:
@@ -277,11 +281,20 @@ git commit -m "feat: add bounded P5 controller"
 
 ### Task 7: P6 residual unit
 
-**Files:** Modify `experiments/01_policy_control/src/representations.py`; create `experiments/01_policy_control/tests/test_p6.py`.
+**Files:** Modify `experiments/01_policy_control/src/representations.py`; create `experiments/01_policy_control/tests/test_p6.py`, `experiments/01_policy_control/tests/test_information_boundary.py`.
 
 - [ ] RED: representation string `BOUNDED_RESIDUAL`, `(1,3)`, abs residual `<=.25`; repeated snapshot action bytes equal despite a mutated external live target; nominal endpoints byte-equal q0/q1.
 
-Run: `UV_CACHE_DIR=.cache/uv uv run pytest experiments/01_policy_control/tests/test_p6.py -q`
+Add one adversarial boundary test over `tuple(CommandStack)`. The test constructs an
+`Observation` and `SkillSpec` from a mutable `external_target`, constructs and retains
+one frozen `PolicyInput`, records `ActionChunk.actions.tobytes()` and the complete
+500 Hz sequence of `ControlReference.q_ref`/`dq_ref` bytes, then mutates
+`external_target[:]`, replaces the scenario's current target, and repeats emission and
+execution from identical q/dq/state. For P1-P6, chunk and reference bytes must remain
+identical. The test also asserts `emit_chunk` and `reference_for_tick` accept no live-
+target/scenario argument by inspecting their exact signatures.
+
+Run: `UV_CACHE_DIR=.cache/uv uv run pytest experiments/01_policy_control/tests/test_p6.py experiments/01_policy_control/tests/test_information_boundary.py -q`
 
 Expected: FAIL because P6 is absent.
 - [ ] GREEN:
@@ -295,12 +308,12 @@ residual=np.clip(absolute_ik(stale_target,observed_q,links,damping)-q_nominal,-.
 
 Executor adds accepted residual to open-loop nominal then common slew/PD; no nominal replanning/live target/state feedback.
 
-Run: `UV_CACHE_DIR=.cache/uv uv run pytest experiments/01_policy_control/tests/test_p6.py experiments/01_policy_control/tests/test_p5.py experiments/01_policy_control/tests/test_p1_p4.py -q`
+Run: `UV_CACHE_DIR=.cache/uv uv run pytest experiments/01_policy_control/tests/test_p6.py experiments/01_policy_control/tests/test_p5.py experiments/01_policy_control/tests/test_p1_p4.py experiments/01_policy_control/tests/test_information_boundary.py -q`
 
 Expected: PASS.
 
 ```bash
-git add experiments/01_policy_control/src/representations.py experiments/01_policy_control/tests/test_p6.py
+git add experiments/01_policy_control/src/representations.py experiments/01_policy_control/tests/test_p6.py experiments/01_policy_control/tests/test_information_boundary.py
 git commit -m "feat: add bounded P6 residual"
 ```
 
@@ -343,14 +356,26 @@ git commit -m "feat: add virtual timing lifecycle"
 
 **Interfaces:** `generate_scenario`, `core_conditions`, `probe_conditions`, `negative_control_condition`, `run_episode(...)->RolloutRecord`, `nearest_rank`, `compute_episode_metrics`, `aggregate_seed_metrics`.
 
-- [ ] RED: scenario bytes repeat; accepted proposal `<32`; feasibility/radius rejection recorded; censor exactly `2.0`; nearest-rank p95 `[1..5]` is `5`; equality at clamp limit is not clamp; negative control passes at exactly `.025` and fails above; missing action-age/discontinuity invalidates.
+- [ ] RED: scenario bytes repeat; a valid scenario may be accepted on one-based proposal `32` but proposal `33` is never attempted (equivalently, zero-based accepted index is `<32`); feasibility/radius rejection recorded; censor exactly `2.0`; nearest-rank p95 `[1..5]` is `5`; equality at clamp limit is not clamp; negative control passes at exactly `.025` and fails above; missing action-age/discontinuity invalidates.
 
 Run: `MUJOCO_GL=disable UV_CACHE_DIR=.cache/uv uv run pytest experiments/01_policy_control/tests/test_episode_metrics.py -q`
 
 Expected: collection FAIL with missing `evaluate`.
 - [ ] GREEN: PCG64 named SHA substreams; immutable path record before stacks; fixed feasibility IK `.01`; no stack resampling. Episode is exactly 3,125 ticks, target movement before request, stable `current_phase`, 100 Hz stored telemetry/500 Hz metrics. Use existing `Observation`, `ActionChunk`, `ControlReference`, `ExecutionEvent`, `VirtualClock`, `RolloutRecord`.
 - [ ] Implement recovery dwell/censor, last/mean/p95 error, action age, third finite-difference jerk, saturation, discontinuity without safe-hold bridge, unsafe/clamp, serial `perf_counter_ns`. Percentile index `max(0,ceil(p*n)-1)`. Episode recovery averages moves; seed primary averages exactly 24 episodes. Exact missing/negative-control rules.
-- [ ] Run all experiment unit tests including one zero-latency headless episode P1-P6; PASS.
+- [ ] Add a `run_episode` wiring test that monkeypatches `evaluate.emit_chunk` and
+`evaluate.reference_for_tick`, captures every positional/keyword argument, and proves
+for P1-P6 that policy calls receive only the request-time `PolicyInput`, executor calls
+receive only the accepted chunk plus q/dq/time/state/config, and neither call receives
+the mutable scenario/live-target object. The captured observation belief and
+`SkillSpec.target_pose` must contain byte-identical request-time target snapshots.
+- [ ] Run all experiment unit tests including one zero-latency headless episode P1-P6:
+
+```text
+MUJOCO_GL=disable UV_CACHE_DIR=.cache/uv uv run pytest experiments/01_policy_control/tests -q
+```
+
+Expected: PASS.
 
 ```bash
 git add experiments/01_policy_control/src/evaluate.py experiments/01_policy_control/tests/test_episode_metrics.py
@@ -410,7 +435,7 @@ git commit -m "feat: add experiment 01 inference"
 
 **Files:** Create `experiments/01_policy_control/src/artifacts.py`, `experiments/01_policy_control/tests/test_artifacts_cli.py`, `experiments/01_policy_control/README.md`, `experiments/01_policy_control/CLAIM.md`, `experiments/01_policy_control/EXPERIMENT.md`, `experiments/01_policy_control/RESULTS.md`, `experiments/01_policy_control/INTERFACE_FINDINGS.md`; modify `experiments/01_policy_control/run.py`, `Makefile`.
 
-**Interfaces:** `iter_manifest(Path)->Iterator[ShardSpec]`, `publish_or_validate_skip`, `run_shard`, `validate_phase`, `analyze_phase`, `freeze_protocol`, `generate_confirmation_manifest`, `write_report`. Single CLI: `--config --p3-gate --phase pilot|freeze|confirmation|analyze|report [--manifest PATH] --output-dir --headless [--shard-id] [--stage revision|base|pd_60_6|pd_100_10|ik_0_001|ik_0_05|p5_0_01|p5_0_04|final_four] [--prepare-manifest PATH] [--dry-run] [--max-episodes]`. `--stage revision --prepare-manifest` is the sole no-predecessor case and atomically writes the protocol revision plus pilot seed partition; every later prepare consumes the validated predecessor named by `--manifest`. Preparation never runs physics; without it, pilot/confirmation execute exactly one shard.
+**Interfaces:** `iter_manifest(Path)->Iterator[ShardSpec]`, `publish_or_validate_skip`, `run_shard`, `validate_phase`, `analyze_phase`, `freeze_protocol`, `generate_confirmation_manifest`, `write_report`. Single CLI: `--config --p3-gate --phase pilot|freeze|confirmation|analyze|report [--manifest PATH] --output-dir --headless [--shard-id] [--list-shards] [--stage revision|base|pd_60_6|pd_100_10|ik_0_001|ik_0_05|p5_0_01|p5_0_04|final_four] [--prepare-manifest PATH] [--bind-preregistration PATH] [--dry-run] [--max-episodes]`. `--stage revision --prepare-manifest` is the sole no-predecessor case and atomically writes the protocol revision plus pilot seed partition; every later prepare consumes the validated predecessor named by `--manifest`. Preparation never runs physics; without it, pilot/confirmation execute exactly one shard. `--bind-preregistration` is confirmation-only: it requires the seed and protocol manifests to be tracked at clean `HEAD`, then atomically writes a canonical binding containing that 40-hex commit and both Git-blob/content hashes. `--list-shards` validates the named manifest and prints its current-stage shard IDs one per line in canonical order without importing MuJoCo or creating output. With `--max-episodes N`, it requires `N` to equal the stage's declared episode count and lists exactly those shards; a validated killed-P5 stage may return an empty list. It cannot be combined with `--shard-id` or evidence execution.
 
 - [ ] RED artifact test:
 
@@ -423,14 +448,14 @@ assert replay.events==artifact.events and replay.observations==artifact.observat
 assert replay.frames[-1].state==replay.final_state
 ```
 
-Also corrupt a byte/extra file/temporary dir and require refusal; verify sorted root-relative manifest iterator; dry-run no MuJoCo/output; evidence requires exact complete shard and headless.
+Also corrupt a byte/extra file/temporary dir and require refusal; verify sorted root-relative manifest iterator and exact `--list-shards` output; dry-run no MuJoCo/output; evidence requires exact complete shard and headless. Confirmation execution requires the sibling `preregistration-binding.json`, verifies that its 40-hex commit contains byte-identical seed/protocol manifests, and records that commit in every shard completion manifest.
 
 Run: `UV_CACHE_DIR=.cache/uv uv run pytest experiments/01_policy_control/tests/test_artifacts_cli.py -q`
 
 Expected: collection FAIL with missing `artifacts`.
 
 - [ ] GREEN artifacts: absent output uses `RolloutWriter.write`, then size, `validate_rollout`, `replay_rollout`. Existing output validates exact file/artifact/protocol/source/scenario/condition hashes, metadata, events, observation/action/reference bytes, and terminal replay; never rewrites. Phase/shard manifests use `O_EXCL`, fsync, absent rename. `ReplayResult` fields are exactly rollout_id/events/observations/frames/final_state.
-- [ ] GREEN CLI: safety/P3 gate precedes local imports; root-contain all paths. Dry-run prints canonical sorted JSON. Freeze validates all pilot artifacts and writes config plus external digest (no self digest). Confirmation generator requires frozen protocol/new RNG. Analyze/report never import physics. Reports preserve bounded stack-level claim.
+- [ ] GREEN CLI: safety/P3 gate precedes local imports; root-contain all paths. Dry-run prints canonical sorted JSON. Freeze validates all pilot artifacts and writes config plus external digest (no self digest). Confirmation generator requires frozen protocol/new RNG. Analyze/report never import physics. Report atomically replaces only the reviewed Task 12 placeholder report bytes, and an exact reissue validates-and-skips; it writes the two Markdown reports and five canonical SVGs named in Task 15. Reports preserve the bounded stack-level claim.
 - [ ] Add exact Make target invoking root-relative base config, P3 gate, base manifest, ignored results, required `SHARD`.
 - [ ] Run before any pilot:
 
@@ -459,7 +484,22 @@ No code/test/dependency/Makefile change after this SHA without Draft/new revisio
 
 **Files:** Create `configs/p3-gate.yaml`, `protocol/pilot-r1/protocol-manifest.json`, `pilot-seeds.json`, `base-manifest.json`.
 
-- [ ] Require clean P4-owned paths; record Task 12 40-hex SHA. Rerun full tests/audits/diff. Protocol binds exact P2 lock, compatibility, licenses, source map, operation manifest, smoke, package artifact, all code/config/equation/metric/gate hashes and budgets.
+- [ ] Require a fully clean tree; record Task 12 40-hex SHA. Protocol binds exact P2 lock, compatibility, licenses, source map, operation manifest, smoke, package artifact, all code/config/equation/metric/gate hashes and budgets. Run exactly:
+
+```text
+git status --porcelain=v1 --untracked-files=all
+git rev-parse HEAD
+MUJOCO_GL=disable UV_CACHE_DIR=.cache/uv uv run pytest experiments/01_policy_control/tests -q
+UV_CACHE_DIR=.cache/uv uv run pytest -q
+UV_CACHE_DIR=.cache/uv uv lock --check
+UV_CACHE_DIR=.cache/uv uv run python -m reflect.safety check
+UV_CACHE_DIR=.cache/uv uv run python scripts/audit_references.py --require-complete
+UV_CACHE_DIR=.cache/uv uv run python scripts/source_audit.py --check
+git diff --check
+```
+
+Expected: status and diff checks print nothing, `rev-parse` prints the reviewed Task 12
+40-hex implementation SHA, and every verification exits 0.
 - [ ] Generate the gate from P3 evidence, then generate checked-in eight seeds split first four tuning/final four sealed evaluation:
 
 ```text
@@ -481,26 +521,104 @@ git commit -m "chore: freeze experiment 01 pilot revision"
 
 ### Task 14: Staged pilot and unchanged-SHA freeze
 
-**Files:** Create small `protocol/pilot-r1/stage-digests.json`, `pilot-decision.json`, `configs/frozen.yaml`, `protocol/frozen-config.sha256`.
+**Files:** Create small `protocol/pilot-r1/pd_60_6-manifest.json`,
+`pd_100_10-manifest.json`, `ik_0_001-manifest.json`, `ik_0_05-manifest.json`,
+`p5_0_01-manifest.json`, `p5_0_04-manifest.json`, `final-four-manifest.json`,
+`stage-digests.json`, `pilot-decision.json`, `configs/frozen.yaml`, and
+`protocol/frozen-config.sha256`.
 
-- [ ] Serially execute base P1-P6 shards, three episodes each with this exact command shape:
+- [ ] Define this exact zsh manifest executor in the orchestration shell. It validates
+the manifest and obtains only its current-stage shard IDs before invoking one bounded
+evidence command per ID; it is not an open-ended phase execution:
 
-```text
-MUJOCO_GL=disable UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/base.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase pilot --manifest experiments/01_policy_control/protocol/pilot-r1/base-manifest.json --output-dir experiments/01_policy_control/results --headless --shard-id P1:base:000 --max-episodes 3
+```zsh
+run_p4_pilot_manifest() {
+  local P4_MANIFEST_PATH="$1"
+  local P4_EPISODE_COUNT="$2"
+  local P4_SHARD_TEXT
+  P4_SHARD_TEXT="$(UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/base.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase pilot --manifest "$P4_MANIFEST_PATH" --output-dir experiments/01_policy_control/results --headless --list-shards --max-episodes "$P4_EPISODE_COUNT")" || return 1
+  if [[ -n "$P4_SHARD_TEXT" ]]; then
+    while IFS= read -r P4_SHARD_ID; do
+      MUJOCO_GL=disable UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/base.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase pilot --manifest "$P4_MANIFEST_PATH" --output-dir experiments/01_policy_control/results --headless --shard-id "$P4_SHARD_ID" --max-episodes "$P4_EPISODE_COUNT" || return 1
+    done <<< "$P4_SHARD_TEXT"
+  fi
+}
 ```
 
-Expected: `published` on first run and `validated-and-skipped` on an exact reissue. Validate/qualify; P1 failure stops. Generate each later manifest only after predecessor validation using the same `--stage NAME --prepare-manifest PATH --dry-run` interface: two PD, select; two IK, select; two P5 scalar, select; final four once. Final-four execution uses its manifest, selected configuration hash, one stack/seed shard, and `--max-episodes 26`. Maximum 1,008 episodes/6,300 seconds; exact resume only.
-- [ ] Before freeze run `git diff --exit-code IMPLEMENTATION_SHA -- Makefile pyproject.toml uv.lock experiments/01_policy_control/run.py experiments/01_policy_control/src experiments/01_policy_control/tests`; expected no diff.
+Expected: the listing validates exact stage identity/counts and imports no MuJoCo.
+Every nonempty stage prints `published` on first execution; an exact reissue prints
+only `validated-and-skipped`. A valid empty P5 stage is allowed only when its validated
+predecessor records P5 killed under the frozen rule.
+
+- [ ] Execute the base stage and then prepare and execute every candidate in this exact
+predecessor chain. Preparation validates every predecessor artifact, publishes one
+create-only manifest, and runs no physics:
+
+```zsh
+run_p4_pilot_manifest experiments/01_policy_control/protocol/pilot-r1/base-manifest.json 3
+UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/base.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase pilot --manifest experiments/01_policy_control/protocol/pilot-r1/base-manifest.json --output-dir experiments/01_policy_control/results --headless --stage pd_60_6 --prepare-manifest experiments/01_policy_control/protocol/pilot-r1/pd_60_6-manifest.json
+run_p4_pilot_manifest experiments/01_policy_control/protocol/pilot-r1/pd_60_6-manifest.json 3
+UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/base.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase pilot --manifest experiments/01_policy_control/protocol/pilot-r1/pd_60_6-manifest.json --output-dir experiments/01_policy_control/results --headless --stage pd_100_10 --prepare-manifest experiments/01_policy_control/protocol/pilot-r1/pd_100_10-manifest.json
+run_p4_pilot_manifest experiments/01_policy_control/protocol/pilot-r1/pd_100_10-manifest.json 3
+UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/base.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase pilot --manifest experiments/01_policy_control/protocol/pilot-r1/pd_100_10-manifest.json --output-dir experiments/01_policy_control/results --headless --stage ik_0_001 --prepare-manifest experiments/01_policy_control/protocol/pilot-r1/ik_0_001-manifest.json
+run_p4_pilot_manifest experiments/01_policy_control/protocol/pilot-r1/ik_0_001-manifest.json 3
+UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/base.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase pilot --manifest experiments/01_policy_control/protocol/pilot-r1/ik_0_001-manifest.json --output-dir experiments/01_policy_control/results --headless --stage ik_0_05 --prepare-manifest experiments/01_policy_control/protocol/pilot-r1/ik_0_05-manifest.json
+run_p4_pilot_manifest experiments/01_policy_control/protocol/pilot-r1/ik_0_05-manifest.json 3
+UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/base.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase pilot --manifest experiments/01_policy_control/protocol/pilot-r1/ik_0_05-manifest.json --output-dir experiments/01_policy_control/results --headless --stage p5_0_01 --prepare-manifest experiments/01_policy_control/protocol/pilot-r1/p5_0_01-manifest.json
+run_p4_pilot_manifest experiments/01_policy_control/protocol/pilot-r1/p5_0_01-manifest.json 3
+UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/base.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase pilot --manifest experiments/01_policy_control/protocol/pilot-r1/p5_0_01-manifest.json --output-dir experiments/01_policy_control/results --headless --stage p5_0_04 --prepare-manifest experiments/01_policy_control/protocol/pilot-r1/p5_0_04-manifest.json
+run_p4_pilot_manifest experiments/01_policy_control/protocol/pilot-r1/p5_0_04-manifest.json 3
+UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/base.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase pilot --manifest experiments/01_policy_control/protocol/pilot-r1/p5_0_04-manifest.json --output-dir experiments/01_policy_control/results --headless --stage final_four --prepare-manifest experiments/01_policy_control/protocol/pilot-r1/final-four-manifest.json
+run_p4_pilot_manifest experiments/01_policy_control/protocol/pilot-r1/final-four-manifest.json 26
+```
+
+Expected: P1 base/final-four failure stops; all later preparation refuses a failed
+predecessor. The final-four manifest contains one shard per surviving stack/seed, each
+with 26 episodes and the selected complete configuration hash. Exact maximum remains
+1,008 episodes and 6,300 simulated seconds; reused evaluations are not re-executed.
+
+- [ ] Validate all pilot artifacts and create the small digests/decision without
+running physics:
+
+```text
+UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/base.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase analyze --manifest experiments/01_policy_control/protocol/pilot-r1/final-four-manifest.json --output-dir experiments/01_policy_control/results --headless
+```
+
+Expected: exit 0 and atomically create only `stage-digests.json` and
+`pilot-decision.json` after validating exact 164/188/1,008 counts, reuse hashes,
+survivors, shared PD/IK, P5 selection or killed disposition, and one-shot final four.
+
+- [ ] Commit every pilot-stage manifest and its derived evidence before Freeze:
+
+```bash
+git add experiments/01_policy_control/protocol/pilot-r1/base-manifest.json experiments/01_policy_control/protocol/pilot-r1/pd_60_6-manifest.json experiments/01_policy_control/protocol/pilot-r1/pd_100_10-manifest.json experiments/01_policy_control/protocol/pilot-r1/ik_0_001-manifest.json experiments/01_policy_control/protocol/pilot-r1/ik_0_05-manifest.json experiments/01_policy_control/protocol/pilot-r1/p5_0_01-manifest.json experiments/01_policy_control/protocol/pilot-r1/p5_0_04-manifest.json experiments/01_policy_control/protocol/pilot-r1/final-four-manifest.json experiments/01_policy_control/protocol/pilot-r1/stage-digests.json experiments/01_policy_control/protocol/pilot-r1/pilot-decision.json
+git commit -m "data: seal experiment 01 pilot evidence"
+```
+
+- [ ] Immediately before Freeze, extract the implementation SHA from the committed
+protocol, require it to be a real 40-hex commit, prove every implementation-owned path
+is byte-identical to that SHA, and require the complete worktree (including untracked
+files, excluding normally ignored raw results) to be clean:
+
+```zsh
+P4_IMPLEMENTATION_SHA="$(UV_CACHE_DIR=.cache/uv uv run python -c 'import json,re; p=json.load(open("experiments/01_policy_control/protocol/pilot-r1/protocol-manifest.json", encoding="utf-8")); s=p["implementation_sha"]; assert re.fullmatch(r"[0-9a-f]{40}",s); print(s)')"
+git cat-file -e "$P4_IMPLEMENTATION_SHA^{commit}"
+git diff --exit-code "$P4_IMPLEMENTATION_SHA" -- Makefile pyproject.toml uv.lock experiments/__init__.py experiments/01_policy_control/__init__.py experiments/01_policy_control/run.py experiments/01_policy_control/src experiments/01_policy_control/tests experiments/01_policy_control/configs/base.yaml experiments/01_policy_control/README.md experiments/01_policy_control/CLAIM.md experiments/01_policy_control/EXPERIMENT.md experiments/01_policy_control/RESULTS.md experiments/01_policy_control/INTERFACE_FINDINGS.md
+git status --porcelain=v1 --untracked-files=all
+```
+
+Expected: all exit 0; both diff and status print nothing. Freeze records this exact
+implementation SHA, the current pilot-evidence commit SHA, and `clean_tree: true`.
 - [ ] Run CLI freeze exactly:
 
 ```text
 UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/base.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase freeze --manifest experiments/01_policy_control/protocol/pilot-r1/final-four-manifest.json --output-dir experiments/01_policy_control/results --headless
 ```
 
-Expected: exit 0 after validating every pilot shard, P1 disposition, counts/reuse hashes, shared PD/IK, P5 scalar, thresholds and P1 smoothness. Config does not self-hash; separate digest hashes exact bytes. Commit only:
+Expected: exit 0 after validating every committed pilot manifest/shard, P1 disposition, counts/reuse hashes, shared PD/IK, P5 scalar, thresholds and P1 smoothness. Config does not self-hash; separate digest hashes exact bytes. Commit only:
 
 ```bash
-git add experiments/01_policy_control/protocol/pilot-r1/stage-digests.json experiments/01_policy_control/protocol/pilot-r1/pilot-decision.json experiments/01_policy_control/configs/frozen.yaml experiments/01_policy_control/protocol/frozen-config.sha256
+git add experiments/01_policy_control/configs/frozen.yaml experiments/01_policy_control/protocol/frozen-config.sha256
 git commit -m "data: freeze experiment 01 protocol"
 ```
 
@@ -510,7 +628,11 @@ Any defect returns to Draft/new r2 seeds; never edits r1.
 
 ### Task 15: Unseen confirmation, analysis, and bounded report
 
-**Files:** Create small confirmation seed/protocol/artifact digest manifests; modify RESULTS/INTERFACE_FINDINGS only.
+**Files:** Create `protocol/confirmation/seed-manifest.json`,
+`protocol-manifest.json`, `preregistration-binding.json`, `artifact-digests.json`, and
+`plots/recovery-vs-latency.svg`, `plots/tracking-error-vs-rate.svg`,
+`plots/joint-jerk.svg`, `plots/action-age.svg`, `plots/timeline.svg`; modify
+`RESULTS.md` and `INTERFACE_FINDINGS.md` only.
 
 - [ ] After freeze, generate a new RNG root absent from pilot; consume at most 64 candidates to seal exactly 32 variant-independent scenarios/rejections before any stack:
 
@@ -518,25 +640,92 @@ Any defect returns to Draft/new r2 seeds; never edits r1.
 UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/frozen.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase confirmation --manifest experiments/01_policy_control/protocol/frozen-config.sha256 --output-dir experiments/01_policy_control/results --headless --prepare-manifest experiments/01_policy_control/protocol/confirmation/seed-manifest.json
 ```
 
-Expected: exit 0, exactly 32 accepted scenario records and at most 64 candidates, and only small manifests (no MuJoCo/results). Commit the small seed/protocol manifests.
-- [ ] Preflight full 7,544 MiB ceiling. Serially run surviving stack shards with this exact shape:
+Expected: exit 0, exactly 32 accepted scenario records and at most 64 candidates, and
+atomically create only the seed and protocol manifests (no MuJoCo/results).
 
-```text
-MUJOCO_GL=disable UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/frozen.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase confirmation --manifest experiments/01_policy_control/protocol/confirmation/seed-manifest.json --output-dir experiments/01_policy_control/results --headless --shard-id P1:frozen:000 --max-episodes 27
+- [ ] Commit those manifests before any confirmation shard, then create and commit the
+binding to the commit that first sealed their exact bytes:
+
+```bash
+git add experiments/01_policy_control/protocol/confirmation/seed-manifest.json experiments/01_policy_control/protocol/confirmation/protocol-manifest.json
+git commit -m "data: preregister experiment 01 confirmation"
+UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/frozen.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase confirmation --manifest experiments/01_policy_control/protocol/confirmation/seed-manifest.json --output-dir experiments/01_policy_control/results --headless --bind-preregistration experiments/01_policy_control/protocol/confirmation/preregistration-binding.json
+git add experiments/01_policy_control/protocol/confirmation/preregistration-binding.json
+git commit -m "data: bind experiment 01 confirmation preregistration"
+git status --porcelain=v1 --untracked-files=all
 ```
 
-Expected: first four seeds use 27 episodes with control; later seeds use the identical shape with `--max-episodes 26`. Maximum 836 paired bundles, 5,016 rollouts, 31,350 simulated seconds, 5,016 MiB plus 256 MiB. Validate-and-skip exact resume; corruption stops.
+Expected: both commits succeed; the binding contains the first commit's 40-hex SHA and
+the Git-blob/content hashes of both manifests; status prints nothing. Every later shard
+requires this binding and records that same preregistration SHA.
+
+- [ ] Preflight the full 7,544 MiB ceiling. Define and invoke this exact serial zsh
+executor for the 27-episode first-four-seed shards and 26-episode remaining shards:
+
+```zsh
+run_p4_confirmation_count() {
+  local P4_EPISODE_COUNT="$1"
+  local P4_SHARD_TEXT
+  P4_SHARD_TEXT="$(UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/frozen.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase confirmation --manifest experiments/01_policy_control/protocol/confirmation/seed-manifest.json --output-dir experiments/01_policy_control/results --headless --list-shards --max-episodes "$P4_EPISODE_COUNT")" || return 1
+  while IFS= read -r P4_SHARD_ID; do
+    MUJOCO_GL=disable UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/frozen.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase confirmation --manifest experiments/01_policy_control/protocol/confirmation/seed-manifest.json --output-dir experiments/01_policy_control/results --headless --shard-id "$P4_SHARD_ID" --max-episodes "$P4_EPISODE_COUNT" || return 1
+  done <<< "$P4_SHARD_TEXT"
+}
+run_p4_confirmation_count 27
+run_p4_confirmation_count 26
+```
+
+Expected: the first four seeds use 27 episodes including the stationary control and
+all later seeds use 26; each manifest-derived shard runs exactly once. Maximum remains
+836 paired bundles, 5,016 rollouts, 31,350 simulated seconds, and 5,016 MiB plus
+256 MiB. Exact reissue validates-and-skips; corruption stops.
 - [ ] Analyze artifacts only:
 
 ```text
 UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/frozen.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase analyze --manifest experiments/01_policy_control/protocol/confirmation/seed-manifest.json --output-dir experiments/01_policy_control/results --headless
 ```
 
-Expected: exit 0; exact paired bootstrap, missing/control/equality/gates, two-stack promotion and wire dedup, and five SVGs without MuJoCo import.
-- [ ] Full tests, lock, safety, P2/P3 audit, replay, secret/tracked-model/checkout/size/diff checks. Verify implementation SHA unchanged. Report stack-level conclusion, all rejected stacks, promoted stacks and deduplicated strings; no general or representation-only claim.
+Expected: exit 0; exact paired bootstrap, missing/control/equality/gates, two-stack
+promotion, wire deduplication, and replay validation without importing MuJoCo. It
+atomically creates aggregate/bootstrap/decision data under ignored results; no report
+or plot is written yet.
+
+- [ ] Run the exact acceptance checks before report generation:
+
+```zsh
+MUJOCO_GL=disable UV_CACHE_DIR=.cache/uv uv run pytest experiments/01_policy_control/tests -q
+UV_CACHE_DIR=.cache/uv uv run pytest -q
+UV_CACHE_DIR=.cache/uv uv lock --check
+UV_CACHE_DIR=.cache/uv uv run python -m reflect.safety check
+UV_CACHE_DIR=.cache/uv uv run python scripts/audit_references.py --require-complete
+UV_CACHE_DIR=.cache/uv uv run python scripts/source_audit.py --check
+UV_CACHE_DIR=.cache/uv uv run python -c 'from pathlib import Path; root=Path("experiments/01_policy_control/results"); total=sum(p.stat().st_size for p in root.rglob("*") if p.is_file() and not p.is_symlink()); assert total <= 7_544*1024*1024, total; print(total)'
+if git grep -I -n -E 'AKIA[0-9A-Z]{16}|g[h]p_[A-Za-z0-9]{36}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' -- . ':(exclude)docs/superpowers/plans/2026-08-22-p4-policy-control-boundary.md'; then exit 1; fi
+P4_IMPLEMENTATION_SHA="$(UV_CACHE_DIR=.cache/uv uv run python -c 'import re,yaml; p=yaml.safe_load(open("experiments/01_policy_control/configs/frozen.yaml", encoding="utf-8")); s=p["implementation_sha"]; assert re.fullmatch(r"[0-9a-f]{40}",s); print(s)')"
+git cat-file -e "$P4_IMPLEMENTATION_SHA^{commit}"
+git diff --exit-code "$P4_IMPLEMENTATION_SHA" -- Makefile pyproject.toml uv.lock experiments/__init__.py experiments/01_policy_control/__init__.py experiments/01_policy_control/run.py experiments/01_policy_control/src experiments/01_policy_control/tests experiments/01_policy_control/configs/base.yaml experiments/01_policy_control/README.md experiments/01_policy_control/CLAIM.md experiments/01_policy_control/EXPERIMENT.md
+git diff --check
+```
+
+Expected: all exit 0; the secret query prints nothing; size is at most 7,544 MiB; the
+implementation diff and whitespace check print nothing. `audit_references` supplies
+the tracked-checkout/model scan; `analyze` has already replayed every complete shard.
+
+- [ ] Generate the bounded reports and all five deterministic plots through the
+reviewed CLI, never by manual editing:
+
+```text
+UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --config experiments/01_policy_control/configs/frozen.yaml --p3-gate experiments/01_policy_control/configs/p3-gate.yaml --phase report --manifest experiments/01_policy_control/protocol/confirmation/seed-manifest.json --output-dir experiments/01_policy_control/results --headless
+```
+
+Expected: exit 0 without MuJoCo import; atomically replace only the reviewed Task 12
+Markdown placeholders, create the five named SVGs plus `artifact-digests.json`, and
+report the stack-level conclusion, every rejection, promoted stacks, and deduplicated
+wire strings without a general or representation-only claim. An exact reissue
+validates-and-skips every output.
 
 ```bash
-git add experiments/01_policy_control/protocol/confirmation/seed-manifest.json experiments/01_policy_control/protocol/confirmation/protocol-manifest.json experiments/01_policy_control/protocol/confirmation/artifact-digests.json experiments/01_policy_control/RESULTS.md experiments/01_policy_control/INTERFACE_FINDINGS.md
+git add experiments/01_policy_control/protocol/confirmation/artifact-digests.json experiments/01_policy_control/protocol/confirmation/plots/recovery-vs-latency.svg experiments/01_policy_control/protocol/confirmation/plots/tracking-error-vs-rate.svg experiments/01_policy_control/protocol/confirmation/plots/joint-jerk.svg experiments/01_policy_control/protocol/confirmation/plots/action-age.svg experiments/01_policy_control/protocol/confirmation/plots/timeline.svg experiments/01_policy_control/RESULTS.md experiments/01_policy_control/INTERFACE_FINDINGS.md
 git commit -m "docs: report experiment 01 decision"
 ```
 
@@ -547,6 +736,7 @@ Never stage `experiments/01_policy_control/results/`.
 - Coverage: P3/safety, all six stacks, exact kinematics/P5/P6, timing/safe hold/events, scenario fairness, metrics/domains, pilot/freeze, inference/gates/plots, atomic CLI/resume/resources/report all map to Tasks 1-15.
 - Type check: representation is string; `run_episode` returns `RolloutRecord`; `ReplayResult` includes `rollout_id`; fixture cutoff is 2650; evidence arrays use byte/value equality.
 - Placeholder check: `rg -n -i 'T[B]D|T[O]DO|implement la[t]er|fill in detai[l]s|similar to tas[k]|appropriate erro[r]' docs/superpowers/plans/2026-08-22-p4-policy-control-boundary.md` must return no matches.
-- Ownership: only Tasks 3/4/8 parallel; all shared-file work is serial. No `reflect/` edit exists.
+- Ownership: every implementer task and every live-evidence phase is serial; Task 4
+  explicitly depends on Task 3. No `reflect/` edit exists.
 
 Plan complete. Execute task-by-task with subagent-driven development and retain review gates, especially the hard no-live-pilot boundary before Task 13.
