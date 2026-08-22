@@ -92,3 +92,11 @@ def test_p0_report_rejects_enabled_remote_before_overwriting_report() -> None:
         assert report.read_bytes() == before
     finally:
         report.write_bytes(before)
+
+
+def test_p0_report_uses_bounded_network_evidence_wording() -> None:
+    generator = (ROOT / "scripts" / "write_p0_report.py").read_text()
+    assert (
+        "This generator performs no explicit source fetches; subprocess network "
+        "activity was not measured."
+    ) in generator

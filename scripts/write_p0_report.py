@@ -105,7 +105,7 @@ PHYSICAL_DEPLOYMENT_ALLOWED=false REFLECT_REMOTE_ENABLED=0 UV_CACHE_DIR=.cache/u
 
 ## Public-source use
 
-This local evidence generator made no network requests.
+This generator performs no explicit source fetches; subprocess network activity was not measured.
 
 ## Interface findings
 
