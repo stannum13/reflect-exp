@@ -27,13 +27,14 @@
 ### Task 1: Pinned sparse-checkout utility
 
 **Files:**
+- Create: `reflect/source_evidence.py`
 - Create: `reflect/source_checkout.py`
 - Modify: `scripts/fetch_reference.py`
 - Create: `tests/test_source_checkout.py`
 
 **Interfaces:**
 - Consumes: complete `SourceRegistry`/`SourceLock`, selector by repository or experiment, `CheckoutRunner`, ignored checkout root.
-- Produces: `SparseCheckoutError`, `CheckoutSpec`, `CheckoutResult`, `eligible_checkout_specs(registry, lock, *, name=None, experiment=None)`, `checkout_sparse(spec, root, runner)`, and CLI modes `--name NAME --sparse-checkout` / `--experiment EXPERIMENT --sparse-checkout`.
+- Produces: `SparseCheckoutError`, `CheckoutSpec`, `CheckoutResult`, `CheckoutEvidence`, `eligible_checkout_specs(registry, lock, *, name=None, experiment=None)`, `checkout_sparse(spec, root, runner)`, `write_evidence_create_only(path, evidence)`, and CLI modes `--name NAME --sparse-checkout` / `--experiment EXPERIMENT --sparse-checkout`.
 
 - [ ] **Step 1: Write failing checkout tests**
 
@@ -41,7 +42,11 @@ Cover selector exclusivity, exact eight-repository eligibility, lock/audit gate,
 `MISSING` path exclusion without substitution, root-glob preservation, fixed Git
 argv/environment, detached SHA verification, finite timeouts, temp-directory cleanup,
 atomic destination publication, and refusal of dirty/mismatched/symlinked existing
-destinations. Include a fake runner test equivalent to:
+destinations. Explicitly cover symlinked root and intermediate directories, checkout
+root inode replacement before inspection/rename/cleanup, malicious repository-local
+hooks/fsmonitor configuration, and proof no out-of-root path is touched. Cover
+create-only checkout evidence with exact command vector/status/download+disk bytes,
+lock binding, canonical hash, fsync, and overwrite refusal. Include a fake runner test equivalent to:
 
 ```python
 def test_checkout_uses_only_locked_sha_and_existing_paths(tmp_path: Path) -> None:
@@ -94,13 +99,23 @@ disk bytes before atomically renaming. If a clean existing destination matches a
 facts, return it unchanged; otherwise fail. Remove only the owned partial directory
 on error.
 
-- [ ] **Step 5: Extend the CLI without weakening metadata modes**
+- [ ] **Step 5: Persist immutable checkout evidence**
+
+`reflect/source_evidence.py` defines the canonical JSON/hash primitive and a strict
+`CHECKOUT` evidence record binding registry digest, name, locked SHA, selected
+patterns, exact command vectors/statuses, download/disk bytes, outcome, blocker, and
+content hashes. Publish through descriptor-relative mode-`0600` `O_EXCL` + fsync;
+never overwrite a fragment. Task 2 reuses this primitive for all other evidence.
+
+- [ ] **Step 6: Extend the CLI without weakening metadata modes**
 
 Keep the P2 selectors unchanged. Sparse modes require exactly one `--name` or
-`--experiment`, call the offline complete audit first, require simulation-only, and
-print deterministic JSON results. They do not publish or alter the lock.
+`--experiment`, an explicit `--fragment-dir`, call the offline complete audit first,
+require simulation-only, and write one create-only `CHECKOUT` fragment per selected
+repository before printing deterministic JSON results. They do not publish or alter
+the lock.
 
-- [ ] **Step 6: Verify and commit**
+- [ ] **Step 7: Verify and commit**
 
 Run:
 
@@ -115,7 +130,7 @@ Expected: all tests pass; no checkout/network is used by tests.
 Commit:
 
 ```bash
-git add reflect/source_checkout.py scripts/fetch_reference.py tests/test_source_checkout.py
+git add reflect/source_evidence.py reflect/source_checkout.py scripts/fetch_reference.py tests/test_source_checkout.py
 git commit -m "feat: add pinned sparse source checkout"
 ```
 
@@ -131,6 +146,7 @@ git commit -m "feat: add pinned sparse source checkout"
 - Create: `experiments/00_source_audit/__init__.py`
 - Create: `experiments/00_source_audit/run.py`
 - Create: `experiments/00_source_audit/configs/base.yaml`
+- Create: `experiments/00_source_audit/configs/operation-manifest.yaml`
 - Create: `experiments/00_source_audit/README.md`
 - Create: `experiments/00_source_audit/CLAIM.md`
 - Create: `experiments/00_source_audit/EXPERIMENT.md`
@@ -140,8 +156,8 @@ git commit -m "feat: add pinned sparse source checkout"
 - Modify: `Makefile`
 
 **Interfaces:**
-- Consumes: unchanged P2 registry/lock plus per-operation evidence fragments.
-- Produces: `CompatibilityClass`, `SmokeStatus`, `CompatibilityEvidence`, `validate_fragment`, `consolidate_compatibility`, `write_compatibility_outputs`, `scripts/source_audit.py --check|--write`, and `python -m experiments.00_source_audit.run --config ...`.
+- Consumes: unchanged P2 registry/lock, digest-bound `OperationManifest`, and per-operation evidence fragments including Task 1 `CHECKOUT` records.
+- Produces: `CompatibilityClass`, `SmokeStatus`, `CompatibilityEvidence`, `RequirementObservation`, `OperationManifest`, `load_operation_manifest`, `validate_fragment`, `consolidate_compatibility`, `write_compatibility_outputs`, `scripts/source_audit.py --check|--write`, and `python -m experiments.00_source_audit.run --config ...`.
 - Produces operation interfaces: `SourceOperation`, `OperationSpec`, `run_source_operation(spec, checkout_root) -> CompatibilityEvidence`, and `write_fragment_create_only(path, evidence) -> None`.
 
 - [ ] **Step 1: Write failing contract/report tests**
@@ -151,7 +167,11 @@ canonical JSON/hash behavior, duplicate/conflicting fragment rejection, complete
 row coverage, classification precedence, deterministic CSV/Markdown, and standard
 experiment CLI flags. Test bounded AST parsing, manifest/header layout checks,
 asset-license inventory, path containment, byte limits, captured normalized results,
-and create-only atomic fragment publication that refuses overwrite. Assert the CSV
+and create-only atomic fragment publication that refuses overwrite. Test that the
+operation manifest binds the registry/lock digest, covers all 45 entries, accepts
+optional structured GPU/Linux/archive observations with canonical/official
+provenance plus content hash, maps missing observations to `NOT_EVALUATED`, and
+rejects tampered hashes before consolidation. Assert the CSV
 header is exactly:
 
 ```text
@@ -177,6 +197,13 @@ Reject extra/missing keys, absolute paths,
 nonfinite/negative counts, timestamps in comparison rows, lock mismatches, and any
 claim stronger than its operation supports. A package-runtime fragment retains the
 P2 Git SHA as registry provenance but never claims that SHA was executed.
+
+Define a strict `OperationManifest` with exact registry and lock hashes, all 45
+repository identities, optional executable operations, and optional
+`RequirementObservation` records for `REMOTE_GPU`, `REMOTE_LINUX`, or `ARCHIVED`.
+Each observation includes a canonical-program or official HTTPS provenance locator,
+normalized statement, and SHA-256 of that statement. Missing observations are valid
+and yield `NOT_EVALUATED`; malformed identities or hashes invalidate the manifest.
 
 - [ ] **Step 4: Implement the reproducible source-operation runner**
 
@@ -288,7 +315,8 @@ check, and safety check. Commit as `feat: add MuJoCo compatibility smoke`.
 
 - [ ] **Step 1: Freeze the operation manifest**
 
-Generate a deterministic manifest covering all 45 repositories. Record exact locked
+Generate and commit
+`experiments/00_source_audit/configs/operation-manifest.yaml` covering all 45 repositories. Record exact locked
 SHAs, existing/missing paths, and frozen platform/archive requirement observations
 with canonical or official provenance and content hashes. Only the eight eligible
 sparse repositories plus the MuJoCo package smoke receive executable operations. Record
@@ -300,7 +328,7 @@ and commit the manifest before source operations.
 
 Dispatch non-overlapping workers for Experiment 01, 02, and 03 repositories. Each
 worker owns only its `external/<repo>` destinations and distinct fragment files.
-Run the explicit sparse command, then invoke only the reviewed `--operate` command
+Run the explicit sparse command with its create-only fragment directory, then invoke only the reviewed `--operate` command
 for declared AST/manifest/header/asset-license checks; it records bytes, normalized
 findings, content hashes, and exact command into a create-only fragment. Stop after one
 failure plus one materially different remedy. Do not import study-only projects.
