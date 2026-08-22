@@ -23,13 +23,15 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_repository_manifest_has_bounded_recommended_scope() -> None:
     manifest = load_run_manifest(ROOT / "docs" / "RUN_MANIFEST.yaml")
     assert manifest.scope == "recommended"
-    assert manifest.current_pass == 1
+    assert manifest.current_pass == 2
     assert manifest.max_passes == 16
     assert manifest.cpu_hours_max == 240
     assert manifest.physical_deployment_allowed is False
     assert manifest.remote_enabled is False
     assert manifest.stages["p0"] == "complete"
-    assert manifest.stages["p1"] == "in_progress"
+    assert manifest.stages["p1"] == "complete"
+    assert manifest.stages["p2"] == "in_progress"
+    assert all(manifest.stages[f"p{index}"] == "pending" for index in range(3, 11))
 
 
 def test_manifest_rejects_pass_overrun(tmp_path: Path) -> None:

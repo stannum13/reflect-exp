@@ -32,3 +32,24 @@ uv, hatchling, PyYAML, and pytest are the minimum tooling needed before P2 can
 materialize the full registry. Their URLs, modes, and justifications are recorded in
 `references/bootstrap-tools.yaml`; P2 must resolve their SHAs and licenses with the
 rest of the registry.
+
+## A-007 — P1 artifact storage
+
+Use NumPy/NPZ for observation arrays and genuine PyArrow Parquet for action and
+control-reference rows. A custom pseudo-Parquet format or database would weaken
+interoperability and is not selected.
+
+## A-008 — Replay boundary
+
+Replay is a deterministic event reducer over saved artifacts. It reconstructs state
+but does not rerun physics.
+
+## A-009 — Measured metadata ownership
+
+Rollout metadata callers supply measured environment fields; the artifact writer
+validates and preserves them rather than silently probing or inventing values.
+
+## A-010 — Equal event ordering keys
+
+When event timestamp and sequence values are equal, replay preserves original JSONL
+order as the final stable ordering key.

@@ -4,7 +4,7 @@ canonical_program: Reflect Lite Research Program.md
 design: docs/superpowers/specs/2026-08-22-reflect-lite-autonomous-run-design.md
 integration_branch: integration/autonomous-run
 scope: recommended
-current_pass: 1
+current_pass: 2
 max_passes: 16
 budgets:
   wall_hours_per_pass_max: 24
@@ -20,8 +20,8 @@ safety:
   remote_enabled: false
 stages:
   p0: complete
-  p1: in_progress
-  p2: pending
+  p1: complete
+  p2: in_progress
   p3: pending
   p4: pending
   p5: pending
