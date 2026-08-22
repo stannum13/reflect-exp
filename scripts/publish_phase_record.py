@@ -254,6 +254,14 @@ def _derive_record(
     bound_sha = _report_binding(report_bytes)
     if bound_sha != implementation_sha:
         raise ValueError("report bound evidence SHA does not match implementation SHA")
+    if phase == "p3":
+        from scripts.write_p3_report import validate_rendered_report
+
+        try:
+            report_text = report_bytes.decode("utf-8", "strict")
+        except UnicodeDecodeError as exc:
+            raise ValueError("P3 report must be strict UTF-8") from exc
+        validate_rendered_report(report_text, implementation_sha)
 
     members: list[dict[str, str]] = []
     for path in sorted(
@@ -441,13 +449,17 @@ def _atomic_write_manifest(
     directory_fd = snapshot.directory_fd
     temporary = f".{snapshot.filename}.phase-{secrets.token_hex(8)}"
     descriptor: int | None = None
+    identity: tuple[int, int] | None = None
     try:
         descriptor = os.open(
             temporary,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
             0o600,
             dir_fd=directory_fd,
         )
+        created = os.fstat(descriptor)
+        identity = (created.st_dev, created.st_ino)
+        os.fchmod(descriptor, 0o600)
         written = 0
         while written < len(content):
             count = os.write(descriptor, content[written:])
@@ -455,12 +467,26 @@ def _atomic_write_manifest(
                 raise OSError("short write while publishing run manifest")
             written += count
         os.fsync(descriptor)
-        os.close(descriptor)
-        descriptor = None
         _recheck_manifest_snapshot(snapshot)
         temporary_path = str(manifest_path.parent / temporary)
         if _worktree_status(root, allowed_untracked=frozenset({temporary_path})):
             raise ValueError("publish requires a clean worktree immediately before replacement")
+        descriptor_state = os.fstat(descriptor)
+        try:
+            path_state = os.stat(temporary, dir_fd=directory_fd, follow_symlinks=False)
+        except FileNotFoundError as exc:
+            raise ValueError("run manifest temporary changed before replacement") from exc
+        current = _read_fd(descriptor, descriptor_state.st_size)
+        if (
+            not stat.S_ISREG(descriptor_state.st_mode)
+            or stat.S_IMODE(descriptor_state.st_mode) != 0o600
+            or (descriptor_state.st_dev, descriptor_state.st_ino) != identity
+            or (path_state.st_dev, path_state.st_ino) != identity
+            or not stat.S_ISREG(path_state.st_mode)
+            or path_state.st_size != len(content)
+            or current != content
+        ):
+            raise ValueError("run manifest temporary changed before replacement")
         os.replace(
             temporary,
             snapshot.filename,
@@ -472,9 +498,11 @@ def _atomic_write_manifest(
         if descriptor is not None:
             os.close(descriptor)
         try:
-            os.unlink(temporary, dir_fd=directory_fd)
+            current = os.stat(temporary, dir_fd=directory_fd, follow_symlinks=False)
         except FileNotFoundError:
-            pass
+            current = None
+        if current is not None and identity == (current.st_dev, current.st_ino):
+            os.unlink(temporary, dir_fd=directory_fd)
 
 
 def publish(

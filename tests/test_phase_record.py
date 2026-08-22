@@ -95,6 +95,7 @@ def _p3_report_repository(
     tmp_path: Path,
     *,
     smoke_symlink: bool = False,
+    invalid_report: bool = False,
     operations_yaml: str = (
         "operations:\n"
         "  - operation_id: MUJOCO_PACKAGE_SMOKE\n"
@@ -156,11 +157,18 @@ def _p3_report_repository(
     manifest["stages"]["p3"] = "complete"
     manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
     evidence_sha = _commit(repository, "p3 evidence")
-    (repository / "RUN_REPORT.md").write_text(
-        "# P3 Run Report\n\n"
-        f"- Implementation/evidence-base Git SHA: `{evidence_sha}`\n",
-        encoding="utf-8",
+    headings = (
+        "Executive result", "Environment", "Commands", "Tests", "Results",
+        "Public-source use", "Interface findings", "Blockers",
+        "Highest-value next action", "Safety",
     )
+    report = "# P3 Run Report\n\n" + "\n\n".join(
+        f"## {heading}\n\nfixture" for heading in headings
+    )
+    report += f"\n\n- Implementation/evidence-base Git SHA: `{evidence_sha}`\n"
+    if invalid_report:
+        report += f"- Other Git SHA: `{evidence_sha}`\n"
+    (repository / "RUN_REPORT.md").write_text(report, encoding="utf-8")
     report_sha = _commit(repository, "p3 report")
     assert yaml.safe_load(manifest_path.read_text(encoding="utf-8"))[
         "phase_records"
@@ -316,6 +324,36 @@ def test_publish_refuses_concurrent_manifest_drift(tmp_path: Path, monkeypatch: 
             manifest_path="docs/RUN_MANIFEST.yaml",
         )
     assert b"concurrent_key: true" in (repository / "docs/RUN_MANIFEST.yaml").read_bytes()
+
+
+def test_publish_refuses_temporary_manifest_inode_substitution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    publisher = importlib.import_module("scripts.publish_phase_record")
+    repository, evidence_sha, report_sha = _p2_report_repository(tmp_path)
+    original_status = publisher._worktree_status
+    calls = 0
+
+    def substitute_on_final_status(root: Path, *, allowed_untracked: frozenset[str] = frozenset()):
+        nonlocal calls
+        calls += 1
+        if allowed_untracked:
+            temporary = repository / next(iter(allowed_untracked))
+            temporary.unlink()
+            temporary.write_text("attacker bytes\n", encoding="utf-8")
+            return b""
+        return original_status(root, allowed_untracked=allowed_untracked)
+
+    monkeypatch.setattr(publisher, "_worktree_status", substitute_on_final_status)
+    with pytest.raises(ValueError, match="temporary|changed"):
+        publisher.publish(
+            root=repository,
+            phase="p2",
+            implementation_sha=evidence_sha,
+            report_sha=report_sha,
+            manifest_path="docs/RUN_MANIFEST.yaml",
+        )
+    assert calls >= 2
 
 
 def test_publish_refuses_concurrent_unrelated_worktree_drift(
@@ -623,6 +661,21 @@ def test_publish_and_validate_p3_record_with_manifest_selected_smoke(
         state_index_sha=state_index_sha,
         manifest_path="docs/RUN_MANIFEST.yaml",
     )
+
+
+def test_p3_publish_rejects_report_with_unknown_provenance(tmp_path: Path) -> None:
+    publisher = importlib.import_module("scripts.publish_phase_record")
+    repository, evidence_sha, report_sha = _p3_report_repository(
+        tmp_path, invalid_report=True
+    )
+    with pytest.raises(ValueError, match="provenance|report"):
+        publisher.publish(
+            root=repository,
+            phase="p3",
+            implementation_sha=evidence_sha,
+            report_sha=report_sha,
+            manifest_path="docs/RUN_MANIFEST.yaml",
+        )
 
 
 def test_p3_publisher_rejects_symlink_smoke_artifact(tmp_path: Path) -> None:
