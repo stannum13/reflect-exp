@@ -2,361 +2,259 @@
 
 Date: 2026-08-22
 
-Status: approved autonomous default. Execution begins only after P4's confirmation
-has selected and frozen one or two action representations, task values, and source
-provenance.
-
-Canonical input: `Reflect Lite Research Program.md` Sections 10, 13, 14, 27, 29,
-and 30; the approved autonomous-run design; and the P4 policy-to-controller design.
-
-## Outcome and boundary
-
-P5 implements Experiment 02: it compares seven ways of changing the *unexecuted*
-future of a valid action chunk while the simulated arm continues to move. The bounded
-claim is a latency/reactivity/smoothness trade-off under one fixed task and one
-deterministic policy-output distribution. It does not establish that a VLA is
-intelligent, that an RTC approximation is the real RTC algorithm, or that an
-asynchronous broker is safe on hardware.
-
-P5 consumes P4's selected representation(s), exact `ActionChunk` shape, horizon,
-task configuration, controller/executor adapter, source-lock hash, and measured
-success/metric definitions. It must not select a representation or substitute task
-values itself. If P4 promotes no non-anchor representation, P5 uses P4's stable
-joint-target anchor only and records that dependency in its frozen protocol.
-
-P5 does not add a VLA, model checkpoint, policy server, ROS 2, CUDA, remote process,
-or physical communication. Experiment-specific policy, broker, environment adapter,
-thresholds, and plots remain below `experiments/02_action_chunks`; only a runtime
-invariant demonstrated by confirmation evidence may later be proposed for `reflect/`.
-
-## Alternatives and trade-offs
-
-### A. P4 planar-arm task plus a project-local deterministic broker — selected
-
-Reuse P4's inline three-link MuJoCo arm, 500 Hz controller, selected command adapter,
-target generator, and fake-policy geometry. A local broker uses virtual event time to
-schedule policy requests and arrivals; no network transport exists.
-
-This preserves P4's meaningful control and jerk measurements while isolating the
-temporal protocol as the only experimental variable. It is small enough for exhaustive
-paired deterministic runs and directly answers how a valid new chunk affects queued
-motion.
-
-### B. Pure-Python point-mass queue simulator — rejected as the evidence task
-
-A queue-only simulator is useful for broker unit tests, but it bypasses P4's selected
-executor and common controller. Its action discontinuity and jerk proxies would not
-be the same quantities used by the actual control task. Retain it only as a compact
-test fixture for hand-calculated queue transitions.
-
-### C. Adapt an upstream async client or RTC runtime — deferred
-
-LeRobot and OpenPI provide valuable study seams, but adopting their runtime would add
-serialization, server lifecycle, trust, dependency, and possibly flow-model behavior
-to a broker experiment. It would also obscure whether a result came from replacement
-semantics or upstream infrastructure. Upstream execution is therefore excluded until
-the synthetic gate has passed and a separate, attributed follow-up justifies it.
-
-## Task and data flow
-
-Every episode runs P4's fixed moving-target arm task. The fake policy receives only
-the immutable observation/skill snapshot captured on a policy request and emits an
-`ActionChunk` in the selected P4 representation. It has no live target channel after
-the request. The protocol broker validates the arrival, maintains only bounded
-unissued future references, and yields a reference for the next 500 Hz controller
-tick. The P4 executor/controller maps that reference to the common slew limiter and
-PD loop.
-
-```text
-P4 target + arm state
-  -> immutable Observation and SkillSpec at request time
-  -> deterministic fake policy / delayed response schedule
-  -> validated ActionChunk arrival
-  -> protocol broker (A--G) and bounded future queue
-  -> selected P4 executor -> common controller -> MuJoCo step
-  -> ControlReference, events, metrics, validated rollout artifact
-```
-
-The policy function, observation request times, target trajectory, P4 limits,
-controller parameters, selected representation, horizon, and response schedule are
-identical for all protocols in a paired condition. Only the broker's treatment of a
-new valid unexecuted future changes. A policy's deterministic strategy bit is varied
-only in the designated strategy-divergence fault, where it produces two valid but
-meaningfully different chunks from the same input contract.
-
-## Canonical protocol semantics
-
-All protocols preserve already issued actions and may only alter unissued references.
-An arrival is eligible only when its `ActionChunk` is finite, dimensionally valid,
-within its half-open validity interval, and sourced from an observation no older than
-the last accepted observation. The fixed protocol names are the decision vocabulary.
-
-| ID | Decision name | Semantics |
-|---|---|---|
-| A | `OPEN_LOOP` | Accept the first valid chunk and execute its usable horizon unchanged. It does not request a response to react to later target movement. |
-| B | `RECEDING_PREFIX` | Execute exactly frozen prefix length `K`; discard all remaining unissued actions, re-observe, and request another chunk. A missing response produces safe hold rather than execution of discarded or stale future. |
-| C | `TEMPORAL_ENSEMBLE` | Align valid unissued predictions by absolute control tick and compute a deterministic age-weighted average at each matching tick. Already issued values are excluded from the blend. |
-| D | `LATEST_VALID` | On a valid non-stale arrival, replace every unissued queued action with the newest proposal. |
-| E | `ASYNC_SAFE_PREFIX` | While a request is outstanding, continue only the accepted, still-valid prefix. After validation, a new arrival replaces the unissued future; expiry before such arrival produces safe hold. |
-| F | `OVERLAP_BLEND` | Preserve the issued prefix and create a new immutable broker-generated chunk whose unissued overlap uses a frozen deterministic ramp from old queued values to the new proposal. Its metadata records parent chunks and weights. |
-| G | `RTC_APPROXIMATION` | Preserve a finite committed prefix and deterministically project/condition the new unissued proposal toward that prefix before replacement. This is an explicitly labelled approximation, not RTC compatibility. |
-
-`RTC_COMPATIBLE` is never selected or claimed by this experiment unless a separately
-reviewed, P3-provenanced compatible flow policy is actually executed and the real RTC
-implementation is compared. A protocol-G approximation may be compared and reported,
-but its decision record remains `RTC_APPROXIMATION` and may not be rewritten as
-`RTC_COMPATIBLE` because its outcome is favorable.
-
-When F or G synthesizes a derived chunk, it receives a new chunk ID and immutable
-action array. Its metadata records both source chunks, the replacement rule revision,
-and any blend/conditioning values. The artifact event for a replacement identifies the
-formerly accepted chunk; no unsupported `replaced_chunk_id` payload is invented.
-
-## Virtual timing and lifecycle
-
-`VirtualClock` is the exclusive source of simulated monotonic and wall time. No
-decision sleeps, reads host wall time, or depends on process scheduling. Measured host
-compute duration is recorded separately and has no effect on delivery time.
-
-The 2 ms P4 tick uses this total ordering:
-
-1. apply target movement(s) scheduled at the current virtual time;
-2. capture every due immutable policy observation and emit `POLICY_REQUESTED`;
-3. schedule its deterministic response, drop it, or schedule an explicit pause;
-4. deliver due responses in `(delivery_time_ns, request_sequence)` order;
-5. validate arrivals, emit `POLICY_RESPONDED`, and accept, reject, replace, blend, or
-   condition only according to the selected protocol;
-6. obtain the next reference from the protocol broker; if no valid reference exists,
-   enter P4's deterministic safe-hold behavior and emit a safety/stall trace event;
-7. execute one P4 control/simulation step and record 500 Hz metric samples; and
-8. emit decimated telemetry and advance virtual time by 2 ms.
-
-The safe-hold reference must hold the current measured joint state through the P4
-controller, not execute an expired chunk. It is recorded as a distinct safety state,
-not attributed to a nonexistent action chunk. A dropped request has a visible request
-event but no response or action chunk. Every stored policy observation has exactly one
-`OBSERVATION_RECEIVED` event; action chunks and control references continue to use the
-existing validated rollout lifecycle.
-
-## Perturbation protocol
-
-Every protocol runs the same paired condition grid:
-
-```text
-arrival latency:       50, 150, 300, 700 ms
-target movements:      one movement during an outstanding request; two such movements
-fault profile:         none
-                       first eligible response dropped
-                       older response arrives after a newer response
-                       policy pause that exhausts the accepted valid prefix
-                       two valid chunks encode different strategies
-                       one otherwise valid chunk contains a discontinuous target
-paired seed:           identical scenario and response schedule across A--G
-```
-
-The target movement uses P4's measured target/displacement values and is scheduled to
-occur during an outstanding request. The out-of-order profile delays an earlier
-response until after the next eligible response; both remain individually valid so the
-broker, rather than malformed input validation, must reject the stale arrival. The
-pause duration is selected during pilot to require safe hold in the pause probe. The
-discontinuous-target response remains finite and in bounds but exceeds the frozen
-protocol discontinuity trigger, so every protocol's disposition is observable.
-
-This is a crossed latency-by-target-count-by-fault-profile grid, not a factorial of
-multiple simultaneous faults. A stationary-target no-fault negative control runs for
-every protocol on a fixed subset of confirmation seeds. Its success criterion is the
-P4 target-hold criterion and it must create no recovery event.
-
-## Runtime invariants
-
-The implementation and confirmation gate require all of the following:
-
-1. Expired or not-yet-valid chunks are never executed.
-2. A response sourced from an older observation cannot supersede a previously accepted
-   newer-observation chunk.
-3. Queue capacity is frozen and bounded; each discard, replacement, and overrun is
-   counted and traceable.
-4. Every chunk declares an explicit validity interval and has finite selected-shape
-   actions.
-5. Once a `ControlReference` is issued, later arrivals cannot mutate its action value,
-   source chunk, or execution history.
-6. Request timeout or accepted-prefix expiry triggers deterministic safe hold, never
-   indefinite stale execution.
-7. Event time and event sequence are non-regressing; each response maps to exactly one
-   preceding policy request and stored source observation.
-8. A replacement emits coherent accepted/replaced/rejected lifecycle events and every
-   executed action resolves to exactly one stored valid control reference.
-9. All policy transport is local scheduling only: no network message, credential,
-   remote execution, or physical communication is reachable.
-
-## Metrics and mechanical decision
-
-The primary metric is perturbation recovery success: after the final target movement,
-the P4 success error-and-dwell criterion is reacquired by the frozen recovery deadline.
-Its analysis unit is the paired seed-level equal-weight average over the frozen grid.
-An episode that does not recover is a zero success observation, not missing data.
-
-Secondary metrics are recovery/completion time; action age p50/p95/p99; executor idle
-fraction; replacement count; invalidated-action count; queue-overrun count; policy
-request rate; timeout/safe-hold activations; P4 jerk proxy; and command discontinuity.
-Safety counters include nonfinite/unclamped outputs and joint/torque/reference-limit
-violations. The primary outcome determines efficacy; secondary metrics enforce the
-frozen viability and smoothness budgets and explain the result.
-
-The anchor is A. B--G form one six-contrast family against A. The confirmation
-analysis uses the autonomous program's deterministic 10,000-resample paired
-percentile bootstrap with Bonferroni-adjusted intervals. The protocol decision is
-mechanical:
-
-1. A candidate is efficacy-eligible only if the full adjusted interval for paired
-   recovery-success improvement clears the frozen minimum worthwhile effect.
-2. It is safety-eligible only if every frozen absolute safety, p95 action-age, p95
-   jerk, p95 discontinuity, timeout/safe-hold, queue-overrun, and artifact-validity
-   budget passes.
-3. Among eligible B--G candidates, select the lowest-complexity fixed order
-   `B, C, D, E, F, G`; break an exact complexity tie by the better lower confidence
-   endpoint, then protocol order.
-4. If no candidate is eligible, retain `OPEN_LOOP` and classify the claim
-   `NOT_SUPPORTED` when precision excludes the minimum effect, otherwise
-   `INCONCLUSIVE`.
-5. Any invalid negative control, missing/corrupt artifact, systematic protocol-specific
-   loss, nonfinite output, or invariant violation invalidates confirmation and yields
-   `INCONCLUSIVE`; it is never silently excluded.
-
-The final `ACTION_EXECUTION_DECISION.md` records the selected canonical name, the
-protocol-G approximation status if applicable, all gate outcomes, and why every other
-protocol was rejected or not selected. Separate decisions may be made only when P4
-has actually promoted distinct deterministic-trajectory and flow-policy value domains;
-otherwise one decision applies.
-
-### Pilot-derived numeric margins
-
-The following values are intentionally not invented in this design. Pilot variance and
-feasibility evidence must select each one and place it in the frozen configuration:
-
-- prefix length `K`, horizon queue capacity, ensemble age-weight rule, overlap-ramp
-  length, and RTC-approximation committed-prefix length;
-- policy request timeout and pause duration;
-- minimum worthwhile paired recovery-success improvement;
-- P4-derived recovery deadline for the selected representation;
-- maximum p95 action age, jerk, command discontinuity, safe-hold activation rate, and
-  queue-overrun rate;
-- confirmation seed count and the exact generated seed manifest; and
-- any selected representation-specific discontinuity trigger.
-
-These values are not placeholders: they are measured protocol parameters with a
-specified owner and lifecycle. P4's existing task geometry, controller, success
-criterion, target schedule, and selected command values remain fixed inputs rather
-than P5 tuning parameters.
-
-## Lifecycle and artifacts
-
-### Draft and pilot
-
-Draft completes when every A--G transition, scheduler, fault profile, metrics,
-artifact writer integration, and test is implemented. It makes no measurement claim.
-Pilot uses a checked-in pilot RNG root with a disjoint tuning/validation partition,
-does not alter protocol architecture, and permits at most two protocol revisions and
-three scalar configurations per protocol revision. Pilot may tune only the explicitly
-enumerated numeric margins above; it may not add policy learning, server infrastructure,
-or an eighth protocol.
-
-### Freeze and confirmation
-
-`configs/frozen.yaml` is created only after pilot. It hashes the implementation SHA,
-clean-tree status, P2/P3 provenance, P4 frozen task/representation hashes, MuJoCo
-package artifact, selected protocol parameters, metric/evaluator revision, fault grid,
-all margins, analysis procedure, exclusions, and pilot manifests. It also records the
-canonical protocol order and G's `RTC_APPROXIMATION` label.
-
-After the implementation commit and frozen hash exist, the orchestrator generates new
-paired confirmation seeds from a recorded RNG root. No code, configuration, threshold,
-or metric change is allowed. Any required change creates a new Draft revision and a
-new unseen confirmation manifest. Confirmation is serial on the local M2; reports
-consume validated artifacts and never rerun physics.
-
-### File and artifact boundary
-
-```text
-experiments/02_action_chunks/
-  README.md
-  CLAIM.md
-  EXPERIMENT.md
-  RESULTS.md
-  INTERFACE_FINDINGS.md
-  ACTION_EXECUTION_DECISION.md
-  configs/base.yaml
-  configs/frozen.yaml                 # created only at Freeze
-  run.py
-  src/broker.py
-  src/protocols.py
-  src/schedule.py
-  src/task_adapter.py
-  src/evaluate.py
-  tests/test_broker.py
-  tests/test_protocols.py
-  tests/test_schedule.py
-  tests/test_evaluate.py
-  results/pilot/
-  results/confirmation/
-```
-
-Each `(phase, seed, protocol, condition)` emits one create-only `RolloutWriter`
-artifact containing canonical metadata/config/metrics/events, policy observations,
-stored chunks, and executed control references. Per phase, write deterministic
-protocol/seed/artifact manifests, episode and seed aggregates, bootstrap output,
-decision JSON, and required SVG timelines/plots. P5 does not modify shared rollout
-schemas to make a protocol convenient.
-
-## Test boundary and verification
-
-Unit/property tests prove every A--G state transition using hand-calculated queue
-fixtures, all nine runtime invariants, exact virtual-clock ordering, bounded queue
-behavior, expiry, safe hold, drop, pause, stale response, strategy divergence,
-discontinuous input, blend provenance, and RTC-approximation labeling. Tests also
-prove repeated-run determinism, selected-shape/finite validation, action immutability,
-paired scenario identity, metric calculations, bootstrap/multiplicity behavior, gate
-threshold boundaries, result classification, CLI headless/dry-run/create-only output,
-artifact validation, and replay.
-
-Integration tests run one zero-latency headless episode for A--G and a minimal
-representative episode for every perturbation profile. Confirmation acceptance requires
-the full repository tests, P2/P3 source audit, P4 input-hash validation, frozen-config
-hash validation, simulation-only guard, rollout validation/replay, secret/large-artifact
-scan, and `git diff --check`.
-
-## Dependency and source seam
-
-P5's only runtime dependencies are the P3-approved MuJoCo package and P4's local
-experiment task adapter. ACT temporal ensembling, LeRobot async/RTC modules, and
-OpenPI's action-chunk broker are study-only source seams. P3 may make their selected
-paths available as pinned, clean, attributed sparse references, but P5 neither imports
-nor copies them. Any future adaptation requires a P3 license/source-map decision and
-an adjacent attribution record tied to the locked commit. No upstream policy client,
-server, checkpoint, or network transport is required for this gate.
-
-## Parallel implementation decomposition
-
-After P4 freezes its selected input contract, work may proceed with non-overlapping
-ownership:
-
-1. **Broker worker** owns `src/broker.py`, `src/protocols.py`, and their unit/property
-   tests: bounded queue, A--G transitions, invariant enforcement, and trace records.
-2. **Task/evaluation worker** owns `src/task_adapter.py`, `src/schedule.py`,
-   `src/evaluate.py`, and their tests: P4 adapter, virtual scheduler, fake policy,
-   perturbations, metrics, bootstrap, and mechanical gate.
-3. **Experiment-artifact worker** owns `run.py`, configs, experiment documents,
-   artifact manifest/report rendering, and CLI/end-to-end tests.
-
-The integration order is broker unit tests, then scheduler/P4 adapter integration,
-then artifact/confirmation validation. Workers do not change P4 files or shared
-`reflect/` contracts concurrently. Latency-bearing pilot and confirmation jobs run
-serially.
-
-## Scope self-review
-
-This design has one task, one deterministic policy-output distribution, seven canonical
-protocols, and one anchored decision family. It neither grants RTC compatibility to an
-approximation nor creates a policy-serving platform. All numeric values not already
-owned by P4 are explicitly pilot-derived, frozen before confirmation, and bounded by a
-mechanical decision rule. No unresolved implementation placeholder changes the scope.
+Status: approved autonomous default. P5 execution requires completed P3 provenance
+and a completed P4 confirmation.
+
+## Outcome, eligibility, and boundary
+
+P5 implements Experiment 02: seven temporal protocols alter only unexecuted future
+actions while the P4 simulated arm continues to move. The claim is a bounded
+latency/reactivity/smoothness trade-off under one deterministic policy-output function.
+It does not establish VLA intelligence, hardware async safety, or RTC equivalence.
+
+P5 is eligible only if P4 promotes at least one CommandVariant whose P4 executor
+provides a multi-step executable horizon with at least K + 1 future control ticks
+after its first issued reference. This permits B to discard future work and guarantees
+that the target perturbation lies inside A's usable horizon. A one-knot joint target,
+MPC goal, or residual is ineligible unless P4 separately measured a multi-step adapter
+for that exact representation. If P4 promotes no eligible row, P5 is
+prerequisite-blocked and makes no protocol decision.
+
+At freeze, P5 records this P4 input matrix:
+
+| P4 promoted variant in promotion order | representation | frozen executor/horizon | H >= K + 1 | P5 role |
+|---|---|---|---|---|
+| every P4-promoted variant | exact P4 value | exact P4 value | yes/no | PRIMARY, DESCRIPTIVE, or INELIGIBLE |
+
+The first eligible P4 row is the sole primary stack. A second eligible row may run as
+descriptive evidence only; it does not enter the primary multiplicity family or choose
+a second protocol. P5 consumes the primary P4 task bytes, controller/executor, action
+shape, horizon H, target geometry, success criterion, and provenance hashes without
+changing them. It adds no VLA, checkpoint, server, ROS, CUDA, remote transport, or
+physical communication, and does not assume shared reflect schema changes.
+
+## Alternatives
+
+1. **P4 planar task plus a project-local virtual-time broker — selected.** It retains
+   P4's 500 Hz controller and meaningful jerk/tracking measures while isolating queue
+   semantics as the treatment.
+2. **Pure-Python point-mass queue model — fixture only.** It is suitable for
+   hand-calculated broker unit tests but not controller evidence.
+3. **LeRobot/OpenPI runtime adaptation — deferred.** Server, serialization, trust,
+   dependency, and possible flow-model behavior would confound the synthetic gate.
+
+## Data flow and issued-reference immutability
+
+~~~
+P4 arm + target -> immutable request Observation/SkillSpec -> raw proposal arrival
+-> protocol broker -> executable ActionChunk -> P4 executor/controller -> MuJoCo
+-> ControlReferences, events, metrics, rollout and proposal sidecar
+~~~
+
+All comparisons pair the scenario seed, target path, latency draw, policy function,
+raw payload, and fault schedule. Request times are protocol-specific because they are
+the treatment; they are deterministically derived by the state machines below.
+
+An issued reference has absolute tick n = time_ns / P4_dt_ns. On first issue the
+broker copies the selected action vector to a C-contiguous read-only array and stores
+it in append-only issued[n] and its ControlReference. Later arrivals may read but
+cannot mutate issued entries. Tests compare issued-array byte hashes before and after
+every later response, replacement, ensemble, blend, or conditioning operation.
+
+## Protocol state machines and exact formulas
+
+P is the frozen policy period, H the frozen P4 horizon, and K a frozen positive
+integer satisfying K + 1 <= H. Every request captures one fresh stored observation;
+no state machine may request twice from an observation ID.
+
+| ID | Name | Request trigger / in-flight bound | Valid-arrival result |
+|---|---|---|---|
+| A | OPEN_LOOP | one initial request only | accept raw proposal directly |
+| B | RECEDING_PREFIX | after exactly K issued ticks, discard remaining future then request; at most one in flight | accept raw proposal or safe hold |
+| C | TEMPORAL_ENSEMBLE | periodic epoch mP, up to cap I in flight | ensemble raw proposals into a derived executable chunk |
+| D | LATEST_VALID | periodic epoch mP, up to cap I in flight | newest valid proposal replaces all unissued ticks |
+| E | ASYNC_SAFE_PREFIX | prefetch once when exactly K unissued ticks remain; at most one in flight | continue valid prefix then replace; hold on expiry |
+| F | OVERLAP_BLEND | same periodic trigger/cap as D | replace with deterministic overlap blend |
+| G | RTC_APPROXIMATION | same periodic trigger/cap as D | replace with deterministic committed-prefix conditioning |
+
+For C, at broker time now, let V(t) be raw proposals delivered by now that cover
+absolute tick t; proposal i has action a_i(t) and delivery d_i:
+
+~~~
+w_i = exp(-lambda * (now_ns - d_i) / 1e9)
+a_C(t) = sum(i in V(t), w_i * a_i(t)) / sum(i in V(t), w_i)
+~~~
+
+For F over the first M unissued overlap ticks, old and raw-new values are o_j and r_j:
+
+~~~
+beta_j = (j + 1) / (M + 1)
+a_F(j) = (1 - beta_j) * o_j + beta_j * r_j, j = 0..M-1
+~~~
+
+After M, F uses r_j. For G over committed prefix L, old committed values are c_j
+and raw-new values r_j:
+
+~~~
+gamma_j = (L - j) / L
+a_G(j) = gamma_j * c_j + (1 - gamma_j) * r_j, j = 0..L-1
+~~~
+
+After L, G uses r_j. P4's unchanged limits and slew processing apply after every
+formula. C/F/G create new immutable executable chunks and never mutate raw proposals.
+G is always RTC_APPROXIMATION. RTC_COMPATIBLE is prohibited unless a P3-provenanced
+compatible flow policy and its real RTC implementation are actually run.
+
+## Proposal sidecar, executable chunks, and event lifecycle
+
+Canonical rollout actions contain executable chunks only: direct raw chunks for
+A/B/D/E and derived chunks for C/F/G. Every raw proposal is a create-only canonical
+JSONL sidecar outside the rollout directory at
+results/<phase>/proposals/<rollout_id>.jsonl; the phase artifact manifest hashes it.
+Each record has exactly:
+
+~~~
+proposal_id, rollout_id, request_observation_id, request_observation_time_ns,
+request_sequence, delivery_time_ns, representation, dt_s, actions_shape,
+raw_actions, actions_sha256, disposition, derived_chunk_id, parent_proposal_hashes
+~~~
+
+raw_actions is a canonical finite nested-float array and actions_sha256 is its
+canonical-JSON hash. Disposition is exactly ACCEPTED_DIRECT, ENSEMBLED, REPLACED,
+BLENDED, CONDITIONED, REJECTED_EXPIRED, REJECTED_OUT_OF_ORDER, DROPPED, or PAUSED.
+A derived executable chunk uses the newest contributing proposal's observation ID/time
+as source. Its metadata contains sorted parent-proposal hashes, rule revision, and
+formula scalars. C assigns the newest delivery contributing to its first executable
+tick as owner; F/G assign the arriving proposal.
+
+For a delivered raw proposal, POLICY_RESPONDED references the resulting executable
+chunk and includes the broker disposition. A direct or derived replacement emits
+CHUNK_REPLACED for the former executable chunk then CHUNK_ACCEPTED for the new one.
+Raw proposals not made executable are sidecar-only and have no fabricated action
+lifecycle event; expiry/staleness is represented precisely in their disposition.
+
+Safe hold is a broker-generated supported-representation ActionChunk, never an
+untracked controller side effect. At hold entry, capture/store a current observation,
+create a finite P4-adapter hold horizon with metadata.origin=broker_safe_hold, and
+emit its standard accepted/executed/replaced-or-expired lifecycle. This preserves
+source ownership, validity, age, and execution evidence without extending shared types.
+
+## Virtual timing, perturbations, and exact applicability
+
+VirtualClock is the only behavior-time source. On every P4 2 ms tick: apply target
+movement; fire due protocol trigger/capture observation; schedule/drop/pause raw
+response; deliver arrivals ordered by (delivery_time_ns, request_sequence); apply
+broker disposition; execute one P4 control/MuJoCo step; log telemetry; then advance
+2 ms. Host time is measured only.
+
+For A core conditions, with t0 initial executable acceptance, freeze first target
+movement at t0 + (K - 0.5) * dt. It is strictly after first issue and before the
+(K + 1) future boundary, therefore inside A's usable horizon. The two-move A
+condition is allowed only when frozen P4 horizon/expiry proves both moves fit before
+expiry; otherwise P5 is blocked rather than silently relocating a perturbation. For
+B--G, movements occur while that protocol has an outstanding request.
+
+Core grid: latency {50,150,300,700} ms times one/two target movements with no fault
+(eight episodes per seed/protocol). One-fault probes use 300 ms and one movement:
+
+| Fault | A | B | C | D | E | F | G | expected outcome |
+|---|---|---|---|---|---|---|---|---|
+| first response dropped | initial | post-prefix | periodic | periodic | prefetch | periodic | periodic | hold after no valid future |
+| old after newer | N/A | N/A | yes | yes | N/A | yes | yes | old proposal rejected |
+| policy pause | initial | post-prefix | periodic | periodic | prefetch | periodic | periodic | hold on expiry |
+| differing strategies | N/A | yes | yes | yes | yes | yes | yes | protocol-specific disposition |
+| finite discontinuous proposal | initial | post-prefix | periodic | periodic | prefetch | periodic | periodic | frozen accounting |
+
+N/A is not run or imputed. Episodes per seed are A=11, B=12, C=13, D=13, E=12,
+F=13, G=13: 87 total primary-stack episodes per paired seed. A stationary/no-fault
+negative control runs on the frozen subset of confirmation seeds; it must satisfy P4
+hold success and create no recovery event.
+
+## Invariants and transition table
+
+Required invariants: no expired/not-yet-valid execution; no older-observation
+supersession; finite selected shape; frozen bounded queue/in-flight state; immutable
+issued absolute ticks; safe hold instead of indefinite stale action; non-regressing
+events; one request per observation; coherent lifecycle; and no network, remote, or
+physical path.
+
+| arrival/state | queue transition | lifecycle | sidecar disposition |
+|---|---|---|---|
+| valid direct A/B/D/E | protocol enqueue/replace unissued | response, old replace if needed, new accept | direct/replaced |
+| valid C/F/G | recompute only unissued, create derived chunk | response for derived, old replace, new accept | ensembled/blended/conditioned |
+| expired or older | unchanged | no executable action event | rejected-expired/rejected-out-of-order |
+| dropped or paused | unchanged until exhaustion | request visible; hold accepted on exhaustion | dropped/paused |
+| no valid future | replace with hold chunk | old replacement/expiry then hold accept/execute | hold metadata |
+
+## Pilot, freeze, confirmation, and resume
+
+Pilot uses eight paired seeds: four tuning then four one-shot validation seeds. It has
+at most 104 episodes per protocol and 696 primary-stack episodes. Begin at the base
+vector; choose exactly one vector by tuning-seed mean paired recovery success subject
+to zero invariant violations; run it once on validation seeds without re-selection.
+
+Finite pilot sets are K in {1,2,4} with K+1<=H; I in {1,2,4}; lambda in {0,1,4} per
+second; M in {1,2,4} with M<=H; L in {1,2,4} with L<=H; timeout in {1.0,1.5,2.0}P.
+Values outside P4 horizon are omitted, not rounded. One scalar group may change per
+revision; there are at most two revisions and three vectors per protocol/revision.
+
+Freeze hashes code/config/P2-P4 provenance, eligibility matrix, selected scalars,
+grid/fault table, metrics, margins, and bootstrap procedure. It freezes only the
+confirmation RNG procedure and count (32), never future seed values. After freeze the
+orchestrator generates exactly 32 new paired seeds and publishes immutable
+seed-manifest.json before execution.
+
+Confirmation is 2,784 primary-stack episodes (32 * 87); no protocol exceeds 416,
+below the 1,024-per-variant ceiling. Run four serial shards of eight confirmation
+seeds; pilot uses two serial shards of four. CLI arguments are --phase,
+--seed-manifest, --shard-index, --shard-count, --output-dir, --headless, --dry-run,
+and --max-episodes. Existing outputs are validate-and-skip only when rollout, sidecar,
+and manifest hashes all validate; conflicting, partial, or mismatched outputs fail.
+--max-episodes is smoke-only unless it equals a shard's manifest count.
+
+## Primary decision, multiplicity, and equality
+
+Primary estimand: paired seed-level recovery-success difference, candidate minus A,
+equal-weighted over that protocol's applicable frozen conditions. Higher is better.
+The six B--G contrasts on the sole primary stack are one family and use deterministic
+10,000-resample paired percentile bootstrap with Bonferroni-adjusted intervals.
+
+Pilot derives then freeze records minimum worthwhile improvement delta, maximum p95
+age/jerk/discontinuity, maximum hold/overrun rates, and discontinuity trigger; P4
+supplies recovery deadline. Exact equality at a maximum passes (value <= limit); a
+nonfinite/unclamped unsafe output or invariant violation fails. Efficacy requires the
+adjusted lower endpoint strictly greater than delta; equality does not pass.
+
+Select exactly one safety- and efficacy-eligible candidate by fixed order B,C,D,E,F,G.
+The result is SUPPORTED iff one selection exists. It is NOT_SUPPORTED iff every
+completed valid candidate either has adjusted upper endpoint <= delta or fails a
+frozen non-efficacy gate, with no invalid/imprecise evidence. It is INCONCLUSIVE
+otherwise: any interval straddling/equaling delta, invalid negative control, missing
+artifact, systematic protocol-specific loss, or invalid shard. Descriptive secondary
+results cannot affect the primary label or selected protocol.
+
+## Artifact, test, source, and parallel boundaries
+
+experiments/02_action_chunks owns claim/experiment/results/interface/decision
+documents; configs/base.yaml and configs/frozen.yaml; run.py; source modules broker,
+protocols, schedule, task_adapter, evaluate; matching tests; pilot/confirmation
+manifests, aggregates, bootstrap/decision output, plots, and proposal sidecars. Every
+rollout and sidecar is create-only. Tests cover all formulas/state rows, source
+ownership/parent hashes, A inside-horizon placement, all applicable faults, safe hold,
+absolute-tick immutability, determinism/resume, metric/bootstrap equality boundaries,
+artifact validation, and headless replay. Confirmation also requires P2/P3 audit, P4
+input hashes, safety guard, full suite, secret/artifact scan, and git diff --check.
+
+P5 runtime needs only P3-approved MuJoCo and the P4 local adapter. ACT temporal
+ensembling, LeRobot async/RTC, and OpenPI broker are study-only P3 source seams; P5
+imports/copies none. One worker owns broker/protocol tests, one owns adapter/scheduler/
+evaluator tests, and one owns config/CLI/artifact/report tests. They do not edit P4 or
+reflect; integration is broker, adapter, then artifact/replay validation, and all
+latency-bearing shards run serially.
+
+## Self-review
+
+The design blocks rather than weakens the multi-step P4 prerequisite, makes request
+timing protocol-specific, serializes raw and derived actions audibly, fixes fault
+denominators and resource counts, selects one primary protocol, and never calls an
+approximation RTC-compatible.
