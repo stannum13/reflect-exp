@@ -15,7 +15,6 @@ import math
 import os
 from pathlib import Path
 import re
-import shutil
 import sys
 import tempfile
 from types import MappingProxyType
@@ -26,6 +25,19 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from reflect._rollout_io import (
+    ArtifactIOError,
+    ArtifactSnapshot,
+    cleanup_exact_directory,
+    entry_identity,
+    fsync_directory,
+    open_directory,
+    open_directory_at,
+    path_matches_directory,
+    read_artifact_snapshot,
+    write_bytes as write_descriptor_bytes,
+    write_file as write_descriptor_file,
+)
 from reflect.events import (
     EventValidationError,
     ExecutionEvent,
@@ -195,6 +207,7 @@ class RolloutMetadata:
     experiment_id: str
     claim_revision: int
     git_sha: str
+    working_tree_clean: bool
     dirty_diff_hash: str | None
     source_lock_hash: str
     os_arch: str
@@ -225,11 +238,18 @@ class RolloutMetadata:
         if not isinstance(self.git_sha, str) or _GIT_SHA_RE.fullmatch(self.git_sha) is None:
             raise RolloutValidationError("git_sha must be a 40- or 64-digit hexadecimal Git SHA")
         object.__setattr__(self, "git_sha", self.git_sha.lower())
+        if type(self.working_tree_clean) is not bool:
+            raise RolloutValidationError("working_tree_clean must be a boolean")
         if self.dirty_diff_hash is not None:
             object.__setattr__(
                 self,
                 "dirty_diff_hash",
                 _sha256(self.dirty_diff_hash, "dirty_diff_hash"),
+            )
+        if self.working_tree_clean != (self.dirty_diff_hash is None):
+            raise RolloutValidationError(
+                "working_tree_clean requires no dirty_diff_hash when true and a "
+                "valid dirty_diff_hash when false"
             )
         object.__setattr__(
             self, "source_lock_hash", _sha256(self.source_lock_hash, "source_lock_hash")
@@ -489,32 +509,18 @@ def _action_rows(record: RolloutRecord) -> list[dict[str, Any]]:
     return rows
 
 
-def _write_bytes(path: Path, data: bytes) -> None:
-    with path.open("xb") as handle:
-        handle.write(data)
-        handle.flush()
-        os.fsync(handle.fileno())
+def _write_bytes(directory_descriptor: int, name: str, data: bytes) -> str:
+    return write_descriptor_bytes(directory_descriptor, name, data)
 
 
-def _fsync_file(path: Path) -> None:
-    with path.open("rb") as handle:
-        os.fsync(handle.fileno())
-
-
-def _fsync_directory(path: Path) -> None:
-    descriptor = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-
-def _publish_directory(source: Path, destination: Path) -> None:
+def _publish_directory(
+    output_root_descriptor: int, source_name: str, destination_name: str
+) -> None:
     """Atomically rename a directory while failing if the destination exists."""
     if sys.platform == "darwin":
-        function_name, at_fdcwd, no_replace = "renameatx_np", -2, 0x00000004
+        function_name, no_replace = "renameatx_np", 0x00000004
     elif sys.platform.startswith("linux"):
-        function_name, at_fdcwd, no_replace = "renameat2", -100, 0x00000001
+        function_name, no_replace = "renameat2", 0x00000001
     else:
         raise RolloutValidationError(
             "atomic no-replace publication is unavailable on this platform"
@@ -533,17 +539,17 @@ def _publish_directory(source: Path, destination: Path) -> None:
     ]
     function.restype = ctypes.c_int
     if function(
-        at_fdcwd,
-        os.fsencode(source),
-        at_fdcwd,
-        os.fsencode(destination),
+        output_root_descriptor,
+        os.fsencode(source_name),
+        output_root_descriptor,
+        os.fsencode(destination_name),
         no_replace,
     ) == 0:
         return
     error = ctypes.get_errno()
     if error in {errno.EEXIST, errno.ENOTEMPTY}:
-        raise RolloutValidationError(f"rollout already exists: {destination}")
-    raise OSError(error, os.strerror(error), destination)
+        raise RolloutValidationError(f"rollout already exists: {destination_name}")
+    raise OSError(error, os.strerror(error), destination_name)
 
 
 _CHUNK_EVENT_TYPES = frozenset(
@@ -580,6 +586,10 @@ def _validate_contents(
     if sha256_json(config) != metadata.task_config_hash:
         raise RolloutValidationError("task_config_hash does not match config.json")
 
+    def require_monotonic_bound(value: int, name: str) -> None:
+        if not metadata.monotonic_start_ns <= value <= metadata.monotonic_end_ns:
+            raise RolloutValidationError(f"{name} falls outside rollout monotonic bounds")
+
     observation_by_id: dict[int, Observation] = {}
     previous_observation: Observation | None = None
     robot_width: int | None = None
@@ -592,6 +602,8 @@ def _validate_contents(
             raise RolloutValidationError("observation sequence IDs must be unique")
         if observation.received_time_ns < observation.source_time_ns:
             raise RolloutValidationError("observation received time precedes source time")
+        require_monotonic_bound(observation.source_time_ns, "observation source time")
+        require_monotonic_bound(observation.received_time_ns, "observation received time")
         if previous_observation is not None:
             if observation.sequence_id <= previous_observation.sequence_id:
                 raise RolloutValidationError("observation sequence IDs must increase")
@@ -623,10 +635,21 @@ def _validate_contents(
             raise RolloutValidationError(
                 f"action {action.chunk_id} source observation time does not match"
             )
-        if action.generated_time_ns < action.source_observation_time_ns:
+        if source.current_skill_id is not None and source.current_skill_id != action.skill_id:
             raise RolloutValidationError(
-                f"action {action.chunk_id} was generated before its source observation"
+                f"action {action.chunk_id} skill_id does not match its source observation"
             )
+        if action.generated_time_ns < source.received_time_ns:
+            raise RolloutValidationError(
+                f"action {action.chunk_id} was generated before its source observation was received"
+            )
+        for value, name in (
+            (action.source_observation_time_ns, "source observation time"),
+            (action.generated_time_ns, "generated time"),
+            (action.valid_from_ns, "valid-from time"),
+            (action.expires_at_ns, "expiry time"),
+        ):
+            require_monotonic_bound(value, f"action {action.chunk_id} {name}")
         if action.actions.ndim != 2 or not np.isfinite(action.actions).all():
             raise RolloutValidationError("stored action arrays must be rank 2 and finite")
         canonical_json_bytes(action.metadata)
@@ -640,14 +663,38 @@ def _validate_contents(
         action = action_by_id.get(reference.source_chunk_id)
         if action is None:
             raise RolloutValidationError("control reference has an unknown source_chunk_id")
+        require_monotonic_bound(reference.time_ns, "control reference time")
         if not action.valid_from_ns <= reference.time_ns <= action.expires_at_ns:
             raise RolloutValidationError(
                 "control reference time must fall within its source chunk validity interval"
             )
 
     previous_event: ExecutionEvent | None = None
-    observation_event_ids: set[int] = set()
-    chunk_event_ids: set[str] = set()
+    observation_event_counts = {observation_id: 0 for observation_id in observation_by_id}
+    chunk_lifecycle = {chunk_id: "unseen" for chunk_id in action_by_id}
+    executed_reference_keys: set[tuple[str, int]] = set()
+
+    def referenced_action(event: ExecutionEvent, key: str) -> ActionChunk:
+        chunk_id = _reference_id(event.payload, key, str, event.event_type.value)
+        action = action_by_id.get(chunk_id)
+        if action is None:
+            raise RolloutValidationError(f"event {key} is not stored")
+        if event.skill_id != action.skill_id:
+            raise RolloutValidationError(
+                f"{event.event_type.value} skill_id does not match action {chunk_id}"
+            )
+        for observation_key in ("observation_id", "source_observation_id"):
+            if observation_key in event.payload:
+                observation_id = _reference_id(
+                    event.payload, observation_key, int, event.event_type.value
+                )
+                if observation_id != action.source_observation_id:
+                    raise RolloutValidationError(
+                        f"{event.event_type.value} {observation_key} does not match "
+                        f"action {chunk_id}"
+                    )
+        return action
+
     for event in events:
         try:
             event_from_dict(event_to_dict(event))
@@ -674,22 +721,85 @@ def _validate_contents(
                 raise RolloutValidationError(
                     "OBSERVATION_RECEIVED observation_id is not stored"
                 )
-            observation_event_ids.add(observation_id)
-        if event.event_type in _CHUNK_EVENT_TYPES:
-            chunk_id = _reference_id(
-                event.payload, "chunk_id", str, event.event_type.value
-            )
-            if chunk_id not in action_by_id:
+            observation = observation_by_id[observation_id]
+            if event.monotonic_time_ns != observation.received_time_ns:
                 raise RolloutValidationError(
-                    f"{event.event_type.value} chunk_id is not stored"
+                    "OBSERVATION_RECEIVED time does not match observation received_time_ns"
                 )
-            chunk_event_ids.add(chunk_id)
+            if event.skill_id != observation.current_skill_id:
+                raise RolloutValidationError(
+                    "OBSERVATION_RECEIVED skill_id does not match observation"
+                )
+            observation_event_counts[observation_id] += 1
+        if event.event_type in _CHUNK_EVENT_TYPES:
+            action = referenced_action(event, "chunk_id")
+            chunk_id = action.chunk_id
+            if event.monotonic_time_ns < action.generated_time_ns:
+                raise RolloutValidationError(
+                    f"{event.event_type.value} occurs before chunk generation"
+                )
+            if event.event_type is ExecutionEventType.CHUNK_REPLACED:
+                if chunk_lifecycle[chunk_id] != "accepted":
+                    raise RolloutValidationError(
+                        "CHUNK_REPLACED requires one previously accepted chunk lifecycle"
+                    )
+                if event.monotonic_time_ns > action.expires_at_ns:
+                    raise RolloutValidationError(
+                        "CHUNK_REPLACED cannot replace an expired chunk"
+                    )
+                chunk_lifecycle[chunk_id] = "replaced"
+            elif chunk_lifecycle[chunk_id] != "unseen":
+                raise RolloutValidationError(
+                    f"chunk {chunk_id} has a contradictory lifecycle transition"
+                )
+            elif event.event_type is ExecutionEventType.CHUNK_ACCEPTED:
+                if event.monotonic_time_ns > action.expires_at_ns:
+                    raise RolloutValidationError(
+                        f"{event.event_type.value} accepted an expired chunk"
+                    )
+                chunk_lifecycle[chunk_id] = "accepted"
+            elif event.event_type is ExecutionEventType.CHUNK_REJECTED_EXPIRED:
+                if event.monotonic_time_ns < action.expires_at_ns:
+                    raise RolloutValidationError(
+                        "CHUNK_REJECTED_EXPIRED must occur at or after expiry"
+                    )
+                chunk_lifecycle[chunk_id] = "rejected"
+            else:
+                chunk_lifecycle[chunk_id] = "rejected"
         if event.event_type is ExecutionEventType.ACTION_EXECUTED:
-            chunk_id = _reference_id(
-                event.payload, "source_chunk_id", str, event.event_type.value
-            )
-            if chunk_id not in action_by_id:
-                raise RolloutValidationError("ACTION_EXECUTED source_chunk_id is not stored")
+            action = referenced_action(event, "source_chunk_id")
+            if "time_ns" in event.payload:
+                reference_time = _reference_id(
+                    event.payload, "time_ns", int, event.event_type.value
+                )
+                if reference_time != event.monotonic_time_ns:
+                    raise RolloutValidationError(
+                        "ACTION_EXECUTED time_ns does not match its saved ControlReference"
+                    )
+            if not action.valid_from_ns <= event.monotonic_time_ns <= action.expires_at_ns:
+                raise RolloutValidationError(
+                    "ACTION_EXECUTED time must fall within its source chunk validity interval"
+                )
+            if chunk_lifecycle[action.chunk_id] != "accepted":
+                raise RolloutValidationError(
+                    "ACTION_EXECUTED requires a currently accepted source chunk"
+                )
+            matches = [
+                reference
+                for reference in control_references
+                if reference.source_chunk_id == action.chunk_id
+                and reference.time_ns == event.monotonic_time_ns
+            ]
+            if len(matches) != 1:
+                raise RolloutValidationError(
+                    "ACTION_EXECUTED must resolve to exactly one saved ControlReference"
+                )
+            reference_key = (action.chunk_id, event.monotonic_time_ns)
+            if reference_key in executed_reference_keys:
+                raise RolloutValidationError(
+                    "one saved ControlReference cannot be executed more than once"
+                )
+            executed_reference_keys.add(reference_key)
         for key in ("observation_id", "source_observation_id"):
             if key in event.payload:
                 observation_id = _reference_id(event.payload, key, int, event.event_type.value)
@@ -701,11 +811,11 @@ def _validate_contents(
                 if chunk_id not in action_by_id:
                     raise RolloutValidationError(f"event {key} is not stored")
         previous_event = event
-    if observation_event_ids != set(observation_by_id):
+    if any(count != 1 for count in observation_event_counts.values()):
         raise RolloutValidationError(
-            "observation event references must cover exactly the stored observations"
+            "each stored observation requires exactly one OBSERVATION_RECEIVED event"
         )
-    if chunk_event_ids != set(action_by_id):
+    if any(state == "unseen" for state in chunk_lifecycle.values()):
         raise RolloutValidationError(
             "action event references must cover exactly the stored actions"
         )
@@ -746,56 +856,121 @@ class RolloutWriter:
             actions=record.actions,
             control_references=record.control_references,
         )
-        if self._path.exists():
-            raise RolloutValidationError(f"rollout already exists: {self._path}")
         self._output_root.mkdir(parents=True, exist_ok=True)
-        temporary = Path(
-            tempfile.mkdtemp(prefix=f".{self._rollout_id}.", dir=self._output_root)
-        ).resolve(strict=True)
-        if temporary.parent != self._output_root:
-            raise RolloutValidationError("temporary rollout escaped the output root")
         try:
-            payloads = {
-                "config.json": canonical_json_bytes(record.config),
-                "metrics.json": canonical_json_bytes(record.metrics),
-                "events.jsonl": b"".join(
-                    canonical_json_bytes(event_to_dict(event)) + b"\n"
-                    for event in record.events
-                ),
-                "observations.npz": _observations_npz_bytes(record.observations),
-                "summary.md": record.summary.encode("utf-8"),
-            }
-            for filename, data in payloads.items():
-                _write_bytes(temporary / filename, data)
-
-            table = pa.Table.from_pylist(_action_rows(record), schema=_ACTION_SCHEMA)
-            pq.write_table(
-                table,
-                temporary / "actions.parquet",
-                compression="zstd",
-                use_dictionary=False,
-                write_statistics=False,
-                version="2.6",
-                data_page_version="1.0",
+            output_root_descriptor, output_root_identity = open_directory(
+                self._output_root
             )
-            _fsync_file(temporary / "actions.parquet")
-
-            artifact_hashes = {
-                filename: hashlib.sha256((temporary / filename).read_bytes()).hexdigest()
-                for filename in sorted(_PAYLOAD_FILES)
-            }
-            _write_bytes(
-                temporary / "metadata.json",
-                canonical_json_bytes(_metadata_dict(record.metadata, artifact_hashes)),
+        except ArtifactIOError as exc:
+            raise RolloutValidationError(str(exc)) from exc
+        try:
+            if entry_identity(output_root_descriptor, self._rollout_id) is not None:
+                raise RolloutValidationError(f"rollout already exists: {self._path}")
+            temporary_location = tempfile.mkdtemp(
+                prefix=f".{self._rollout_id}.",
+                dir=self._output_root,
             )
-            _fsync_directory(temporary)
-            _publish_directory(temporary, self._path)
-            _fsync_directory(self._output_root)
-            return self._path
-        except Exception:
-            if temporary.exists() and temporary.parent == self._output_root:
-                shutil.rmtree(temporary)
-            raise
+            try:
+                temporary_name = Path(temporary_location).name
+                temporary_descriptor, temporary_identity = open_directory_at(
+                    output_root_descriptor, temporary_name
+                )
+                published = False
+                try:
+                    payloads = {
+                        "config.json": canonical_json_bytes(record.config),
+                        "metrics.json": canonical_json_bytes(record.metrics),
+                        "events.jsonl": b"".join(
+                            canonical_json_bytes(event_to_dict(event)) + b"\n"
+                            for event in record.events
+                        ),
+                        "observations.npz": _observations_npz_bytes(
+                            record.observations
+                        ),
+                        "summary.md": record.summary.encode("utf-8"),
+                    }
+                    artifact_hashes = {
+                        filename: _write_bytes(
+                            temporary_descriptor, filename, data
+                        )
+                        for filename, data in payloads.items()
+                    }
+
+                    table = pa.Table.from_pylist(
+                        _action_rows(record), schema=_ACTION_SCHEMA
+                    )
+
+                    def write_parquet(handle: Any) -> None:
+                        pq.write_table(
+                            table,
+                            handle,
+                            compression="zstd",
+                            use_dictionary=False,
+                            write_statistics=False,
+                            version="2.6",
+                            data_page_version="1.0",
+                        )
+
+                    artifact_hashes["actions.parquet"] = write_descriptor_file(
+                        temporary_descriptor,
+                        "actions.parquet",
+                        write_parquet,
+                    )
+                    _write_bytes(
+                        temporary_descriptor,
+                        "metadata.json",
+                        canonical_json_bytes(
+                            _metadata_dict(record.metadata, artifact_hashes)
+                        ),
+                    )
+                    fsync_directory(temporary_descriptor)
+                    if not path_matches_directory(
+                        self._output_root, output_root_identity
+                    ):
+                        raise RolloutValidationError(
+                            "output root identity changed during rollout write"
+                        )
+                    if (
+                        entry_identity(output_root_descriptor, temporary_name)
+                        != temporary_identity
+                    ):
+                        raise RolloutValidationError(
+                            "temporary directory identity changed during rollout write"
+                        )
+                    _publish_directory(
+                        output_root_descriptor,
+                        temporary_name,
+                        self._rollout_id,
+                    )
+                    if (
+                        entry_identity(output_root_descriptor, self._rollout_id)
+                        != temporary_identity
+                    ):
+                        raise RolloutValidationError(
+                            "published directory identity does not match created temp inode"
+                        )
+                    fsync_directory(output_root_descriptor)
+                    if not path_matches_directory(
+                        self._output_root, output_root_identity
+                    ):
+                        raise RolloutValidationError(
+                            "output root identity changed during rollout publication"
+                        )
+                    published = True
+                    return self._path
+                finally:
+                    if not published:
+                        cleanup_exact_directory(
+                            output_root_descriptor,
+                            temporary_descriptor,
+                            temporary_identity,
+                            temporary_name,
+                        )
+                    os.close(temporary_descriptor)
+            except ArtifactIOError as exc:
+                raise RolloutValidationError(str(exc)) from exc
+        finally:
+            os.close(output_root_descriptor)
 
 
 def _reject_json_constant(value: str) -> None:
@@ -829,29 +1004,10 @@ def _parse_json(data: bytes, name: str, *, require_canonical: bool = True) -> An
     return value
 
 
-def _inspect_files(path: Path) -> tuple[str, ...]:
-    if not path.is_dir():
-        raise RolloutValidationError(f"rollout path is not a directory: {path}")
-    entries = tuple(path.iterdir())
-    non_files = sorted(
-        entry.name for entry in entries if entry.is_symlink() or not entry.is_file()
-    )
-    if non_files:
-        raise RolloutValidationError(
-            f"rollout entries must be regular files, not links/directories: {non_files}"
-        )
-    names = {entry.name for entry in entries}
-    missing = _REQUIRED_FILES - names
-    if missing:
-        raise RolloutValidationError(f"missing required rollout files: {sorted(missing)}")
-    unexpected = names - _REQUIRED_FILES - _OPTIONAL_FILES
-    if unexpected:
-        raise RolloutValidationError(f"unexpected file in rollout: {sorted(unexpected)}")
-    return tuple(sorted(names & _OPTIONAL_FILES))
-
-
-def _read_metadata(path: Path, optional_files: tuple[str, ...]) -> tuple[RolloutMetadata, Mapping[str, str]]:
-    raw = _parse_json((path / "metadata.json").read_bytes(), "metadata.json")
+def _read_metadata(
+    data: bytes, optional_files: tuple[str, ...]
+) -> tuple[RolloutMetadata, Mapping[str, str]]:
+    raw = _parse_json(data, "metadata.json")
     if not isinstance(raw, dict):
         raise RolloutValidationError("metadata.json must contain an object")
     metadata_names = {field.name for field in fields(RolloutMetadata)}
@@ -887,8 +1043,7 @@ def _read_metadata(path: Path, optional_files: tuple[str, ...]) -> tuple[Rollout
     return metadata, artifact_hashes
 
 
-def _load_events(path: Path) -> tuple[ExecutionEvent, ...]:
-    data = path.read_bytes()
+def _load_events(data: bytes) -> tuple[ExecutionEvent, ...]:
     if not data:
         return ()
     lines = data.splitlines(keepends=True)
@@ -960,9 +1115,21 @@ def _load_object_beliefs(text: str, row: int) -> tuple[ObjectBelief, ...]:
     return tuple(beliefs)
 
 
-def _load_observations(path: Path) -> tuple[Observation, ...]:
+def _load_observations(data: bytes) -> tuple[Observation, ...]:
     try:
-        with np.load(path, allow_pickle=False) as archive:
+        with zipfile.ZipFile(io.BytesIO(data), "r") as raw_archive:
+            member_names = [info.filename for info in raw_archive.infolist()]
+        expected_members = {f"{name}.npy" for name in _OBSERVATION_ARRAYS}
+        if len(member_names) != len(set(member_names)):
+            raise RolloutValidationError(
+                "observations.npz contains duplicate raw NPZ members"
+            )
+        if set(member_names) != expected_members:
+            raise RolloutValidationError(
+                "observations.npz must contain exactly one canonical <name>.npy "
+                "member per declared key"
+            )
+        with np.load(io.BytesIO(data), allow_pickle=False) as archive:
             arrays = {name: np.array(archive[name], copy=True) for name in archive.files}
     except (OSError, ValueError, KeyError, zipfile.BadZipFile) as exc:
         raise RolloutValidationError(f"observations.npz is invalid: {exc}") from exc
@@ -1020,9 +1187,9 @@ def _required_row_values(row: Mapping[str, Any], names: frozenset[str], kind: st
         raise RolloutValidationError(f"stored {kind} row has null required fields: {missing}")
 
 
-def _load_actions(path: Path) -> tuple[tuple[ActionChunk, ...], tuple[ControlReference, ...]]:
+def _load_actions(data: bytes) -> tuple[tuple[ActionChunk, ...], tuple[ControlReference, ...]]:
     try:
-        table = pq.read_table(path)
+        table = pq.read_table(pa.BufferReader(data))
     except (OSError, pa.ArrowException) as exc:
         raise RolloutValidationError(f"actions.parquet is invalid: {exc}") from exc
     if table.schema != _ACTION_SCHEMA:
@@ -1101,25 +1268,41 @@ def _load_actions(path: Path) -> tuple[tuple[ActionChunk, ...], tuple[ControlRef
     return tuple(actions), tuple(references)
 
 
-def _load_rollout(path: Path) -> RolloutArtifact:
-    resolved = path.resolve(strict=False)
-    optional_files = _inspect_files(resolved)
+def _snapshot_rollout(path: Path) -> ArtifactSnapshot:
     try:
-        metadata, artifact_hashes = _read_metadata(resolved, optional_files)
-        config = _parse_json((resolved / "config.json").read_bytes(), "config.json")
-        metrics = _parse_json((resolved / "metrics.json").read_bytes(), "metrics.json")
+        return read_artifact_snapshot(path, _REQUIRED_FILES, _OPTIONAL_FILES)
+    except ArtifactIOError as exc:
+        raise RolloutValidationError(str(exc)) from exc
+
+
+def _load_rollout(snapshot: ArtifactSnapshot, *, verify_hashes: bool) -> RolloutArtifact:
+    payloads = snapshot.payloads
+    optional_files = snapshot.optional_files
+    try:
+        metadata, artifact_hashes = _read_metadata(
+            payloads["metadata.json"], optional_files
+        )
+        if verify_hashes:
+            for filename, expected in artifact_hashes.items():
+                actual = hashlib.sha256(payloads[filename]).hexdigest()
+                if actual != expected:
+                    raise RolloutValidationError(
+                        f"artifact hash mismatch for {filename}"
+                    )
+        config = _parse_json(payloads["config.json"], "config.json")
+        metrics = _parse_json(payloads["metrics.json"], "metrics.json")
         if not isinstance(config, dict) or not isinstance(metrics, dict):
             raise RolloutValidationError("config.json and metrics.json must contain objects")
-        events = _load_events(resolved / "events.jsonl")
-        observations = _load_observations(resolved / "observations.npz")
-        actions, references = _load_actions(resolved / "actions.parquet")
-        summary = (resolved / "summary.md").read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
+        events = _load_events(payloads["events.jsonl"])
+        observations = _load_observations(payloads["observations.npz"])
+        actions, references = _load_actions(payloads["actions.parquet"])
+        summary = payloads["summary.md"].decode("utf-8")
+    except (OSError, UnicodeDecodeError, KeyError) as exc:
         raise RolloutValidationError(f"could not load rollout: {exc}") from exc
     frozen_config = _freeze_json(config, "config")
     frozen_metrics = _freeze_json(metrics, "metrics")
     artifact = RolloutArtifact(
-        path=resolved,
+        path=snapshot.path,
         schema_version=SCHEMA_VERSION,
         metadata=metadata,
         artifact_hashes=artifact_hashes,
@@ -1133,7 +1316,7 @@ def _load_rollout(path: Path) -> RolloutArtifact:
         optional_files=optional_files,
     )
     _validate_contents(
-        rollout_id=resolved.name,
+        rollout_id=snapshot.path.name,
         metadata=metadata,
         config=frozen_config,
         events=events,
@@ -1146,19 +1329,12 @@ def _load_rollout(path: Path) -> RolloutArtifact:
 
 def load_rollout(path: Path) -> RolloutArtifact:
     """Parse and reconstruct the declared rollout files without trusting pickles."""
-    return _load_rollout(Path(path))
+    return _load_rollout(_snapshot_rollout(Path(path)), verify_hashes=False)
 
 
 def validate_rollout(path: Path) -> RolloutArtifact:
     """Strictly verify hashes, schemas, safety, ordering, and cross-references."""
-    resolved = Path(path).resolve(strict=False)
-    optional_files = _inspect_files(resolved)
-    _, artifact_hashes = _read_metadata(resolved, optional_files)
-    for filename, expected in artifact_hashes.items():
-        actual = hashlib.sha256((resolved / filename).read_bytes()).hexdigest()
-        if actual != expected:
-            raise RolloutValidationError(f"artifact hash mismatch for {filename}")
-    return _load_rollout(resolved)
+    return _load_rollout(_snapshot_rollout(Path(path)), verify_hashes=True)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

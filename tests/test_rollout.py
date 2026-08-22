@@ -3,15 +3,19 @@ from __future__ import annotations
 from dataclasses import fields, replace
 from enum import Enum
 import hashlib
+import io
 import json
+import os
 from pathlib import Path
 from types import MappingProxyType
+import zipfile
 
 import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+import reflect.rollout as rollout_module
 from reflect.events import ExecutionEvent, ExecutionEventType
 from reflect.rollout import (
     SCHEMA_VERSION,
@@ -47,6 +51,7 @@ def valid_metadata(**changes: object) -> RolloutMetadata:
         "experiment_id": "experiment-01",
         "claim_revision": 2,
         "git_sha": "1" * 40,
+        "working_tree_clean": True,
         "dirty_diff_hash": None,
         "source_lock_hash": "2" * 64,
         "os_arch": "linux-x86_64",
@@ -61,9 +66,9 @@ def valid_metadata(**changes: object) -> RolloutMetadata:
         "action_schema_version": SCHEMA_VERSION,
         "observation_schema_version": SCHEMA_VERSION,
         "wall_start_ns": 10_000,
-        "wall_end_ns": 10_030,
-        "monotonic_start_ns": 1_000,
-        "monotonic_end_ns": 1_030,
+        "wall_end_ns": 10_190,
+        "monotonic_start_ns": 100,
+        "monotonic_end_ns": 290,
         "status": "pass",
         "physical_deployment_allowed": False,
     }
@@ -153,16 +158,28 @@ def valid_control_references() -> tuple[ControlReference, ...]:
 def valid_events(rollout_id: str = "rollout-1") -> tuple[ExecutionEvent, ...]:
     config_hash = sha256_json(CONFIG)
     definitions = (
-        (ExecutionEventType.OBSERVATION_RECEIVED, 1_000, 0, {"observation_id": 0}),
-        (ExecutionEventType.CHUNK_ACCEPTED, 1_010, 1, {"chunk_id": "chunk-0"}),
-        (ExecutionEventType.OBSERVATION_RECEIVED, 1_020, 2, {"observation_id": 1}),
-        (ExecutionEventType.CHUNK_ACCEPTED, 1_030, 3, {"chunk_id": "chunk-1"}),
+        (ExecutionEventType.OBSERVATION_RECEIVED, 110, 0, {"observation_id": 0}),
+        (
+            ExecutionEventType.CHUNK_ACCEPTED,
+            130,
+            1,
+            {"chunk_id": "chunk-0", "source_observation_id": 0},
+        ),
+        (ExecutionEventType.ACTION_EXECUTED, 140, 2, {"source_chunk_id": "chunk-0"}),
+        (ExecutionEventType.OBSERVATION_RECEIVED, 210, 3, {"observation_id": 1}),
+        (
+            ExecutionEventType.CHUNK_ACCEPTED,
+            230,
+            4,
+            {"chunk_id": "chunk-1", "source_observation_id": 1},
+        ),
+        (ExecutionEventType.ACTION_EXECUTED, 240, 5, {"source_chunk_id": "chunk-1"}),
     )
     return tuple(
         ExecutionEvent(
             event_type=event_type,
             monotonic_time_ns=monotonic_time_ns,
-            wall_time_ns=10_000 + (monotonic_time_ns - 1_000),
+            wall_time_ns=10_000 + (monotonic_time_ns - 100),
             rollout_id=rollout_id,
             sequence_id=sequence_id,
             component="rollout-test",
@@ -344,6 +361,21 @@ def test_metadata_rejects_invalid_or_unsafe_values(
         valid_metadata(**change)
 
 
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"working_tree_clean": "yes"},
+        {"working_tree_clean": True, "dirty_diff_hash": "4" * 64},
+        {"working_tree_clean": False, "dirty_diff_hash": None},
+    ],
+)
+def test_metadata_requires_exactly_one_clean_status_or_dirty_diff_hash(
+    change: dict[str, object],
+) -> None:
+    with pytest.raises(RolloutValidationError, match="working_tree_clean"):
+        valid_metadata(**change)
+
+
 def test_writer_rejects_a_target_outside_output_root(tmp_path: Path) -> None:
     root = tmp_path / "results"
 
@@ -403,15 +435,202 @@ def test_writer_preserves_a_chunk_rejected_after_expiry(tmp_path: Path) -> None:
     actions = (actions[0], replace(actions[1], generated_time_ns=300))
     events = valid_events()
     events = (
-        *events[:-1],
-        replace(events[-1], event_type=ExecutionEventType.CHUNK_REJECTED_EXPIRED),
+        *events[:-2],
+        replace(
+            events[-2],
+            event_type=ExecutionEventType.CHUNK_REJECTED_EXPIRED,
+            monotonic_time_ns=300,
+            wall_time_ns=10_200,
+        ),
     )
 
     artifact_path = RolloutWriter(tmp_path, "rollout-1").write(
-        valid_record(actions=actions, events=events)
+        valid_record(
+            actions=actions,
+            events=events,
+            control_references=valid_control_references()[:1],
+            metadata=valid_metadata(
+                monotonic_end_ns=300,
+                wall_end_ns=10_200,
+            ),
+        )
     )
 
     assert validate_rollout(artifact_path).actions[1].generated_time_ns == 300
+
+
+def test_writer_rejects_chunk_acceptance_after_expiry(tmp_path: Path) -> None:
+    events = list(valid_events())
+    events[4] = replace(events[4], monotonic_time_ns=291, wall_time_ns=10_191)
+    events[5] = replace(events[5], monotonic_time_ns=292, wall_time_ns=10_192)
+
+    with pytest.raises(RolloutValidationError, match="expired"):
+        RolloutWriter(tmp_path, "rollout-1").write(
+            valid_record(
+                events=tuple(events),
+                metadata=valid_metadata(
+                    monotonic_end_ns=292,
+                    wall_end_ns=10_192,
+                ),
+            )
+        )
+
+
+def test_writer_rejects_expired_rejection_before_expiry(tmp_path: Path) -> None:
+    events = list(valid_events())
+    events[4] = replace(
+        events[4], event_type=ExecutionEventType.CHUNK_REJECTED_EXPIRED
+    )
+    events.pop()
+
+    with pytest.raises(RolloutValidationError, match="at or after expiry"):
+        RolloutWriter(tmp_path, "rollout-1").write(
+            valid_record(
+                events=tuple(events),
+                control_references=valid_control_references()[:1],
+            )
+        )
+
+
+def test_writer_rejects_action_execution_outside_chunk_validity(tmp_path: Path) -> None:
+    events = list(valid_events())
+    events[5] = replace(events[5], monotonic_time_ns=291, wall_time_ns=10_191)
+
+    with pytest.raises(RolloutValidationError, match="validity interval"):
+        RolloutWriter(tmp_path, "rollout-1").write(
+            valid_record(
+                events=tuple(events),
+                metadata=valid_metadata(
+                    monotonic_end_ns=291,
+                    wall_end_ns=10_191,
+                ),
+            )
+        )
+
+
+def test_writer_rejects_duplicate_observation_received_events(tmp_path: Path) -> None:
+    events = list(valid_events())
+    events.insert(1, replace(events[0], sequence_id=1))
+    events = [replace(event, sequence_id=index) for index, event in enumerate(events)]
+
+    with pytest.raises(RolloutValidationError, match="exactly one OBSERVATION_RECEIVED"):
+        RolloutWriter(tmp_path, "rollout-1").write(valid_record(events=tuple(events)))
+
+
+@pytest.mark.parametrize(
+    "changed_event",
+    [
+        replace(valid_events()[1], skill_id="other-skill"),
+        replace(
+            valid_events()[1],
+            payload={"chunk_id": "chunk-0", "source_observation_id": 1},
+        ),
+    ],
+)
+def test_writer_rejects_chunk_event_skill_or_observation_mismatch(
+    tmp_path: Path, changed_event: ExecutionEvent
+) -> None:
+    events = list(valid_events())
+    events[1] = changed_event
+
+    with pytest.raises(RolloutValidationError, match="does not match"):
+        RolloutWriter(tmp_path, "rollout-1").write(valid_record(events=tuple(events)))
+
+
+def test_writer_rejects_contradictory_chunk_lifecycle(tmp_path: Path) -> None:
+    events = list(valid_events())
+    events.insert(
+        2,
+        replace(
+            events[1],
+            event_type=ExecutionEventType.CHUNK_REJECTED_OUT_OF_ORDER,
+            sequence_id=2,
+        ),
+    )
+    events = [replace(event, sequence_id=index) for index, event in enumerate(events)]
+
+    with pytest.raises(RolloutValidationError, match="lifecycle"):
+        RolloutWriter(tmp_path, "rollout-1").write(valid_record(events=tuple(events)))
+
+
+def test_writer_accepts_one_coherent_chunk_replacement_transition(
+    tmp_path: Path,
+) -> None:
+    events = list(valid_events())
+    events.insert(
+        3,
+        replace(
+            events[1],
+            event_type=ExecutionEventType.CHUNK_REPLACED,
+            monotonic_time_ns=150,
+            wall_time_ns=10_050,
+            sequence_id=3,
+        ),
+    )
+    events = [replace(event, sequence_id=index) for index, event in enumerate(events)]
+
+    artifact_path = RolloutWriter(tmp_path, "rollout-1").write(
+        valid_record(events=tuple(events))
+    )
+
+    assert validate_rollout(artifact_path).events[3].event_type is (
+        ExecutionEventType.CHUNK_REPLACED
+    )
+
+
+def test_writer_rejects_replacing_an_expired_chunk(tmp_path: Path) -> None:
+    events = list(valid_events())
+    events.insert(
+        3,
+        replace(
+            events[1],
+            event_type=ExecutionEventType.CHUNK_REPLACED,
+            monotonic_time_ns=191,
+            wall_time_ns=10_091,
+            sequence_id=3,
+        ),
+    )
+    events = [replace(event, sequence_id=index) for index, event in enumerate(events)]
+
+    with pytest.raises(RolloutValidationError, match="expired"):
+        RolloutWriter(tmp_path, "rollout-1").write(valid_record(events=tuple(events)))
+
+
+def test_writer_rejects_action_execution_without_matching_control_reference(
+    tmp_path: Path,
+) -> None:
+    references = (
+        replace(valid_control_references()[0], time_ns=141),
+        valid_control_references()[1],
+    )
+
+    with pytest.raises(RolloutValidationError, match="ControlReference"):
+        RolloutWriter(tmp_path, "rollout-1").write(
+            valid_record(control_references=references)
+        )
+
+
+def test_writer_rejects_action_execution_with_mismatched_reference_time_payload(
+    tmp_path: Path,
+) -> None:
+    events = list(valid_events())
+    events[2] = replace(
+        events[2], payload={"source_chunk_id": "chunk-0", "time_ns": 141}
+    )
+
+    with pytest.raises(RolloutValidationError, match="ControlReference"):
+        RolloutWriter(tmp_path, "rollout-1").write(valid_record(events=tuple(events)))
+
+
+def test_writer_rejects_duplicate_execution_of_one_control_reference(
+    tmp_path: Path,
+) -> None:
+    events = list(valid_events())
+    events.insert(3, replace(events[2], sequence_id=3))
+    events = [replace(event, sequence_id=index) for index, event in enumerate(events)]
+
+    with pytest.raises(RolloutValidationError, match="executed more than once"):
+        RolloutWriter(tmp_path, "rollout-1").write(valid_record(events=tuple(events)))
 
 
 def test_writer_refuses_to_overwrite_existing_rollout(tmp_path: Path) -> None:
@@ -440,6 +659,98 @@ def test_writer_atomic_publication_does_not_replace_a_racing_directory(
         writer.write(valid_record())
 
 
+def test_writer_failure_cleanup_preserves_replacement_temp_sentinel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created: list[Path] = []
+    real_mkdtemp = rollout_module.tempfile.mkdtemp
+
+    def tracked_mkdtemp(*args: object, **kwargs: object) -> str:
+        path = real_mkdtemp(*args, **kwargs)  # type: ignore[arg-type]
+        created.append(Path(path))
+        return path
+
+    def replace_temp_then_fail(observations: tuple[Observation, ...]) -> bytes:
+        del observations
+        temporary = created[0]
+        original = temporary.with_name(f"{temporary.name}.original")
+        temporary.rename(original)
+        temporary.mkdir()
+        (temporary / "sentinel.txt").write_text("replacement\n", encoding="utf-8")
+        raise RuntimeError("injected artifact encoding failure")
+
+    monkeypatch.setattr(rollout_module.tempfile, "mkdtemp", tracked_mkdtemp)
+    monkeypatch.setattr(
+        rollout_module, "_observations_npz_bytes", replace_temp_then_fail
+    )
+
+    with pytest.raises(RuntimeError, match="injected"):
+        RolloutWriter(tmp_path, "rollout-1").write(valid_record())
+
+    assert (created[0] / "sentinel.txt").read_text(encoding="utf-8") == "replacement\n"
+    assert not created[0].with_name(f"{created[0].name}.original").exists()
+
+
+def test_writer_detects_output_root_replacement_and_cleans_original_temp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "results"
+    displaced_root = tmp_path / "displaced-results"
+    real_encoder = rollout_module._observations_npz_bytes
+
+    def replace_root(observations: tuple[Observation, ...]) -> bytes:
+        root.rename(displaced_root)
+        root.mkdir()
+        (root / "sentinel.txt").write_text("replacement root\n", encoding="utf-8")
+        return real_encoder(observations)
+
+    monkeypatch.setattr(rollout_module, "_observations_npz_bytes", replace_root)
+
+    with pytest.raises(RolloutValidationError, match="output root identity"):
+        RolloutWriter(root, "rollout-1").write(valid_record())
+
+    assert (root / "sentinel.txt").read_text(encoding="utf-8") == "replacement root\n"
+    assert not any(entry.name.startswith(".rollout-1.") for entry in displaced_root.iterdir())
+
+
+def test_writer_verifies_published_directory_is_created_temp_inode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def publish_impostor(*args: object) -> None:
+        if len(args) == 2:
+            destination = Path(args[1])
+            destination.mkdir()
+            (destination / "sentinel.txt").write_text("impostor\n", encoding="utf-8")
+            return
+        root_fd, _source_name, destination_name = args
+        os.mkdir(destination_name, dir_fd=root_fd)  # type: ignore[arg-type]
+        destination_fd = os.open(  # type: ignore[arg-type]
+            destination_name, os.O_RDONLY | os.O_DIRECTORY, dir_fd=root_fd
+        )
+        try:
+            file_fd = os.open(
+                "sentinel.txt",
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+                dir_fd=destination_fd,
+            )
+            try:
+                os.write(file_fd, b"impostor\n")
+            finally:
+                os.close(file_fd)
+        finally:
+            os.close(destination_fd)
+
+    monkeypatch.setattr(rollout_module, "_publish_directory", publish_impostor)
+
+    with pytest.raises(RolloutValidationError, match="published directory identity"):
+        RolloutWriter(tmp_path, "rollout-1").write(valid_record())
+
+    assert (tmp_path / "rollout-1" / "sentinel.txt").read_text(encoding="utf-8") == (
+        "impostor\n"
+    )
+
+
 def test_validate_rejects_a_missing_required_file(tmp_path: Path) -> None:
     artifact_path = write_valid_rollout(tmp_path)
     (artifact_path / "actions.parquet").unlink()
@@ -461,6 +772,60 @@ def test_validate_rejects_an_artifact_hash_mismatch(tmp_path: Path) -> None:
     (artifact_path / "summary.md").write_text("corrupted\n", encoding="utf-8")
 
     with pytest.raises(RolloutValidationError, match="hash mismatch"):
+        validate_rollout(artifact_path)
+
+
+def test_validate_parses_the_exact_payload_snapshot_that_was_hashed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifact_path = write_valid_rollout(tmp_path)
+    event_path = artifact_path / "events.jsonl"
+    original = event_path.read_bytes()
+    replacement_events = [
+        replace(event, component="replacement-component") for event in valid_events()
+    ]
+    replacement_path = tmp_path / ".replacement-events"
+    replacement_path.write_bytes(
+        b"".join(
+            canonical_json_bytes(rollout_module.event_to_dict(event)) + b"\n"
+            for event in replacement_events
+        )
+    )
+    real_sha256 = hashlib.sha256
+    replaced = False
+
+    def replace_after_hash(data: object = b"", *args: object, **kwargs: object) -> object:
+        nonlocal replaced
+        digest = real_sha256(data, *args, **kwargs)  # type: ignore[arg-type]
+        if not replaced and bytes(data) == original:  # type: ignore[arg-type]
+            replaced = True
+            os.replace(replacement_path, event_path)
+        return digest
+
+    monkeypatch.setattr(hashlib, "sha256", replace_after_hash)
+
+    try:
+        artifact = validate_rollout(artifact_path)
+    except RolloutValidationError:
+        return
+    assert {event.component for event in artifact.events} == {"rollout-test"}
+
+
+def test_validate_rejects_duplicate_raw_npz_members(tmp_path: Path) -> None:
+    artifact_path = write_valid_rollout(tmp_path)
+    observations_path = artifact_path / "observations.npz"
+    original = observations_path.read_bytes()
+    output = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(original), "r") as source:
+        with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as target:
+            for info in source.infolist():
+                target.writestr(info, source.read(info))
+            with pytest.warns(UserWarning, match="Duplicate name"):
+                target.writestr("sequence_id.npy", source.read("sequence_id.npy"))
+    observations_path.write_bytes(output.getvalue())
+    refresh_artifact_hash(artifact_path, "observations.npz")
+
+    with pytest.raises(RolloutValidationError, match="duplicate.*NPZ|NPZ.*duplicate"):
         validate_rollout(artifact_path)
 
 
@@ -503,7 +868,7 @@ def test_validate_rejects_event_with_unknown_action_id(tmp_path: Path) -> None:
 
 
 def test_validate_rejects_an_orphan_stored_action(tmp_path: Path) -> None:
-    record = valid_record(events=valid_events()[:-1])
+    record = valid_record(events=valid_events()[:-2])
 
     with pytest.raises(RolloutValidationError, match="action event references"):
         RolloutWriter(tmp_path, "rollout-1").write(record)
