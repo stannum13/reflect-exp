@@ -535,3 +535,153 @@ attempts:
       The command exited zero after the production registry/candidate validators
       accepted the one-entry result. Its checksummed cache records are available
       for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_5_14_unitree_sdk2
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - unitree_sdk2
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:53:30Z
+    finished_at_utc: 2026-08-22T20:53:47Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [unitree_sdk2]
+    summary: >-
+      Resolved and validated the pinned unitree_sdk2 metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_5_15_unifolm_vla
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - unifolm_vla
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:53:47Z
+    finished_at_utc: 2026-08-22T20:53:52Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [unifolm_vla]
+    summary: >-
+      Resolved and validated the pinned unifolm_vla metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_5_16_unifolm_wma
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - unifolm_wma
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:53:52Z
+    finished_at_utc: 2026-08-22T20:53:57Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [unifolm_wma]
+    summary: >-
+      Resolved and validated the pinned unifolm_wma metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_5_17_isaac_sim
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - isaac_sim
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:54:19Z
+    finished_at_utc: 2026-08-22T20:54:25Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [isaac_sim]
+    summary: >-
+      Resolved and validated the pinned isaac_sim metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_5_18_isaac_lab
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - isaac_lab
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:54:25Z
+    finished_at_utc: 2026-08-22T20:54:31Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [isaac_lab]
+    summary: >-
+      Resolved and validated the pinned isaac_lab metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_5_19_isaac_launchable
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - isaac_launchable
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:54:46Z
+    finished_at_utc: 2026-08-22T20:54:51Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [isaac_launchable]
+    summary: >-
+      Resolved and validated the pinned isaac_launchable metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
