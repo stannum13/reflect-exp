@@ -6,10 +6,13 @@ import ast
 from dataclasses import dataclass
 from enum import Enum
 import hashlib
+import json
 import os
 from pathlib import Path, PurePosixPath
-import platform
+import re
 import stat
+import tomllib
+import xml.etree.ElementTree as ET
 
 import yaml
 
@@ -31,14 +34,46 @@ class OperationSpec:
     commit_sha: str
     experiment: str
     selected_path: str
+    operation_id: str
     operation: SourceOperation
     license_status: str
     license_spdx: str | None
+    platform: str
+    python_requirement: str
+    compiler_or_runtime: str
 
 
 _MAX_FILE_BYTES = 2 * 1024 * 1024
 _MAX_TOTAL_BYTES = 16 * 1024 * 1024
+_MAX_FILES = 512
+_MAX_DEPTH = 8
 _DIRECTORY_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+
+
+class _UniqueLoader(yaml.SafeLoader):
+    pass
+
+
+def _unique_yaml_mapping(loader: yaml.SafeLoader, node: yaml.MappingNode, deep: bool = False) -> dict[object, object]:
+    result: dict[object, object] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in result:
+            raise ValueError(f"duplicate YAML key: {key}")
+        result[key] = loader.construct_object(value_node, deep=deep)
+    return result
+
+
+_UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _unique_yaml_mapping)
+
+
+def _unique_json(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
 
 
 def _safe_relative(value: str) -> None:
@@ -60,17 +95,31 @@ def _selected_files(root: Path, selected: str, operation: SourceOperation) -> tu
                 SourceOperation.MANIFEST_LAYOUT: {".json", ".yaml", ".yml", ".toml", ".xml"},
                 SourceOperation.ASSET_LICENSE_INVENTORY: set(),
             }[operation]
-            candidates = tuple(
-                sorted(
-                    child for child in target.rglob("*")
-                    if child.is_file() and (not suffixes or child.suffix.lower() in suffixes or "license" in child.name.lower())
-                )
-            )
+            found = []
+            for current, directories, filenames in os.walk(target, topdown=True, followlinks=False):
+                current_path = Path(current)
+                depth = len(current_path.relative_to(target).parts)
+                if depth >= _MAX_DEPTH:
+                    directories[:] = []
+                else:
+                    directories[:] = sorted(
+                        name for name in directories
+                        if not (current_path / name).is_symlink()
+                    )
+                for name in sorted(filenames):
+                    child = current_path / name
+                    if not suffixes or child.suffix.lower() in suffixes or "license" in child.name.lower():
+                        found.append(child)
+                        if len(found) > _MAX_FILES:
+                            raise ValueError("source operation exceeds file-count limit")
+            candidates = tuple(found)
         else:
             candidates = (target,)
     if not candidates:
         raise ValueError("source operation selected no files")
     result = []
+    if len(candidates) > _MAX_FILES:
+        raise ValueError("source operation exceeds file-count limit")
     for candidate in candidates:
         try:
             candidate.relative_to(root)
@@ -129,7 +178,7 @@ def run_source_operation(spec: OperationSpec, checkout_root: Path) -> Compatibil
         raise
     hashes: dict[str, str] = {}
     total = 0
-    parsed = 0
+    file_findings = []
     blocker = None
     try:
         for path in files:
@@ -139,33 +188,87 @@ def run_source_operation(spec: OperationSpec, checkout_root: Path) -> Compatibil
             if total > _MAX_TOTAL_BYTES:
                 raise ValueError("source operation input exceeds total byte limit")
             hashes[relative] = hashlib.sha256(data).hexdigest()
+            digest = hashes[relative]
+            disposition = "PASS"
             try:
                 text = data.decode("utf-8", errors="strict")
                 if spec.operation is SourceOperation.AST_PARSE:
-                    ast.parse(text, filename=relative)
-                elif spec.operation is SourceOperation.MANIFEST_LAYOUT and path.suffix.lower() in {".yaml", ".yml", ".json"}:
-                    yaml.safe_load(text)
-                parsed += 1
-            except (UnicodeError, SyntaxError, yaml.YAMLError) as exc:
+                    tree = ast.parse(text, filename=relative)
+                    finding = {
+                        "path": relative, "sha256": digest, "disposition": disposition,
+                        "node_count": sum(1 for _ in ast.walk(tree)),
+                        "failure_line": None, "failure_column": None,
+                    }
+                elif spec.operation is SourceOperation.HEADER_LAYOUT:
+                    guard = re.search(r"^\s*#ifndef\s+([A-Za-z_][A-Za-z0-9_]*)", text, re.MULTILINE)
+                    finding = {
+                        "path": relative, "sha256": digest, "disposition": disposition,
+                        "include_guard": guard.group(1) if guard else None,
+                        "pragma_once": bool(re.search(r"^\s*#pragma\s+once\b", text, re.MULTILINE)),
+                        "declaration_count": text.count(";"), "failure_line": None,
+                    }
+                elif spec.operation is SourceOperation.MANIFEST_LAYOUT:
+                    suffix = path.suffix.lower()
+                    if suffix == ".toml":
+                        parsed_manifest = tomllib.loads(text)
+                        top_level = sorted(parsed_manifest)
+                        format_name = "TOML"
+                    elif suffix == ".xml":
+                        root_element = ET.fromstring(text)
+                        top_level = [root_element.tag]
+                        format_name = "XML"
+                    elif suffix == ".json":
+                        parsed_manifest = json.loads(text, object_pairs_hook=_unique_json)
+                        top_level = sorted(parsed_manifest) if isinstance(parsed_manifest, dict) else [type(parsed_manifest).__name__]
+                        format_name = "JSON"
+                    elif suffix in {".yaml", ".yml"}:
+                        parsed_manifest = yaml.load(text, Loader=_UniqueLoader)
+                        top_level = sorted(parsed_manifest) if isinstance(parsed_manifest, dict) else [type(parsed_manifest).__name__]
+                        format_name = "YAML"
+                    else:
+                        raise ValueError("unsupported manifest format")
+                    finding = {
+                        "path": relative, "sha256": digest, "disposition": disposition,
+                        "format": format_name, "top_level": top_level, "failure_line": None,
+                    }
+                else:
+                    candidates = sorted(set(re.findall(r"SPDX-License-Identifier:\s*([A-Za-z0-9.+-]+)", text)))
+                    if "license" in path.name.lower() and not candidates:
+                        candidates = ["LICENSE_FILE_PRESENT"]
+                    finding = {
+                        "path": relative, "sha256": digest, "disposition": disposition,
+                        "license_candidates": candidates, "failure_line": None,
+                    }
+            except (UnicodeError, SyntaxError, ValueError, json.JSONDecodeError, tomllib.TOMLDecodeError, ET.ParseError, yaml.YAMLError) as exc:
                 blocker = f"{type(exc).__name__}: bounded static inspection failed"
-                break
+                position = getattr(exc, "position", None)
+                line = getattr(exc, "lineno", None) or (position[0] + 1 if position else 1)
+                column = getattr(exc, "offset", None) or (position[1] + 1 if position else 1)
+                if spec.operation is SourceOperation.AST_PARSE:
+                    finding = {"path": relative, "sha256": digest, "disposition": "FAIL", "node_count": 0, "failure_line": line, "failure_column": column}
+                elif spec.operation is SourceOperation.HEADER_LAYOUT:
+                    finding = {"path": relative, "sha256": digest, "disposition": "FAIL", "include_guard": None, "pragma_once": False, "declaration_count": 0, "failure_line": line}
+                elif spec.operation is SourceOperation.MANIFEST_LAYOUT:
+                    finding = {"path": relative, "sha256": digest, "disposition": "FAIL", "format": path.suffix.lstrip(".").upper(), "top_level": [], "failure_line": line}
+                else:
+                    finding = {"path": relative, "sha256": digest, "disposition": "FAIL", "license_candidates": [], "failure_line": line}
+            file_findings.append(finding)
         current_root = os.stat(checkout_root, follow_symlinks=False)
         if (current_root.st_dev, current_root.st_ino) != (root_value.st_dev, root_value.st_ino):
             raise ValueError("checkout root changed during source operation")
     finally:
         os.close(root_descriptor)
-    system = platform.system().lower()
-    machine = platform.machine().lower()
     return CompatibilityEvidence.create(
         registry_sha256=spec.registry_sha256,
         repository=spec.repository,
         commit_sha=spec.commit_sha,
         experiment=spec.experiment,
         selected_path=spec.selected_path,
+        operation_id=spec.operation_id,
         operation=spec.operation.value,
-        platform=f"{system}-{machine}",
-        python_requirement=">=3.11,<3.12",
-        compiler_or_runtime=platform.python_version(),
+        platform=spec.platform,
+        python_requirement=spec.python_requirement,
+        compiler_or_runtime=spec.compiler_or_runtime,
         command=(spec.operation.value.lower(), spec.selected_path),
         exit_status=0 if blocker is None else 1,
         disk_bytes=total,
@@ -179,7 +282,14 @@ def run_source_operation(spec: OperationSpec, checkout_root: Path) -> Compatibil
         package_version=None,
         package_artifact_sha256=None,
         patch_artifact_sha256=None,
-        findings={"parsed_files": parsed},
+        findings={
+            "files": file_findings,
+            "summary": {
+                "files_total": len(file_findings),
+                "files_pass": sum(item["disposition"] == "PASS" for item in file_findings),
+                "files_fail": sum(item["disposition"] == "FAIL" for item in file_findings),
+            },
+        },
         content_hashes=hashes,
     )
 

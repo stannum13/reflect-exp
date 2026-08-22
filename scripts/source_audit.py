@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
-import json
 import os
 from pathlib import Path
 import sys
 
 from reflect.safety import SafetyConfig
 from reflect.source_compat import (
-    CompatibilityEvidence,
     consolidate_compatibility,
+    load_manifest_fragments,
     load_operation_manifest,
     write_compatibility_outputs,
 )
@@ -30,12 +29,9 @@ def _parser() -> argparse.ArgumentParser:
     modes.add_argument("--check", action="store_true")
     modes.add_argument("--write", action="store_true")
     modes.add_argument("--operate")
-    parser.add_argument("--operation", choices=[item.value for item in SourceOperation])
-    parser.add_argument("--fragment")
     parser.add_argument("--registry", default="references/repos.yaml")
     parser.add_argument("--lock", default="references/repos.lock.yaml")
     parser.add_argument("--manifest", default="experiments/00_source_audit/configs/operation-manifest.yaml")
-    parser.add_argument("--fragment-dir", default="experiments/00_source_audit/results/fragments")
     parser.add_argument("--checkout-root", default="external")
     parser.add_argument("--root", default=os.fspath(ROOT))
     return parser
@@ -60,38 +56,44 @@ def main(argv: Sequence[str] | None = None) -> int:
     lock = load_lock(_beneath(root, arguments.lock, "lock"))
     manifest = load_operation_manifest(_beneath(root, arguments.manifest, "manifest"), registry, lock, root)
     if arguments.operate:
-        if arguments.operation is None or arguments.fragment is None:
-            raise ValueError("--operate requires --operation and --fragment")
+        matches = tuple(item for item in manifest.operations if item.operation_id == arguments.operate)
+        if len(matches) != 1:
+            raise ValueError("--operate requires one exact manifest operation ID")
+        operation = matches[0]
+        if operation.operation not in {item.value for item in SourceOperation}:
+            raise ValueError("--operate supports only bounded static manifest operations")
         sources = {item.name: item for item in registry.repositories}
         locked = {item.name: item for item in lock.entries}
-        if arguments.operate not in sources:
-            raise ValueError("unknown operation repository")
-        source = sources[arguments.operate]
-        pin = locked[arguments.operate]
-        existing = tuple(path for path in source.selected_paths if pin.path_statuses[path] is PathStatus.EXISTS)
-        if not existing:
-            raise ValueError("operation repository has no locked existing path")
+        source = sources[operation.repository]
+        pin = locked[operation.repository]
+        if pin.path_statuses[operation.selected_path] is not PathStatus.EXISTS:
+            raise ValueError("operation selected path is not locked existing")
+        _, checkouts, seen = load_manifest_fragments(root, manifest, registry, lock)
+        checkout = next((item for item in checkouts if item.repository == source.name), None)
+        if checkout is None or checkout.outcome != "PASS" or not any(entry.operation == "CHECKOUT" and entry.repository == source.name and entry.operation_id in seen for entry in manifest.operations):
+            raise ValueError("operation requires its exact manifest-declared PASS checkout receipt")
         evidence = run_source_operation(
             OperationSpec(
                 registry.registry_sha256, source.name, pin.commit_sha or "",
-                source.experiments[0], existing[0], SourceOperation(arguments.operation),
-                pin.license_status.value, pin.license_spdx,
+                operation.experiment, operation.selected_path, operation.operation_id,
+                SourceOperation(operation.operation), pin.license_status.value,
+                pin.license_spdx, operation.platform, operation.python_requirement,
+                operation.compiler_or_runtime,
             ),
             _beneath(root, arguments.checkout_root, "checkout root") / source.name,
         )
-        destination = _beneath(root, arguments.fragment, "fragment")
+        destination = _beneath(root, operation.relative_output, "fragment")
         write_fragment_create_only(destination, evidence)
         sys.stdout.buffer.write(evidence.canonical_bytes())
         return 0
-    fragment_dir = _beneath(root, arguments.fragment_dir, "fragment directory")
-    fragments = []
-    if fragment_dir.exists():
-        for path in sorted(fragment_dir.glob("*.json")):
-            raw = json.loads(path.read_text())
-            if raw.get("evidence_type") == "COMPATIBILITY":
-                fragments.append(CompatibilityEvidence.from_dict(raw))
-    rows = consolidate_compatibility(registry, lock, fragments, manifest.requirement_observations)
-    hashes = write_compatibility_outputs(root, registry, lock, rows, check=arguments.check)
+    fragments, checkouts, seen = load_manifest_fragments(root, manifest, registry, lock)
+    rows = consolidate_compatibility(
+        registry, lock, fragments, manifest.requirement_observations, manifest, checkouts
+    )
+    hashes = write_compatibility_outputs(
+        root, registry, lock, rows, check=arguments.check,
+        manifest=manifest, seen_operation_ids=seen,
+    )
     sys.stdout.buffer.write(canonical_json_bytes({"mode": "check" if arguments.check else "write", "outputs": hashes, "rows": len(rows)}))
     return 0
 

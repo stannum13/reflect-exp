@@ -137,6 +137,39 @@ class CheckoutEvidence:
         digest = canonical_sha256(record.to_dict(include_hash=False))
         return cls(**{**record.__dict__, "evidence_sha256": digest})
 
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> "CheckoutEvidence":
+        required = {
+            "schema_version", "evidence_type", "registry_sha256", "repository",
+            "url", "locked_sha", "patterns", "commands", "statuses",
+            "download_bytes", "disk_bytes", "outcome", "blocker",
+            "content_hashes", "evidence_sha256",
+        }
+        if set(raw) != required:
+            raise ValueError("checkout evidence has missing or extra keys")
+        hashes: dict[str, str] = {}
+        if not isinstance(raw["content_hashes"], list):
+            raise ValueError("checkout content hashes must be a list")
+        for item in raw["content_hashes"]:
+            if not isinstance(item, Mapping) or set(item) != {"path", "sha256"}:
+                raise ValueError("checkout content hash row is invalid")
+            if item["path"] in hashes:
+                raise ValueError("checkout content hash path is duplicated")
+            hashes[item["path"]] = item["sha256"]
+        record = cls(
+            schema_version=raw["schema_version"], evidence_type=raw["evidence_type"],
+            registry_sha256=raw["registry_sha256"], repository=raw["repository"],
+            url=raw["url"], locked_sha=raw["locked_sha"],
+            patterns=tuple(raw["patterns"]),
+            commands=tuple(tuple(command) for command in raw["commands"]),
+            statuses=tuple(raw["statuses"]), download_bytes=raw["download_bytes"],
+            disk_bytes=raw["disk_bytes"], outcome=raw["outcome"],
+            blocker=raw["blocker"], content_hashes=tuple(sorted(hashes.items())),
+            evidence_sha256=raw["evidence_sha256"],
+        )
+        record._validate()
+        return record
+
     def _validate(self, *, include_hash: bool = True) -> None:
         if self.schema_version != 1 or self.evidence_type != "CHECKOUT":
             raise ValueError("checkout evidence schema/type is invalid")

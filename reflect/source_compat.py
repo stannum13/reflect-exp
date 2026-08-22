@@ -12,11 +12,13 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import stat
 from typing import Any
 
 import yaml
 
 from reflect.source_evidence import canonical_json_bytes, canonical_sha256
+from reflect.source_evidence import CheckoutEvidence
 from reflect.sources import (
     LicenseStatus,
     PathStatus,
@@ -58,12 +60,18 @@ _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _FIXED_SMOKE_PATH = "experiments/00_source_audit/results/fragments/mujoco-package-smoke.json"
 _EVIDENCE_KEYS = {
     "schema_version", "evidence_type", "registry_sha256", "repository",
-    "commit_sha", "experiment", "selected_path", "operation", "platform",
+    "commit_sha", "experiment", "selected_path", "operation_id", "operation", "platform",
     "python_requirement", "compiler_or_runtime", "command", "exit_status",
     "disk_bytes", "download_bytes", "license_status", "license_spdx", "blocker",
     "notes", "runtime_subject", "package_name", "package_version",
     "package_artifact_sha256", "patch_artifact_sha256", "findings",
     "content_hashes", "evidence_sha256",
+}
+_STATIC_FILE_KEYS = {
+    "AST_PARSE": {"path", "sha256", "disposition", "node_count", "failure_line", "failure_column"},
+    "HEADER_LAYOUT": {"path", "sha256", "disposition", "include_guard", "pragma_once", "declaration_count", "failure_line"},
+    "MANIFEST_LAYOUT": {"path", "sha256", "disposition", "format", "top_level", "failure_line"},
+    "ASSET_LICENSE_INVENTORY": {"path", "sha256", "disposition", "license_candidates", "failure_line"},
 }
 
 
@@ -81,6 +89,62 @@ def _sha(value: object, field: str, length: int) -> str:
     if pattern.fullmatch(result or "") is None:
         raise ValueError(f"{field} has an invalid digest")
     return result  # type: ignore[return-value]
+
+
+def _validate_raw_findings(
+    operation: str,
+    findings: tuple[tuple[str, Any], ...],
+    content_hashes: tuple[tuple[str, str], ...],
+) -> None:
+    raw = dict(findings)
+    if operation == "PACKAGE_RUNTIME":
+        required = {"duration_ns", "finite_qpos", "finite_qvel", "finite_time", "simulation_time"}
+        if set(raw) != required or type(raw["duration_ns"]) is not int or raw["duration_ns"] < 0:
+            raise ValueError("package smoke findings schema is invalid")
+        if any(type(raw[key]) is not bool for key in ("finite_qpos", "finite_qvel", "finite_time")):
+            raise ValueError("package smoke finite-state findings are invalid")
+        if type(raw["simulation_time"]) not in {int, float} or raw["simulation_time"] <= 0:
+            raise ValueError("package smoke simulation time is invalid")
+        return
+    if operation not in _STATIC_FILE_KEYS or set(raw) != {"files", "summary"}:
+        raise ValueError("static operation findings schema is invalid")
+    if not isinstance(raw["files"], list) or not isinstance(raw["summary"], Mapping):
+        raise ValueError("static operation files/summary are invalid")
+    if set(raw["summary"]) != {"files_total", "files_pass", "files_fail"} or any(type(raw["summary"][key]) is not int or raw["summary"][key] < 0 for key in raw["summary"]):
+        raise ValueError("static operation summary schema is invalid")
+    if raw["summary"]["files_total"] != len(raw["files"]) or raw["summary"]["files_pass"] + raw["summary"]["files_fail"] != len(raw["files"]):
+        raise ValueError("static operation summary counts are inconsistent")
+    expected_hashes = dict(content_hashes)
+    seen = set()
+    for item in raw["files"]:
+        if not isinstance(item, Mapping) or set(item) != _STATIC_FILE_KEYS[operation]:
+            raise ValueError("operation-specific file finding is invalid")
+        path = _string(item["path"], "finding path")
+        digest = _sha(item["sha256"], "finding sha256", 64)
+        if path in seen or expected_hashes.get(path) != digest:
+            raise ValueError("finding path/hash disposition is duplicated or inconsistent")
+        seen.add(path)
+        if item["disposition"] not in {"PASS", "FAIL"}:
+            raise ValueError("finding disposition is invalid")
+        failed = item["disposition"] == "FAIL"
+        if operation == "AST_PARSE" and (type(item["node_count"]) is not int or item["node_count"] < 0):
+            raise ValueError("AST finding node count is invalid")
+        if operation == "AST_PARSE" and ((item["failure_line"] is None) == failed or (item["failure_column"] is None) == failed):
+            raise ValueError("AST finding failure location is invalid")
+        if operation == "HEADER_LAYOUT" and (type(item["pragma_once"]) is not bool or type(item["declaration_count"]) is not int or item["declaration_count"] < 0):
+            raise ValueError("header finding structure is invalid")
+        if operation == "HEADER_LAYOUT" and ((item["failure_line"] is None) == failed):
+            raise ValueError("header finding failure location is invalid")
+        if operation == "MANIFEST_LAYOUT" and (item["format"] not in {"TOML", "XML", "JSON", "YAML"} or not isinstance(item["top_level"], list)):
+            raise ValueError("manifest finding structure is invalid")
+        if operation == "MANIFEST_LAYOUT" and ((item["failure_line"] is None) == failed):
+            raise ValueError("manifest finding failure location is invalid")
+        if operation == "ASSET_LICENSE_INVENTORY" and not isinstance(item["license_candidates"], list):
+            raise ValueError("asset-license finding structure is invalid")
+        if operation == "ASSET_LICENSE_INVENTORY" and ((item["failure_line"] is None) == failed):
+            raise ValueError("asset-license finding failure location is invalid")
+    if seen != set(expected_hashes):
+        raise ValueError("every selected content hash requires one file disposition")
 
 
 def _lock_object(lock: SourceLock) -> dict[str, Any]:
@@ -118,6 +182,7 @@ class CompatibilityEvidence:
     commit_sha: str
     experiment: str
     selected_path: str
+    operation_id: str
     operation: str
     platform: str
     python_requirement: str
@@ -183,7 +248,7 @@ class CompatibilityEvidence:
             raise ValueError("compatibility evidence schema/type is invalid")
         _sha(self.registry_sha256, "registry_sha256", 64)
         _sha(self.commit_sha, "commit_sha", 40)
-        for field in ("repository", "experiment", "selected_path", "operation", "platform", "python_requirement", "compiler_or_runtime", "notes"):
+        for field in ("repository", "experiment", "selected_path", "operation_id", "operation", "platform", "python_requirement", "compiler_or_runtime", "notes"):
             _string(getattr(self, field), field)
         if self.runtime_subject not in {"source_checkout", "package"}:
             raise ValueError("runtime_subject is invalid")
@@ -197,16 +262,30 @@ class CompatibilityEvidence:
             raise ValueError("byte counts must be nonnegative integers")
         LicenseStatus(self.license_status)
         if self.runtime_subject == "package":
-            if not self.package_name or not self.package_version or self.package_artifact_sha256 is None:
+            if (
+                self.operation != "PACKAGE_RUNTIME"
+                or self.operation_id != "MUJOCO_PACKAGE_SMOKE"
+                or self.repository != "mujoco"
+                or self.package_name != "mujoco"
+                or self.command != ("mujoco", "headless-one-step")
+                or not self.package_version
+                or self.package_artifact_sha256 is None
+            ):
                 raise ValueError("package runtime requires package identity and artifact hash")
             _sha(self.package_artifact_sha256, "package_artifact_sha256", 64)
-        elif any(value is not None for value in (self.package_name, self.package_version, self.package_artifact_sha256)):
-            raise ValueError("source checkout cannot claim package identity")
+        else:
+            if self.operation not in _STATIC_FILE_KEYS:
+                raise ValueError("source checkout operation is not in the closed matrix")
+            if self.command != (self.operation.lower(), self.selected_path):
+                raise ValueError("source checkout command does not match operation matrix")
+            if any(value is not None for value in (self.package_name, self.package_version, self.package_artifact_sha256)):
+                raise ValueError("source checkout cannot claim package identity")
         if self.patch_artifact_sha256 is not None:
             _sha(self.patch_artifact_sha256, "patch_artifact_sha256", 64)
         for path, digest in self.content_hashes:
             _string(path, "content path")
             _sha(digest, "content hash", 64)
+        _validate_raw_findings(self.operation, self.findings, self.content_hashes)
         if include_hash:
             _sha(self.evidence_sha256, "evidence_sha256", 64)
             if self.evidence_sha256 != canonical_sha256(self.to_dict(False)):
@@ -217,7 +296,8 @@ class CompatibilityEvidence:
             "schema_version": self.schema_version, "evidence_type": self.evidence_type,
             "registry_sha256": self.registry_sha256, "repository": self.repository,
             "commit_sha": self.commit_sha, "experiment": self.experiment,
-            "selected_path": self.selected_path, "operation": self.operation,
+            "selected_path": self.selected_path, "operation_id": self.operation_id,
+            "operation": self.operation,
             "platform": self.platform, "python_requirement": self.python_requirement,
             "compiler_or_runtime": self.compiler_or_runtime, "command": list(self.command),
             "exit_status": self.exit_status, "disk_bytes": self.disk_bytes,
@@ -262,6 +342,7 @@ class RequirementObservation:
 class RepositoryIdentity:
     repository: str
     commit_sha: str
+    paths: tuple[tuple[str, str], ...]
 
 
 @dataclass(frozen=True)
@@ -270,7 +351,19 @@ class ManifestOperation:
     repository: str
     operation: str
     runtime_subject: str
+    experiment: str
+    selected_path: str
+    command: tuple[str, ...]
     relative_output: str
+    platform: str
+    python_requirement: str
+    compiler_or_runtime: str
+    timeout_seconds: int
+    download_ceiling_bytes: int
+    disk_ceiling_bytes: int
+    no_copy: bool
+    no_models: bool
+    package_name: str | None
 
 
 @dataclass(frozen=True)
@@ -298,8 +391,25 @@ def _safe_relative(value: object, field: str) -> str:
     return result  # type: ignore[return-value]
 
 
+class _UniqueLoader(yaml.SafeLoader):
+    pass
+
+
+def _unique_mapping(loader: yaml.SafeLoader, node: yaml.MappingNode, deep: bool = False) -> dict[Any, Any]:
+    result: dict[Any, Any] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in result:
+            raise ValueError(f"duplicate YAML key: {key}")
+        result[key] = loader.construct_object(value_node, deep=deep)
+    return result
+
+
+_UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _unique_mapping)
+
+
 def load_operation_manifest(path: Path, registry: SourceRegistry, lock: SourceLock, root: Path) -> OperationManifest:
-    raw = yaml.safe_load(path.read_text())
+    raw = yaml.load(path.read_text(), Loader=_UniqueLoader)
     required = {"schema_version", "registry_sha256", "lock_sha256", "repositories", "operations", "requirement_observations", "mujoco_smoke_output"}
     if not isinstance(raw, Mapping) or set(raw) != required:
         raise ValueError("operation manifest has missing or extra keys")
@@ -308,11 +418,71 @@ def load_operation_manifest(path: Path, registry: SourceRegistry, lock: SourceLo
     errors = validate_lock(registry, lock, require_complete=True)
     if errors:
         raise ValueError(f"operation manifest requires complete lock: {errors[0]}")
-    identities = tuple(RepositoryIdentity(**item) for item in raw["repositories"])
-    expected = tuple((item.name, item.commit_sha) for item in lock.entries)
-    if tuple((item.repository, item.commit_sha) for item in identities) != expected:
+    identities_list = []
+    for item in raw["repositories"]:
+        if not isinstance(item, Mapping) or set(item) != {"repository", "commit_sha", "paths"} or not isinstance(item["paths"], list):
+            raise ValueError("repository identity schema is invalid")
+        paths = []
+        for row in item["paths"]:
+            if not isinstance(row, Mapping) or set(row) != {"path", "status"}:
+                raise ValueError("repository path identity schema is invalid")
+            PathStatus(row["status"])
+            paths.append((row["path"], row["status"]))
+        identities_list.append(RepositoryIdentity(item["repository"], item["commit_sha"], tuple(paths)))
+    identities = tuple(identities_list)
+    expected = tuple(
+        (
+            item.name,
+            item.commit_sha,
+            tuple((path, status.value) for path, status in sorted(item.path_statuses.items())),
+        )
+        for item in lock.entries
+    )
+    if tuple((item.repository, item.commit_sha, item.paths) for item in identities) != expected:
         raise ValueError("operation manifest must cover every locked repository in order")
-    operations = tuple(ManifestOperation(**item) for item in raw["operations"])
+    operation_keys = {
+        "operation_id", "repository", "operation", "runtime_subject", "experiment",
+        "selected_path", "command", "relative_output", "platform",
+        "python_requirement", "compiler_or_runtime", "timeout_seconds",
+        "download_ceiling_bytes", "disk_ceiling_bytes", "no_copy", "no_models",
+        "package_name",
+    }
+    operations_list = []
+    for item in raw["operations"]:
+        if not isinstance(item, Mapping) or set(item) != operation_keys:
+            raise ValueError("manifest operation schema is invalid")
+        if not isinstance(item["command"], list):
+            raise ValueError("manifest operation command must be a list")
+        operations_list.append(ManifestOperation(**{**item, "command": tuple(item["command"])}))
+    operations = tuple(operations_list)
+    if len({item.operation_id for item in operations}) != len(operations):
+        raise ValueError("manifest operation IDs must be unique")
+    sources = {item.name: item for item in registry.repositories}
+    for item in operations:
+        if item.repository not in sources or item.experiment not in sources[item.repository].experiments:
+            raise ValueError("manifest operation repository/experiment is invalid")
+        _safe_relative(item.relative_output, "operation output")
+        if not item.relative_output.startswith("experiments/00_source_audit/results/fragments/"):
+            raise ValueError("operation output must stay in the Experiment 00 fragment root")
+        if not item.command or any(type(arg) is not str or not arg or "\n" in arg or Path(arg).is_absolute() for arg in item.command):
+            raise ValueError("manifest operation argv is invalid")
+        if type(item.timeout_seconds) is not int or not 0 < item.timeout_seconds <= 3600:
+            raise ValueError("manifest operation timeout is invalid")
+        if type(item.download_ceiling_bytes) is not int or type(item.disk_ceiling_bytes) is not int or item.download_ceiling_bytes < 0 or item.disk_ceiling_bytes < 0:
+            raise ValueError("manifest operation byte ceilings are invalid")
+        if type(item.no_copy) is not bool or type(item.no_models) is not bool or not item.no_models:
+            raise ValueError("manifest operation safety flags are invalid")
+        if item.operation == "PACKAGE_RUNTIME":
+            if item.operation_id != "MUJOCO_PACKAGE_SMOKE" or item.repository != "mujoco" or item.runtime_subject != "package" or item.package_name != "mujoco" or item.command != ("mujoco", "headless-one-step"):
+                raise ValueError("package operation matrix is invalid")
+        elif item.operation == "CHECKOUT":
+            if item.runtime_subject != "source_checkout" or item.selected_path != "" or item.package_name is not None or item.command != ("fetch_reference", "--name", item.repository, "--sparse-checkout"):
+                raise ValueError("checkout operation matrix is invalid")
+        elif item.operation in _STATIC_FILE_KEYS:
+            if item.runtime_subject != "source_checkout" or item.selected_path not in sources[item.repository].selected_paths or item.package_name is not None or item.command != (item.operation.lower(), item.selected_path):
+                raise ValueError("static operation matrix is invalid")
+        else:
+            raise ValueError("manifest operation kind is invalid")
     observations = tuple(RequirementObservation(**item) for item in raw["requirement_observations"])
     registry_names = {item.name for item in registry.repositories}
     if any(item.repository not in registry_names for item in observations) or len({item.repository for item in observations}) != len(observations):
@@ -338,7 +508,13 @@ def load_operation_manifest(path: Path, registry: SourceRegistry, lock: SourceLo
     return OperationManifest(1, raw["registry_sha256"], raw["lock_sha256"], identities, operations, observations, selector)
 
 
-def validate_fragment(raw: Mapping[str, Any], registry: SourceRegistry, lock: SourceLock) -> CompatibilityEvidence:
+def validate_fragment(
+    raw: Mapping[str, Any],
+    registry: SourceRegistry,
+    lock: SourceLock,
+    manifest: OperationManifest | None = None,
+    relative_path: str | None = None,
+) -> CompatibilityEvidence:
     item = CompatibilityEvidence.from_dict(raw)
     if item.registry_sha256 != registry.registry_sha256:
         raise ValueError("fragment registry digest mismatch")
@@ -352,7 +528,102 @@ def validate_fragment(raw: Mapping[str, Any], registry: SourceRegistry, lock: So
         raise ValueError("fragment experiment/path does not match registry")
     if item.license_status != lock_entry.license_status.value or item.license_spdx != lock_entry.license_spdx:
         raise ValueError("fragment license observation does not match lock")
+    if manifest is not None:
+        matches = tuple(operation for operation in manifest.operations if operation.operation_id == item.operation_id)
+        if len(matches) != 1:
+            raise ValueError("fragment operation ID is not exactly manifest-declared")
+        operation = matches[0]
+        if relative_path != operation.relative_output:
+            raise ValueError("fragment path does not match its declared operation output")
+        if (
+            item.repository != operation.repository
+            or item.experiment != operation.experiment
+            or item.selected_path != operation.selected_path
+            or item.operation != operation.operation
+            or item.runtime_subject != operation.runtime_subject
+            or item.command != operation.command
+            or item.platform != operation.platform
+            or item.python_requirement != operation.python_requirement
+            or item.compiler_or_runtime != operation.compiler_or_runtime
+            or item.package_name != operation.package_name
+        ):
+            raise ValueError("fragment facts do not match the frozen operation spec")
     return item
+
+
+def _json_no_duplicates(data: bytes) -> Mapping[str, Any]:
+    def unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"duplicate JSON key: {key}")
+            result[key] = value
+        return result
+
+    raw = json.loads(data, object_pairs_hook=unique)
+    if not isinstance(raw, Mapping):
+        raise ValueError("fragment root must be a JSON object")
+    return raw
+
+
+def load_manifest_fragments(
+    project_root: Path,
+    manifest: OperationManifest,
+    registry: SourceRegistry,
+    lock: SourceLock,
+) -> tuple[tuple[CompatibilityEvidence, ...], tuple[CheckoutEvidence, ...], frozenset[str]]:
+    expected = {item.relative_output: item for item in manifest.operations}
+    if len(expected) != len(manifest.operations):
+        raise ValueError("manifest output paths collide")
+    fragment_root = project_root / "experiments/00_source_audit/results/fragments"
+    compatibility = []
+    checkouts = []
+    seen = set()
+    if not fragment_root.exists():
+        return (), (), frozenset()
+    if fragment_root.is_symlink() or not fragment_root.is_dir():
+        raise ValueError("fragment root must be a no-follow directory")
+    entries = tuple(os.scandir(fragment_root))
+    if len(entries) > len(expected):
+        raise ValueError("fragment directory exceeds manifest-declared count")
+    locked = {item.name: item for item in lock.entries}
+    sources = {item.name: item for item in registry.repositories}
+    for entry in sorted(entries, key=lambda item: item.name):
+        if entry.is_symlink() or not entry.is_file(follow_symlinks=False):
+            raise ValueError("fragment directory contains a nonregular entry")
+        relative = f"experiments/00_source_audit/results/fragments/{entry.name}"
+        operation = expected.get(relative)
+        if operation is None:
+            raise ValueError("fragment path is not declared by the operation manifest")
+        parent_descriptor = os.open(fragment_root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            descriptor = os.open(entry.name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=parent_descriptor)
+        finally:
+            os.close(parent_descriptor)
+        try:
+            value = os.fstat(descriptor)
+            if not stat.S_ISREG(value.st_mode) or value.st_nlink != 1:
+                raise ValueError("fragment changed from an exact regular file")
+            if value.st_size > 2 * 1024 * 1024:
+                raise ValueError("fragment exceeds the bounded byte limit")
+            data = os.read(descriptor, value.st_size + 1)
+            if len(data) != value.st_size:
+                raise ValueError("fragment changed during bounded read")
+        finally:
+            os.close(descriptor)
+        raw = _json_no_duplicates(data)
+        if operation.operation == "CHECKOUT":
+            item = CheckoutEvidence.from_dict(raw)
+            source = sources[operation.repository]
+            pin = locked[operation.repository]
+            existing = tuple(path for path in source.selected_paths if pin.path_statuses[path] is PathStatus.EXISTS)
+            if item.repository != source.name or item.locked_sha != pin.commit_sha or item.registry_sha256 != registry.registry_sha256 or item.patterns != existing:
+                raise ValueError("checkout receipt does not bind the manifest/lock")
+            checkouts.append(item)
+        else:
+            compatibility.append(validate_fragment(raw, registry, lock, manifest, relative))
+        seen.add(operation.operation_id)
+    return tuple(compatibility), tuple(checkouts), frozenset(seen)
 
 
 @dataclass(frozen=True)
@@ -376,6 +647,7 @@ class CompatibilityRow:
     download_bytes: int
     blocker: str
     notes: str
+    evidence_sha256: str = ""
 
     def csv_values(self) -> tuple[object, ...]:
         return tuple(getattr(self, key).value if isinstance(getattr(self, key), Enum) else getattr(self, key) for key in CSV_HEADER)
@@ -386,13 +658,25 @@ def consolidate_compatibility(
     lock: SourceLock,
     fragments: Sequence[CompatibilityEvidence],
     observations: Sequence[RequirementObservation],
+    manifest: OperationManifest | None = None,
+    checkouts: Sequence[CheckoutEvidence] = (),
 ) -> tuple[CompatibilityRow, ...]:
     errors = validate_lock(registry, lock, require_complete=True)
     if errors:
         raise ValueError(f"complete source lock required: {errors[0]}")
+    if manifest is not None:
+        if manifest.registry_sha256 != registry.registry_sha256 or manifest.lock_sha256 != source_lock_sha256(lock):
+            raise ValueError("consolidation manifest digest binding is invalid")
+        if tuple(observations) != manifest.requirement_observations:
+            raise ValueError("consolidation observations must come exactly from manifest")
     fragment_map: dict[tuple[str, str, str], CompatibilityEvidence] = {}
     for item in fragments:
-        validated = validate_fragment(item.to_dict(), registry, lock)
+        if manifest is None:
+            raise ValueError("compatibility fragments require their frozen operation manifest")
+        operation = next((entry for entry in manifest.operations if entry.operation_id == item.operation_id), None)
+        if operation is None:
+            raise ValueError("compatibility fragment operation is absent from manifest")
+        validated = validate_fragment(item.to_dict(), registry, lock, manifest, operation.relative_output)
         key = (validated.repository, validated.experiment, validated.selected_path)
         if key in fragment_map:
             raise ValueError("duplicate/conflicting compatibility fragment")
@@ -401,6 +685,9 @@ def consolidate_compatibility(
     if len(observation_map) != len(observations):
         raise ValueError("duplicate requirement observation")
     locked = {item.name: item for item in lock.entries}
+    checkout_map = {item.repository: item for item in checkouts}
+    if len(checkout_map) != len(checkouts):
+        raise ValueError("duplicate checkout receipt")
     rows = []
     for source in registry.repositories:
         pin = locked[source.name]
@@ -416,9 +703,9 @@ def consolidate_compatibility(
                     classification = CompatibilityClass.LICENSE_REVIEW_REQUIRED
                 elif item is not None and item.operation == "PACKAGE_RUNTIME" and item.exit_status == 0 and source.mode not in {ReuseMode.REMOTE_ONLY, ReuseMode.DEFERRED}:
                     classification = CompatibilityClass.WORKS_LOCAL_M2
-                elif item is not None and item.exit_status == 0 and item.patch_artifact_sha256 and source.mode not in {ReuseMode.REMOTE_ONLY, ReuseMode.DEFERRED}:
+                elif item is not None and item.exit_status == 0 and item.patch_artifact_sha256 and checkout_map.get(source.name) is not None and checkout_map[source.name].outcome == "PASS" and source.mode not in {ReuseMode.REMOTE_ONLY, ReuseMode.DEFERRED}:
                     classification = CompatibilityClass.WORKS_LOCAL_CPU_WITH_PATCH
-                elif item is not None and item.exit_status == 0 and source.mode in {ReuseMode.SPARSE_REFERENCE, ReuseMode.PAPER_AND_CODE_REFERENCE}:
+                elif item is not None and item.exit_status == 0 and checkout_map.get(source.name) is not None and checkout_map[source.name].outcome == "PASS" and source.mode in {ReuseMode.SPARSE_REFERENCE, ReuseMode.PAPER_AND_CODE_REFERENCE}:
                     classification = CompatibilityClass.SOURCE_REFERENCE_ONLY
                 elif observation is not None and observation.kind == "REMOTE_GPU":
                     classification = CompatibilityClass.REMOTE_GPU_REQUIRED
@@ -435,6 +722,7 @@ def consolidate_compatibility(
                     smoke, classification, pin.license_status.value, pin.license_spdx or "",
                     item.disk_bytes if item else 0, item.download_bytes if item else 0,
                     item.blocker or "" if item else "", item.notes if item else "",
+                    item.evidence_sha256 if item else "",
                 ))
     return tuple(sorted(rows, key=lambda row: (row.repository, row.experiment, row.selected_path)))
 
@@ -478,6 +766,8 @@ def write_compatibility_outputs(
     rows: Sequence[CompatibilityRow],
     *,
     check: bool = False,
+    manifest: OperationManifest | None = None,
+    seen_operation_ids: frozenset[str] = frozenset(),
 ) -> dict[str, str]:
     csv_buffer = io.StringIO(newline="")
     writer = csv.writer(csv_buffer, lineterminator="\n")
@@ -498,7 +788,12 @@ def write_compatibility_outputs(
                 restriction = "STUDY_ONLY" if source.mode in {ReuseMode.SPARSE_REFERENCE, ReuseMode.PAPER_AND_CODE_REFERENCE} else "LOCKED_DEPENDENCY" if source.mode in {ReuseMode.DIRECT_DEPENDENCY, ReuseMode.ADAPTER_DEPENDENCY} else "NO_LOCAL_COPY"
                 source_map.append(f"| {experiment} | {source.name} | {selected} | {source.use} | {restriction} | project-local baseline | licenses.md#{source.name} |")
     labels = {CompatibilityClass.WORKS_LOCAL_M2: "LOCALLY_REPRODUCED_M2", CompatibilityClass.WORKS_LOCAL_CPU_WITH_PATCH: "LOCALLY_INTEGRATED", CompatibilityClass.REMOTE_GPU_REQUIRED: "REMOTELY_REPRODUCED_GPU", CompatibilityClass.SOURCE_REFERENCE_ONLY: "PRODUCTION_SHAPED_REFERENCE"}
-    maturity = ["# Maturity ledger", "", "| project/component | evidence label | evidence source | supported embodiment/task | license | compute requirements | local reproduction status | hardware validation status | known failure modes | role in this program |", "|---|---|---|---|---|---|---|---|---|---|"]
+    maturity = ["# Maturity ledger", "", "| project_or_component | evidence_label | evidence_source | supported_embodiment_or_task | license | compute_requirements | local_reproduction_status | known_failure_modes | role_in_program | hardware_validation_status |", "|---|---|---|---|---|---|---|---|---|---|"]
+    observation_hashes = {
+        item.repository: item.statement_sha256
+        for item in (manifest.requirement_observations if manifest else ())
+    }
+    unitree_rows = {"unitree_rl_mjlab", "unitree_mujoco", "unitree_sdk2", "unifolm_vla", "unifolm_wma"}
     for source in registry.repositories:
         classes = [row.classification for row in rows if row.repository == source.name]
         label = next(
@@ -511,10 +806,44 @@ def write_compatibility_outputs(
             "UNVERIFIED",
         )
         pin = locked[source.name]
-        maturity.append(f"| {source.name} | {label} | compatibility.csv | {','.join(source.experiments)} | {pin.license_spdx or pin.license_status.value} | bounded by reuse mode | {'REPRODUCED' if label == 'LOCALLY_REPRODUCED_M2' else 'NOT_REPRODUCED'} | NOT_VALIDATED | {source.caveat or 'not yet observed'} | {source.use} |")
-    maturity.append("| Experiment 00 source compatibility | LOCALLY_REPRODUCED_M2 | compatibility.csv | source audit | project | local CPU | REPRODUCED | NOT_APPLICABLE | incomplete evidence blocks gate | source gate |")
-    results = "# Experiment 00 results\n\nGenerated from immutable compatibility fragments.\n"
-    interface = "# Interface findings\n\nOnly bounded, evidence-backed source reuse is promoted.\n"
+        source_rows = [row for row in rows if row.repository == source.name]
+        evidence_hashes = sorted({row.evidence_sha256 for row in source_rows if row.evidence_sha256})
+        evidence_source = ",".join(f"sha256:{digest}" for digest in evidence_hashes) or (f"sha256:{observation_hashes[source.name]}" if source.name in observation_hashes else "NONE")
+        local_status = "LOCALLY_REPRODUCED_M2" if label == "LOCALLY_REPRODUCED_M2" else "NOT_REPRODUCED"
+        failures = sorted({row.blocker for row in source_rows if row.blocker})
+        known_failures = "; ".join(failures) or source.caveat or "NOT_OBSERVED"
+        hardware = "NOT_VALIDATED" if source.name in unitree_rows else "NOT_APPLICABLE"
+        maturity.append(f"| {source.name} | {label} | {evidence_source} | {','.join(source.experiments)} | {pin.license_spdx or pin.license_status.value} | bounded by {source.mode.value} | {local_status} | {known_failures} | {source.use} | {hardware} |")
+    expected_ids = frozenset(item.operation_id for item in manifest.operations) if manifest else frozenset()
+    missing_ids = sorted(expected_ids - seen_operation_ids)
+    package_rows = [row for row in rows if row.repository == "mujoco" and row.operation == "PACKAGE_RUNTIME"]
+    package_pass = len(package_rows) == 1 and package_rows[0].smoke_status is SmokeStatus.PASS and package_rows[0].classification is CompatibilityClass.WORKS_LOCAL_M2
+    evidence_failures = sorted({row.blocker for row in rows if row.smoke_status in {SmokeStatus.FAIL, SmokeStatus.BLOCKED} and row.blocker})
+    gate_complete = bool(manifest) and not missing_ids and package_pass and not evidence_failures
+    result_label = "LOCALLY_REPRODUCED_M2" if gate_complete else "UNVERIFIED"
+    result_local = "LOCALLY_REPRODUCED_M2" if gate_complete else "NOT_REPRODUCED"
+    result_sources = ",".join(f"operation:{item}" for item in sorted(seen_operation_ids)) or "NONE"
+    result_failure = "NONE" if gate_complete else "; ".join([*(f"missing:{item}" for item in missing_ids), *evidence_failures]) or "INCOMPLETE_EVIDENCE"
+    maturity.append(f"| Experiment 00 source compatibility | {result_label} | {result_sources} | source audit | project | local CPU | {result_local} | {result_failure} | source gate | NOT_APPLICABLE |")
+    results = (
+        "# Experiment 00 results\n\n"
+        "comparative_implementation_time_claim: INCONCLUSIVE\n\n"
+        f"operational_gate: {'PASS' if gate_complete else 'BLOCKED'}\n\n"
+        f"registry_sha256: {registry.registry_sha256}\n\n"
+        f"lock_sha256: {source_lock_sha256(lock)}\n\n"
+        f"expected_operation_ids: {','.join(sorted(expected_ids)) or 'NONE'}\n\n"
+        f"seen_operation_ids: {','.join(sorted(seen_operation_ids)) or 'NONE'}\n\n"
+        f"missing_operation_ids: {','.join(missing_ids) or 'NONE'}\n\n"
+        f"mujoco_package_smoke: {'PASS' if package_pass else 'NOT_PROVEN'}\n\n"
+        f"blockers: {result_failure}\n"
+    )
+    interface = (
+        "# Interface findings\n\n"
+        f"gate_status: {'PASS' if gate_complete else 'BLOCKED'}\n\n"
+        "promoted_claims: only exact manifest-bound PASS evidence\n\n"
+        "cannot_claim: production readiness, physical validation, or comparative adoption speed\n\n"
+        f"blockers: {result_failure}\n"
+    )
     outputs = {
         "experiments/00_source_audit/results/compatibility.csv": csv_buffer.getvalue().encode(),
         "references/licenses.md": ("\n".join(licenses) + "\n").encode(),

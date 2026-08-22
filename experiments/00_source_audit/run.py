@@ -41,8 +41,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(summary, sort_keys=True, separators=(",", ":")))
         return 0
     command = [f"--{raw['mode']}", "--manifest", raw["manifest"]]
-    if arguments.output_dir:
-        command.extend(("--fragment-dir", arguments.output_dir))
     return source_audit_main(command)
 
 
