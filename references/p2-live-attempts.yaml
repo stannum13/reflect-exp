@@ -210,3 +210,328 @@ attempts:
       across 20 repository directories and no lock exists or was published. The
       next window must use the allowlisted single-name command for the first
       incomplete entry before resuming the all-entry publication command.
+
+  - id: single_metadata_window_5_01_kimera
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - kimera
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:49:51Z
+    finished_at_utc: 2026-08-22T20:50:15Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [kimera]
+    summary: >-
+      Resolved and validated the pinned kimera metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_5_02_conceptgraphs
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - conceptgraphs
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:50:15Z
+    finished_at_utc: 2026-08-22T20:50:31Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [conceptgraphs]
+    summary: >-
+      Resolved and validated the pinned conceptgraphs metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_5_03_rerun
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - rerun
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:50:31Z
+    finished_at_utc: 2026-08-22T20:50:51Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [rerun]
+    summary: >-
+      Resolved and validated the pinned rerun metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_5_04_openusd
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - openusd
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:50:51Z
+    finished_at_utc: 2026-08-22T20:50:57Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [openusd]
+    summary: >-
+      Resolved and validated the pinned openusd metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_5_05_ifcopenshell
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - ifcopenshell
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:50:57Z
+    finished_at_utc: 2026-08-22T20:51:03Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [ifcopenshell]
+    summary: >-
+      Resolved and validated the pinned ifcopenshell metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_5_06_ifcopenshell_test_files
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - ifcopenshell_test_files
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:51:03Z
+    finished_at_utc: 2026-08-22T20:51:08Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [ifcopenshell_test_files]
+    summary: >-
+      Resolved and validated the pinned ifcopenshell_test_files metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_5_07_tdmpc2
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - tdmpc2
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:51:08Z
+    finished_at_utc: 2026-08-22T20:51:13Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [tdmpc2]
+    summary: >-
+      Resolved and validated the pinned tdmpc2 metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_5_08_dino_wm
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - dino_wm
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:51:13Z
+    finished_at_utc: 2026-08-22T20:51:18Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [dino_wm]
+    summary: >-
+      Resolved and validated the pinned dino_wm metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_5_09_vjepa2
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - vjepa2
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:51:18Z
+    finished_at_utc: 2026-08-22T20:51:26Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [vjepa2]
+    summary: >-
+      Resolved and validated the pinned vjepa2 metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_5_10_lawam
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - lawam
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:51:26Z
+    finished_at_utc: 2026-08-22T20:51:31Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [lawam]
+    summary: >-
+      Resolved and validated the pinned lawam metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_5_11_libero
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - libero
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:51:31Z
+    finished_at_utc: 2026-08-22T20:51:36Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [libero]
+    summary: >-
+      Resolved and validated the pinned libero metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_5_12_unitree_rl_mjlab
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - unitree_rl_mjlab
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:51:36Z
+    finished_at_utc: 2026-08-22T20:51:40Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [unitree_rl_mjlab]
+    summary: >-
+      Resolved and validated the pinned unitree_rl_mjlab metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
+
+  - id: single_metadata_window_5_13_unitree_mujoco
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - unitree_mujoco
+      - --metadata-only
+    started_at_utc: 2026-08-22T20:51:40Z
+    finished_at_utc: 2026-08-22T20:51:46Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [unitree_mujoco]
+    summary: >-
+      Resolved and validated the pinned unitree_mujoco metadata entry into its
+      repository-scoped cache; the stdout candidate reported metadata status
+      RESOLVED. Single-name mode did not publish a partial lock.
+    cache_validation: >-
+      The command exited zero after the production registry/candidate validators
+      accepted the one-entry result. Its checksummed cache records are available
+      for the later complete all-entry publication pass.
