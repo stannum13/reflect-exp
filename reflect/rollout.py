@@ -1198,7 +1198,7 @@ def _load_actions(
 ) -> tuple[tuple[ActionChunk, ...], tuple[ControlReference, ...]]:
     try:
         stream.seek(0)
-        table = pq.read_table(stream)
+        table = pq.read_table(stream, use_threads=False)
     except (OSError, pa.ArrowException) as exc:
         raise RolloutValidationError(f"actions.parquet is invalid: {exc}") from exc
     if table.schema != _ACTION_SCHEMA:
@@ -1350,18 +1350,15 @@ def validate_rollout(path: Path) -> RolloutArtifact:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Expose the replay command boundary implemented by the replay module in Task 4."""
+    """Validate and replay exactly one saved simulation rollout."""
     parser = argparse.ArgumentParser(prog="python -m reflect.rollout")
     subcommands = parser.add_subparsers(dest="command", required=True)
     replay_parser = subcommands.add_parser("replay")
     replay_parser.add_argument("path", type=Path)
     arguments = parser.parse_args(argv)
     SafetyConfig.from_mapping(os.environ).require_simulation_only()
-    try:
-        from reflect.replay import format_replay, replay_rollout
-    except ImportError:
-        print("replay support is not available until Task 4", file=sys.stderr)
-        return 2
+    from reflect.replay import format_replay, replay_rollout
+
     try:
         result = replay_rollout(arguments.path)
     except RolloutValidationError as exc:
@@ -1372,4 +1369,5 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    sys.modules["reflect.rollout"] = sys.modules[__name__]
     raise SystemExit(main())
