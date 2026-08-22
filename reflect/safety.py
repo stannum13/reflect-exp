@@ -113,7 +113,7 @@ class SafetyConfig:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=["check"])
-    args = parser.parse_args(argv)
+    parser.parse_args(argv)
     config = SafetyConfig.from_mapping(os.environ)
     config.require_simulation_only()
     target = config.validated_remote_target()
