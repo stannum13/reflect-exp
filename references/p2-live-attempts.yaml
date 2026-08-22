@@ -934,3 +934,118 @@ attempts:
       canonical prefix through act, but the newly pinned lerobot license response
       was not present in cache. The command failed closed without network access or
       partial publication; no lock exists. Further retries wait for the next window.
+
+  - id: single_metadata_window_7_01_lerobot
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - lerobot
+      - --metadata-only
+    started_at_utc: 2026-08-22T22:50:34Z
+    finished_at_utc: 2026-08-22T22:50:42Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [lerobot]
+    summary: >-
+      Resolved and validated the current pinned lerobot metadata entry; stdout
+      identified name lerobot and metadata_status RESOLVED. Single-name mode did
+      not publish a partial lock.
+    cache_validation: >-
+      The targeted pass filled the exact lerobot license response missing after
+      the prior live refresh and left its checksummed cache ready for publication.
+
+  - id: all_metadata_window_7_live_refresh
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --all-metadata-only
+    started_at_utc: 2026-08-22T22:50:49Z
+    finished_at_utc: 2026-08-22T22:51:31Z
+    exit_code: 1
+    published_lock: false
+    completed_entries:
+      - mujoco
+      - mujoco_mpc
+      - mujoco_menagerie
+      - mink
+      - mjctrl
+      - hydrax
+      - curobo
+      - moveit2
+      - ros2_control
+      - ros2_controllers
+      - mujoco_ros2_control
+      - act
+      - lerobot
+      - openpi
+      - diffusion_policy
+      - behaviortree_cpp
+      - navigation2
+      - spark_dsg
+    incomplete_entry: hydra_scene_graph
+    error: >-
+      GitHub rate limit exhausted for https://api.github.com/repos/MIT-SPARK/Hydra/license?ref=2e58a35baea629eee8838409771876acff015daf; reset 1787442641
+    rate_limit_reset_utc: 2026-08-22T23:50:41Z
+    lock_absence_verified: true
+    cache_validation: >-
+      The live-first pass validated the canonical prefix through spark_dsg and
+      stopped at the current Hydra license endpoint when the window exhausted. It
+      published no partial lock; the response was retained for cache replay.
+
+  - id: all_metadata_window_7_cache_retry
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --all-metadata-only
+    started_at_utc: 2026-08-22T22:51:40Z
+    finished_at_utc: 2026-08-22T22:51:43Z
+    exit_code: 1
+    published_lock: false
+    completed_entries:
+      - mujoco
+      - mujoco_mpc
+      - mujoco_menagerie
+      - mink
+      - mjctrl
+      - hydrax
+      - curobo
+      - moveit2
+      - ros2_control
+      - ros2_controllers
+      - mujoco_ros2_control
+      - act
+      - lerobot
+      - openpi
+      - diffusion_policy
+      - behaviortree_cpp
+      - navigation2
+      - spark_dsg
+      - hydra_scene_graph
+      - kimera
+      - conceptgraphs
+      - rerun
+      - openusd
+      - ifcopenshell
+    incomplete_entry: ifcopenshell_test_files
+    error: >-
+      GitHub rate limit remains active for https://api.github.com/repos/IfcOpenShell/files/license?ref=9fc2267d7f1ff35284c5b0fc28cc97bff7ace8e7; reset 1787442641
+    rate_limit_reset_utc: 2026-08-22T23:50:41Z
+    lock_absence_verified: true
+    cache_validation: >-
+      The immediate active-marker retry replayed the enlarged canonical prefix through
+      ifcopenshell, then found the newly pinned IfcOpenShell/files license response
+      absent. It made no network request, published no partial lock, and stopped
+      without looping before the next window.
