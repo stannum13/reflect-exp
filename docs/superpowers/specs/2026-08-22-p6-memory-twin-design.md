@@ -108,6 +108,24 @@ equal but never regress. Architecture-visible events use the existing shared
 `ExecutionEventType` when applicable; P6's `event_subtype` is a validated payload
 field and never expands the shared enum implicitly.
 
+The canonical mapping is exact:
+
+| Rank | P6 record | Shared event mapping | Required payload |
+|---:|---|---|---|
+| 1 | truth mutation | scorer-private truth event only | `event_subtype`, `truth_event_id` |
+| 2 | observation delivery | `OBSERVATION_RECEIVED` | `observation_id`, `event_subtype` |
+| 3 | compiled memory mutation | `MEMORY_UPDATED` | `mutation_id`, `event_subtype=MEMORY_STATE_UPDATED` |
+| 4 | query/mission request | P6 query/mission sidecar only | `event_subtype=QUERY_REQUESTED` or `MISSION_REQUESTED` |
+| 5 | query response | P6 query sidecar only | `event_subtype=QUERY_RESPONDED` |
+| 6 | decision/initial plan | P6 decision/plan sidecar only | `event_subtype=DECISION_PUBLISHED` or `PLAN_PUBLISHED` |
+| 6 | replacement plan | `SEMANTIC_REPLAN` plus plan sidecar | `event_subtype=PLAN_REPLACED`, `plan_id` |
+| 7 | executed physical chunk, if any | `ACTION_EXECUTED` | canonical `source_chunk_id`, `event_subtype=PHYSICAL_ACTION_EXECUTED` |
+| 8 | truth outcome/scoring | sealed scorer artifact only | `event_subtype=OUTCOME_SCORED` |
+
+P6 never abuses `POLICY_RESPONDED` for a query because the current rollout validator
+binds that event to a stored `ActionChunk`. Every P6-emitted shared event includes
+`event_subtype` in addition to the canonical fields required by its shared type.
+
 The frozen local subtype vocabulary is:
 
 ```text
@@ -126,11 +144,21 @@ ROUTE_BLOCKED
 TOPOLOGY_EDGE_CHANGED
 BATTERY_ESTIMATE_CHANGED
 INSTRUCTION_CHANGED
+MEMORY_STATE_UPDATED
+QUERY_REQUESTED
+MISSION_REQUESTED
+QUERY_RESPONDED
+DECISION_PUBLISHED
+PLAN_PUBLISHED
+PLAN_REPLACED
+PHYSICAL_ACTION_EXECUTED
+OUTCOME_SCORED
 ```
 
 The first ten cover Exp04's event suite
-(`Reflect Lite Research Program.md:1661-1672`); the remaining subtypes cover the
-additional Exp05 dynamics (`Reflect Lite Research Program.md:1819-1832`).
+(`Reflect Lite Research Program.md:1661-1672`); the next five cover additional Exp05
+dynamics (`Reflect Lite Research Program.md:1819-1832`); the final nine are frozen
+runner/scorer lifecycle subtypes used by the mapping table.
 
 ## 4. Physical and API oracle separation
 
@@ -163,6 +191,15 @@ runs a fresh fact compiler and architecture instance. No decoded object, compile
 cache, memory state, planner state, or output buffer is shared between variants.
 After execution, the runner canonicalizes, hashes, fsyncs, and atomically seals its
 output. The scorer refuses a writable, incomplete, or hash-mismatched output.
+
+Canonical `Observation` objects are an artifact-ingestion format only. Immediately
+after each observation is validated, the boundary compiler copies its values into a
+tuple of experiment-local frozen `FactRecord`s, recursively converts JSON lists to
+tuples and mappings to new read-only mapping proxies, copies every NumPy array into a
+C-contiguous array with its write flag disabled, and releases all callback-reachable
+references to the `Observation`. Architecture, query, and planner callbacks accept
+only immutable `FactRecord` tuples or typed read-only `FactBatch` views. They never
+receive an `Observation`, mutable payload, loader, descriptor, or artifact path.
 
 Only after sealing does the orchestrator launch scorers with separate read-only
 descriptors for sealed output, observation trace, and—where allowed—truth trace.
@@ -291,35 +328,79 @@ vector-only comparison explicit.
 
 M5's non-vector retrieval is the strong baseline: exact stable-ID lookup, exact
 predicate filter, normalized alias lookup, and a deterministic lexical inverted
-index. The lexical score is frozen BM25 over lowercase Unicode-NFKC alphanumeric
-tokens and adjacent token bigrams. With `k1=1.2`, `b=0.75`, retained-document count
-`N`, document frequency `df`, term frequency `tf`, document length `dl`, and retained
-average document length `avgdl`, each query-term contribution is
+index.
+
+One fact is one retrieval document. Its field sequence is exactly `subject_id`,
+`predicate`, canonical JSON `object_id_or_canonical_value`, then sorted provenance.
+Each field is prefixed with the literal marker `subject`, `predicate`, `object`, or
+`provenance`. Tokenization applies Unicode NFKC then `casefold`, replaces each maximal
+run of non-alphanumeric code points with one space, splits on spaces, removes empty
+tokens, and retains repetitions. Adjacent unigrams within a field add a bigram token
+joined by one underscore; bigrams never cross fields. There is no stemming, stop-word
+removal, or synonym expansion.
+
+A query document is constructed from the lowercase query-type token, then its sorted
+canonical argument fields using the same field markers/tokenizer, then the fixed
+predicate expansion:
 
 ```text
-ln(1 + (N - df + 0.5) / (df + 0.5))
-* tf * (k1 + 1) / (tf + k1 * (1 - b + b * dl / avgdl))
+WHERE -> IN, ON, OBSERVED_AT
+LAST_OBSERVED -> OBSERVED_AT
+POSE_USABLE -> OBSERVED_AT
+ATTEMPT_HISTORY -> TASK_ATTEMPT_FAILED
+CHANGES_SINCE -> OBSERVED_AT
+CONFLICTS -> OBSERVED_AT
+ROUTE_FACTS -> CONNECTS, BLOCKS, REACHABLE, RESTRICTED_BY
 ```
 
-An empty corpus or query returns no lexical hit. Repeated query terms contribute once.
-Document statistics are recomputed from the current retained fact set. Ties use
-`fact_id`.
+Normalized aliases are appended only when an exact retained alias fact refers to the
+query's stable entity ID; alias facts are sorted by fact ID. Query construction never
+reads truth or a future observation.
+
+The lexical score is frozen BM25. With `k1=1.2`, `b=0.75`, retained-document count
+`N`, document frequency `df_t`, document term frequency `tf_td`, document length `dl`,
+and retained average document length `avgdl`, token `t` contributes
+
+```text
+idf_t = ln(1 + (N - df_t + 0.5) / (df_t + 0.5))
+bm25_td = idf_t * tf_td * (k1 + 1)
+           / (tf_td + k1 * (1 - b + b * dl / avgdl))
+```
+
+The lexical score sums `bm25_td` once for each distinct query token present in the
+document. An empty corpus/query returns no lexical hit. Statistics are recomputed from
+the current retained facts. Lexical order is `(score descending, received_at_ns
+descending, fact_id ascending)`.
 
 M6 adds no library or model. Each token and bigram's UTF-8 bytes are SHA-256 hashed and
 the digest is interpreted as one unsigned big-endian integer. Because every allowed
 `D` is a power of two, the low `log2(D)` bits select the dimension and the immediately
-next bit selects sign. Signed term-frequency components use the BM25 IDF above and are
-L2-normalized. Query vectors use the same transform.
-Cosine similarity retrieves the first `R` facts sorted by `(score descending,
-received_at_ns descending, fact_id ascending)`. Exact typed/lexical matches are
-unioned first, deduplicated by fact ID, and remain authoritative; vector hits are
-candidate evidence only. An all-zero vector returns no vector hits. Index rebuilds
-after each retention change from canonical fact bytes, so deletion/expiry cannot
-leave hidden state.
+next bit selects sign (`0 -> +1`, `1 -> -1`). For document `d`, every token component
+is exactly `signed_bm25_td = sign_t * bm25_td`. For query `q`, it is
+`signed_query_t = sign_t * idf_t * tf_tq`. All colliding token components are summed
+algebraically in their selected dimension before the full vector is L2-normalized.
+An empty or zero-norm vector stays all-zero. Cosine is the dot product of normalized
+vectors; a zero vector has no vector hits. Vector order is `(cosine descending,
+received_at_ns descending, fact_id ascending)` and only the first `R` are retained.
+
+The final candidate union is deterministic: authoritative typed matches first in
+`(predicate expansion order, received_at_ns descending, fact_id ascending)`, then
+lexical hits in lexical order, then vector hits in vector order. First occurrence of a
+fact ID wins and records every channel/score that also found it. The common context
+fact/byte truncation runs only after union. Vector hits remain non-authoritative.
+The index rebuilds from canonical retained fact bytes after every retention change.
 
 V0 uses the same hash dimension, tokenization, IDF, and top-R rule but cannot use
 typed/lexical authoritative lookup. This makes M6 feasible, reproducible, and a
 true additive retrieval test rather than a disguised embedding service.
+
+A hand fixture freezes collision behavior. With `D=8`, token `valve` hashes to digest
+ending `0xeb`, dimension `3`, sign `-1`; token `room` ends `0x32`, dimension `2`, sign
+`+1`; and token `valve_valve` ends `0xbd`, dimension `5`, sign `-1`. A second token
+whose low four bits equal `0x3` must sum algebraically with `valve` in dimension 3
+before normalization; equal positive and negative weighted components cancel to zero.
+Golden tests recompute these SHA-256 digests, BM25 components, collision sum, norm,
+cosine, union ordering, deduplication, and context truncation by hand.
 
 ### 6.2 Queries, decisions, and metrics
 
@@ -336,6 +417,15 @@ metrics are stale-belief action rate and wrong-identity rate. Other secondary me
 are repeated scans, explanation accuracy, Brier calibration, query latency, actual
 storage bytes, input fact count/bytes, and emitted context count/bytes. Abstention is
 correct only when the epistemic oracle says unknown or unresolved contradiction.
+
+Endpoint denominators are fixed before generation. Exp04 correctness and Brier score
+use all ten query IDs per seed. Stale-action rate uses the four action-eligible query
+IDs `POSE_USABLE`, `REACHABLE_VALVE`, `ROUTE_BLOCKER`, and `DUPLICATE_IDENTITY`.
+Wrong-identity rate uses `REACHABLE_VALVE` and `DUPLICATE_IDENTITY`. Ambiguous-
+retrieval accuracy uses `DUPLICATE_IDENTITY`. Explanation accuracy uses
+`LAST_FAILURE_REASON`. Repeated scans is a count over the complete ten-query trace,
+not a rate. A missing required answer keeps the fixed denominator and scores incorrect;
+a malformed/missing row makes the shard invalid rather than changing a denominator.
 
 ### 6.3 Nested scientific and promotion rule
 
@@ -391,6 +481,13 @@ The primary metric is seed-level invalid-plan rate. Secondary/guard metrics are
 mission success, forbidden-region violations, invalid affordances, stale-belief
 failures, route cost, replans, semantic/geometry query counts, context size, and
 latency. Any forbidden-region violation is a safety failure.
+
+Exp05 invalid-plan rate and mission success use all five mission IDs per seed. The
+history-dependent T4 contrast uses exactly `ALTERNATE_DOOR_AFTER_FAILURE` and
+`REPLAN_AFTER_RESTRICTION`, denominator two. Forbidden-region and invalid-affordance
+rates use all five missions; route cost averages only successful missions but also
+reports the fixed successful-count denominator. Zero successful missions yields a
+missing required route-cost guard and makes that variant-seed invalid.
 
 ### 7.1 Fixed comparator rule
 
@@ -514,7 +611,17 @@ scorer/oracle breach, missing required safety output, or undeclared exclusion ma
 the artifact set `INVALID` and no scientific result is computed. Nothing is imputed.
 
 All contrasts use seed-level paired differences and a deterministic 10,000-resample
-percentile bootstrap. Families and marginal intervals are:
+percentile bootstrap. For each contrast, complete paired seed IDs are sorted ascending.
+The NumPy `PCG64` seed is the first 128 bits, interpreted big-endian, of SHA-256 over
+canonical UTF-8 JSON array
+`[protocol_hash, experiment_id, family_id, contrast_id, "bootstrap-v1"]`. Each
+resample draws exactly the paired-seed count indices with replacement. Bootstrap
+statistics are sorted ascending; percentile endpoint `p` uses nearest rank
+`max(0, ceil(p * 10000) - 1)` with no interpolation. Identical bootstrap values are
+retained, not deduplicated. Exact equality to a superiority margin fails; exact
+equality to a non-inferiority boundary passes. If promotion/ranking values are exactly
+tied after all bounds, the fixed architecture orders M0-M6 then T0-T4 break the tie.
+Families and marginal intervals are:
 
 - Exp04 M4 correctness versus M0 and V0: two contrasts, 97.5% intervals.
 - Exp04 M4 stale action, wrong identity, and scans versus M0: three contrasts,
@@ -544,23 +651,71 @@ remaining valid uncertainty is `INCONCLUSIVE`. Exp05 uses the equivalent T3/T4 r
 
 ## 9. Bounded shards, resume, and maxima
 
-One evidence-bearing command runs exactly one declared
-`(experiment, phase, variant, seed)` shard. A shard executes one complete trace: ten
-queries for Exp04 or five missions for Exp05. It has a 60-minute wall-clock ceiling
-and 16 MiB total serialized-artifact ceiling. `--max-cases` is smoke-only unless it
-equals the shard's frozen complete case count.
+One evidence-bearing command runs exactly one declared shard keyed by
+`(experiment, protocol_revision, phase, variant, configuration, seed)`. Valid phases
+are `pilot-tuning`, `pilot-evaluation`, and `confirmation`. The canonical textual key
+is, for example, `exp04:r1:confirmation:M5:BASE:00000017`; every component is parsed
+and compared with the protocol and trace manifest. A shard executes one complete
+trace: ten queries for Exp04 or five missions for Exp05. It has a 60-minute wall-clock
+ceiling and 4 MiB runner-artifact ceiling. `--max-cases` is smoke-only unless it equals
+10 for Exp04 or 5 for Exp05.
+
+The exact runner command shapes are:
+
+```text
+python experiments/04_memory/run.py \
+  --protocol configs/frozen.yaml \
+  --shard-id exp04:r1:confirmation:M5:BASE:00000017 \
+  --observation-trace manifests/exp04-confirmation/00000017.json \
+  --output-root results/04_memory --headless --max-cases 10
+
+python experiments/05_semantic_twin/run.py \
+  --protocol configs/frozen.yaml \
+  --shard-id exp05:r1:confirmation:T3:BASE:00000017 \
+  --observation-trace manifests/exp05-confirmation/00000017.json \
+  --output-root results/05_semantic_twin --headless --max-cases 5
+```
+
+Pilot uses the identical command shape with `configs/base.yaml`, a pilot phase in the
+shard ID, and its declared configuration/seed. An evidence command rejects a duplicate
+phase/configuration flag, missing `--headless`, mismatched case count, unknown shard,
+truth argument/environment variable, or output path not derived from the shard key.
+Reissuing the exact command is the only resume operation and must validate-and-skip.
 
 Per revision, Exp04 has at most
 `9 variants * (3 configurations * 4 tuning seeds + 1 selected configuration * 4
 evaluation seeds) = 144` pilot shards; Exp05 has at most
 `6 * (3 * 4 + 1 * 4) = 96`. Confirmation has at most
 `9 * 32 = 288` Exp04 and `6 * 32 = 192` Exp05 variant-seed shards, 480 total before
-any killed-variant reduction. At 16 MiB each, pilot is at most 3,840 MiB plus a
-256 MiB aggregate allowance, and confirmation is at most 7,680 MiB plus a 512 MiB
-aggregate/manifest allowance. Both are below the inherited 10 GiB per-pass ceiling.
-The orchestrator refuses to start a phase without its declared remaining byte budget.
+any killed-variant reduction.
 
-Destinations derive from frozen experiment/phase/variant/config/seed/trace hashes.
+The retained maximum covers both permitted pilot revisions and confirmation, not one
+pass in isolation:
+
+```text
+pilot runner shards:        480 * 4 MiB = 1,920 MiB
+confirmation runner shards: 480 * 4 MiB = 1,920 MiB
+pilot truth+observation:      32 * 4 MiB =   128 MiB
+confirmation truth+obs:       64 * 4 MiB =   256 MiB
+pilot scorer artifacts:      480 * 1 MiB =   480 MiB
+confirmation scorer:         480 * 1 MiB =   480 MiB
+two pilot aggregate areas:     2 * 128 MiB = 256 MiB
+confirmation/cross-phase aggregate allowance = 512 MiB
+------------------------------------------------------
+maximum retained P6 total                  = 5,952 MiB
+```
+
+The 32 pilot trace pairs are two revisions times eight seeds times two experiments;
+the 64 confirmation pairs are 32 seeds times two experiments. A truth+observation
+pair shares one 4 MiB ceiling, and each sealed scorer output has a separate 1 MiB
+ceiling. Temporary sibling directories count against the 512 MiB allowance and must
+be absent before a new phase. `5,952 MiB` is below the inherited 10 GiB ceiling. Phase
+preflight sums all retained files plus the complete declared next-phase maximum and
+refuses to start unless both total budget and free disk cover it. Retention is
+create-only through final decision; no favorable shard may replace an unfavorable one.
+
+Destinations derive from experiment/protocol-revision/phase/variant/configuration/seed
+plus protocol and observation-trace hashes.
 Writes are create-only through sibling temporary directories, fsync, and atomic
 rename. Resume validates every canonical rollout and P6 sidecar, checks all schema,
 protocol, source, observation, equality, and content hashes, and skips only an exact
@@ -593,11 +748,13 @@ p6/
 artifact-manifest.json
 ```
 
-`observations.npz` remains the canonical repository observation artifact. It contains
-freshly decoded architecture-visible `Observation` values. `actions.parquet` remains
-canonical `ActionChunk`/`ControlReference` data and is never repurposed for queries or
-plans; it is a valid empty canonical table when the benchmark executes no physical
-chunk. Canonical shared events retain their existing lifecycle meanings.
+`observations.npz` remains the canonical repository observation artifact. Its
+`Observation` values exist only at the ingestion/replay boundary and are compiled
+immediately into deeply frozen P6 fact tuples before any architecture callback.
+`actions.parquet` remains canonical `ActionChunk`/`ControlReference` data and is never
+repurposed for queries or plans; it is a valid empty canonical table when the benchmark
+executes no physical chunk. Canonical shared events retain their existing lifecycle
+meanings.
 
 P6-local sidecars have exact versioned schemas:
 
@@ -607,19 +764,22 @@ P6-local sidecars have exact versioned schemas:
   IDs, cited facts, and uncertainty. It contains no outcome or truth-derived column;
   the scorer writes outcome metrics elsewhere and never mutates this file.
 - `plans.parquet`: plan ID/mission ID, ordered step index, action enum, entity/edge,
-  precondition fact IDs, predicted cost, and invalidation reason.
+  precondition fact IDs, predicted cost, and runner-authored
+  `predicted_invalidation_reason`. The reason uses a closed prediction enum and may be
+  `NONE`; there is no actual-validity or truth-derived reason column.
 - `memory_snapshots.jsonl`: variant-visible canonical state after each update, actual
   serialized byte count, input/context budget, and hash.
 - `fact_sets.jsonl`: compiler step, ordered fact IDs, canonical input-byte count,
   expiry decisions, and equality-group hash.
 - `replay.json`: sidecar schema hashes, counts, terminal query/decision/plan IDs,
-  equality proof, and replay result.
+  equality proof, predicted invalidations, and truth-free replay result.
 
 A P6 sidecar validator rejects extra/missing columns, duplicate IDs/keys, nonfinite
 values, time regression, unknown enums/relations/subtypes, dangling fact references,
-budget violations, unsealed outcomes, and hash mismatch. Sidecar replay reconstructs
-fact compilation, memory mutations, queries, decisions, and plan invalidations from
-`observations.npz`, shared events, and sidecars without the generator or truth.
+budget violations, outcome/truth columns in runner files, and hash mismatch. Sidecar
+replay reconstructs fact compilation, memory mutations, queries, decisions, plans,
+and **predicted** invalidations from `observations.npz`, shared events, and sidecars
+without the generator or truth. It does not claim actual plan validity.
 
 `artifact-manifest.json` lists the relative path, media type, byte count, and SHA-256
 of every immutable file under `rollout/` and `p6/`. It excludes itself and any temporary
@@ -627,7 +787,9 @@ file, is canonicalized, fsynced, and atomically created last. Validation recompu
 listed set exactly, so a self-hash recursion or unlisted file is impossible.
 
 Truth traces and scorer outputs are separate orchestrator artifacts with their own
-manifests. They are never copied under a runner shard.
+manifests. The sealed scorer bundle alone may contain actual plan validity and
+`actual_invalidation_reason`, cross-linked by plan/mission/step ID. These files are
+never copied under or used to replay a runner shard.
 
 ## 11. Verification design
 
@@ -637,6 +799,9 @@ Tests cover:
 - physical descriptor/path/import/environment isolation of truth from hostile runners;
 - fresh observation decode, immutable records, per-variant rehash, and zero shared
   caches/state;
+- hostile callbacks that attempt array writes, mapping/list mutation, object-field
+  replacement, retained-reference mutation, and `Observation` discovery, with no
+  mutation visible to a later callback or variant;
 - sealing before scorer launch and scorer refusal of writable/incomplete output;
 - epistemic-oracle unknown/stale/conflict answers versus outcome-oracle hidden-truth
   safety decisions;
@@ -648,7 +813,8 @@ Tests cover:
   every query/mission;
 - M0-M6/H0/V0 retention semantics and MemoryView conformance;
 - BM25 tokenization/scoring, signed SHA-256 feature hashing, zero vectors, cosine/top-R
-  ties, rebuild after expiry, M6 typed authority, and V0 non-authority;
+  ties, algebraic collision summation, the frozen hand fixture, typed/lexical/vector
+  union/dedup order, rebuild after expiry, M6 typed authority, and V0 non-authority;
 - all ten query answers/decisions and five missions/invalid-plan reasons;
 - Dijkstra cost/tie ordering, bounded replan, and safety rejection before action;
 - exact pilot configurations, selection keys/ties, infeasibility, 25% headroom,
@@ -656,12 +822,16 @@ Tests cover:
 - post-freeze confirmation generation and rejection of a preexisting/reused seed or
   scenario manifest;
 - paired bootstrap, every multiplicity family, hierarchy, equality boundaries,
-  missing rules, and lifecycle/artifact/scientific/blocker/promotion state separation;
+  exact hash-derived PCG64 seeds, nearest-rank endpoints, retained ties, fixed endpoint
+  denominators, missing rules, and lifecycle/artifact/scientific/blocker/promotion
+  state separation;
 - canonical RolloutWriter compatibility with `observations.npz` and empty/nonempty
   canonical actions;
-- exact sidecar schemas, replay, manifest self-exclusion, extra-file rejection,
-  corruption rejection, and truth absence;
-- one-shard command enforcement, case limits, wall/byte ceilings, create-only atomic
+- exact sidecar schemas, predicted-only runner plan fields/replay, scorer-only actual
+  validity/reasons, manifest self-exclusion, extra-file rejection, corruption
+  rejection, and truth absence;
+- exact six-component shard identity and CLI examples, case limits, wall/byte ceilings,
+  two-revision 5,952 MiB arithmetic, full-next-phase preflight, create-only atomic
   publication, validate-and-skip resume, and mismatch refusal; and
 - offline/network/LLM/physical/remote guards, clean implementation state, full tests,
   secret scan, artifact sizes, and diff checks.
