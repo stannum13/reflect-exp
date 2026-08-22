@@ -10,11 +10,15 @@ import hashlib
 import os
 from pathlib import Path, PurePosixPath
 import re
+import select
 import selectors
+import socket
 import stat
 import subprocess
+import threading
 import time
 from typing import Protocol
+from urllib.parse import urlsplit
 
 from reflect._rollout_io import FileIdentity, cleanup_exact_directory, open_directory_at
 from reflect.source_evidence import open_directory_chain
@@ -69,6 +73,7 @@ class CheckoutCommandResult:
     stdout: bytes
     stderr: bytes
     download_bytes: int
+    executed_argv: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -83,6 +88,7 @@ class CheckoutResult:
     disk_bytes: int
     content_hashes: Mapping[str, str]
     reused: bool
+    destination_identity: tuple[int, int]
 
 
 class CheckoutRunner(Protocol):
@@ -98,7 +104,129 @@ class CheckoutRunner(Protocol):
     ) -> CheckoutCommandResult: ...
 
 
+class _ConnectTunnel:
+    """One-purpose loopback CONNECT tunnel with an upstream-to-client byte cap."""
+
+    def __init__(self, host: str, port: int, cap: int) -> None:
+        self.host = host
+        self.port = port
+        self.cap = cap
+        self.consumed = 0
+        self.capped = threading.Event()
+        self._stop = threading.Event()
+        self._lock = threading.Lock()
+        self._sockets: set[socket.socket] = set()
+        self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._listener.bind(("127.0.0.1", 0))
+        self._listener.listen(4)
+        self._listener.settimeout(0.1)
+        self.local_port = self._listener.getsockname()[1]
+        self._thread = threading.Thread(target=self._accept, daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def _track(self, value: socket.socket) -> None:
+        with self._lock:
+            self._sockets.add(value)
+
+    def _untrack(self, value: socket.socket) -> None:
+        with self._lock:
+            self._sockets.discard(value)
+
+    def _accept(self) -> None:
+        while not self._stop.is_set() and not self.capped.is_set():
+            try:
+                client, address = self._listener.accept()
+            except (TimeoutError, OSError):
+                continue
+            if address[0] != "127.0.0.1":
+                client.close()
+                continue
+            self._track(client)
+            threading.Thread(target=self._serve, args=(client,), daemon=True).start()
+
+    def _serve(self, client: socket.socket) -> None:
+        upstream: socket.socket | None = None
+        try:
+            client.settimeout(5)
+            request = bytearray()
+            while b"\r\n\r\n" not in request and len(request) <= 8192:
+                chunk = client.recv(1024)
+                if not chunk:
+                    return
+                request.extend(chunk)
+            first = bytes(request).split(b"\r\n", 1)[0]
+            expected = f"CONNECT {self.host}:{self.port} HTTP/1.1".encode("ascii")
+            if first != expected or len(request) > 8192:
+                client.sendall(b"HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n")
+                return
+            upstream = socket.create_connection((self.host, self.port), timeout=5)
+            self._track(upstream)
+            client.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+            client.setblocking(False)
+            upstream.setblocking(False)
+            while not self._stop.is_set() and not self.capped.is_set():
+                readable, _, _ = select.select((client, upstream), (), (), 0.05)
+                for source in readable:
+                    try:
+                        data = source.recv(64 * 1024)
+                    except BlockingIOError:
+                        continue
+                    if not data:
+                        return
+                    if source is upstream:
+                        with self._lock:
+                            remaining = self.cap - self.consumed
+                            accepted = data[: max(0, remaining + 1)]
+                            self.consumed += len(accepted)
+                            over = self.consumed > self.cap
+                        if accepted:
+                            client.sendall(accepted)
+                        if over:
+                            self.capped.set()
+                            return
+                    else:
+                        upstream.sendall(data)
+        except OSError:
+            return
+        finally:
+            for value in (client, upstream):
+                if value is not None:
+                    self._untrack(value)
+                    try:
+                        value.close()
+                    except OSError:
+                        pass
+
+    def close(self) -> None:
+        self._stop.set()
+        try:
+            self._listener.close()
+        except OSError:
+            pass
+        with self._lock:
+            values = tuple(self._sockets)
+        for value in values:
+            try:
+                value.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                value.close()
+            except OSError:
+                pass
+        self._thread.join(timeout=1)
+
 class SubprocessCheckoutRunner:
+    def __init__(self, registry_url: str = "https://github.com/") -> None:
+        parsed = urlsplit(registry_url)
+        if parsed.scheme != "https" or parsed.hostname is None or parsed.username is not None or parsed.password is not None:
+            raise SparseCheckoutError("registry URL cannot define the checkout tunnel")
+        self._host = parsed.hostname
+        self._port = parsed.port or 443
+
     def run(
         self,
         argv: tuple[str, ...],
@@ -115,77 +243,84 @@ class SubprocessCheckoutRunner:
             if index + 1 >= len(argv):
                 raise SparseCheckoutError("Git -C argument is missing")
             checkout = cwd / argv[index + 1]
-        before = _retained_git_bytes(checkout) if checkout is not None else 0
+        network_capable = Path(argv[0]).name == "git" and (
+            "fetch" in argv or "checkout" in argv
+        )
+        tunnel = _ConnectTunnel(self._host, self._port, max_download_bytes) if network_capable else None
+        executed_argv = argv
+        if tunnel is not None:
+            tunnel.start()
+            executed_argv = (argv[0], "-c", f"http.proxy=http://127.0.0.1:{tunnel.local_port}", *argv[1:])
+        process: subprocess.Popen[bytes] | None = None
+        poller: selectors.BaseSelector | None = None
+        captured = {"stdout": bytearray(), "stderr": bytearray()}
+        returncode = 70
+        capped = False
+        timed_out = False
         try:
             process = subprocess.Popen(
-                argv,
+                executed_argv,
                 cwd=cwd,
                 env=env,
                 stdin=subprocess.PIPE if input_bytes is not None else subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
+            if input_bytes is not None:
+                assert process.stdin is not None
+                try:
+                    process.stdin.write(input_bytes)
+                    process.stdin.close()
+                except BrokenPipeError:
+                    pass
+            assert process.stdout is not None and process.stderr is not None
+            poller = selectors.DefaultSelector()
+            poller.register(process.stdout, selectors.EVENT_READ, "stdout")
+            poller.register(process.stderr, selectors.EVENT_READ, "stderr")
+            started = time.monotonic()
+            while poller.get_map():
+                retained = _retained_git_bytes(checkout, strict=False)
+                capped = bool(tunnel and tunnel.capped.is_set()) or retained > _MAX_DISK_BYTES
+                timed_out = time.monotonic() - started > timeout
+                if capped or timed_out:
+                    if process.poll() is None:
+                        process.kill()
+                    break
+                events = poller.select(0.01)
+                if not events and process.poll() is not None:
+                    events = [(key, selectors.EVENT_READ) for key in tuple(poller.get_map().values())]
+                for key, _ in events:
+                    remaining = 1024 * 1024 - len(captured["stdout"]) - len(captured["stderr"])
+                    if remaining < 0:
+                        capped = True
+                        process.kill()
+                        break
+                    try:
+                        chunk = os.read(key.fileobj.fileno(), min(64 * 1024, remaining + 1))
+                    except BlockingIOError:
+                        continue
+                    if chunk:
+                        captured[key.data].extend(chunk)
+                    else:
+                        poller.unregister(key.fileobj)
+            returncode = process.wait()
         except OSError as exc:
             raise SparseCheckoutError(
-                f"Git checkout command failed: {type(exc).__name__}"
+                f"Git checkout command failed: {type(exc).__name__}",
+                commands=(executed_argv,), statuses=(70,),
+                download_bytes=tunnel.consumed if tunnel else 0,
             ) from exc
-        if input_bytes is not None:
-            assert process.stdin is not None
-            try:
-                process.stdin.write(input_bytes)
-                process.stdin.close()
-            except BrokenPipeError:
-                pass
-        assert process.stdout is not None and process.stderr is not None
-        poller = selectors.DefaultSelector()
-        poller.register(process.stdout, selectors.EVENT_READ, "stdout")
-        poller.register(process.stderr, selectors.EVENT_READ, "stderr")
-        captured = {"stdout": bytearray(), "stderr": bytearray()}
-        high_water = before
-        capped = False
-        timed_out = False
-        started = time.monotonic()
-        while poller.get_map():
-            high_water = max(high_water, _retained_git_bytes(checkout))
-            pack_growth = max(0, high_water - before)
-            allowance = 64 * 1024 if pack_growth and ("fetch" in argv or "checkout" in argv) else 0
-            consumed = len(captured["stdout"]) + len(captured["stderr"]) + pack_growth + allowance
-            if consumed > max_download_bytes:
-                capped = True
-                if process.poll() is None:
-                    process.kill()
-            if time.monotonic() - started > timeout:
-                timed_out = True
-                if process.poll() is None:
-                    process.kill()
-            events = poller.select(0.01)
-            if not events and process.poll() is not None:
-                events = [(key, selectors.EVENT_READ) for key in tuple(poller.get_map().values())]
-            for key, _ in events:
-                current = len(captured["stdout"]) + len(captured["stderr"]) + pack_growth + allowance
-                remaining = max(0, max_download_bytes - current)
-                try:
-                    chunk = os.read(key.fileobj.fileno(), min(64 * 1024, remaining + 1))
-                except BlockingIOError:
-                    continue
-                if chunk:
-                    captured[key.data].extend(chunk)
-                else:
-                    poller.unregister(key.fileobj)
-            if capped or timed_out:
-                # Drain at most the already-established cap+1 receipt.
-                for key in tuple(poller.get_map().values()):
-                    poller.unregister(key.fileobj)
-                break
-        poller.close()
-        returncode = process.wait()
-        high_water = max(high_water, _retained_git_bytes(checkout))
-        pack_growth = max(0, high_water - before)
-        allowance = 64 * 1024 if pack_growth and ("fetch" in argv or "checkout" in argv) else 0
-        accounted_download = len(captured["stdout"]) + len(captured["stderr"]) + pack_growth + allowance
+        finally:
+            if process is not None and process.poll() is None:
+                process.kill()
+                process.wait()
+            if poller is not None:
+                poller.close()
+            if tunnel is not None:
+                tunnel.close()
         if timed_out:
             returncode = 124
-        elif capped:
+        elif capped or (tunnel is not None and tunnel.capped.is_set()):
             returncode = 70
         elif returncode < 0:
             returncode = 128 + abs(returncode)
@@ -193,33 +328,53 @@ class SubprocessCheckoutRunner:
             returncode,
             bytes(captured["stdout"]),
             bytes(captured["stderr"]),
-            accounted_download,
+            tunnel.consumed if tunnel else 0,
+            executed_argv,
         )
 
 
-def _retained_git_bytes(checkout: Path | None) -> int:
+def _retained_git_bytes(checkout: Path | None, *, strict: bool = True) -> int:
     if checkout is None:
         return 0
     git = checkout / ".git"
-    if not git.exists():
-        return 0
+    try:
+        if not git.exists():
+            return 0
+    except OSError:
+        return _MAX_DISK_BYTES + 1
     total = 0
     for current, directories, files in os.walk(git, topdown=True, followlinks=False):
         current_path = Path(current)
         safe = []
         for name in sorted(directories):
-            value = (current_path / name).lstat()
+            try:
+                value = (current_path / name).lstat()
+            except OSError:
+                if strict:
+                    raise
+                return _MAX_DISK_BYTES + 1
             if stat.S_ISLNK(value.st_mode):
-                raise SparseCheckoutError("Git metadata contains a symlinked directory")
+                if strict:
+                    raise SparseCheckoutError("Git metadata contains a symlinked directory")
+                return _MAX_DISK_BYTES + 1
             safe.append(name)
         directories[:] = safe
         for name in sorted(files):
-            value = (current_path / name).lstat()
+            try:
+                value = (current_path / name).lstat()
+            except OSError:
+                if strict:
+                    raise
+                return _MAX_DISK_BYTES + 1
             if not stat.S_ISREG(value.st_mode) or value.st_nlink != 1:
-                raise SparseCheckoutError("Git metadata contains a nonregular or linked file")
+                if strict:
+                    raise SparseCheckoutError("Git metadata contains a nonregular or linked file")
+                return _MAX_DISK_BYTES + 1
             total += max(value.st_size, getattr(value, "st_blocks", 0) * 512)
             if total > _MAX_DOWNLOAD_BYTES:
-                raise SparseCheckoutError("Git transport accounting exceeded its byte ceiling")
+                if strict:
+                    raise SparseCheckoutError("Git metadata exceeded its disk byte ceiling")
+                return total
     return total
 
 
@@ -344,18 +499,19 @@ def _run_checked(
         input_bytes=input_bytes,
         max_download_bytes=max_download_bytes,
     )
+    receipt = result.executed_argv or argv
     if type(result.stdout) is not bytes or type(result.stderr) is not bytes:
-        raise SparseCheckoutError("Git checkout command output must be bytes", commands=(argv,))
+        raise SparseCheckoutError("Git checkout command output must be bytes", commands=(receipt,), statuses=(70,))
     if type(result.returncode) is not int or result.returncode < 0:
-        raise SparseCheckoutError("Git checkout command status is invalid", commands=(argv,))
+        raise SparseCheckoutError("Git checkout command status is invalid", commands=(receipt,), statuses=(70,))
     if type(result.download_bytes) is not int or result.download_bytes < 0:
-        raise SparseCheckoutError("Git checkout download receipt is invalid", commands=(argv,), statuses=(result.returncode,))
+        raise SparseCheckoutError("Git checkout download receipt is invalid", commands=(receipt,), statuses=(result.returncode,))
     if result.download_bytes > max_download_bytes:
-        raise SparseCheckoutError("Git checkout download exceeded its byte ceiling", commands=(argv,), statuses=(result.returncode,), download_bytes=result.download_bytes)
+        raise SparseCheckoutError("Git checkout download exceeded its byte ceiling", commands=(receipt,), statuses=(result.returncode,), download_bytes=result.download_bytes)
     if result.returncode != 0:
         raise SparseCheckoutError(
             f"Git checkout command returned {result.returncode}: {argv[-1]}",
-            commands=(argv,),
+            commands=(receipt,),
             statuses=(result.returncode,),
             download_bytes=result.download_bytes,
         )
@@ -464,6 +620,21 @@ def _cleanup_owned_directory(
         os.close(descriptor)
 
 
+def cleanup_new_checkout(result: CheckoutResult) -> None:
+    """Remove only a newly published checkout at its retained exact identity."""
+    if result.reused:
+        return
+    try:
+        parent = open_directory_chain(result.destination.parent, create=False)
+    except (OSError, ValueError):
+        return
+    try:
+        _cleanup_owned_directory(parent, result.destination.name, result.destination_identity)
+        os.fsync(parent)
+    finally:
+        os.close(parent)
+
+
 def _validate_checkout(
     spec: CheckoutSpec,
     checkout_name: str,
@@ -496,7 +667,7 @@ def _validate_checkout(
                 statuses=(*statuses, 70),
                 download_bytes=download,
             ) from exc
-        commands.append(argv)
+        commands.append(result.executed_argv or argv)
         statuses.append(result.returncode)
         download += result.download_bytes
         if download > download_budget:
@@ -565,7 +736,7 @@ def checkout_sparse(
             )
             if not _path_matches_root(root, root_identity):
                 raise SparseCheckoutError("checkout root changed during operation", commands=commands, statuses=statuses, download_bytes=download)
-            return CheckoutResult(spec.name, root / spec.name, spec.commit_sha, spec.patterns, tuple(commands), tuple(statuses), download, disk, hashes, True)
+            return CheckoutResult(spec.name, root / spec.name, spec.commit_sha, spec.patterns, tuple(commands), tuple(statuses), download, disk, hashes, True, (existing.st_dev, existing.st_ino))
 
         def run(argv: tuple[str, ...], input_bytes: bytes | None = None) -> None:
             nonlocal download
@@ -593,7 +764,7 @@ def checkout_sparse(
                     statuses=(*statuses, 70),
                     download_bytes=download,
                 ) from exc
-            commands.append(argv)
+            commands.append(result.executed_argv or argv)
             statuses.append(result.returncode)
             download += result.download_bytes
             if download > _MAX_DOWNLOAD_BYTES:
@@ -652,7 +823,7 @@ def checkout_sparse(
             raise SparseCheckoutError("published checkout identity or mode is invalid", commands=commands, statuses=statuses, download_bytes=download)
         partial_created = False
         os.fsync(root_descriptor)
-        return CheckoutResult(spec.name, root / spec.name, spec.commit_sha, spec.patterns, tuple(commands), tuple(statuses), download, disk, hashes, False)
+        return CheckoutResult(spec.name, root / spec.name, spec.commit_sha, spec.patterns, tuple(commands), tuple(statuses), download, disk, hashes, False, partial_identity)
     except BaseException as exc:
         if partial_created and partial_identity is not None:
             _cleanup_owned_directory(root_descriptor, partial, partial_identity)

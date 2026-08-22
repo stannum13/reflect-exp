@@ -5,8 +5,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import socket
 import stat
 import sys
+import threading
 from typing import Any
 
 import pytest
@@ -439,24 +441,79 @@ def test_partial_cleanup_covers_unexpected_runner_exception(tmp_path: Path) -> N
     assert tuple(root.iterdir()) == ()
 
 
-def test_subprocess_runner_accounts_conservative_fetch_growth(
+def _local_upstream(payload: bytes) -> tuple[socket.socket, int, threading.Thread]:
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    port = listener.getsockname()[1]
+
+    def serve() -> None:
+        connection, _ = listener.accept()
+        try:
+            connection.recv(32)
+            connection.sendall(payload)
+        finally:
+            connection.close()
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    return listener, port, thread
+
+
+def _fake_git(tmp_path: Path) -> Path:
+    path = tmp_path / "git"
+    path.write_text(
+        "#!/usr/bin/env python3\n"
+        "import socket,sys,time\n"
+        "from pathlib import Path\n"
+        "proxy=next(x.split('=',1)[1] for x in sys.argv if x.startswith('http.proxy='))\n"
+        "host,port=proxy.rsplit(':',1)\n"
+        "s=socket.create_connection((host.removeprefix('http://'),int(port)))\n"
+        "target=sys.argv[-1]\n"
+        "transient=Path('partial/.git/transient.pack') if 'transient' in sys.argv else None\n"
+        "transient.write_bytes(b'p'*32) if transient else None\n"
+        "time.sleep(0.05)\n"
+        "s.sendall(f'CONNECT {target} HTTP/1.1\\r\\nHost: {target}\\r\\n\\r\\n'.encode())\n"
+        "assert b'200' in s.recv(1024)\n"
+        "s.sendall(b'request')\n"
+        "while s.recv(65536): pass\n"
+        "transient.unlink() if transient and transient.exists() else None\n"
+    )
+    path.chmod(0o700)
+    return path
+
+
+def test_subprocess_runner_tunnel_counts_success_and_no_retained_cap_plus_one(
     tmp_path: Path,
 ) -> None:
-    checkout = tmp_path / "partial"
-    (checkout / ".git").mkdir(parents=True)
-
-    result = SubprocessCheckoutRunner().run(
-        (
-            sys.executable, "-c",
-            "from pathlib import Path;Path('partial/.git/pack').write_bytes(b'x'*37)",
-            "-C", "partial", "fetch",
-        ),
-        cwd=tmp_path, env={}, timeout=1, max_download_bytes=1024 * 1024,
+    fake_git = _fake_git(tmp_path)
+    (tmp_path / "partial" / ".git").mkdir(parents=True)
+    listener, port, thread = _local_upstream(b"x" * 37)
+    runner = SubprocessCheckoutRunner(f"https://127.0.0.1:{port}/repo")
+    success = runner.run(
+        (os.fspath(fake_git), "-C", "partial", "fetch", "transient", f"127.0.0.1:{port}"),
+        cwd=tmp_path, env=dict(os.environ), timeout=5, max_download_bytes=64,
     )
-    assert result.download_bytes >= 37
+    listener.close()
+    thread.join(timeout=1)
+    assert success.returncode == 0
+    assert success.download_bytes == 37
+    assert not (tmp_path / "partial" / ".git" / "transient.pack").exists()
+    assert any(item.startswith("http.proxy=http://127.0.0.1:") for item in success.executed_argv)
+
+    listener, port, thread = _local_upstream(b"y" * 65)
+    runner = SubprocessCheckoutRunner(f"https://127.0.0.1:{port}/repo")
+    capped = runner.run(
+        (os.fspath(fake_git), "fetch", f"127.0.0.1:{port}"),
+        cwd=tmp_path, env=dict(os.environ), timeout=5, max_download_bytes=64,
+    )
+    listener.close()
+    thread.join(timeout=1)
+    assert capped.returncode != 0
+    assert capped.download_bytes == 65
 
 
-def test_subprocess_runner_streams_success_and_stops_failed_no_pack_at_cap() -> None:
+def test_subprocess_runner_streams_nonnetwork_success() -> None:
     runner = SubprocessCheckoutRunner()
     success = runner.run(
         (sys.executable, "-c", "import sys;sys.stdout.buffer.write(b'ok')"),
@@ -464,14 +521,7 @@ def test_subprocess_runner_streams_success_and_stops_failed_no_pack_at_cap() -> 
     )
     assert success.returncode == 0
     assert success.stdout == b"ok"
-    assert success.download_bytes == 2
-    capped = runner.run(
-        (sys.executable, "-c", "import sys;sys.stdout.buffer.write(b'x'*65);sys.stdout.flush()"),
-        cwd=Path.cwd(), env=dict(os.environ), timeout=5, max_download_bytes=64,
-    )
-    assert capped.returncode != 0
-    assert capped.download_bytes == 65
-    assert len(capped.stdout) == 65
+    assert success.download_bytes == 0
 
 
 def test_post_publish_root_drift_cleans_exact_destination(
@@ -563,6 +613,84 @@ def test_sparse_cli_writes_immutable_failure_fragment(tmp_path: Path) -> None:
             root=tmp_path, registry_path=Path("references/repos.yaml"), lock_path=lock_path,
             checkout_runner=RecordingRunner(fail_on="fetch"),
         )
+
+
+def test_sparse_cli_preexisting_fragment_prevents_checkout_and_preserves_old_bytes(
+    tmp_path: Path,
+) -> None:
+    _, lock = complete_lock()
+    lock_path = tmp_path / "repos.lock.yaml"
+    lock_path.write_bytes(lock_yaml_bytes(lock))
+    fragment = tmp_path / "fragments" / "mujoco_mpc-checkout.json"
+    fragment.parent.mkdir()
+    fragment.write_bytes(b"old immutable evidence\n")
+    with pytest.raises(FileExistsError):
+        fetch_main(
+            ["--name", "mujoco_mpc", "--sparse-checkout", "--fragment-dir", os.fspath(fragment.parent)],
+            root=tmp_path, registry_path=Path("references/repos.yaml"), lock_path=lock_path,
+            checkout_runner=RecordingRunner(),
+        )
+    assert fragment.read_bytes() == b"old immutable evidence\n"
+    assert not (tmp_path / "external").exists()
+
+
+@pytest.mark.parametrize("failure", ["link", "fsync"])
+def test_pass_evidence_publication_failure_removes_only_new_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    _, lock = complete_lock()
+    lock_path = tmp_path / "repos.lock.yaml"
+    lock_path.write_bytes(lock_yaml_bytes(lock))
+    fragments = tmp_path / "fragments"
+    linked = False
+    real_link = evidence_module.os.link
+    real_fsync = evidence_module.os.fsync
+
+    def controlled_link(*args: object, **kwargs: object) -> None:
+        nonlocal linked
+        if failure == "link":
+            raise OSError("injected link failure")
+        real_link(*args, **kwargs)
+        linked = True
+
+    def controlled_fsync(descriptor: int) -> None:
+        if failure == "fsync" and linked:
+            raise OSError("injected fsync failure")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(evidence_module.os, "link", controlled_link)
+    monkeypatch.setattr(evidence_module.os, "fsync", controlled_fsync)
+    with pytest.raises(OSError, match="injected"):
+        fetch_main(
+            ["--name", "mujoco_mpc", "--sparse-checkout", "--fragment-dir", os.fspath(fragments)],
+            root=tmp_path, registry_path=Path("references/repos.yaml"), lock_path=lock_path,
+            checkout_runner=RecordingRunner(),
+        )
+    external = tmp_path / "external"
+    assert tuple(external.iterdir()) == ()
+    assert tuple(fragments.iterdir()) == ()
+
+
+def test_pass_evidence_failure_never_removes_reused_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry, lock = complete_lock()
+    lock_path = tmp_path / "repos.lock.yaml"
+    lock_path.write_bytes(lock_yaml_bytes(lock))
+    spec = eligible_checkout_specs(registry, lock, name="mujoco_mpc")[0]
+    existing = checkout_sparse(spec, tmp_path / "external", RecordingRunner()).destination
+
+    def fail_link(*args: object, **kwargs: object) -> None:
+        raise OSError("injected link failure")
+
+    monkeypatch.setattr(evidence_module.os, "link", fail_link)
+    with pytest.raises(OSError, match="injected"):
+        fetch_main(
+            ["--name", "mujoco_mpc", "--sparse-checkout", "--fragment-dir", os.fspath(tmp_path / "fragments")],
+            root=tmp_path, registry_path=Path("references/repos.yaml"), lock_path=lock_path,
+            checkout_runner=RecordingRunner(),
+        )
+    assert existing.is_dir()
 
 
 @pytest.mark.parametrize(

@@ -220,6 +220,8 @@ def write_evidence_create_only(path: Path, evidence: CheckoutEvidence) -> None:
     temporary = f".{path.name}.partial-{os.urandom(8).hex()}"
     descriptor = -1
     temporary_identity: tuple[int, int] | None = None
+    published = False
+    completed = False
     try:
         descriptor = os.open(temporary, flags, 0o600, dir_fd=parent)
         value = os.fstat(descriptor)
@@ -239,7 +241,9 @@ def write_evidence_create_only(path: Path, evidence: CheckoutEvidence) -> None:
             dst_dir_fd=parent,
             follow_symlinks=False,
         )
+        published = True
         os.fsync(parent)
+        completed = True
     finally:
         if descriptor >= 0:
             os.close(descriptor)
@@ -250,5 +254,24 @@ def write_evidence_create_only(path: Path, evidence: CheckoutEvidence) -> None:
                 current = None
             if current is not None and temporary_identity == (current.st_dev, current.st_ino):
                 os.unlink(temporary, dir_fd=parent)
-                os.fsync(parent)
+        if published and not completed and temporary_identity is not None:
+            try:
+                final = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+            except FileNotFoundError:
+                final = None
+            if final is not None and temporary_identity == (final.st_dev, final.st_ino):
+                os.unlink(path.name, dir_fd=parent)
+        os.close(parent)
+
+
+def ensure_evidence_target_available(path: Path) -> None:
+    """Fail before checkout when an immutable evidence identity already exists."""
+    parent = open_directory_chain(path.parent, create=True)
+    try:
+        try:
+            os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+        except FileNotFoundError:
+            return
+        raise FileExistsError(os.fspath(path))
+    finally:
         os.close(parent)

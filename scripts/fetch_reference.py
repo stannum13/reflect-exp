@@ -15,11 +15,13 @@ from reflect.source_checkout import (
     SparseCheckoutError,
     SubprocessCheckoutRunner,
     checkout_sparse,
+    cleanup_new_checkout,
     eligible_checkout_specs,
 )
 from reflect.source_evidence import (
     CheckoutEvidence,
     canonical_json_bytes,
+    ensure_evidence_target_available,
     write_evidence_create_only,
 )
 from reflect.source_fetch import (
@@ -115,10 +117,11 @@ def main(
         if not fragment_dir.is_absolute():
             fragment_dir = project_root / fragment_dir
         checkout_root = project_root / "external"
-        checkout_impl = checkout_runner or SubprocessCheckoutRunner()
         output = []
         for spec in specs:
+            checkout_impl = checkout_runner or SubprocessCheckoutRunner(spec.url)
             evidence_path = fragment_dir / f"{spec.name}-checkout.json"
+            ensure_evidence_target_available(evidence_path)
             try:
                 checkout = checkout_sparse(spec, checkout_root, checkout_impl)
             except SparseCheckoutError as exc:
@@ -152,7 +155,11 @@ def main(
                 blocker=None,
                 content_hashes=checkout.content_hashes,
             )
-            write_evidence_create_only(evidence_path, evidence)
+            try:
+                write_evidence_create_only(evidence_path, evidence)
+            except BaseException:
+                cleanup_new_checkout(checkout)
+                raise
             output.append(
                 {
                     "destination": os.fspath(checkout.destination),
