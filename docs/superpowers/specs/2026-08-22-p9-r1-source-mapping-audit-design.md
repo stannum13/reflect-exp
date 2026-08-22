@@ -46,7 +46,9 @@ phases' clean evidence-base Git SHAs and report-only commit/blob/hash identities
 `experiments/00_source_audit/results/compatibility.csv`, `references/licenses.md`,
 `docs/SOURCE_MAP.md`, `docs/MATURITY_LEDGER.md`, `experiments/00_source_audit/RESULTS.md`,
 `experiments/00_source_audit/INTERFACE_FINDINGS.md`, and the exact MuJoCo-smoke
-fragment path/hash named by P3's operation manifest. Missing, dirty, incomplete, or
+fragment path selected by P3's operation manifest plus the Git blob ID/SHA-256 derived
+from that path at P3's evidence commit. The pre-run manifest never names a future
+fragment hash or blob. Missing, dirty, incomplete, or
 hash-mismatched evidence blocks P9 before checkout or output creation.
 
 The current `docs/RUN_MANIFEST.yaml` must contain closed immutable records at
@@ -109,9 +111,15 @@ experiments/00_source_audit/INTERFACE_FINDINGS.md
 RUN_REPORT.md
 ```
 
-The manifest-selected fragment must be a distinct normalized repository-relative path
-beneath `experiments/00_source_audit/results/fragments`; collision with another member
-or path escape is invalid. The ledger excludes `docs/RUN_MANIFEST.yaml`, the phase
+The strict historical operation manifest has one required `mujoco_smoke_output` object
+with exactly `operation_id,relative_path`; they equal
+`MUJOCO_PACKAGE_SMOKE` and
+`experiments/00_source_audit/results/fragments/mujoco-package-smoke.json`. Exactly one
+manifest operation has that ID, `runtime_subject=package`, and the same output identity.
+The selected fragment is a distinct normalized repository-relative path beneath
+`experiments/00_source_audit/results/fragments`; an absent/extra selector key, another
+matching operation, alternate path, collision, symlink component, or path escape is
+invalid. No hash/blob/result field is legal in this pre-run selector. The ledger excludes `docs/RUN_MANIFEST.yaml`, the phase
 record, its later state-index commit, caches/checkouts, untracked files, and every path
 not in the applicable exact list. Consequently neither the record hash nor ledger hash
 can depend on the commit that publishes the record.
@@ -194,7 +202,10 @@ false. File hashes are lowercase 64-hex, Git SHAs lowercase 40-hex, and Git blob
 the repository's validated object format. The P9 factory
 rehashes every immutable named artifact rather than trusting this summary. The smoke path must be the
 single MuJoCo-smoke fragment identity selected from the hash-matched P3 operation
-manifest, be relative beneath P3's fragment root, and hash to the recorded value.
+manifest and be relative beneath P3's fragment root. The gate obtains its Git blob ID
+from `p3_implementation_evidence_git_sha`, reads the blob bytes, and derives
+`p3_mujoco_smoke_sha256`; neither identity may be supplied by the operation manifest or
+caller. The derived values must equal the phase-record artifact-ledger member.
 The `p3_maturity_ledger_sha256` is computed from the `docs/MATURITY_LEDGER.md` blob at
 `p3_implementation_evidence_git_sha`, not from the later current worktree ledger. The
 `--p3-maturity-ledger` argument supplies only that normalized historical path identity;
@@ -881,6 +892,13 @@ launch, and prove failure releases only its immutable reservation.
 Authority-seal tests separately alter the sealing commit, Git blob ID, and SHA-256 for
 each of the operation manifest, extraction rules, and reviewed mapping; freeze, check,
 and byte-for-byte reproduction must reject every mutation.
+Selector fixtures independently remove/extend `mujoco_smoke_output`, change its fixed
+operation ID or path, add a future hash/blob/result field, add a second matching
+package-smoke operation, point through a symlink or outside the fragment root, remove
+the selected blob at the P3 evidence commit, and change that blob without updating the
+historical P3 record/ledger; publisher, gate, and every downstream validator reject
+each case. A positive fixture proves the blob ID and SHA-256 are derived only from the
+selected Git path at the sealed P3 evidence commit.
 Historical-gate fixtures advance current pass, permitted later stage/lane/P9 fields,
 and replace the root report after preserving the immutable P2/P3 phase records, their
 complete stage values, both false safety values, and a platform lane of `in_progress |

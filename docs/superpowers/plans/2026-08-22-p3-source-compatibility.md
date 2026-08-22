@@ -174,7 +174,12 @@ and create-only atomic fragment publication that refuses overwrite. Test that th
 operation manifest binds the registry/lock digest, covers all 45 entries, accepts
 optional structured GPU/Linux/archive observations with canonical/official
 provenance plus content hash, maps missing observations to `NOT_EVALUATED`, and
-rejects tampered hashes before consolidation. Assert the CSV
+contains exactly one closed `mujoco_smoke_output` selector with
+`operation_id=MUJOCO_PACKAGE_SMOKE` and the fixed normalized repository-relative
+`relative_path=experiments/00_source_audit/results/fragments/mujoco-package-smoke.json`.
+Require exactly one matching package-runtime operation; reject an absent/extra key,
+another matching operation, path escape, symlinked parent, collision, alternate output
+path, or any pre-run output hash. Reject tampered hashes before consolidation. Assert the CSV
 header is exactly:
 
 ```text
@@ -204,6 +209,13 @@ P2 Git SHA as registry provenance but never claims that SHA was executed.
 Define a strict `OperationManifest` with exact registry and lock hashes, all 45
 repository identities, optional executable operations, and optional
 `RequirementObservation` records for `REMOTE_GPU`, `REMOTE_LINUX`, or `ARCHIVED`.
+Its required `mujoco_smoke_output` object has exactly `operation_id,relative_path`;
+the values are exactly `MUJOCO_PACKAGE_SMOKE` and
+`experiments/00_source_audit/results/fragments/mujoco-package-smoke.json`. The normalized
+path is distinct from every other declared output and resolves beneath the fragment
+root. Exactly one executable operation has that operation ID, `runtime_subject=package`,
+and this output identity. The manifest is frozen before execution and therefore stores
+no fragment SHA, Git blob ID, result, or other future-derived value.
 Each observation includes a canonical-program or official HTTPS provenance locator,
 normalized statement, and SHA-256 of that statement. Missing observations are valid
 and yield `NOT_EVALUATED`; malformed identities or hashes invalidate the manifest.
@@ -270,7 +282,9 @@ Commit all Task 2 files atomically as `feat: add source compatibility evidence`.
 
 **Interfaces:**
 - Consumes: locked published MuJoCo 3.x package and separately recorded P2 `mujoco` source provenance.
-- Produces: `run_mujoco_smoke() -> SmokeEvidence` and a deterministic evidence fragment without rendering/viewer state.
+- Produces: `run_mujoco_smoke() -> SmokeEvidence` and a deterministic evidence fragment
+  at the exact `OperationManifest.mujoco_smoke_output.relative_path`, without
+  rendering/viewer state.
 
 - [ ] **Step 1: Write failing smoke tests**
 
@@ -278,7 +292,9 @@ Test a minimal two-body XML, headless `MjModel.from_xml_string`, `MjData`, one
 `mj_step`, finite time/state, no viewer/window/network, locked package version, and
 fragment binding to the installed package name/version/artifact hash. Retain the P2
 MuJoCo Git SHA/license only in separate registry-provenance fields and assert the
-fragment does not claim that SHA was executed. Prove RED before adding the dependency.
+fragment does not claim that SHA was executed. Assert the writer accepts no caller
+output path and consumes the exact validated `mujoco_smoke_output` selector. Prove RED
+before adding the dependency.
 
 - [ ] **Step 2: Add and lock only MuJoCo**
 
@@ -292,7 +308,9 @@ Use an inline XML with one world, plane, free body, joint, and actuator. Set a
 deterministic control, call one `mj_step`, assert finite `time/qpos/qvel`, and record
 package/Python/platform versions, installed-distribution artifact hash, command,
 duration, and hashes. Never create a
-viewer or load a downloaded model.
+viewer or load a downloaded model. Descriptor-safely create exactly
+`experiments/00_source_audit/results/fragments/mujoco-package-smoke.json`; a different,
+existing-conflicting, escaping, or symlinked target fails closed.
 
 - [ ] **Step 4: Verify and commit**
 
@@ -334,13 +352,17 @@ false, clean-HEAD enforcement, and a report-only candidate. Assert that
 - requires that SHA to equal clean current `HEAD` immediately before publication;
 - reads only descriptor-anchored regular files and fixed local Git identity commands;
 - validates all P2/P3 artifacts and exact hashes before rendering;
+- reads the one exact `mujoco_smoke_output.relative_path` from the strict operation
+  manifest and derives the fragment Git blob ID/SHA-256 from that path at the supplied
+  evidence SHA, never from a caller or pre-run hash;
 - renders the canonical Section-35 headings and one closed
   `Implementation/evidence-base Git SHA` provenance field consumed by
   `scripts/publish_phase_record.py`;
 - is byte-deterministic across two fresh fixture repositories with identical Git
   objects and semantic evidence;
-- rejects dirty state, report/path/hash tampering, duplicate YAML keys, a nonselected
-  smoke fragment, tracked checkout/model/secret paths, physical or remote enablement,
+- rejects dirty state, report/path/hash tampering, duplicate YAML keys, a missing,
+  duplicate, alternate, escaping, or hash-tampered selected smoke fragment, tracked
+  checkout/model/secret paths, physical or remote enablement,
   socket/DNS access, and any subprocess outside the fixed local Git read allowlist; and
 - publishes `RUN_REPORT.md` mode `0600` with descriptor-relative no-follow temporary
   creation, fsync, atomic replacement, and same-inode cleanup.
@@ -361,7 +383,10 @@ evidence it installs the audited socket/DNS denial and fixed local-Git-read subp
 allowlist, including `GIT_OPTIONAL_LOCKS=0`; caller data cannot expand that allowlist.
 The P3 report parser must reject unknown or repeated provenance fields, and the shared
 phase-record publisher tests must prove the validated P3 report binds exactly the
-supplied evidence SHA. Then run the focused test, `tests/test_p2_commands.py`, the full
+supplied evidence SHA. Those tests also exercise the exact `mujoco_smoke_output`
+selector schema, one-operation cardinality, fixed path containment, absence of future
+identity fields, historical Git-blob/SHA derivation, and every negative mutation above.
+Then run the focused test, `tests/test_p2_commands.py`, the full
 suite, lock check, safety check, and `git diff --check`. Review the exact changed paths
 and commit only:
 
@@ -386,7 +411,10 @@ with canonical or official provenance and content hashes. Only the eight eligibl
 sparse repositories plus the MuJoCo package smoke receive executable operations. Record
 operations, commands, platform/toolchain, per-command 60-minute maximum, 2 GB
 per-source and 5 GB pass download ceilings, and no-copy/no-model constraints. Hash
-and commit the manifest before source operations.
+and commit the manifest before source operations. Its required
+`mujoco_smoke_output={operation_id: MUJOCO_PACKAGE_SMOKE, relative_path:
+experiments/00_source_audit/results/fragments/mujoco-package-smoke.json}` selects the
+future artifact path only; it contains no future fragment hash or Git identity.
 
 - [ ] **Step 2: Run independent sparse lanes**
 
@@ -399,7 +427,8 @@ failure plus one materially different remedy. Do not import study-only projects.
 
 - [ ] **Step 3: Run the MuJoCo smoke serially**
 
-Execute the reviewed headless one-step smoke alone, write its evidence fragment,
+Execute the reviewed headless one-step smoke alone and write its evidence fragment to
+exactly the validated `mujoco_smoke_output.relative_path`,
 and verify no process/viewer remains. Optional Mink/Rerun attempts are omitted unless
 the frozen manifest contains a bounded decision-relevant check.
 
@@ -500,14 +529,18 @@ The publisher derives every `phase_records.p3` field and its canonical artifact-
 hash. The exact ledger members are the operation manifest, compatibility CSV,
 `references/licenses.md`, `docs/SOURCE_MAP.md`, `docs/MATURITY_LEDGER.md`, both
 Experiment 00 reports, the one
-MuJoCo-smoke fragment selected by the operation manifest, all at `P3_EVIDENCE_SHA`, and
+MuJoCo-smoke fragment path selected by the operation manifest, all at
+`P3_EVIDENCE_SHA`, and
 `RUN_REPORT.md` at `P3_REPORT_COMMIT`. It rejects any additional member or caller-
 supplied digest, requires
 `implementation_evidence_git_sha == bound_evidence_git_sha == P3_EVIDENCE_SHA`, and
 requires the report commit's only parent and validated bound SHA to match. The existing
 P2 record must remain canonically equal. The state-index commit has the report commit as
 its only parent, changes exactly `docs/RUN_MANIFEST.yaml`, and is excluded from both the
-record and ledger so no self-reference exists.
+record and ledger so no self-reference exists. The publisher reads the selected path
+from the strict historical operation-manifest blob, obtains that path's blob at
+`P3_EVIDENCE_SHA`, and derives its Git blob ID and SHA-256 from the blob bytes; the
+pre-run manifest never supplies either future identity.
 
 - [ ] **Step 9: Reverify the three-commit P3 closeout**
 
