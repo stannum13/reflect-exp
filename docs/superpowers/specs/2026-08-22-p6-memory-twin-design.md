@@ -100,8 +100,10 @@ use this total order:
 4. query or mission request;
 5. query response;
 6. decision or plan publication;
-7. simulated outcome; and
-8. scoring record.
+7. action issuance;
+8. action execution;
+9. simulator truth outcome; and
+10. scorer publication.
 
 Within one rank, `source_sequence` then `event_id` orders records. Time may remain
 equal but never regress. Architecture-visible events use the existing shared
@@ -118,12 +120,18 @@ The canonical mapping is exact:
 | 4 | query/mission request | P6 query/mission sidecar only | `event_subtype=QUERY_REQUESTED` or `MISSION_REQUESTED` |
 | 5 | query response | P6 query sidecar only | `event_subtype=QUERY_RESPONDED` |
 | 6 | decision/initial plan | P6 decision/plan sidecar only | `event_subtype=DECISION_PUBLISHED` or `PLAN_PUBLISHED` |
-| 6 | replacement plan | `SEMANTIC_REPLAN` plus plan sidecar | `event_subtype=PLAN_REPLACED`, `plan_id` |
-| 7 | executed physical chunk, if any | `ACTION_EXECUTED` | canonical `source_chunk_id`, `event_subtype=PHYSICAL_ACTION_EXECUTED` |
-| 8 | truth outcome/scoring | sealed scorer artifact only | `event_subtype=OUTCOME_SCORED` |
+| 6 | replacement plan | `SEMANTIC_REPLAN` plus plan sidecar | `event_subtype=PLAN_REPLACED`, `plan_id`, canonical `mission_state` object |
+| 7 | issued physical chunk, if any | `POLICY_RESPONDED` | canonical `source_chunk_id`, `event_subtype=ACTION_ISSUED` |
+| 8 | executed physical chunk, if any | `ACTION_EXECUTED` | canonical `source_chunk_id`, `event_subtype=PHYSICAL_ACTION_EXECUTED` |
+| 9 | simulator truth outcome | scorer-private truth event only | `event_subtype=SIMULATOR_OUTCOME_RECORDED`, `truth_event_id` |
+| 10 | scorer publication | sealed scorer artifact only | `event_subtype=OUTCOME_SCORED`, `score_record_id` |
 
-P6 never abuses `POLICY_RESPONDED` for a query because the current rollout validator
-binds that event to a stored `ActionChunk`. Every P6-emitted shared event includes
+P6 never uses `POLICY_RESPONDED` for a query; it appears only when a stored canonical
+`ActionChunk` is actually issued, because the current rollout validator binds those
+records. Issuance does not prove execution, execution does not contain simulator truth,
+and neither substitutes for scorer publication. `SEMANTIC_REPLAN.mission_state` is the
+canonical structured mission-state object required by the shared validator, not an ID,
+string summary, or P6-local substitute. Every P6-emitted shared event includes
 `event_subtype` in addition to the canonical fields required by its shared type.
 
 The frozen local subtype vocabulary is:
@@ -151,14 +159,30 @@ QUERY_RESPONDED
 DECISION_PUBLISHED
 PLAN_PUBLISHED
 PLAN_REPLACED
+ACTION_ISSUED
 PHYSICAL_ACTION_EXECUTED
+SIMULATOR_OUTCOME_RECORDED
 OUTCOME_SCORED
 ```
 
 The first ten cover Exp04's event suite
 (`Reflect Lite Research Program.md:1661-1672`); the next five cover additional Exp05
-dynamics (`Reflect Lite Research Program.md:1819-1832`); the final nine are frozen
-runner/scorer lifecycle subtypes used by the mapping table.
+dynamics (`Reflect Lite Research Program.md:1819-1832`); the remaining closed values
+are frozen runner/truth/scorer lifecycle subtypes used by the mapping table.
+
+Subtype storage and shared-event waivers are exact. `queries.parquet` has
+`request_event_subtype=QUERY_REQUESTED` and
+`response_event_subtype=QUERY_RESPONDED`; `decisions.parquet` has
+`publication_event_subtype=DECISION_PUBLISHED`; `plans.parquet` has
+`publication_event_subtype=PLAN_PUBLISHED | PLAN_REPLACED`. These four local
+request/response/publication subtypes are explicitly waived from a shared event because
+no compatible shared enum exists. `MEMORY_STATE_UPDATED`, `PLAN_REPLACED`,
+`ACTION_ISSUED`, and `PHYSICAL_ACTION_EXECUTED` require their mapped shared event and
+may not use the waiver. Generator-only world subtypes appear only in the observation
+or private truth trace as declared by the observation policy.
+`SIMULATOR_OUTCOME_RECORDED` is truth-only and `OUTCOME_SCORED` scorer-only; both are
+forbidden from runner rollouts and sidecars. Any other subtype/location combination,
+missing required shared event, or extra shared event is invalid.
 
 ## 4. Physical and API oracle separation
 
@@ -195,11 +219,18 @@ output. The scorer refuses a writable, incomplete, or hash-mismatched output.
 Canonical `Observation` objects are an artifact-ingestion format only. Immediately
 after each observation is validated, the boundary compiler copies its values into a
 tuple of experiment-local frozen `FactRecord`s, recursively converts JSON lists to
-tuples and mappings to new read-only mapping proxies, copies every NumPy array into a
-C-contiguous array with its write flag disabled, and releases all callback-reachable
-references to the `Observation`. Architecture, query, and planner callbacks accept
-only immutable `FactRecord` tuples or typed read-only `FactBatch` views. They never
-receive an `Observation`, mutable payload, loader, descriptor, or artifact path.
+tuples and mappings to new read-only mapping proxies, and releases all callback-
+reachable references to the `Observation`. Numeric callback values use tuples of
+Python `int`/`float` by default. A vectorized `FactBatch` may instead expose a
+C-contiguous NumPy view created with `numpy.frombuffer(immutable_bytes, dtype=...)`:
+its base is immutable `bytes`, `OWNDATA` is false, and `WRITEABLE` is false, so both
+element assignment and `setflags(write=True)` fail. An owning array whose write flag
+could be re-enabled is forbidden, even if initially read-only. Architecture, query,
+and planner callbacks accept only frozen `FactRecord` tuples or those immutable-bytes-
+backed `FactBatch` views. They never receive an `Observation`, mutable payload, loader,
+descriptor, or artifact path. Callback-returned references are retained by a hostile
+test harness and attacked again after later callbacks and after variant completion;
+the canonical fact bytes and the next fresh variant must remain unchanged.
 
 Only after sealing does the orchestrator launch scorers with separate read-only
 descriptors for sealed output, observation trace, and—where allowed—truth trace.
@@ -230,6 +261,7 @@ One frozen pure compiler converts an ordered `ObservationTrace` prefix to ordere
 
 ```text
 fact_id
+fact_kind
 subject_id
 predicate
 object_id_or_canonical_value
@@ -242,6 +274,57 @@ confidence
 provenance
 status = asserted | contradicted | unknown
 ```
+
+`fact_kind` and `predicate` form one closed tagged union. Relation names never share
+the attribute/scalar/event namespace:
+
+| `fact_kind` | Closed `FactPredicate` members | Subject type | Object/value type | Base TTL |
+|---|---|---|---|---|
+| `RELATION` | `IN`, `ON`, `NEAR`, `BLOCKS`, `CONNECTS`, `HELD_BY`, `REACHABLE`, `RESTRICTED_BY`, `OBSERVED_AT` | stable entity ID allowed by the relation table below | stable entity ID allowed by the relation table | predicate-specific below |
+| `ATTRIBUTE` | `LABEL`, `ALIAS`, `ENTITY_CLASS`, `AFFORDANCE`, `VISIBILITY`, `DOOR_STATE`, `OPERATIONAL_STATE` | stable entity ID | the exact enum/string type below | predicate-specific below |
+| `SCALAR` | `POSE`, `BATTERY_LEVEL` | stable entity ID | the exact numeric tuple/scalar below | predicate-specific below |
+| `EVENT` | `ATTEMPT_OUTCOME` | robot or acted-on entity ID | exact `AttemptOutcomeValue` tuple below | immutable |
+
+There is no generic string predicate or generic event fact. The nine relation
+predicates use these exact subject/object domains: `IN(entity, room-or-container)`,
+`ON(asset-or-tool, asset-or-room-support)`, `NEAR(physical-entity,
+physical-entity)`, `BLOCKS(door-or-asset-or-obstacle, door-or-room-or-edge)`,
+`CONNECTS(door-or-edge, room)`, `HELD_BY(asset-or-tool, robot)`,
+`REACHABLE(robot, physical-entity-or-room)`, `RESTRICTED_BY(room-or-door,
+restriction-policy)`, and `OBSERVED_AT(physical-entity, room-or-anchor)`. Self-relations
+are forbidden except `NEAR`; symmetric `NEAR` is stored once with the smaller entity
+ID first. `CONNECTS` stores one fact for each endpoint room. All other relations are
+directed. Entity kinds are the closed enum `ROOM | DOOR | ASSET | VALVE | TOOL |
+CHARGER | ROBOT | OBSTACLE | TOPOLOGY_EDGE | RESTRICTION_POLICY | ANCHOR`.
+
+Attribute/scalar/event values are exact:
+
+- `LABEL` and `ALIAS` are nonempty NFKC strings; `LABEL` preserves display case and
+  `ALIAS` stores its casefolded lookup form. Both are immutable identity facts.
+- `ENTITY_CLASS` is one `EntityKind`; `AFFORDANCE` is one of `NAVIGABLE | OPENABLE |
+  CLOSEABLE | OPERABLE | PICKABLE | PLACEABLE | CHARGEABLE`. Both are immutable.
+- `POSE` is a seven-float tuple `(x_m, y_m, z_m, qw, qx, qy, qz)` with finite values
+  and a unit quaternion under the frozen tolerance. Its TTL is two event intervals.
+- `VISIBILITY` is `VISIBLE | OCCLUDED | NOT_OBSERVED`, with two-interval TTL.
+- `DOOR_STATE` is `OPEN | CLOSED | BLOCKED | UNKNOWN`, with one-interval TTL.
+- `BATTERY_LEVEL` is a finite float in `[0,1]`, with one-interval TTL.
+- `OPERATIONAL_STATE` is `OPERATIONAL | DEGRADED | FAILED | UNKNOWN`, with
+  one-interval TTL.
+- `ATTEMPT_OUTCOME` is the frozen tuple `(action: ActionEnum, target_id: EntityId,
+  outcome: SUCCEEDED | FAILED | ABORTED, reason: AttemptReason, attempt_id: EventId)`;
+  it is immutable. `ActionEnum` is `NAVIGATE | INSPECT | OPEN_DOOR | CLOSE_DOOR |
+  OPERATE | PICK | PLACE | RECHARGE | RESCAN | REIDENTIFY | HOLD`; every attempt uses
+  the stable entity most directly acted on as its non-null target. `AttemptReason` is
+  `NONE | STALE_POSE | WRONG_IDENTITY |
+  UNREACHABLE | RESTRICTED | BLOCKED | INSUFFICIENT_BATTERY | NOT_OPERATIONAL |
+  AFFORDANCE_MISMATCH | CONTROLLER_FAILURE`.
+
+Relation TTLs are two intervals for `IN`, `ON`, `NEAR`, `HELD_BY`, and `OBSERVED_AT`;
+one interval for `BLOCKS`, `CONNECTS`, `REACHABLE`, and `RESTRICTED_BY`. Thus labels,
+aliases, classes, affordances, and attempt outcomes are immutable; pose, visibility,
+door, battery, operational, and all nine relation predicates have exactly the finite
+TTLs stated here. `status=unknown` retains the predicate's tagged value type by using
+the one canonical `null` sentinel; no untyped substitute is permitted.
 
 `fact_id` is lowercase SHA-256 of canonical JSON over all fields except `fact_id`.
 Canonical values use sorted UTF-8 JSON with no NaN/Infinity and normalized strings.
@@ -339,19 +422,28 @@ tokens, and retains repetitions. Adjacent unigrams within a field add a bigram t
 joined by one underscore; bigrams never cross fields. There is no stemming, stop-word
 removal, or synonym expansion.
 
-A query document is constructed from the lowercase query-type token, then its sorted
-canonical argument fields using the same field markers/tokenizer, then the fixed
-predicate expansion:
+A query document starts with the exact lowercase query-ID token below. Argument fields
+then sort by field name and emit the field-name marker followed by the canonical JSON
+value through the same tokenizer. Finally, each expansion predicate is appended as
+two tokens, literal `predicate` then its lowercase enum name, in the listed order.
+These are all measured Exp04 query IDs; no query name is inferred or aliased:
 
-```text
-WHERE -> IN, ON, OBSERVED_AT
-LAST_OBSERVED -> OBSERVED_AT
-POSE_USABLE -> OBSERVED_AT
-ATTEMPT_HISTORY -> TASK_ATTEMPT_FAILED
-CHANGES_SINCE -> OBSERVED_AT
-CONFLICTS -> OBSERVED_AT
-ROUTE_FACTS -> CONNECTS, BLOCKS, REACHABLE, RESTRICTED_BY
-```
+| Query ID / name token | Exact argument fields | Ordered predicate expansion |
+|---|---|---|
+| `LOCATION` / `location` | `entity_id` | `IN, ON, NEAR, HELD_BY, OBSERVED_AT` |
+| `LAST_OBSERVED` / `last_observed` | `entity_id` | `OBSERVED_AT, POSE, VISIBILITY` |
+| `POSE_USABLE` / `pose_usable` | `entity_id, now_ns` | `POSE, VISIBILITY, OBSERVED_AT` |
+| `PRIOR_ATTEMPT` / `prior_attempt` | `entity_id, action` | `ATTEMPT_OUTCOME` |
+| `LAST_FAILURE_REASON` / `last_failure_reason` | `entity_id, action` | `ATTEMPT_OUTCOME` |
+| `REACHABLE_VALVE` / `reachable_valve` | `robot_id, valve_class` | `REACHABLE, RESTRICTED_BY, BLOCKS, CONNECTS, AFFORDANCE, OPERATIONAL_STATE` |
+| `CHANGES_SINCE` / `changes_since` | `location_id, since_ns` | `OBSERVED_AT, IN, ON, BLOCKS, CONNECTS, REACHABLE, RESTRICTED_BY, POSE, VISIBILITY, DOOR_STATE, BATTERY_LEVEL, OPERATIONAL_STATE, ATTEMPT_OUTCOME` |
+| `ROUTE_BLOCKER` / `route_blocker` | `robot_id, destination_id` | `CONNECTS, BLOCKS, REACHABLE, RESTRICTED_BY, DOOR_STATE` |
+| `DUPLICATE_IDENTITY` / `duplicate_identity` | `label` | `LABEL, ALIAS, ENTITY_CLASS, OBSERVED_AT, VISIBILITY` |
+| `CONFLICTS_UNKNOWN` / `conflicts_unknown` | `entity_id` | `IN, ON, NEAR, BLOCKS, CONNECTS, HELD_BY, REACHABLE, RESTRICTED_BY, OBSERVED_AT, LABEL, ALIAS, ENTITY_CLASS, AFFORDANCE, VISIBILITY, DOOR_STATE, OPERATIONAL_STATE, POSE, BATTERY_LEVEL, ATTEMPT_OUTCOME` |
+
+Names, argument fields, and expansions are schema constants shared by M5, M6, V0,
+the epistemic oracle, and replay. An unknown/missing/extra query argument invalidates
+the row rather than changing its retrieval document.
 
 Normalized aliases are appended only when an exact retained alias fact refers to the
 query's stable entity ID; alias facts are sorted by fact ID. Query construction never
@@ -394,13 +486,24 @@ V0 uses the same hash dimension, tokenization, IDF, and top-R rule but cannot us
 typed/lexical authoritative lookup. This makes M6 feasible, reproducible, and a
 true additive retrieval test rather than a disguised embedding service.
 
-A hand fixture freezes collision behavior. With `D=8`, token `valve` hashes to digest
-ending `0xeb`, dimension `3`, sign `-1`; token `room` ends `0x32`, dimension `2`, sign
-`+1`; and token `valve_valve` ends `0xbd`, dimension `5`, sign `-1`. A second token
-whose low four bits equal `0x3` must sum algebraically with `valve` in dimension 3
-before normalization; equal positive and negative weighted components cancel to zero.
-Golden tests recompute these SHA-256 digests, BM25 components, collision sum, norm,
-cosine, union ordering, deduplication, and context truncation by hand.
+A hand fixture freezes collision behavior. With `D=8`, token `valve` hashes to exact
+digest `c9af477d19b132dbcda4ebbaa61c923d29ef65c44636b929da54acd23f4e40eb`,
+dimension `3`, sign `-1`; token `where` hashes to
+`b48111c10c65fc119368edafb19f97451759ee90b3f44647368135ca47aa4753`,
+dimension `3`, sign `+1`; token `room` hashes to
+`1f1c5b2fad778434024f1537986346927917f4755a6e7d3fd91f22653b7c3132`,
+dimension `2`, sign `+1`; and token `valve_valve` hashes to
+`fc28d41e794aea83e56def0612984eeda33fdb1a6ca54b5435d748c772b79fbd`,
+dimension `5`, sign `-1`.
+
+The equal-BM25 micro-fixture has `N=1`, one document and one query whose complete
+token sequences are both `[valve, where]`, `tf=1`, `df=1`, `dl=avgdl=2`. Each token
+therefore has `idf=ln(4/3)` and `bm25=idf`; the equal opposite-signed components sum
+to exactly zero in dimension 3 for both document and query before normalization, so
+the vector channel returns no hit. This component fixture bypasses fact field markers
+deliberately; a separate full-record fixture covers the specified document/query
+compiler. Golden tests recompute every full digest, BM25 component, collision sum,
+norm, cosine, union ordering, deduplication, and context truncation by hand.
 
 ### 6.2 Queries, decisions, and metrics
 
@@ -547,12 +650,14 @@ The three complete configurations are fixed before pilot:
   retained input `512`/`131072`, context `32`/`8192`, dimension `512`, R `16`, reserve
   `0.10`, replans `3`.
 
-Let `event_interval_ns` be the fixed generator interval. Base TTL is two intervals for
-pose/visibility/location facts; one interval for door, restriction, operational,
-topology, and battery facts; and maximum signed 64-bit time for entity identity,
-class, affordance, and episodic-attempt facts. The selected TTL multiplier applies
-only to finite TTLs before upward rounding to one virtual-clock tick; immutable
-maximum-time facts remain unchanged. Physical energy units and task timeouts are fixed
+Let `event_interval_ns` be the fixed generator interval. The compiler applies the
+predicate-by-predicate TTL table in Section 5.1: two intervals for `POSE`, `VISIBILITY`,
+`IN`, `ON`, `NEAR`, `HELD_BY`, and `OBSERVED_AT`; one interval for `DOOR_STATE`,
+`BATTERY_LEVEL`, `OPERATIONAL_STATE`, `BLOCKS`, `CONNECTS`, `REACHABLE`, and
+`RESTRICTED_BY`; and maximum signed 64-bit time for `LABEL`, `ALIAS`, `ENTITY_CLASS`,
+`AFFORDANCE`, and `ATTEMPT_OUTCOME`. The selected TTL multiplier applies only to
+finite TTLs before upward rounding to one virtual-clock tick; immutable maximum-time
+facts remain unchanged. Physical energy units and task timeouts are fixed
 in `base.yaml`; the three complete configurations above are the only pilot choices.
 A configuration that exceeds an inherited resource cap, cannot encode one fact,
 produces nonfinite output, violates stepwise equality, or fails artifact validation
@@ -660,27 +765,32 @@ trace: ten queries for Exp04 or five missions for Exp05. It has a 60-minute wall
 ceiling and 4 MiB runner-artifact ceiling. `--max-cases` is smoke-only unless it equals
 10 for Exp04 or 5 for Exp05.
 
-The exact runner command shapes are:
+The launcher requires `cwd` to equal the physical project root returned by
+`git rev-parse --show-toplevel` after resolving symlinks; it refuses any other working
+directory. Every path below is therefore executable and project-root-relative, and the
+runner rejects an absolute path or any `..` component. The exact command shapes are:
 
 ```text
-python experiments/04_memory/run.py \
-  --protocol configs/frozen.yaml \
+uv run python experiments/04_memory/run.py \
+  --protocol experiments/04_memory/configs/frozen.yaml \
   --shard-id exp04:r1:confirmation:M5:BASE:00000017 \
-  --observation-trace manifests/exp04-confirmation/00000017.json \
+  --observation-trace experiments/04_memory/manifests/exp04-confirmation/00000017.json \
   --output-root results/04_memory --headless --max-cases 10
 
-python experiments/05_semantic_twin/run.py \
-  --protocol configs/frozen.yaml \
+uv run python experiments/05_semantic_twin/run.py \
+  --protocol experiments/05_semantic_twin/configs/frozen.yaml \
   --shard-id exp05:r1:confirmation:T3:BASE:00000017 \
-  --observation-trace manifests/exp05-confirmation/00000017.json \
+  --observation-trace experiments/05_semantic_twin/manifests/exp05-confirmation/00000017.json \
   --output-root results/05_semantic_twin --headless --max-cases 5
 ```
 
-Pilot uses the identical command shape with `configs/base.yaml`, a pilot phase in the
-shard ID, and its declared configuration/seed. An evidence command rejects a duplicate
-phase/configuration flag, missing `--headless`, mismatched case count, unknown shard,
-truth argument/environment variable, or output path not derived from the shard key.
-Reissuing the exact command is the only resume operation and must validate-and-skip.
+Pilot uses the identical command shape with the corresponding project-relative
+`experiments/<experiment>/configs/base.yaml`, a pilot phase in the shard ID, and its
+declared configuration/seed. An evidence command rejects a wrong cwd, absolute or
+parent-traversing path, duplicate phase/configuration flag, missing `--headless`,
+mismatched case count, unknown shard, truth argument/environment variable, or output
+path not derived from the shard key. Reissuing the exact command is the only resume
+operation and must validate-and-skip.
 
 Per revision, Exp04 has at most
 `9 variants * (3 configurations * 4 tuning seeds + 1 selected configuration * 4
@@ -759,16 +869,24 @@ meanings.
 P6-local sidecars have exact versioned schemas:
 
 - `queries.parquet`: query ID/time/type, canonical arguments, epistemic answer,
-  confidence, cited fact IDs, omitted count, and latency.
+  confidence, cited fact IDs, omitted count, latency,
+  `request_event_subtype=QUERY_REQUESTED`, and
+  `response_event_subtype=QUERY_RESPONDED`.
 - `decisions.parquet`: decision ID/query ID/time, closed decision enum, entity/route
-  IDs, cited facts, and uncertainty. It contains no outcome or truth-derived column;
-  the scorer writes outcome metrics elsewhere and never mutates this file.
+  IDs, cited facts, uncertainty, and
+  `publication_event_subtype=DECISION_PUBLISHED`. It contains no outcome or
+  truth-derived column; the scorer writes outcome metrics elsewhere and never mutates
+  this file.
 - `plans.parquet`: plan ID/mission ID, ordered step index, action enum, entity/edge,
   precondition fact IDs, predicted cost, and runner-authored
-  `predicted_invalidation_reason`. The reason uses a closed prediction enum and may be
-  `NONE`; there is no actual-validity or truth-derived reason column.
+  `predicted_invalidation_reason`, plus `publication_event_subtype=PLAN_PUBLISHED |
+  PLAN_REPLACED`. The reason uses a closed prediction enum and may be `NONE`; there is
+  no actual-validity or truth-derived reason column. Every `PLAN_REPLACED` row
+  cross-links one `SEMANTIC_REPLAN` whose payload carries the canonical structured
+  `mission_state` object.
 - `memory_snapshots.jsonl`: variant-visible canonical state after each update, actual
-  serialized byte count, input/context budget, and hash.
+  serialized byte count, input/context budget, hash, and
+  `event_subtype=MEMORY_STATE_UPDATED`; each row cross-links one `MEMORY_UPDATED`.
 - `fact_sets.jsonl`: compiler step, ordered fact IDs, canonical input-byte count,
   expiry decisions, and equality-group hash.
 - `replay.json`: sidecar schema hashes, counts, terminal query/decision/plan IDs,
@@ -799,13 +917,16 @@ Tests cover:
 - physical descriptor/path/import/environment isolation of truth from hostile runners;
 - fresh observation decode, immutable records, per-variant rehash, and zero shared
   caches/state;
-- hostile callbacks that attempt array writes, mapping/list mutation, object-field
-  replacement, retained-reference mutation, and `Observation` discovery, with no
-  mutation visible to a later callback or variant;
+- hostile callbacks that attempt array writes, `setflags(write=True)`, mapping/list
+  mutation, object-field replacement, and retained-reference mutation both during and
+  after later callbacks, plus `Observation` discovery, with no mutation visible to a
+  later callback or freshly decoded variant;
 - sealing before scorer launch and scorer refusal of writable/incomplete output;
 - epistemic-oracle unknown/stale/conflict answers versus outcome-oracle hidden-truth
   safety decisions;
-- stable IDs, exact relation/subtype vocabularies, total coincident-event order, and
+- stable IDs, the closed fact-kind/predicate/value/TTL domain, exact relation/subtype
+  vocabularies and sidecar waivers, structured `SEMANTIC_REPLAN.mission_state`,
+  separate action issuance/execution/truth/scoring, total coincident-event order, and
   monotonic chronology;
 - fact-ID/byte/time/TTL/expiry golden fixtures, exact-budget boundaries, deterministic
   truncation, and contradiction preservation;
