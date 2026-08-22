@@ -259,6 +259,23 @@ becomes the reference before the common slew limiter and PD. This is a bounded l
 receding-horizon controller, not a production safety layer or an imported MJPC
 implementation.
 
+`qdot_previous` is frozen controller state, not measured joint velocity. It is
+`[0, 0, 0] rad/s` at episode start. Acceptance of the first valid P5 objective leaves
+that zero initialization in place. Replacement by a newer valid P5 objective while
+the old objective is still valid preserves `qdot_previous`; a rejected arrival never
+changes it. At each 50 Hz planner tick, the cost above uses the velocity selected at
+the preceding planner tick, then atomically replaces `qdot_previous` with the newly
+selected candidate velocity before the common slew limiter is applied. Intervening
+2 ms controller ticks hold both the chosen q reference and `qdot_previous` unchanged.
+
+When the active P5 chunk reaches its half-open expiry, the transition to safe hold
+sets `qdot_previous` to exact zero and disables planner updates until another P5 chunk
+is accepted. A later direct acceptance after expiry therefore begins from zero. If
+acceptance and a 50 Hz planner tick coincide, delivery/acceptance occurs first and
+that planner tick uses the state selected by the preceding rule: preserved for a
+valid-objective replacement, zero after episode start or safe hold. These resets and
+updates are part of the frozen P5 executor state and replay trace.
+
 Two hand-calculated controller tests guard against the hold bias found in review. In
 a zero-penalty one-dimensional fixture, holding a `0.04 m` error has
 `J_hold = 2*(0.04/0.06)^2 = 0.888888...`; a feasible candidate that closes the error
@@ -529,41 +546,87 @@ and artifact validation exist. Draft output carries no measurement claim.
 Pilot uses eight paired seeds generated from a checked-in pilot seed root. The first
 four are tuning seeds and the final four are a single untouched pilot-evaluation set.
 No parameter, exclusion, implementation, or protocol decision may use the final four
-before that single evaluation. Pilot permits at most two protocol revisions and at
-most three configurations per stack per revision.
+before that single evaluation. Pilot permits at most two protocol revisions. Within a
+revision it uses only the following three-condition tuning subset, with no fault
+probes, in this fixed order:
 
-Initial parameters are the exact values in this design. A subsequent configuration
-may change only one of these named scalar groups without changing architecture:
+1. `5 Hz`, `700 ms`, two moves;
+2. `10 Hz`, `300 ms`, two moves; and
+3. `20 Hz`, `0 ms`, one move.
 
-- common PD pair: `(60, 6)`, `(80, 8)`, or `(100, 10)`;
-- IK damping: `0.001`, `0.01`, or `0.05`; or
-- MPC smoothness coefficient: `0.01`, `0.02`, or `0.04`.
+Pilot selection is a bounded coordinate search, not a per-stack choice. The initial
+vector is common PD `(Kp, Kd)=(80, 8)`, common IK damping `0.01`, and P5-only MPC
+smoothness `0.02`. First, every stack runs the base candidate. It qualifies the fixed
+survivor set for the revision: a P1 hard failure immediately makes the phase
+`INCONCLUSIVE`/`STOPPED`, while a non-anchor with a dimensional mismatch, nonfinite
+reference/state, joint-limit escape, or unstable divergence under the base vector is
+killed before selection. The fixed survivors then run the other two global PD
+candidates. The complete PD tie order is `(80, 8)`, `(60, 6)`, `(100, 10)`, always
+with damping `0.01` and MPC smoothness `0.02`; the base output is reused rather than
+rerun. The survivor set cannot vary by candidate.
 
-Common PD changes apply to every stack. Each candidate configuration runs only the
-12-condition tuning subset: three rates crossed with `0/700 ms` latency and one/two
-moves, with no fault probes. After tuning selects one configuration per surviving
-stack, that configuration runs exactly once on the final four seeds over all 24 core
-conditions and both robustness probes. No result from those final four can trigger a
-retune; changing anything starts a new protocol revision with eight new pilot seeds.
-No pilot may replace a failed controller with a new stack.
+A candidate is feasible only when every episode for every fixed surviving stack is
+present and valid and has zero dimensional, nonfinite, joint-limit, or divergence
+failures. For each feasible candidate and `(stack, seed)`, compute the equal-weight
+mean of its three episode primary recovery values; then compute the equal-weight mean
+over the four seeds within each stack and the equal-weight mean over the fixed
+surviving stacks. Select the smallest global mean, breaking exact ties by the frozen
+candidate order above. A non-base candidate failure makes that candidate infeasible;
+it never removes a stack or changes the aggregation domain. Because the base
+qualification removed any failed non-anchor and stops on failed P1, at least the base
+candidate is feasible; otherwise the revision is invalid and P4 becomes
+`INCONCLUSIVE`/`STOPPED`.
 
-A non-anchor stack is killed during pilot when it has any dimensional mismatch, nonfinite
-reference/state, joint-limit escape, unstable divergence, or fails to recover all
-four pilot-evaluation seeds within `1.0 s` in the easiest `20 Hz`, `0 ms`, one-move
-condition after its one straightforward implementation and bounded scalar tuning.
-Killed stacks are marked unsuitable for this task and receive no confirmation run.
+Second, hold the selected global PD pair fixed and evaluate common IK damping in tie
+order `0.01`, `0.001`, `0.05` with the identical survivor set, score, feasibility,
+and tie rule. The `0.01` result under the selected PD pair is reused from the PD
+stage, so only two additional configurations run. The selected damping applies to
+every absolute and differential IK call in every surviving stack; there is no
+stack-specific PD or IK value and the PD choice is not revisited after IK selection.
 
-P1 is not replaceable. If P1 hits any kill condition or fails its final-four easiest-
-condition requirement, P4 immediately records `INCONCLUSIVE`, moves to `STOPPED`, and
-runs no confirmation. A new anchor or controller would be a new reviewed protocol,
-not an autonomous continuation of this one.
+Third, if P5 survives, hold the selected shared PD/IK vector fixed and select its MPC
+smoothness from tie order `0.02`, `0.01`, `0.04`, using P5's equal-weight mean over the
+same four tuning seeds and three conditions. The `0.02` result is reused from the
+selected shared-vector evaluations, so only two additional P5 configurations run.
+Missing/invalid output or a hard failure makes an MPC candidate infeasible; if all
+three are infeasible, P5 is killed. This P5-only scalar cannot alter another stack.
 
-Per protocol revision, the maximum pilot count is exact: at most
-`3 configurations * 4 tuning seeds * 12 conditions = 144` tuning episodes plus
-`1 selected configuration * 4 evaluation seeds * 26 conditions = 104` evaluation
-episodes, for at most 248 episodes per stack. This remains below the autonomous
-256-pilot-episode ceiling. With six stacks the revision maximum is 1,488 pilot
-episodes.
+The resulting single global PD/IK vector and, if applicable, the P5-only smoothness
+value then run exactly once on the final four seeds over all 24 core conditions and
+both robustness probes. This is the only final-four evaluation. Those results may
+apply only the preregistered stack/P1 disposition below; they cannot select, retune,
+or reorder parameters. Any change starts a new protocol revision with eight new pilot
+seeds. No pilot may replace a failed controller with a new stack.
+
+A non-anchor stack is killed during base qualification or under the selected vector
+when it has any dimensional mismatch, nonfinite reference/state, joint-limit escape,
+unstable divergence, or fails to recover all four pilot-evaluation seeds within
+`1.0 s` in the easiest `20 Hz`, `0 ms`, one-move condition. A hard failure under an
+unselected candidate makes only that candidate infeasible under the rules above; it
+does not change the fixed survivor set. Killed stacks are marked unsuitable for this
+task and receive no confirmation run.
+
+P1 is not replaceable. If P1 hits any kill condition during base qualification,
+under the selected vector, or in the final-four evaluation, or fails its final-four
+easiest-condition requirement, P4 immediately records `INCONCLUSIVE`, moves to
+`STOPPED`, and runs no confirmation. A hard failure under an unselected candidate is
+candidate infeasibility, not selection of a different anchor. A new anchor or
+controller would be a new reviewed protocol, not an autonomous continuation of this
+one.
+
+Per protocol revision, each non-P5 stack runs at most
+`(3 PD + 2 additional IK) * 4 tuning seeds * 3 conditions = 60` tuning episodes and
+`1 selected vector * 4 evaluation seeds * 26 conditions = 104` evaluation episodes,
+or 164 total. P5 runs those 60 plus
+`2 additional smoothness * 4 * 3 = 24` tuning episodes and the same 104 evaluation
+episodes, or 188 total. With all six stacks surviving, the exact maximum is
+`5 * 164 + 188 = 1,008` pilot episodes, 6,300 simulated seconds, and 1,008 MiB under
+the per-rollout cap plus the existing 128 MiB pilot allowance. Every stack remains
+below the autonomous 256-pilot-episode per-revision ceiling. If both permitted
+revisions are used, the lifecycle maximum is 2,016 pilot episodes, 12,600 simulated
+seconds, 2,016 MiB of rollout payload, and two 128 MiB allowances. Reused evaluations
+are addressed by their complete parameter-vector hash and are never executed or
+counted twice.
 
 ### Freeze
 
@@ -574,10 +637,13 @@ After pilot, `configs/frozen.yaml` records and hashes:
 - MuJoCo package version and artifact hash;
 - MJCF, scenario, metric, plotting, and gate revisions;
 - all absolute/differential IK equations and parameters, posture/null-space rules,
-  interpolation endpoints, `dt_s`, MPC normalization/candidates/cost, residual
-  nominal construction, controller parameters, and limits;
+  interpolation endpoints, `dt_s`, MPC normalization/candidates/cost and
+  `qdot_previous` transition rules, residual nominal construction, controller
+  parameters, and limits;
 - surviving stacks and pilot exclusions;
 - pilot tuning and untouched pilot-evaluation seed manifests;
+- base survivor qualification, global PD/IK and P5-only MPC candidate orders,
+  feasibility results, reused-evaluation hashes, scores, ties, and selections;
 - confirmation seed count and RNG algorithm;
 - exact bootstrap and multiplicity procedure; and
 - every threshold below.
@@ -600,16 +666,17 @@ surviving stack on the identical scenario. With all six stacks surviving, those 
 paired bundles contain 5,016 stack rollouts. Each rollout is 6.25 simulated seconds,
 so the maximum confirmation manifest contains 31,350 simulated seconds. One shard is
 exactly one
-`(phase, stack, configuration, seed)` tuple: 12 episodes for a tuning shard, 26 for a
+`(phase, stack, configuration, seed)` tuple: 3 episodes for a tuning shard, 26 for a
 pilot-evaluation shard, and 26 or 27 for a confirmation shard depending on whether
 that seed includes the negative control. Thus a confirmation shard contains at most
 168.75 simulated seconds and is subject to the 60-minute wall-clock command ceiling.
 
 Each rollout has a hard 1 MiB serialized-artifact limit checked before publication.
 The maximum confirmation payload is therefore 5,016 MiB plus a 256 MiB aggregate/
-manifest/plot allowance; pilot is at most 1,488 MiB plus a 128 MiB allowance. Both are
+manifest/plot allowance. Across both permitted pilot revisions, pilot is at most
+2,016 MiB plus two 128 MiB allowances. The combined declared maximum is 7,544 MiB,
 inside the 10 GiB generated-artifact ceiling, and the complete phase refuses to start
-unless remaining budget covers its declared maximum.
+unless remaining budget covers that maximum.
 
 The analysis uses a deterministic 10,000-resample paired percentile bootstrap over
 seed-level primary values. The five contrasts against P1 form one multiplicity family
@@ -847,6 +914,12 @@ Unit and property tests cover:
 - dimensionless MPC stage integration and normalization, feasible multi-magnitude
   candidates, the hand-calculated 4 cm and 6 cm move-over-hold inequalities, and
   infeasible-candidate rejection;
+- P5 `qdot_previous` zero initialization, planner update, valid-replacement
+  preservation, rejected-arrival no-op, expiry/safe-hold reset, later reacceptance,
+  and coincident acceptance/planner-tick ordering;
+- global shared PD/IK candidate feasibility, aggregation, frozen tie ordering,
+  base-survivor qualification, reused-evaluation identity, P5-only smoothness
+  selection, all-infeasible handling, and one-shot final-four evaluation;
 - paired bootstrap, 99% multiplicity intervals, missing-data rules, threshold
   boundaries, tie ordering, result classification, two-stack promotion cap, and
   wire-representation deduplication;
@@ -952,4 +1025,9 @@ revision:
 - preserved semantic `current_phase` and defined coincident telemetry/policy
   observations and events; and
 - made scenario generation and rejection variant-independent and frozen before any
-  confirmation stack runs.
+  confirmation stack runs;
+- made pilot selection mechanical with one global PD/IK vector across surviving
+  stacks, an isolated P5 smoothness selection, exact aggregation/ties/failure rules,
+  and corrected 1,008-episode per-revision resource accounting; and
+- froze P5 MPC velocity-history initialization, updates, preservation, expiry reset,
+  safe-hold behavior, and later reacceptance.
