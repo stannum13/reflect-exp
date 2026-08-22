@@ -69,10 +69,10 @@ _EVIDENCE_KEYS = {
     "content_hashes", "evidence_sha256",
 }
 _STATIC_FILE_KEYS = {
-    "AST_PARSE": {"path", "sha256", "disposition", "node_count", "failure_line", "failure_column"},
-    "HEADER_LAYOUT": {"path", "sha256", "disposition", "include_guard", "pragma_once", "declaration_count", "failure_line"},
-    "MANIFEST_LAYOUT": {"path", "sha256", "disposition", "format", "top_level", "failure_line"},
-    "ASSET_LICENSE_INVENTORY": {"path", "sha256", "disposition", "license_candidates", "failure_line"},
+    "AST_PARSE": {"path", "sha256", "bytes", "disposition", "node_count", "failure_line", "failure_column"},
+    "HEADER_LAYOUT": {"path", "sha256", "bytes", "disposition", "include_guard", "pragma_once", "declaration_count", "failure_line"},
+    "MANIFEST_LAYOUT": {"path", "sha256", "bytes", "disposition", "format", "top_level", "failure_line"},
+    "ASSET_LICENSE_INVENTORY": {"path", "sha256", "bytes", "disposition", "license_candidates", "failure_line"},
 }
 
 
@@ -164,6 +164,8 @@ def _validate_raw_findings(
         if path in seen or expected_hashes.get(path) != digest:
             raise ValueError("finding path/hash disposition is duplicated or inconsistent")
         seen.add(path)
+        if type(item["bytes"]) is not int or item["bytes"] < 0:
+            raise ValueError("finding byte count is invalid")
         if item["disposition"] not in {"PASS", "FAIL"}:
             raise ValueError("finding disposition is invalid")
         failed = item["disposition"] == "FAIL"
@@ -328,7 +330,7 @@ class CompatibilityEvidence:
             if any(value is not None for value in (self.package_name, self.package_version, self.package_artifact_sha256, self.package_lock_artifact_sha256)):
                 raise ValueError("source checkout cannot claim package identity")
         if self.patch_artifact_sha256 is not None:
-            _sha(self.patch_artifact_sha256, "patch_artifact_sha256", 64)
+            raise ValueError("closed compatibility matrix has no patched-runtime operation")
         for path, digest in self.content_hashes:
             _string(path, "content path")
             _sha(digest, "content hash", 64)
@@ -412,6 +414,9 @@ class ManifestOperation:
     no_copy: bool
     no_models: bool
     package_name: str | None
+    file_ceiling_bytes: int
+    file_count_ceiling: int
+    depth_ceiling: int
 
 
 @dataclass(frozen=True)
@@ -494,6 +499,7 @@ def load_operation_manifest(path: Path, registry: SourceRegistry, lock: SourceLo
         "python_requirement", "compiler_or_runtime", "timeout_seconds",
         "download_ceiling_bytes", "disk_ceiling_bytes", "no_copy", "no_models",
         "package_name",
+        "file_ceiling_bytes", "file_count_ceiling", "depth_ceiling",
     }
     operations_list = []
     for item in raw["operations"]:
@@ -518,7 +524,9 @@ def load_operation_manifest(path: Path, registry: SourceRegistry, lock: SourceLo
             raise ValueError("manifest operation timeout is invalid")
         if type(item.download_ceiling_bytes) is not int or type(item.disk_ceiling_bytes) is not int or item.download_ceiling_bytes < 0 or item.disk_ceiling_bytes < 0:
             raise ValueError("manifest operation byte ceilings are invalid")
-        if type(item.no_copy) is not bool or type(item.no_models) is not bool or not item.no_models:
+        if any(type(value) is not int or value <= 0 for value in (item.file_ceiling_bytes, item.file_count_ceiling, item.depth_ceiling)) or item.file_ceiling_bytes > item.disk_ceiling_bytes:
+            raise ValueError("manifest operation file/count/depth ceilings are invalid")
+        if type(item.no_copy) is not bool or type(item.no_models) is not bool or not item.no_copy or not item.no_models:
             raise ValueError("manifest operation safety flags are invalid")
         if item.operation == "PACKAGE_RUNTIME":
             if item.operation_id != "MUJOCO_PACKAGE_SMOKE" or item.repository != "mujoco" or item.runtime_subject != "package" or item.package_name != "mujoco" or item.command != ("mujoco", "headless-one-step"):
@@ -527,7 +535,7 @@ def load_operation_manifest(path: Path, registry: SourceRegistry, lock: SourceLo
             if item.runtime_subject != "source_checkout" or item.selected_path != "" or item.package_name is not None or item.command != ("fetch_reference", "--name", item.repository, "--sparse-checkout"):
                 raise ValueError("checkout operation matrix is invalid")
         elif item.operation in _STATIC_FILE_KEYS:
-            if item.runtime_subject != "source_checkout" or item.selected_path not in sources[item.repository].selected_paths or item.package_name is not None or item.command != (item.operation.lower(), item.selected_path):
+            if item.runtime_subject != "source_checkout" or item.selected_path not in sources[item.repository].selected_paths or item.package_name is not None or item.command != (item.operation.lower(), item.selected_path) or item.download_ceiling_bytes != 0:
                 raise ValueError("static operation matrix is invalid")
         else:
             raise ValueError("manifest operation kind is invalid")
@@ -593,8 +601,14 @@ def validate_fragment(
             or item.python_requirement != operation.python_requirement
             or item.compiler_or_runtime != operation.compiler_or_runtime
             or item.package_name != operation.package_name
+            or item.disk_bytes > operation.disk_ceiling_bytes
+            or item.download_bytes > operation.download_ceiling_bytes
         ):
             raise ValueError("fragment facts do not match the frozen operation spec")
+        if item.operation in _STATIC_FILE_KEYS:
+            files = dict(item.findings)["files"]
+            if len(files) > operation.file_count_ceiling or any(row["bytes"] > operation.file_ceiling_bytes for row in files):
+                raise ValueError("fragment exceeds its manifest file/count ceilings")
     return item
 
 
@@ -664,12 +678,22 @@ def load_manifest_fragments(
             source = sources[operation.repository]
             pin = locked[operation.repository]
             existing = tuple(path for path in source.selected_paths if pin.path_statuses[path] is PathStatus.EXISTS)
-            if item.repository != source.name or item.locked_sha != pin.commit_sha or item.registry_sha256 != registry.registry_sha256 or item.patterns != existing:
+            if item.repository != source.name or item.url != source.url or item.locked_sha != pin.commit_sha or item.registry_sha256 != registry.registry_sha256 or item.patterns != existing:
                 raise ValueError("checkout receipt does not bind the manifest/lock")
             checkouts.append(item)
         else:
             compatibility.append(validate_fragment(raw, registry, lock, manifest, relative))
         seen.add(operation.operation_id)
+    checkout_by_repository = {item.repository: item for item in checkouts if item.outcome == "PASS"}
+    for item in compatibility:
+        if item.runtime_subject != "source_checkout":
+            continue
+        checkout = checkout_by_repository.get(item.repository)
+        if checkout is None:
+            raise ValueError("source operation requires a matching PASS checkout receipt")
+        inventory = dict(checkout.content_hashes)
+        if any(inventory.get(path) != digest for path, digest in item.content_hashes):
+            raise ValueError("source operation content hashes do not match checkout inventory")
     return tuple(compatibility), tuple(checkouts), frozenset(seen)
 
 
@@ -735,6 +759,24 @@ def consolidate_compatibility(
     checkout_map = {item.repository: item for item in checkouts}
     if len(checkout_map) != len(checkouts):
         raise ValueError("duplicate checkout receipt")
+    sources_by_name = {item.name: item for item in registry.repositories}
+    for repository, checkout in checkout_map.items():
+        source = sources_by_name.get(repository)
+        pin = locked.get(repository)
+        if source is None or pin is None:
+            raise ValueError("checkout receipt repository is not registered")
+        expected_patterns = tuple(path for path in source.selected_paths if pin.path_statuses[path] is PathStatus.EXISTS)
+        if checkout.url != source.url or checkout.locked_sha != pin.commit_sha or checkout.registry_sha256 != registry.registry_sha256 or checkout.patterns != expected_patterns:
+            raise ValueError("checkout receipt does not bind registry/lock")
+    for item in fragments:
+        if item.runtime_subject != "source_checkout":
+            continue
+        checkout = checkout_map.get(item.repository)
+        if checkout is None or checkout.outcome != "PASS":
+            raise ValueError("source compatibility requires a matching PASS checkout")
+        inventory = dict(checkout.content_hashes)
+        if any(inventory.get(path) != digest for path, digest in item.content_hashes):
+            raise ValueError("source compatibility hashes are stale against checkout")
     rows = []
     for source in registry.repositories:
         pin = locked[source.name]
@@ -750,8 +792,6 @@ def consolidate_compatibility(
                     classification = CompatibilityClass.LICENSE_REVIEW_REQUIRED
                 elif item is not None and item.operation == "PACKAGE_RUNTIME" and item.exit_status == 0 and source.mode not in {ReuseMode.REMOTE_ONLY, ReuseMode.DEFERRED}:
                     classification = CompatibilityClass.WORKS_LOCAL_M2
-                elif item is not None and item.exit_status == 0 and item.patch_artifact_sha256 and checkout_map.get(source.name) is not None and checkout_map[source.name].outcome == "PASS" and source.mode not in {ReuseMode.REMOTE_ONLY, ReuseMode.DEFERRED}:
-                    classification = CompatibilityClass.WORKS_LOCAL_CPU_WITH_PATCH
                 elif item is not None and item.exit_status == 0 and checkout_map.get(source.name) is not None and checkout_map[source.name].outcome == "PASS" and source.mode in {ReuseMode.SPARSE_REFERENCE, ReuseMode.PAPER_AND_CODE_REFERENCE}:
                     classification = CompatibilityClass.SOURCE_REFERENCE_ONLY
                 elif observation is not None and observation.kind == "REMOTE_GPU":
@@ -815,6 +855,7 @@ def write_compatibility_outputs(
     check: bool = False,
     manifest: OperationManifest | None = None,
     seen_operation_ids: frozenset[str] = frozenset(),
+    checkouts: Sequence[CheckoutEvidence] = (),
 ) -> dict[str, str]:
     csv_buffer = io.StringIO(newline="")
     writer = csv.writer(csv_buffer, lineterminator="\n")
@@ -866,11 +907,12 @@ def write_compatibility_outputs(
     package_rows = [row for row in rows if row.repository == "mujoco" and row.operation == "PACKAGE_RUNTIME"]
     package_pass = len(package_rows) == 1 and package_rows[0].smoke_status is SmokeStatus.PASS and package_rows[0].classification is CompatibilityClass.WORKS_LOCAL_M2
     evidence_failures = sorted({row.blocker for row in rows if row.smoke_status in {SmokeStatus.FAIL, SmokeStatus.BLOCKED} and row.blocker})
-    gate_complete = bool(manifest) and not missing_ids and package_pass and not evidence_failures
+    checkout_failures = sorted(item.blocker or "checkout failed" for item in checkouts if item.outcome != "PASS")
+    gate_complete = bool(manifest) and not missing_ids and package_pass and not evidence_failures and not checkout_failures
     result_label = "LOCALLY_REPRODUCED_M2" if gate_complete else "UNVERIFIED"
     result_local = "LOCALLY_REPRODUCED_M2" if gate_complete else "NOT_REPRODUCED"
     result_sources = ",".join(f"operation:{item}" for item in sorted(seen_operation_ids)) or "NONE"
-    result_failure = "NONE" if gate_complete else "; ".join([*(f"missing:{item}" for item in missing_ids), *evidence_failures]) or "INCOMPLETE_EVIDENCE"
+    result_failure = "NONE" if gate_complete else "; ".join([*(f"missing:{item}" for item in missing_ids), *evidence_failures, *checkout_failures]) or "INCOMPLETE_EVIDENCE"
     maturity.append(f"| Experiment 00 source compatibility | {result_label} | {result_sources} | source audit | project | local CPU | {result_local} | {result_failure} | source gate | NOT_APPLICABLE |")
     results = (
         "# Experiment 00 results\n\n"

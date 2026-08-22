@@ -11,6 +11,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
+import time
 import tomllib
 import xml.etree.ElementTree as ET
 
@@ -41,12 +42,16 @@ class OperationSpec:
     platform: str
     python_requirement: str
     compiler_or_runtime: str
+    timeout_seconds: int
+    download_ceiling_bytes: int
+    disk_ceiling_bytes: int
+    file_ceiling_bytes: int
+    file_count_ceiling: int
+    depth_ceiling: int
+    no_copy: bool
+    no_models: bool
 
 
-_MAX_FILE_BYTES = 2 * 1024 * 1024
-_MAX_TOTAL_BYTES = 16 * 1024 * 1024
-_MAX_FILES = 512
-_MAX_DEPTH = 8
 _DIRECTORY_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 
 
@@ -82,7 +87,7 @@ def _safe_relative(value: str) -> None:
         raise ValueError("source operation path escapes checkout")
 
 
-def _selected_files(root: Path, selected: str, operation: SourceOperation) -> tuple[Path, ...]:
+def _selected_files(root: Path, selected: str, operation: SourceOperation, file_count_ceiling: int, depth_ceiling: int) -> tuple[Path, ...]:
     _safe_relative(selected)
     if any(character in selected for character in "*?["):
         candidates = tuple(sorted(root.glob(selected)))
@@ -99,8 +104,9 @@ def _selected_files(root: Path, selected: str, operation: SourceOperation) -> tu
             for current, directories, filenames in os.walk(target, topdown=True, followlinks=False):
                 current_path = Path(current)
                 depth = len(current_path.relative_to(target).parts)
-                if depth >= _MAX_DEPTH:
+                if depth >= depth_ceiling:
                     directories[:] = []
+                    filenames = []
                 else:
                     directories[:] = sorted(
                         name for name in directories
@@ -110,7 +116,7 @@ def _selected_files(root: Path, selected: str, operation: SourceOperation) -> tu
                     child = current_path / name
                     if not suffixes or child.suffix.lower() in suffixes or "license" in child.name.lower():
                         found.append(child)
-                        if len(found) > _MAX_FILES:
+                        if len(found) > file_count_ceiling:
                             raise ValueError("source operation exceeds file-count limit")
             candidates = tuple(found)
         else:
@@ -118,7 +124,7 @@ def _selected_files(root: Path, selected: str, operation: SourceOperation) -> tu
     if not candidates:
         raise ValueError("source operation selected no files")
     result = []
-    if len(candidates) > _MAX_FILES:
+    if len(candidates) > file_count_ceiling:
         raise ValueError("source operation exceeds file-count limit")
     for candidate in candidates:
         try:
@@ -132,7 +138,7 @@ def _selected_files(root: Path, selected: str, operation: SourceOperation) -> tu
     return tuple(result)
 
 
-def _read_descriptor_relative(root_descriptor: int, relative: str) -> bytes:
+def _read_descriptor_relative(root_descriptor: int, relative: str, file_ceiling_bytes: int) -> bytes:
     parts = PurePosixPath(relative).parts
     descriptor = os.dup(root_descriptor)
     try:
@@ -149,15 +155,15 @@ def _read_descriptor_relative(root_descriptor: int, relative: str) -> bytes:
             value = os.fstat(file_descriptor)
             if not stat.S_ISREG(value.st_mode) or value.st_nlink != 1:
                 raise ValueError("source operation requires an exact regular file")
-            if value.st_size > _MAX_FILE_BYTES:
+            if value.st_size > file_ceiling_bytes:
                 raise ValueError("source operation input exceeds file byte limit")
             data = bytearray()
-            while len(data) <= _MAX_FILE_BYTES:
-                chunk = os.read(file_descriptor, min(64 * 1024, _MAX_FILE_BYTES + 1 - len(data)))
+            while len(data) <= file_ceiling_bytes:
+                chunk = os.read(file_descriptor, min(64 * 1024, file_ceiling_bytes + 1 - len(data)))
                 if not chunk:
                     break
                 data.extend(chunk)
-            if len(data) > _MAX_FILE_BYTES:
+            if len(data) > file_ceiling_bytes:
                 raise ValueError("source operation input exceeds file byte limit")
             return bytes(data)
         finally:
@@ -167,12 +173,20 @@ def _read_descriptor_relative(root_descriptor: int, relative: str) -> bytes:
 
 
 def run_source_operation(spec: OperationSpec, checkout_root: Path) -> CompatibilityEvidence:
+    if (
+        not spec.no_copy or not spec.no_models or spec.download_ceiling_bytes != 0
+        or spec.timeout_seconds <= 0 or spec.disk_ceiling_bytes <= 0
+        or not 0 < spec.file_ceiling_bytes <= spec.disk_ceiling_bytes
+        or spec.file_count_ceiling <= 0 or spec.depth_ceiling <= 0
+    ):
+        raise ValueError("source operation safety/cap contract is invalid")
+    started = time.monotonic()
     if not checkout_root.is_dir() or checkout_root.is_symlink():
         raise ValueError("checkout root must be a non-symlink directory")
     root_descriptor = os.open(checkout_root, _DIRECTORY_FLAGS)
     root_value = os.fstat(root_descriptor)
     try:
-        files = _selected_files(checkout_root, spec.selected_path, spec.operation)
+        files = _selected_files(checkout_root, spec.selected_path, spec.operation, spec.file_count_ceiling, spec.depth_ceiling)
     except BaseException:
         os.close(root_descriptor)
         raise
@@ -183,9 +197,11 @@ def run_source_operation(spec: OperationSpec, checkout_root: Path) -> Compatibil
     try:
         for path in files:
             relative = path.relative_to(checkout_root).as_posix()
-            data = _read_descriptor_relative(root_descriptor, relative)
+            if time.monotonic() - started > spec.timeout_seconds:
+                raise TimeoutError("source operation exceeded timeout")
+            data = _read_descriptor_relative(root_descriptor, relative, spec.file_ceiling_bytes)
             total += len(data)
-            if total > _MAX_TOTAL_BYTES:
+            if total > spec.disk_ceiling_bytes:
                 raise ValueError("source operation input exceeds total byte limit")
             hashes[relative] = hashlib.sha256(data).hexdigest()
             digest = hashes[relative]
@@ -195,14 +211,14 @@ def run_source_operation(spec: OperationSpec, checkout_root: Path) -> Compatibil
                 if spec.operation is SourceOperation.AST_PARSE:
                     tree = ast.parse(text, filename=relative)
                     finding = {
-                        "path": relative, "sha256": digest, "disposition": disposition,
+                        "path": relative, "sha256": digest, "bytes": len(data), "disposition": disposition,
                         "node_count": sum(1 for _ in ast.walk(tree)),
                         "failure_line": None, "failure_column": None,
                     }
                 elif spec.operation is SourceOperation.HEADER_LAYOUT:
                     guard = re.search(r"^\s*#ifndef\s+([A-Za-z_][A-Za-z0-9_]*)", text, re.MULTILINE)
                     finding = {
-                        "path": relative, "sha256": digest, "disposition": disposition,
+                        "path": relative, "sha256": digest, "bytes": len(data), "disposition": disposition,
                         "include_guard": guard.group(1) if guard else None,
                         "pragma_once": bool(re.search(r"^\s*#pragma\s+once\b", text, re.MULTILINE)),
                         "declaration_count": text.count(";"), "failure_line": None,
@@ -228,7 +244,7 @@ def run_source_operation(spec: OperationSpec, checkout_root: Path) -> Compatibil
                     else:
                         raise ValueError("unsupported manifest format")
                     finding = {
-                        "path": relative, "sha256": digest, "disposition": disposition,
+                        "path": relative, "sha256": digest, "bytes": len(data), "disposition": disposition,
                         "format": format_name, "top_level": top_level, "failure_line": None,
                     }
                 else:
@@ -236,7 +252,7 @@ def run_source_operation(spec: OperationSpec, checkout_root: Path) -> Compatibil
                     if "license" in path.name.lower() and not candidates:
                         candidates = ["LICENSE_FILE_PRESENT"]
                     finding = {
-                        "path": relative, "sha256": digest, "disposition": disposition,
+                        "path": relative, "sha256": digest, "bytes": len(data), "disposition": disposition,
                         "license_candidates": candidates, "failure_line": None,
                     }
             except (UnicodeError, SyntaxError, ValueError, json.JSONDecodeError, tomllib.TOMLDecodeError, ET.ParseError, yaml.YAMLError) as exc:
@@ -245,13 +261,13 @@ def run_source_operation(spec: OperationSpec, checkout_root: Path) -> Compatibil
                 line = getattr(exc, "lineno", None) or (position[0] + 1 if position else 1)
                 column = getattr(exc, "offset", None) or (position[1] + 1 if position else 1)
                 if spec.operation is SourceOperation.AST_PARSE:
-                    finding = {"path": relative, "sha256": digest, "disposition": "FAIL", "node_count": 0, "failure_line": line, "failure_column": column}
+                    finding = {"path": relative, "sha256": digest, "bytes": len(data), "disposition": "FAIL", "node_count": 0, "failure_line": line, "failure_column": column}
                 elif spec.operation is SourceOperation.HEADER_LAYOUT:
-                    finding = {"path": relative, "sha256": digest, "disposition": "FAIL", "include_guard": None, "pragma_once": False, "declaration_count": 0, "failure_line": line}
+                    finding = {"path": relative, "sha256": digest, "bytes": len(data), "disposition": "FAIL", "include_guard": None, "pragma_once": False, "declaration_count": 0, "failure_line": line}
                 elif spec.operation is SourceOperation.MANIFEST_LAYOUT:
-                    finding = {"path": relative, "sha256": digest, "disposition": "FAIL", "format": path.suffix.lstrip(".").upper(), "top_level": [], "failure_line": line}
+                    finding = {"path": relative, "sha256": digest, "bytes": len(data), "disposition": "FAIL", "format": path.suffix.lstrip(".").upper(), "top_level": [], "failure_line": line}
                 else:
-                    finding = {"path": relative, "sha256": digest, "disposition": "FAIL", "license_candidates": [], "failure_line": line}
+                    finding = {"path": relative, "sha256": digest, "bytes": len(data), "disposition": "FAIL", "license_candidates": [], "failure_line": line}
             file_findings.append(finding)
         current_root = os.stat(checkout_root, follow_symlinks=False)
         if (current_root.st_dev, current_root.st_ino) != (root_value.st_dev, root_value.st_ino):

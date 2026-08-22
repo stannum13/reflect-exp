@@ -74,6 +74,8 @@ def write_manifest(root: Path, registry: object, lock: SourceLock) -> Path:
             "timeout_seconds": 60, "download_ceiling_bytes": 0,
             "disk_ceiling_bytes": 536870912, "no_copy": True, "no_models": True,
             "package_name": "mujoco",
+            "file_ceiling_bytes": 2097152, "file_count_ceiling": 512,
+            "depth_ceiling": 8,
         }],
         "requirement_observations": [],
         "mujoco_smoke_output": {"operation_id": "MUJOCO_PACKAGE_SMOKE", "relative_path": output},

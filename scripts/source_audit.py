@@ -85,7 +85,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 operation.experiment, operation.selected_path, operation.operation_id,
                 SourceOperation(operation.operation), pin.license_status.value,
                 pin.license_spdx, operation.platform, operation.python_requirement,
-                operation.compiler_or_runtime,
+                operation.compiler_or_runtime, operation.timeout_seconds,
+                operation.download_ceiling_bytes, operation.disk_ceiling_bytes,
+                operation.file_ceiling_bytes, operation.file_count_ceiling,
+                operation.depth_ceiling, operation.no_copy, operation.no_models,
             ),
             _beneath(root, arguments.checkout_root, "checkout root") / source.name,
         )
@@ -100,6 +103,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     hashes = write_compatibility_outputs(
         root, registry, lock, rows, check=arguments.check,
         manifest=manifest, seen_operation_ids=seen,
+        checkouts=checkouts,
     )
     sys.stdout.buffer.write(canonical_json_bytes({"mode": "check" if arguments.check else "write", "outputs": hashes, "rows": len(rows)}))
     return 0
