@@ -12,7 +12,10 @@ P6 uses a frozen pure-Python world-trace kernel shared by Experiments 04 and 05.
 Experiment 04 establishes a minimal memory interface; Experiment 05 consumes that
 frozen interface to test semantic-twin layers. Evidence is serial, Exp04 then
 Exp05. Contract and fixture preparation may proceed in parallel, but Exp05 may not
-select or inspect the winning Exp04 implementation before Exp04 promotion.
+select or inspect the winning Exp04 implementation before Exp04 promotion. After
+promotion, Exp05 inherits the promoted memory protocol, every selected memory
+parameter, and its conformance hashes unchanged; it tunes only the closed Exp05-local
+planner settings in Section 8.2.
 
 The benchmark uses standard-library data structures, `dataclasses`, `heapq`, and
 the repository's current NumPy/PyArrow artifact stack. It does not introduce a
@@ -61,10 +64,17 @@ charger, one restricted room, and one robot, matching Exp04
 CorridorA, PumpRoom, ElectricalRoom, and RestrictedLab
 (`Reflect Lite Research Program.md:1801-1812`).
 
-Stable IDs are opaque canonical strings: `room/0001`, `door/0001`, `asset/0001`,
-`robot/0001`, `event/00000001`, and `observation/00000001`. Labels and aliases are
-facts, never identities. IDs are assigned by sorted generator role before any
-variant runs; a variant cannot mint a world-entity ID.
+Stable world and local IDs are opaque canonical strings: `room/0001`, `door/0001`,
+`asset/0001`, `robot/0001`, `event/00000001`, and local
+`observation/00000001`. The local string is `observation_key`; it is never written
+into canonical `Observation.sequence_id` or an `OBSERVATION_RECEIVED.observation_id`.
+For one trace, delivery order assigns the gap-free canonical integer
+`observation_sequence` `0..n-1`; the public per-seed trace manifest contains the complete sorted bijection
+`(observation_key, observation_sequence)`. Both directions are unique, immutable, and
+validated before the first callback. Shared observations and events use only the
+integer; P6 sidecars may carry both and must resolve the bijection exactly. Labels and
+aliases are facts, never identities. IDs are assigned by sorted generator role before
+any variant runs; a variant cannot mint a world-entity ID.
 
 ### 3.2 Frozen relation vocabulary
 
@@ -105,6 +115,9 @@ use this total order:
 9. simulator truth outcome; and
 10. scorer publication.
 
+Ranks 7 and 8 are reserved solely to keep cross-experiment ordering stable; P6 emits
+no record at either rank.
+
 Within one rank, `source_sequence` then `event_id` orders records. Time may remain
 equal but never regress. Architecture-visible events use the existing shared
 `ExecutionEventType` when applicable; P6's `event_subtype` is a validated payload
@@ -115,21 +128,25 @@ The canonical mapping is exact:
 | Rank | P6 record | Shared event mapping | Required payload |
 |---:|---|---|---|
 | 1 | truth mutation | scorer-private truth event only | `event_subtype`, `truth_event_id` |
-| 2 | observation delivery | `OBSERVATION_RECEIVED` | `observation_id`, `event_subtype` |
+| 2 | observation delivery | `OBSERVATION_RECEIVED` | integer `observation_id`, `event_subtype` |
 | 3 | compiled memory mutation | `MEMORY_UPDATED` | `mutation_id`, `event_subtype=MEMORY_STATE_UPDATED` |
 | 4 | query/mission request | P6 query/mission sidecar only | `event_subtype=QUERY_REQUESTED` or `MISSION_REQUESTED` |
 | 5 | query response | P6 query sidecar only | `event_subtype=QUERY_RESPONDED` |
 | 6 | decision/initial plan | P6 decision/plan sidecar only | `event_subtype=DECISION_PUBLISHED` or `PLAN_PUBLISHED` |
 | 6 | replacement plan | `SEMANTIC_REPLAN` plus plan sidecar | `event_subtype=PLAN_REPLACED`, `plan_id`, canonical `mission_state` object |
-| 7 | issued physical chunk, if any | `POLICY_RESPONDED` | canonical `source_chunk_id`, `event_subtype=ACTION_ISSUED` |
-| 8 | executed physical chunk, if any | `ACTION_EXECUTED` | canonical `source_chunk_id`, `event_subtype=PHYSICAL_ACTION_EXECUTED` |
+| 7 | action issuance | forbidden in P6 | no payload is legal |
+| 8 | action execution | forbidden in P6 | no payload is legal |
 | 9 | simulator truth outcome | scorer-private truth event only | `event_subtype=SIMULATOR_OUTCOME_RECORDED`, `truth_event_id` |
 | 10 | scorer publication | sealed scorer artifact only | `event_subtype=OUTCOME_SCORED`, `score_record_id` |
 
-P6 never uses `POLICY_RESPONDED` for a query; it appears only when a stored canonical
-`ActionChunk` is actually issued, because the current rollout validator binds those
-records. Issuance does not prove execution, execution does not contain simulator truth,
-and neither substitutes for scorer publication. `SEMANTIC_REPLAN.mission_state` is the
+P6 is a decision/plan benchmark and never issues physical controls. Every canonical
+`actions.parquet` is the valid empty schema, and `POLICY_REQUESTED`,
+`POLICY_RESPONDED`, `CHUNK_ACCEPTED`, `CHUNK_REPLACED`, every chunk-rejection event,
+and `ACTION_EXECUTED` are forbidden. This avoids fabricating the pending-request,
+response, chunk-validity, and control-reference lifecycle required by the shared
+rollout validator. A decision such as `HOLD`, `RESCAN`, or `NAVIGATE` remains a typed
+P6-local proposed action and never becomes an `ActionChunk`. Simulator outcomes and
+scorer publication remain separate. `SEMANTIC_REPLAN.mission_state` is the
 canonical structured mission-state object required by the shared validator, not an ID,
 string summary, or P6-local substitute. Every P6-emitted shared event includes
 `event_subtype` in addition to the canonical fields required by its shared type.
@@ -159,8 +176,6 @@ QUERY_RESPONDED
 DECISION_PUBLISHED
 PLAN_PUBLISHED
 PLAN_REPLACED
-ACTION_ISSUED
-PHYSICAL_ACTION_EXECUTED
 SIMULATOR_OUTCOME_RECORDED
 OUTCOME_SCORED
 ```
@@ -176,9 +191,10 @@ Subtype storage and shared-event waivers are exact. `queries.parquet` has
 `publication_event_subtype=DECISION_PUBLISHED`; `plans.parquet` has
 `publication_event_subtype=PLAN_PUBLISHED | PLAN_REPLACED`. These four local
 request/response/publication subtypes are explicitly waived from a shared event because
-no compatible shared enum exists. `MEMORY_STATE_UPDATED`, `PLAN_REPLACED`,
-`ACTION_ISSUED`, and `PHYSICAL_ACTION_EXECUTED` require their mapped shared event and
-may not use the waiver. Generator-only world subtypes appear only in the observation
+no compatible shared enum exists. `MEMORY_STATE_UPDATED` and `PLAN_REPLACED` require
+their mapped shared event and may not use the waiver. `ACTION_ISSUED` and
+`PHYSICAL_ACTION_EXECUTED` are outside the closed P6 vocabulary and are rejected
+everywhere. Generator-only world subtypes appear only in the observation
 or private truth trace as declared by the observation policy.
 `SIMULATOR_OUTCOME_RECORDED` is truth-only and `OUTCOME_SCORED` scorer-only; both are
 forbidden from runner rollouts and sidecars. Any other subtype/location combination,
@@ -188,9 +204,10 @@ missing required shared event, or extra shared event is invalid.
 
 ### 4.1 Separate immutable traces
 
-The generator writes two sibling artifacts through separate descriptors:
+The phase controller generates two physically and API-separated byte streams:
 
-- `truth/trace.jsonl` contains authoritative state transitions and outcome fields.
+- a parent-held `TruthTrace` capability contains authoritative state transitions and
+  outcome fields; and
 - `observations/trace.jsonl` contains only delivered observations, confidence,
   provenance, visibility, contradictions, and explicit unknowns.
 
@@ -199,13 +216,25 @@ capability types. `TruthTrace` cannot be converted to `ObservationTrace` by a ca
 the generator alone applies the frozen observation policy. The observation artifact
 contains no truth path, truth hash, hidden entity pose, injection identity, future
 outcome, or oracle cause label. The public scenario identity is a random run ID that
-cannot be joined to a truth filename by a runner.
+cannot be joined to truth by a runner.
 
-Truth files reside outside every variant working directory. A variant invocation
-receives only an already-open observation descriptor or copied observation bytes,
-the protocol, and its output directory. Its environment and arguments contain no
-truth location. Hostile-runner tests enumerate descriptors, arguments, environment,
-imports, and working-directory files and prove truth is unreachable.
+Before the first runner is spawned, the controller writes truth through an
+`O_CLOEXEC | O_NOFOLLOW` regular-file descriptor in a mode-`0700` parent-private
+directory, fsyncs it, opens the validated read-only descriptor, and unlinks its sole
+directory entry. The controller retains this unlinked capability; it is not named in
+an argument, environment variable, manifest, `/proc`-style descriptor path, working
+directory, or importable object, and it is never placed in a child `pass_fds` set.
+Runner children are spawned with `close_fds=true`, an explicit descriptor allowlist
+containing only their observation/input and output capabilities, and no inherited
+parent controller object. A restart cannot reconstruct runner evidence from a named
+truth file: it quarantines every incomplete phase and regenerates the entire phase
+under a new protocol revision and RNG root. Only after every runner child has exited
+and all runner bundles have sealed may the controller copy the retained bytes through
+the descriptor-relative create-only writer into the private truth bundle, seal its
+manifest, and close the unlinked capability. The private root becomes path-addressable
+only after no runner process exists and is never mounted or passed to a later runner.
+Hostile-runner tests enumerate descriptors, arguments, environment, imports, and
+working-directory entries and prove truth is unreachable.
 
 ### 4.2 Fresh immutable execution
 
@@ -232,9 +261,10 @@ descriptor, or artifact path. Callback-returned references are retained by a hos
 test harness and attacked again after later callbacks and after variant completion;
 the canonical fact bytes and the next fresh variant must remain unchanged.
 
-Only after sealing does the orchestrator launch scorers with separate read-only
-descriptors for sealed output, observation trace, and—where allowed—truth trace.
-Evaluated architecture code is not imported into the scorer process.
+Only after every phase runner has exited and sealed does the controller publish the
+private truth manifest. Scorers then descriptor-open sealed output, observation trace,
+and truth beneath separately prevalidated roots. Evaluated architecture code is not
+imported into the scorer process.
 
 ### 4.3 Two distinct oracles
 
@@ -373,22 +403,59 @@ All variants receive freshly decoded byte-identical observation traces and answe
 through the same typed `MemoryView`:
 
 ```text
-where(entity)
-last_observed(entity)
-pose_usable(entity, now)
-attempt_history(entity, action)
-changes_since(location, time)
-conflicts(entity)
-route_facts(destination)
+where(entity: EntityId) -> FactResult[RelationFact]
+last_observed(entity: EntityId) -> FactResult[RelationFact]
+pose_usable(entity: EntityId, now_ns: int) -> PoseUsabilityResult
+attempt_history(entity: EntityId, action: ActionEnum) -> FactResult[AttemptFact]
+changes_since(location: EntityId, time_ns: int) -> FactResult[FactRecord]
+conflicts(entity: EntityId) -> ConflictResult
+route_facts(destination: EntityId) -> RouteFactResult
+labels(entity: EntityId) -> FactResult[LabelFact]
+entity_class(entity: EntityId) -> EntityClassResult
+restrictions(entity: EntityId) -> FactResult[RestrictionFact]
 ```
 
-Results are sorted typed records with fact/source IDs, observation/receipt time,
-confidence, provenance, staleness, omitted count, and explicit unknown reason.
+`FactResult[T]` is exactly `(records: tuple[T,...], omitted_count: int,
+unknown_reason: UnknownReason | null)`. Every typed record carries fact/source IDs,
+observed/received times, confidence, provenance, and `FRESH | STALE | IMMUTABLE`.
+Records use the common truncation order; an empty known answer has `records=()`,
+`omitted_count=0`, and `unknown_reason=null`, while an epistemically unknown answer
+uses one of `NOT_OBSERVED | EXPIRED | CONTRADICTED | BUDGET_TRUNCATED`.
+`LabelFact` permits only `LABEL | ALIAS` and returns `(text, is_primary)`;
+`EntityClassResult` is exactly `(value: EntityKind | null, cited_fact_ids:
+tuple[FactId,...], unknown_reason: UnknownReason | null)`; `RestrictionFact` permits
+only `RESTRICTED_BY` and returns the restriction-policy entity ID plus its current
+status. `PoseUsabilityResult` is exactly `(status: USABLE | STALE | CONTRADICTED |
+UNKNOWN, pose: tuple[float,float,float,float,float,float,float] | null,
+cited_fact_ids: tuple[FactId,...], unknown_reason: UnknownReason | null)`.
+`ConflictResult` is exactly `(pairs: tuple[(asserted_fact_id,contradicting_fact_id),...],
+omitted_count: int, unknown_reason: UnknownReason | null)`, with each pair ordered by
+fact ID. `RouteFactResult` is exactly `(records: tuple[RouteFact,...], omitted_count:
+int, unknown_reason: UnknownReason | null)` and `RouteFact` permits only `CONNECTS |
+BLOCKS | REACHABLE | RESTRICTED_BY | DOOR_STATE`. `where` permits only `IN | ON |
+NEAR | HELD_BY | OBSERVED_AT`; `last_observed` only `OBSERVED_AT`; `attempt_history`
+only `ATTEMPT_OUTCOME`; and `changes_since` may return any closed fact predicate after
+the requested time. All methods return typed tuples, never mappings or free-form
+strings. Unknown
+entity IDs, wrong argument types, or a result record outside the method's allowed
+predicate set invalidate the shard. These ten methods and exact result contracts are
+the complete promoted interface; Exp05 cannot downcast to an implementation store.
 
 - **M0 — current observation only:** retains only facts from the latest delivered
   frame.
 - **M1 — recent-state buffer:** retains the canonical bounded recent window of
-  observations, robot state, actions, and controller events.
+  observation-derived facts plus local closed `ExecutionRecord` ring entries.
+  `ExecutionRecord` is exactly `(record_id: EventId, observed_at_ns: int, kind,
+  action: ActionEnum | null, target_id: EntityId | null,
+  controller_status: NOMINAL | SATURATED | REJECTED | FAILED | null,
+  outcome: SUCCEEDED | FAILED | ABORTED | null, reason: AttemptReason | null,
+  source_fact_ids: tuple[FactId,...])`, where `kind=PROPOSED_ACTION |
+  CONTROLLER_STATUS | ATTEMPT_RESULT`. The three variant tags respectively require
+  `(action,target)`, `controller_status`, or `(action,target,outcome,reason)` and require
+  all non-applicable fields null. It is
+  compiled only from delivered observation fields and `ATTEMPT_OUTCOME` facts; it is
+  not an `ActionChunk`, `ControlReference`, or shared action event and is never written
+  to canonical `actions.parquet`.
 - **M2 — episodic log only:** append-only normalized attempt, outcome, failure,
   intervention, and change facts.
 - **M3 — semantic graph only:** latest entity beliefs and typed relations without
@@ -589,8 +656,13 @@ Exp05 invalid-plan rate and mission success use all five mission IDs per seed. T
 history-dependent T4 contrast uses exactly `ALTERNATE_DOOR_AFTER_FAILURE` and
 `REPLAN_AFTER_RESTRICTION`, denominator two. Forbidden-region and invalid-affordance
 rates use all five missions; route cost averages only successful missions but also
-reports the fixed successful-count denominator. Zero successful missions yields a
-missing required route-cost guard and makes that variant-seed invalid.
+reports the fixed successful-count denominator. Zero successful missions produces the
+typed pair `(route_cost_status=NOT_APPLICABLE, route_cost=null,
+successful_route_count=0)`; this is valid evidence, never zero cost and never a missing
+row. In pilot selection, any finite mean route cost sorts before `NOT_APPLICABLE`; if
+every candidate is `NOT_APPLICABLE`, that key ties and selection proceeds to context
+bytes. Confirmation route cost is descriptive and reports the successful count, so
+this valid typed absence neither changes a primary denominator nor invalidates a shard.
 
 ### 7.1 Fixed comparator rule
 
@@ -629,26 +701,39 @@ promotion.
 Draft completes when trace separation, compilers, variants, scorers, sidecar replay,
 commands, and validation tests exist. Draft carries no claim.
 
-Each experiment uses eight paired pilot seeds from a checked-in pilot root. Seeds
-0-3 are tuning; seeds 4-7 are one untouched pilot evaluation. No decision reads
+Each experiment uses eight paired pilot seed slots from a checked-in work manifest.
+At controller start, one newly sampled generator root remains a parent-held private
+capability and the controller publishes only opaque seed IDs and its root commitment.
+Slots 0-3 are tuning; slots 4-7 are one untouched pilot
+evaluation. No decision reads
 evaluation seeds before one common configuration for the experiment is selected.
-That configuration applies unchanged to every variant, including H0/M5, V0/M5, and
-T4/TM equality pairs. Evaluation cannot trigger retuning; a change begins a new
-protocol revision with eight new pilot seeds. At most two pilot revisions and the
-three configurations below per revision are allowed.
+The selected Exp04 memory configuration applies unchanged to every Exp04 variant,
+including H0/M5 and V0/M5. Exp05 first imports that promoted configuration and its
+hash unchanged; one selected Exp05-local planner configuration applies to every
+T0-T4/TM variant. Evaluation cannot trigger retuning; a change begins a new protocol
+revision with eight new pilot seeds. At most two pilot revisions and exactly three
+candidate configurations per experiment and revision are allowed.
 
-The three complete configurations are fixed before pilot:
+The three complete **Exp04 memory** configurations are fixed before Exp04 pilot:
 
 - **BASE:** TTL multiplier `1.0`, confidence threshold `0.70`, contradiction delta
   `0.20`, retained-event cap `128`, retained-input cap `256` facts/`65536` bytes,
-  context cap `16` facts/`4096` bytes, hash dimension `256`, retrieval R `8`, battery
-  reserve `0.20`, and replan cap `2`.
+  context cap `16` facts/`4096` bytes, hash dimension `256`, and retrieval R `8`.
 - **CONSERVATIVE:** multiplier `0.5`, threshold `0.85`, delta `0.10`, event cap `64`,
-  retained input `128`/`32768`, context `8`/`2048`, dimension `128`, R `4`, reserve
-  `0.30`, replans `1`.
+  retained input `128`/`32768`, context `8`/`2048`, dimension `128`, and R `4`.
 - **PERMISSIVE:** multiplier `2.0`, threshold `0.55`, delta `0.30`, event cap `256`,
-  retained input `512`/`131072`, context `32`/`8192`, dimension `512`, R `16`, reserve
-  `0.10`, replans `3`.
+  retained input `512`/`131072`, context `32`/`8192`, dimension `512`, and R `16`.
+
+Exp05 has a distinct three-choice planner grid and no memory parameter:
+
+- **PLANNER_BASE:** battery reserve `0.20`, replan cap `2`;
+- **PLANNER_CONSERVATIVE:** battery reserve `0.30`, replan cap `1`; and
+- **PLANNER_PERMISSIVE:** battery reserve `0.10`, replan cap `3`.
+
+All other planner behavior—Dijkstra cost formula, edge weights, safety predicates,
+mission timeouts, invalidation enum, and tie order—is fixed in `base.yaml` before
+Exp05 pilot. The Exp05 protocol embeds the promoted Exp04 protocol hash and exact
+selected memory parameter object; a byte difference blocks Exp05 before generation.
 
 Let `event_interval_ns` be the fixed generator interval. The compiler applies the
 predicate-by-predicate TTL table in Section 5.1: two intervals for `POSE`, `VISIBILITY`,
@@ -657,9 +742,9 @@ predicate-by-predicate TTL table in Section 5.1: two intervals for `POSE`, `VISI
 `RESTRICTED_BY`; and maximum signed 64-bit time for `LABEL`, `ALIAS`, `ENTITY_CLASS`,
 `AFFORDANCE`, and `ATTEMPT_OUTCOME`. The selected TTL multiplier applies only to
 finite TTLs before upward rounding to one virtual-clock tick; immutable maximum-time
-facts remain unchanged. Physical energy units and task timeouts are fixed
-in `base.yaml`; the three complete configurations above are the only pilot choices.
-A configuration that exceeds an inherited resource cap, cannot encode one fact,
+facts remain unchanged. Physical energy units and task timeouts are fixed in
+`base.yaml`. The three Exp04 memory choices and three Exp05-local planner choices above
+are the only pilot grids. A configuration that exceeds an inherited resource cap, cannot encode one fact,
 produces nonfinite output, violates stepwise equality, or fails artifact validation
 is infeasible and cannot be selected.
 
@@ -668,12 +753,14 @@ eligible only if every canonical variant is artifact-valid, stepwise equality ho
 and all inherited resource/safety caps pass. Exp04 selects eligible configurations
 lexicographically by highest equal-variant-weight mean correctness, lowest mean
 stale/wrong composite, lowest repeated scans, lowest context bytes, lowest storage
-bytes, then BASE before CONSERVATIVE before PERMISSIVE. Exp05 uses lowest equal-
+bytes, then BASE before CONSERVATIVE before PERMISSIVE. Exp05 holds the promoted
+Exp04 memory object fixed and ranks only its three planner choices by lowest equal-
 variant-weight mean invalid-plan rate, highest mission success, lowest route cost,
-lowest context bytes, lowest storage bytes, then the same fixed configuration order.
+lowest context bytes, lowest storage bytes, then PLANNER_BASE before
+PLANNER_CONSERVATIVE before PLANNER_PERMISSIVE.
 Seeds and variants have equal weight. Exact numerical ties proceed to the next key.
 If no configuration is eligible, the experiment is `INCONCLUSIVE` and `STOPPED`.
-The selected common configuration runs once on seeds 4-7; failures affect pilot
+The experiment's selected configuration runs once on seeds 4-7; failures affect pilot
 disposition but never cause retuning.
 
 For each configuration before ranking, candidate resource ceilings use
@@ -692,15 +779,18 @@ means superiority margins round away from zero and non-inferiority widths round 
 A derived margin outside the metric's attainable range makes the result
 `INCONCLUSIVE`; it is never clipped to manufacture a feasible gate.
 
-Freeze records implementation/config/source/schema hashes, generator version and RNG
+The Exp05 freeze copies the promoted Exp04 memory protocol/configuration/conformance
+hashes byte-for-byte and adds only the selected planner configuration and Exp05-local
+ceilings/margins; changing an inherited memory field starts a new Exp04 protocol rather
+than an Exp05 tuning candidate. Freeze records implementation/config/source/schema hashes, generator version and RNG
 algorithm, confirmation seed **count**, all compiler/event/relation semantics, selected
 configurations, exact formulas and resulting margins, multiplicity families, missing
 rules, budgets, and pilot manifests. It does **not** contain confirmation seeds,
 scenarios, trace hashes, or outcomes.
 
-After the protocol and implementation hashes freeze, the orchestrator creates a new
-recorded confirmation RNG root, generates the complete scenario/seed manifest, hashes
-it, and only then permits a variant to run. Confirmation data did not exist during
+After the protocol and implementation hashes freeze, the controller creates a new
+unlinked confirmation RNG root, records only its SHA-256 commitment, generates the
+complete public scenario/seed manifest, hashes it, and only then permits a variant to run. Confirmation data did not exist during
 implementation, pilot, or protocol freeze. Any change returns to Draft and requires a
 new protocol revision and a new unseen confirmation root.
 
@@ -756,7 +846,37 @@ remaining valid uncertainty is `INCONCLUSIVE`. Exp05 uses the equivalent T3/T4 r
 
 ## 9. Bounded shards, resume, and maxima
 
-One evidence-bearing command runs exactly one declared shard keyed by
+### 9.1 Immutable prerequisites and fail-closed preflight
+
+Each P6 protocol contains exact lowercase digests for the complete P2
+`references/repos.yaml` registry and `references/repos.lock.yaml` lock, the P2 report
+implementation Git SHA, P3
+`experiments/00_source_audit/configs/operation-manifest.yaml`,
+`experiments/00_source_audit/results/compatibility.csv`, `docs/SOURCE_MAP.md`,
+`references/licenses.md`, and the P3 report implementation Git SHA. SHA fields are
+lowercase 64-hex for files and lowercase
+40-hex for Git. The process's only permitted initial operation is a bounded read-only,
+descriptor-anchored load of the safety/protocol and these prerequisite files. Before
+**any** generation, non-preflight input open, output-directory creation, temporary-file
+creation, runner/scorer import, or resume decision, that common preflight hashes the
+artifacts and requires exact equality. It
+also requires P2 and P3 lifecycle states `complete`, a clean implementation commit,
+and the P3 local-lane gate. Missing, incomplete, dirty, stale, or mismatched evidence
+sets P6 `BLOCKED` without creating an artifact.
+
+The same first preflight parses exact booleans and requires
+`physical_deployment_allowed=false`, `remote_enabled=false`,
+`network_enabled=false`, and `external_llm_enabled=false`. It rejects a true or
+non-boolean value, `ALLOW_EXTERNAL_LLM`, remote-host credentials/configuration,
+proxy variables, a non-loopback network allowlist, physical device endpoints, or an
+enabled physical transport. Evidence subprocesses receive a cleared environment,
+disabled socket/network policy, no LLM/model endpoint, no remote executor, and no
+physical device descriptor. These guards run before all controller, runner, scorer,
+aggregate, validation, and resume operations; a smoke path cannot weaken them.
+
+### 9.2 Exact phase and shard commands
+
+One evidence-bearing runner or scorer command runs exactly one declared shard keyed by
 `(experiment, protocol_revision, phase, variant, configuration, seed)`. Valid phases
 are `pilot-tuning`, `pilot-evaluation`, and `confirmation`. The canonical textual key
 is, for example, `exp04:r1:confirmation:M5:BASE:00000017`; every component is parsed
@@ -768,29 +888,108 @@ ceiling and 4 MiB runner-artifact ceiling. `--max-cases` is smoke-only unless it
 The launcher requires `cwd` to equal the physical project root returned by
 `git rev-parse --show-toplevel` after resolving symlinks; it refuses any other working
 directory. Every path below is therefore executable and project-root-relative, and the
-runner rejects an absolute path or any `..` component. The exact command shapes are:
+runner rejects an absolute path or any `..` component. The phase controller is the
+generator and sole truth-capability parent. These are the exact confirmation command
+shapes for Exp04; Exp05 uses the second exact block:
 
 ```text
+uv run python experiments/04_memory/generate.py \
+  --protocol experiments/04_memory/configs/frozen.yaml \
+  --phase confirmation \
+  --work-manifest experiments/04_memory/manifests/confirmation-work.json \
+  --seed-manifest-output results/04_memory/confirmation-seeds.json \
+  --shard-manifest-output results/04_memory/confirmation-shards.json \
+  --observation-root results/04_memory/observations \
+  --runner-root results/04_memory/runs \
+  --truth-root .private/04_memory/confirmation --headless
+
 uv run python experiments/04_memory/run.py \
   --protocol experiments/04_memory/configs/frozen.yaml \
   --shard-id exp04:r1:confirmation:M5:BASE:00000017 \
-  --observation-trace experiments/04_memory/manifests/exp04-confirmation/00000017.json \
-  --output-root results/04_memory --headless --max-cases 10
+  --trace-manifest results/04_memory/observations/confirmation/00000017.json \
+  --output-root results/04_memory/runs --headless --max-cases 10
+
+uv run python experiments/04_memory/score.py \
+  --protocol experiments/04_memory/configs/frozen.yaml \
+  --shard-id exp04:r1:confirmation:M5:BASE:00000017 \
+  --runner-root results/04_memory/runs \
+  --truth-manifest .private/04_memory/confirmation/truth-manifest.json \
+  --output-root results/04_memory/scores --headless --max-cases 10
+
+uv run python experiments/04_memory/aggregate.py \
+  --protocol experiments/04_memory/configs/frozen.yaml \
+  --shard-manifest results/04_memory/confirmation-shards.json \
+  --runner-root results/04_memory/runs \
+  --score-root results/04_memory/scores \
+  --output-root results/04_memory/aggregates \
+  --aggregate-id exp04:r1:confirmation:all --max-runner-shards 288 \
+  --max-score-shards 288 --headless
+```
+
+```text
+uv run python experiments/05_semantic_twin/generate.py \
+  --protocol experiments/05_semantic_twin/configs/frozen.yaml \
+  --phase confirmation \
+  --work-manifest experiments/05_semantic_twin/manifests/confirmation-work.json \
+  --seed-manifest-output results/05_semantic_twin/confirmation-seeds.json \
+  --shard-manifest-output results/05_semantic_twin/confirmation-shards.json \
+  --observation-root results/05_semantic_twin/observations \
+  --runner-root results/05_semantic_twin/runs \
+  --truth-root .private/05_semantic_twin/confirmation --headless
 
 uv run python experiments/05_semantic_twin/run.py \
   --protocol experiments/05_semantic_twin/configs/frozen.yaml \
-  --shard-id exp05:r1:confirmation:T3:BASE:00000017 \
-  --observation-trace experiments/05_semantic_twin/manifests/exp05-confirmation/00000017.json \
-  --output-root results/05_semantic_twin --headless --max-cases 5
+  --shard-id exp05:r1:confirmation:T3:PLANNER_BASE:00000017 \
+  --trace-manifest results/05_semantic_twin/observations/confirmation/00000017.json \
+  --output-root results/05_semantic_twin/runs --headless --max-cases 5
+
+uv run python experiments/05_semantic_twin/score.py \
+  --protocol experiments/05_semantic_twin/configs/frozen.yaml \
+  --shard-id exp05:r1:confirmation:T3:PLANNER_BASE:00000017 \
+  --runner-root results/05_semantic_twin/runs \
+  --truth-manifest .private/05_semantic_twin/confirmation/truth-manifest.json \
+  --output-root results/05_semantic_twin/scores --headless --max-cases 5
+
+uv run python experiments/05_semantic_twin/aggregate.py \
+  --protocol experiments/05_semantic_twin/configs/frozen.yaml \
+  --shard-manifest results/05_semantic_twin/confirmation-shards.json \
+  --runner-root results/05_semantic_twin/runs \
+  --score-root results/05_semantic_twin/scores \
+  --output-root results/05_semantic_twin/aggregates \
+  --aggregate-id exp05:r1:confirmation:all --max-runner-shards 192 \
+  --max-score-shards 192 --headless
 ```
 
-Pilot uses the identical command shape with the corresponding project-relative
-`experiments/<experiment>/configs/base.yaml`, a pilot phase in the shard ID, and its
-declared configuration/seed. An evidence command rejects a wrong cwd, absolute or
+The checked-in work manifest declares exact schema/protocol/upstream hashes, phase,
+variant/configuration sets, ordered seed slots, case/resource limits, and destination
+roots; it contains no seed IDs or RNG material. `generate.py` samples its root, creates
+the public seed and derived shard manifests, then launches only the exact runner
+argv listed in that sealed shard manifest while retaining unlinked truth capabilities,
+waits for every child, validates every runner bundle, and only then atomically
+materializes the private scorer-only truth manifest. It never passes truth to
+`run.py`. Pilot uses the identical command shapes with the corresponding
+project-relative `experiments/<experiment>/configs/base.yaml`, phase
+`pilot-tuning` or `pilot-evaluation`, checked-in `pilot-r1-work.json` (or the distinct
+`pilot-r2-work.json`), and the corresponding result/private roots. Tuning and evaluation
+use one eight-slot root, but evaluation observation generation remains sealed in the
+controller and does not occur until the selected configuration is recorded. An
+evidence command rejects a wrong cwd, absolute or
 parent-traversing path, duplicate phase/configuration flag, missing `--headless`,
 mismatched case count, unknown shard, truth argument/environment variable, or output
-path not derived from the shard key. Reissuing the exact command is the only resume
-operation and must validate-and-skip.
+path not derived from the shard key.
+
+The public seed manifest has exactly schema/protocol revision, phase, experiment,
+ordered opaque seed IDs, generator algorithm/version, and the SHA-256 commitment to
+the parent-held RNG root; it has no RNG root or cause. Its digest is stored in the
+derived shard manifest, not recursively inside the seed manifest. The shard manifest
+has exactly schema/protocol and inherited P2/P3 hashes, phase, seed-manifest SHA-256,
+ordered six-component shard IDs, configuration hashes, seed IDs,
+expected observation-manifest paths, output paths, and limits; its digest is likewise
+excluded from its own bytes and bound by every runner/scorer/aggregate manifest. The
+post-run private truth manifest binds the same public IDs plus truth descriptor hashes
+and is generated only after runner termination. Runner/scorer/aggregate manifests bind
+their complete declared inputs, exact argv, implementation SHA, return status, byte
+counts, file hashes, and exclude their own digest field.
 
 Per revision, Exp04 has at most
 `9 variants * (3 configurations * 4 tuning seeds + 1 selected configuration * 4
@@ -826,13 +1025,27 @@ create-only through final decision; no favorable shard may replace an unfavorabl
 
 Destinations derive from experiment/protocol-revision/phase/variant/configuration/seed
 plus protocol and observation-trace hashes.
-Writes are create-only through sibling temporary directories, fsync, and atomic
-rename. Resume validates every canonical rollout and P6 sidecar, checks all schema,
-protocol, source, observation, equality, and content hashes, and skips only an exact
-complete match. Missing/extra files, interrupted temporary directories, oversize,
-hash mismatch, or invalid replay fail the shard; nothing is overwritten or repaired
-in place. A create-only shard completion manifest is written only after every case
-validates.
+All path components are fixed manifest identifiers. Writers open the validated root
+once, walk each intermediate component descriptor-relatively with
+`openat(O_DIRECTORY | O_NOFOLLOW)`, require owner/mode/device/inode stability, and
+create regular files with `openat(O_CREAT | O_EXCL | O_NOFOLLOW, 0600)`. Reads and
+validation use bounded regular-file snapshots and reject symlinks, hard-link count
+other than one, replacement, growth, or inode/device change. Writes are create-only
+through same-parent sibling temporary directories, file fsync, manifest-last directory
+fsync, atomic rename, and parent-directory fsync.
+
+The exact command is the only resume operation. A sealed destination validates every
+canonical rollout and P6 sidecar, all schemas, protocol/source/P2/P3/observation/
+equality/content hashes, and exact file set, then skips. The same live writer process
+may clean only the temporary directory whose random name, descriptor identity, and
+creation token it retained after its own failed pre-rename publication. On process
+restart, an interrupted temporary or controller state is never adopted or deleted:
+the whole incomplete phase moves by descriptor-relative create-only rename beneath
+`results/<experiment>/quarantine/<protocol-revision>/<phase>/<incident-id>/`, receives
+a failure manifest, and restart requires a new protocol revision/RNG root. A symlink,
+unknown temporary, missing/extra file, oversize, hash mismatch, or invalid replay fails
+closed; nothing is overwritten or repaired in place. A create-only shard completion
+manifest is written only after every case validates.
 
 ## 10. Canonical rollout and P6 sidecars
 
@@ -861,10 +1074,10 @@ artifact-manifest.json
 `observations.npz` remains the canonical repository observation artifact. Its
 `Observation` values exist only at the ingestion/replay boundary and are compiled
 immediately into deeply frozen P6 fact tuples before any architecture callback.
-`actions.parquet` remains canonical `ActionChunk`/`ControlReference` data and is never
-repurposed for queries or plans; it is a valid empty canonical table when the benchmark
-executes no physical chunk. Canonical shared events retain their existing lifecycle
-meanings.
+`actions.parquet` remains the canonical schema but must contain zero
+`ActionChunk`/`ControlReference` rows. It is never repurposed for queries or plans.
+Any nonempty action table or policy/chunk/action shared event invalidates the shard.
+Canonical shared events retain their existing lifecycle meanings.
 
 P6-local sidecars have exact versioned schemas:
 
@@ -926,19 +1139,25 @@ Tests cover:
   safety decisions;
 - stable IDs, the closed fact-kind/predicate/value/TTL domain, exact relation/subtype
   vocabularies and sidecar waivers, structured `SEMANTIC_REPLAN.mission_state`,
-  separate action issuance/execution/truth/scoring, total coincident-event order, and
+  local observation-key/canonical-sequence bijection, mandatory absence of physical
+  action issuance/execution, separate truth/scoring, total coincident-event order, and
   monotonic chronology;
 - fact-ID/byte/time/TTL/expiry golden fixtures, exact-budget boundaries, deterministic
   truncation, and contradiction preservation;
 - stepwise H0/M5, V0/M5, and T4/TM input/equality hashes after every update and before
   every query/mission;
-- M0-M6/H0/V0 retention semantics and MemoryView conformance;
+- M0-M6/H0/V0 retention semantics, local M1 execution-ring typing, and exact
+  `MemoryView` method/result/predicate conformance including label, class, and
+  restriction queries;
 - BM25 tokenization/scoring, signed SHA-256 feature hashing, zero vectors, cosine/top-R
   ties, algebraic collision summation, the frozen hand fixture, typed/lexical/vector
   union/dedup order, rebuild after expiry, M6 typed authority, and V0 non-authority;
 - all ten query answers/decisions and five missions/invalid-plan reasons;
-- Dijkstra cost/tie ordering, bounded replan, and safety rejection before action;
-- exact pilot configurations, selection keys/ties, infeasibility, 25% headroom,
+- Dijkstra cost/tie ordering, bounded replan, and safety rejection before proposed-
+  action publication;
+- exact Exp04 memory and Exp05-local planner pilot configurations, unchanged promoted
+  memory hashes/parameters, zero-success typed route-cost absence, selection keys/ties,
+  infeasibility, 25% headroom,
   rounding, task units, derived margins, and no pilot-evaluation retuning;
 - post-freeze confirmation generation and rejection of a preexisting/reused seed or
   scenario manifest;
@@ -946,15 +1165,18 @@ Tests cover:
   exact hash-derived PCG64 seeds, nearest-rank endpoints, retained ties, fixed endpoint
   denominators, missing rules, and lifecycle/artifact/scientific/blocker/promotion
   state separation;
-- canonical RolloutWriter compatibility with `observations.npz` and empty/nonempty
-  canonical actions;
+- canonical RolloutWriter compatibility with `observations.npz`, the mandatory empty
+  canonical action table, and rejection of every policy/chunk/action lifecycle event;
 - exact sidecar schemas, predicted-only runner plan fields/replay, scorer-only actual
   validity/reasons, manifest self-exclusion, extra-file rejection, corruption
   rejection, and truth absence;
-- exact six-component shard identity and CLI examples, case limits, wall/byte ceilings,
+- exact generator/runner/scorer/aggregate manifests and commands, six-component shard
+  identity, case limits, wall/byte ceilings,
   two-revision 5,952 MiB arithmetic, full-next-phase preflight, create-only atomic
-  publication, validate-and-skip resume, and mismatch refusal; and
-- offline/network/LLM/physical/remote guards, clean implementation state, full tests,
+  publication, descriptor-relative no-follow traversal, same-process cleanup,
+  restart quarantine, validate-and-skip resume, and mismatch refusal; and
+- exact P2/P3 hash binding plus offline/network/LLM/physical/remote guards before every
+  operation, clean implementation state, full tests,
   secret scan, artifact sizes, and diff checks.
 
 ## 12. Dependency and promotion boundaries
