@@ -80,8 +80,8 @@ credentials by default.
 For each entry it runs read-only `git ls-remote --symref URL HEAD` to resolve the
 default branch and branch-head SHA, resolves the commit's tree SHA through the
 documented Git commit endpoint, retrieves the pinned recursive tree for path
-verification and root license discovery, and fetches only the discovered license
-blob by its tree-recorded blob SHA. If GitHub marks a recursive tree truncated, the
+verification and root license discovery, and queries GitHub's repository-license
+endpoint at the pinned commit. If GitHub marks a recursive tree truncated, the
 resolver traverses only the requested path prefixes and root license candidates
 through non-recursive tree calls; it never guesses from incomplete data. Raw
 responses and request metadata are cached below ignored
@@ -101,7 +101,7 @@ silently guessing.
 
 Unauthenticated GitHub REST resolution is serialized and resumable because the
 documented public limit is 60 requests per hour and the documented commit, tree, and
-license-blob sequence needs more than one window for 45 repositories. On exhaustion,
+license sequence needs more than one window for 45 repositories. On exhaustion,
 the process stores validated partial cache entries, reports the reset timestamp, and
 exits without publishing the lock. A later invocation resumes from cache; it does
 not sleep for an unbounded interval or issue immediate forbidden retries.
@@ -121,12 +121,13 @@ The cache is anchored by a no-follow directory descriptor. All child creation,
 reads, replacements, and rate-limit marker operations are relative to retained
 descriptors; a symlink at the cache root or any intermediate component is rejected.
 
-License blob base64 permits only ASCII base64 whitespace before strict decoding.
-SPDX identification uses high-confidence normalized full-text evidence, never a
-short phrase match. Negated excerpts and ambiguous grants remain `UNKNOWN`;
-`-only`, `-or-later`, and deterministic dual-license observations remain distinct.
-Conventional root filenames including `LICENSE-MIT` and `LICENSE-APACHE` are
-discovered case-insensitively.
+License classification is not reimplemented locally. GitHub's pinned license API
+SPDX result is recorded as factual upstream metadata and checked against the
+tree-discovered root license path/blob when supplied. `NOASSERTION`, absent,
+malformed, conflicting, or ambiguous results remain `UNKNOWN`; they never cross the
+direct/adapter approval gate. Conventional root filenames, including suffixed or
+multiple license files, remain recorded for P3 review rather than being collapsed
+into a locally inferred legal conclusion.
 
 ## Audit behavior
 

@@ -157,7 +157,7 @@ git ls-remote --symref https://github.com/{owner}/{repo} HEAD
 https://api.github.com/repos/{owner}/{repo}/git/commits/{commit_sha}
 https://api.github.com/repos/{owner}/{repo}/git/trees/{tree_sha}?recursive=1
 https://api.github.com/repos/{owner}/{repo}/git/trees/{tree_sha}
-https://api.github.com/repos/{owner}/{repo}/git/blobs/{license_blob_sha}
+https://api.github.com/repos/{owner}/{repo}/license?ref={commit_sha}
 ```
 
 Run Git from a fresh non-repository directory with a fixed argument vector,
@@ -181,12 +181,12 @@ requested path exists when its exact tree/blob entry exists or when it is a tree
 prefix of an entry. A root glob matches only root entries via `fnmatchcase`. When a
 recursive tree is truncated, walk only requested prefixes by tree SHA and refuse
 unresolved paths. Preserve every requested string in the lock. Discover conventional
-root license filenames case-insensitively, including suffixed `LICENSE-MIT` and
-`LICENSE-APACHE`; fetch exact blobs by their recorded SHAs; remove only permitted
-ASCII base64 whitespace before strict decoding; and classify only high-confidence
-normalized full-license evidence. Negated/excerpted/ambiguous text remains
-`UNKNOWN`; `-only`, `-or-later`, and deterministic dual-license results remain
-distinct. Otherwise record `UNKNOWN` or `UNAVAILABLE` with exact evidence.
+root license filenames case-insensitively, including suffixed and multiple license
+files. Query GitHub's repository-license endpoint at the pinned commit and record
+its SPDX result as factual upstream metadata only when nonempty and not
+`NOASSERTION`; validate any returned path/blob identity against the pinned tree.
+Absent, malformed, conflicting, multi-license, or ambiguous results remain
+`UNKNOWN` for P3 review rather than being locally classified. Record exact evidence.
 
 - [ ] **Step 5: Implement checksummed cache and atomic lock output**
 
@@ -196,7 +196,8 @@ retained descriptors, rejecting root/intermediate symlinks. Write raw JSON/text 
 available, and SHA-256 below
 `external/.metadata/{name}/`. Validate cache metadata and payload digest before a
 single fallback. Process requests serially. When `x-ratelimit-remaining` reaches
-zero or GitHub returns its rate-limit response, report `x-ratelimit-reset`, exit
+zero or GitHub returns HTTP 429, report `x-ratelimit-reset` when valid (otherwise
+report reset unknown), exit
 nonzero, and resume from the validated cache on a later invocation; do not sleep or
 retry immediately. Serialize the full candidate deterministically, validate it,
 write a same-directory temporary file with descriptor-safe permissions, `fsync`,
