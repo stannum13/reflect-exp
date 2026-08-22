@@ -61,6 +61,7 @@ attempts:
     rate_limit_reset_utc: 2026-08-22T17:48:39Z
     lock_absence_verified: true
     cache_validation: >-
-      Production CacheStore and offline resolver replay validated 19 complete
-      entries; Hydra branch/commit/tree validate and only its license endpoint is
-      absent. No cached recursive tree is truncated.
+      Production CacheStore and offline resolver replay validated 18 complete
+      entries; Hydra was the nineteenth repository reached, its branch/commit/tree
+      validate, and only its license endpoint is absent. No cached recursive tree
+      is truncated.
