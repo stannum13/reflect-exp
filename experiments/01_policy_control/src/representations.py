@@ -57,6 +57,11 @@ def emit_chunk(stack: CommandStack, policy_input: PolicyInput, config: Experimen
     elif stack is CommandStack.P5:
         actions = target[None, :]
         representation = "MPC_GOAL"
+    elif stack is CommandStack.P6:
+        nominal = minimum_jerk_nominal(policy_input.q_initial, policy_input.q_initial_target, policy_input.response_time_ns)
+        stale_target_q = absolute_ik(target, q_observed, links, damping)
+        actions = np.clip(stale_target_q - nominal, -config.residual.component_limit_rad, config.residual.component_limit_rad)[None, :]
+        representation = "BOUNDED_RESIDUAL"
     else:
         raise NotImplementedError(stack.value)
     expiry = policy_input.response_time_ns + math.ceil(config.timing.expiry_periods * policy_input.policy_period_ns)
@@ -77,7 +82,10 @@ def emit_chunk(stack: CommandStack, policy_input: PolicyInput, config: Experimen
              "velocity_limit_rad_s": config.controller.qdot_limit_rad_s,
              "torque_limit_nm": config.arm.torque_max_nm,
              "success_radius_m": config.thresholds["success_radius_m"]}
-            if stack is CommandStack.P5 else {"stack_id": stack.value}
+            if stack is CommandStack.P5 else (
+                {"stack_id": stack.value, "q_initial": policy_input.q_initial.tolist(), "q_initial_target": policy_input.q_initial_target.tolist(), "nominal_revision": config.residual.nominal_revision}
+                if stack is CommandStack.P6 else {"stack_id": stack.value}
+            )
         ),
     )
 
@@ -122,6 +130,10 @@ def reference_for_tick(
             candidate = state.p5_planner_q_ref
             p5_previous = state.p5_qdot_previous
             planner_reference = state.p5_planner_q_ref
+    elif stack is CommandStack.P6:
+        q_initial = np.asarray(chunk.metadata["q_initial"], dtype=np.float64)
+        q_initial_target = np.asarray(chunk.metadata["q_initial_target"], dtype=np.float64)
+        candidate = minimum_jerk_nominal(q_initial, q_initial_target, time_ns) + chunk.actions[0]
     else:
         raise NotImplementedError(stack.value)
     bounded, did_slew = _slew(candidate, state.latched_q_ref, config)
@@ -135,6 +147,12 @@ def reference_for_tick(
         True if stack is CommandStack.P5 else state.p5_planner_enabled,
     )
     return reference, next_state, ClampReport(reference_clamped=did_slew)
+
+
+def minimum_jerk_nominal(q_initial: np.ndarray, q_target: np.ndarray, time_ns: int) -> np.ndarray:
+    s = float(np.clip(time_ns / 1_000_000_000, 0.0, 1.0))
+    h = 10.0 * s**3 - 15.0 * s**4 + 6.0 * s**5
+    return frozen_vector(np.asarray(q_initial) + h * (np.asarray(q_target) - np.asarray(q_initial)), "nominal", shape=(3,))
 
 
 def mpc_candidates() -> tuple[np.ndarray, ...]:
