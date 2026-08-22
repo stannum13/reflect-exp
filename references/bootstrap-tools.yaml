@@ -1,0 +1,30 @@
+verified_at: 2026-08-22
+repositories:
+  - name: uv
+    url: https://github.com/astral-sh/uv
+    mode: DIRECT_DEPENDENCY
+    experiments: [bootstrap]
+    selected_paths: []
+    use: Locked interpreter, dependency, and command execution for the repository.
+    justification: The host already provides uv; no source clone is required.
+  - name: hatchling
+    url: https://github.com/pypa/hatch
+    mode: DIRECT_DEPENDENCY
+    experiments: [bootstrap]
+    selected_paths: []
+    use: Minimal PEP 517 build backend for the local package.
+    justification: Required to build the declared package without custom build code.
+  - name: pyyaml
+    url: https://github.com/yaml/pyyaml
+    mode: DIRECT_DEPENDENCY
+    experiments: [bootstrap, 00_source_audit]
+    selected_paths: []
+    use: Parse the canonical YAML registry and durable run manifest.
+    justification: The program mandates YAML registries and manifests.
+  - name: pytest
+    url: https://github.com/pytest-dev/pytest
+    mode: DIRECT_DEPENDENCY
+    experiments: [bootstrap]
+    selected_paths: []
+    use: Deterministic local test harness required by P1 and every experiment.
+    justification: The program requires automated tests before empirical work.
