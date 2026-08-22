@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeAlias, cast
 
 from reflect.events import ExecutionEvent, ExecutionEventType
 from reflect.rollout import (
@@ -14,7 +14,24 @@ from reflect.rollout import (
     canonical_json_bytes,
     validate_rollout,
 )
-from reflect.types import ControlReference, RecoveryDecision, SkillState
+from reflect.types import (
+    ControlReference,
+    Observation,
+    RecoveryDecision,
+    SkillState,
+)
+
+
+FrozenJSONValue: TypeAlias = (
+    None
+    | bool
+    | int
+    | float
+    | str
+    | tuple["FrozenJSONValue", ...]
+    | Mapping[str, "FrozenJSONValue"]
+)
+MissionState: TypeAlias = Mapping[str, FrozenJSONValue]
 
 
 @dataclass(frozen=True)
@@ -22,6 +39,10 @@ class ReplayState:
     """One immutable reconstruction snapshot after an execution event."""
 
     current_observation_id: int | None = None
+    current_observation: Observation | None = None
+    current_skill_id: str | None = None
+    current_phase: str | None = None
+    mission_state: MissionState | None = None
     accepted_chunk_ids: tuple[str, ...] = ()
     rejected_chunk_ids: tuple[str, ...] = ()
     replaced_chunk_ids: tuple[str, ...] = ()
@@ -39,13 +60,24 @@ class ReplayState:
 
 @dataclass(frozen=True)
 class ReplayFrame:
-    """An event's stable ordering key and resulting immutable state."""
+    """One complete ordered event, any resolved observation, and resulting state."""
 
-    event_type: ExecutionEventType
-    monotonic_time_ns: int
-    sequence_id: int
+    event: ExecutionEvent
+    observation: Observation | None
     original_line_index: int
     state: ReplayState
+
+    @property
+    def event_type(self) -> ExecutionEventType:
+        return self.event.event_type
+
+    @property
+    def monotonic_time_ns(self) -> int:
+        return self.event.monotonic_time_ns
+
+    @property
+    def sequence_id(self) -> int:
+        return self.event.sequence_id
 
 
 @dataclass(frozen=True)
@@ -53,12 +85,14 @@ class ReplayResult:
     """The complete deterministic reconstruction of one saved rollout."""
 
     rollout_id: str
+    events: tuple[ExecutionEvent, ...]
+    observations: tuple[Observation, ...]
     frames: tuple[ReplayFrame, ...]
     final_state: ReplayState
 
     @property
     def event_count(self) -> int:
-        return len(self.frames)
+        return len(self.events)
 
     @property
     def frame_count(self) -> int:
@@ -95,6 +129,46 @@ def _append_unique(
     return (*values, value)
 
 
+def _required_mission_state(
+    payload: Mapping[str, Any], event_type: ExecutionEventType
+) -> MissionState:
+    value = payload.get("mission_state")
+    if not isinstance(value, Mapping):
+        raise RolloutValidationError(
+            f"{event_type.value} event payload requires mission_state as a JSON object"
+        )
+    return cast(MissionState, value)
+
+
+def _resolve_observation(
+    artifact: RolloutArtifact, observation_id: int
+) -> Observation:
+    matches = tuple(
+        observation
+        for observation in artifact.observations
+        if observation.sequence_id == observation_id
+    )
+    if len(matches) != 1:
+        raise RolloutValidationError(
+            "OBSERVATION_RECEIVED must resolve to exactly one saved Observation"
+        )
+    return matches[0]
+
+
+def _skill_update(state: ReplayState, event: ExecutionEvent) -> dict[str, Any]:
+    skill_id = event.skill_id
+    if skill_id is None:
+        raise RolloutValidationError(
+            f"{event.event_type.value} requires an explicit skill_id"
+        )
+    return {
+        "current_skill_id": skill_id,
+        "current_phase": (
+            state.current_phase if state.current_skill_id == skill_id else None
+        ),
+    }
+
+
 def _resolve_control_reference(
     artifact: RolloutArtifact, event: ExecutionEvent, source_chunk_id: str
 ) -> ControlReference:
@@ -121,7 +195,14 @@ def _reduce_event(
         observation_id = _required_non_negative_int(
             event.payload, "observation_id", event_type
         )
-        return replace(state, current_observation_id=observation_id)
+        observation = _resolve_observation(artifact, observation_id)
+        return replace(
+            state,
+            current_observation_id=observation_id,
+            current_observation=observation,
+            current_skill_id=observation.current_skill_id,
+            current_phase=observation.current_phase,
+        )
 
     if event_type is ExecutionEventType.CHUNK_ACCEPTED:
         chunk_id = _required_identifier(event.payload, "chunk_id", event_type)
@@ -167,16 +248,44 @@ def _reduce_event(
         return replace(state, executed_control_reference=reference)
 
     if event_type is ExecutionEventType.SKILL_RETRIGGERED:
-        return replace(state, recovery_decision=RecoveryDecision.RETRIGGER)
+        return replace(
+            state,
+            recovery_decision=RecoveryDecision.RETRIGGER,
+            **_skill_update(state, event),
+        )
 
     if event_type is ExecutionEventType.SKILL_ESCALATED:
-        return replace(state, recovery_decision=RecoveryDecision.ESCALATE)
+        return replace(
+            state,
+            recovery_decision=RecoveryDecision.ESCALATE,
+            **_skill_update(state, event),
+        )
+
+    if event_type is ExecutionEventType.SKILL_STALLED:
+        return replace(
+            state,
+            **_skill_update(state, event),
+        )
 
     if event_type is ExecutionEventType.SKILL_SUCCEEDED:
-        return replace(state, skill_state=SkillState.SUCCEEDED)
+        return replace(
+            state,
+            skill_state=SkillState.SUCCEEDED,
+            **_skill_update(state, event),
+        )
 
     if event_type is ExecutionEventType.SKILL_FAILED:
-        return replace(state, skill_state=SkillState.FAILED)
+        return replace(
+            state,
+            skill_state=SkillState.FAILED,
+            **_skill_update(state, event),
+        )
+
+    if event_type is ExecutionEventType.SEMANTIC_REPLAN:
+        return replace(
+            state,
+            mission_state=_required_mission_state(event.payload, event_type),
+        )
 
     if event_type is ExecutionEventType.MEMORY_UPDATED:
         mutation_id = _required_identifier(event.payload, "mutation_id", event_type)
@@ -223,19 +332,28 @@ def replay_rollout(path: Path) -> ReplayResult:
     )
     state = ReplayState()
     frames: list[ReplayFrame] = []
+    observations: list[Observation] = []
     for original_line_index, event in ordered_events:
         state = _reduce_event(state, event, artifact)
+        observation = (
+            state.current_observation
+            if event.event_type is ExecutionEventType.OBSERVATION_RECEIVED
+            else None
+        )
+        if observation is not None:
+            observations.append(observation)
         frames.append(
             ReplayFrame(
-                event_type=event.event_type,
-                monotonic_time_ns=event.monotonic_time_ns,
-                sequence_id=event.sequence_id,
+                event=event,
+                observation=observation,
                 original_line_index=original_line_index,
                 state=state,
             )
         )
     return ReplayResult(
         rollout_id=artifact.path.name,
+        events=tuple(event for _, event in ordered_events),
+        observations=tuple(observations),
         frames=tuple(frames),
         final_state=state,
     )

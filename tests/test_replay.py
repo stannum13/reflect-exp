@@ -94,6 +94,8 @@ def _event(
     monotonic_time_ns: int,
     sequence_id: int,
     payload: dict[str, object],
+    *,
+    skill_id: str | None = "skill-1",
 ) -> ExecutionEvent:
     return ExecutionEvent(
         event_type=event_type,
@@ -103,7 +105,7 @@ def _event(
         sequence_id=sequence_id,
         component="replay-test",
         config_hash=sha256_json(CONFIG),
-        skill_id="skill-1",
+        skill_id=skill_id,
         payload=payload,
     )
 
@@ -206,6 +208,173 @@ def test_replay_reconstructs_deterministic_state(tmp_path: Path) -> None:
     np.testing.assert_array_equal(reference.dq_ref, np.array([0.0, 0.0]))
     assert reference.eef_ref is None
     np.testing.assert_array_equal(reference.feedforward, np.array([0.01, 0.02]))
+
+
+def test_replay_preserves_full_events_observations_and_mission_state(
+    tmp_path: Path,
+) -> None:
+    observations = (
+        _observation(),
+        Observation(
+            sequence_id=1,
+            source_time_ns=200,
+            received_time_ns=210,
+            robot_state=RobotState(
+                q=np.array([0.4, 0.5]),
+                dq=np.array([0.2, 0.3]),
+            ),
+            object_beliefs=(),
+            current_skill_id="skill-2",
+            current_phase="execute",
+        ),
+    )
+    events = (
+        _event(
+            ExecutionEventType.OBSERVATION_RECEIVED,
+            110,
+            0,
+            {"observation_id": 0},
+        ),
+        _event(
+            ExecutionEventType.SEMANTIC_REPLAN,
+            120,
+            1,
+            {
+                "mission_state": {
+                    "mission_id": "mission-1",
+                    "revision": 1,
+                    "remaining_skills": ["skill-1", "skill-2"],
+                }
+            },
+        ),
+        _event(
+            ExecutionEventType.SKILL_RETRIGGERED,
+            120,
+            1,
+            {"reason": "stalled"},
+        ),
+        _event(
+            ExecutionEventType.OBSERVATION_RECEIVED,
+            210,
+            2,
+            {"observation_id": 1},
+            skill_id="skill-2",
+        ),
+        _event(
+            ExecutionEventType.SEMANTIC_REPLAN,
+            220,
+            3,
+            {
+                "mission_state": {
+                    "mission_id": "mission-1",
+                    "revision": 2,
+                    "remaining_skills": [],
+                }
+            },
+            skill_id="skill-2",
+        ),
+        _event(
+            ExecutionEventType.SKILL_SUCCEEDED,
+            230,
+            4,
+            {"outcome": "complete"},
+            skill_id="skill-2",
+        ),
+    )
+    path = RolloutWriter(tmp_path, "replay-1").write(
+        RolloutRecord(
+            metadata=_metadata(),
+            config=CONFIG,
+            metrics={"success": True},
+            events=events,
+            observations=observations,
+            actions=(),
+            control_references=(),
+            summary="# Complete replay fixture\n",
+        )
+    )
+
+    result = replay_rollout(path)
+
+    assert result.events == tuple(frame.event for frame in result.frames)
+    assert [event.event_type for event in result.events] == [
+        ExecutionEventType.OBSERVATION_RECEIVED,
+        ExecutionEventType.SEMANTIC_REPLAN,
+        ExecutionEventType.SKILL_RETRIGGERED,
+        ExecutionEventType.OBSERVATION_RECEIVED,
+        ExecutionEventType.SEMANTIC_REPLAN,
+        ExecutionEventType.SKILL_SUCCEEDED,
+    ]
+    assert result.events[1].payload["mission_state"]["revision"] == 1
+    assert result.events[-1].wall_time_ns == 1_130
+    assert result.events[-1].skill_id == "skill-2"
+    assert result.events[-1].payload == {"outcome": "complete"}
+
+    assert [observation.sequence_id for observation in result.observations] == [0, 1]
+    assert result.frames[0].observation is result.observations[0]
+    assert result.frames[3].observation is result.observations[1]
+    assert result.frames[1].observation is None
+    np.testing.assert_array_equal(
+        result.observations[1].robot_state.q,
+        np.array([0.4, 0.5]),
+    )
+    assert result.observations[1].current_skill_id == "skill-2"
+    assert result.observations[1].current_phase == "execute"
+
+    assert result.frames[0].state.current_observation is result.observations[0]
+    assert result.frames[0].state.current_skill_id == "skill-1"
+    assert result.frames[0].state.current_phase == "approach"
+    assert result.frames[1].state.mission_state == {
+        "mission_id": "mission-1",
+        "revision": 1,
+        "remaining_skills": ("skill-1", "skill-2"),
+    }
+    assert result.frames[2].state.recovery_decision is RecoveryDecision.RETRIGGER
+    assert result.frames[2].state.current_skill_id == "skill-1"
+    assert result.final_state.current_observation is result.observations[1]
+    assert result.final_state.current_observation_id == 1
+    assert result.final_state.current_skill_id == "skill-2"
+    assert result.final_state.current_phase == "execute"
+    assert result.final_state.mission_state == {
+        "mission_id": "mission-1",
+        "revision": 2,
+        "remaining_skills": (),
+    }
+    assert result.final_state.skill_state is SkillState.SUCCEEDED
+
+
+def test_replay_rejects_semantic_replan_without_explicit_mission_state(
+    tmp_path: Path,
+) -> None:
+    events = (
+        _event(
+            ExecutionEventType.OBSERVATION_RECEIVED,
+            110,
+            0,
+            {"observation_id": 0},
+        ),
+        _event(
+            ExecutionEventType.SEMANTIC_REPLAN,
+            120,
+            1,
+            {"state": {"mission_id": "ambiguous-legacy-field"}},
+        ),
+    )
+    path = RolloutWriter(tmp_path, "replay-1").write(
+        RolloutRecord(
+            metadata=_metadata(),
+            config=CONFIG,
+            metrics={"success": False},
+            events=events,
+            observations=(_observation(),),
+            actions=(),
+            control_references=(),
+            summary="# Missing mission state\n",
+        )
+    )
+
+    with pytest.raises(RolloutValidationError, match="SEMANTIC_REPLAN.*mission_state"):
+        replay_rollout(path)
 
 
 def test_replay_rejects_missing_state_payload(tmp_path: Path) -> None:

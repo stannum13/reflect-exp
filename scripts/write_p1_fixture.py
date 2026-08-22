@@ -195,12 +195,27 @@ def fixture_record(provenance: FixtureProvenance | None = None) -> RolloutRecord
 
     clock.advance_ns(10)
     events.append(
-        _event(clock, config_hash, ExecutionEventType.POLICY_REQUESTED, 1, {})
+        _event(
+            clock,
+            config_hash,
+            ExecutionEventType.POLICY_REQUESTED,
+            1,
+            {"source_observation_id": observation.sequence_id},
+        )
     )
-    generated_time_ns = clock.monotonic_ns()
     clock.advance_ns(5)
+    generated_time_ns = clock.monotonic_ns()
     events.append(
-        _event(clock, config_hash, ExecutionEventType.POLICY_RESPONDED, 2, {})
+        _event(
+            clock,
+            config_hash,
+            ExecutionEventType.POLICY_RESPONDED,
+            2,
+            {
+                "chunk_id": CHUNK_ID,
+                "source_observation_id": observation.sequence_id,
+            },
+        )
     )
 
     valid_from_ns = clock.advance_ns(5)

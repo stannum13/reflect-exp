@@ -193,6 +193,52 @@ def valid_events(rollout_id: str = "rollout-1") -> tuple[ExecutionEvent, ...]:
     )
 
 
+def valid_policy_events(
+    rollout_id: str = "rollout-1",
+) -> tuple[ExecutionEvent, ...]:
+    events = valid_events(rollout_id)
+    definitions = (
+        events[0],
+        replace(
+            events[0],
+            event_type=ExecutionEventType.POLICY_REQUESTED,
+            monotonic_time_ns=115,
+            wall_time_ns=10_015,
+            payload={"source_observation_id": 0},
+        ),
+        replace(
+            events[0],
+            event_type=ExecutionEventType.POLICY_RESPONDED,
+            monotonic_time_ns=120,
+            wall_time_ns=10_020,
+            payload={"chunk_id": "chunk-0", "source_observation_id": 0},
+        ),
+        events[1],
+        events[2],
+        events[3],
+        replace(
+            events[3],
+            event_type=ExecutionEventType.POLICY_REQUESTED,
+            monotonic_time_ns=215,
+            wall_time_ns=10_115,
+            payload={"source_observation_id": 1},
+        ),
+        replace(
+            events[3],
+            event_type=ExecutionEventType.POLICY_RESPONDED,
+            monotonic_time_ns=220,
+            wall_time_ns=10_120,
+            payload={"chunk_id": "chunk-1", "source_observation_id": 1},
+        ),
+        events[4],
+        events[5],
+    )
+    return tuple(
+        replace(event, sequence_id=sequence_id)
+        for sequence_id, event in enumerate(definitions)
+    )
+
+
 def valid_record(rollout_id: str = "rollout-1", **changes: object) -> RolloutRecord:
     values: dict[str, object] = {
         "metadata": valid_metadata(),
@@ -430,6 +476,147 @@ def test_writer_revalidates_mutated_record_mappings_before_output(tmp_path: Path
         RolloutWriter(root, "rollout-1").write(record)
 
     assert not root.exists()
+
+
+def test_writer_accepts_coherent_policy_request_response_lifecycle(
+    tmp_path: Path,
+) -> None:
+    artifact_path = RolloutWriter(tmp_path, "rollout-1").write(
+        valid_record(events=valid_policy_events())
+    )
+
+    artifact = validate_rollout(artifact_path)
+    responses = tuple(
+        event
+        for event in artifact.events
+        if event.event_type is ExecutionEventType.POLICY_RESPONDED
+    )
+    assert [event.payload for event in responses] == [
+        {"chunk_id": "chunk-0", "source_observation_id": 0},
+        {"chunk_id": "chunk-1", "source_observation_id": 1},
+    ]
+    assert [action.generated_time_ns for action in artifact.actions] == [120, 220]
+
+
+def test_writer_allows_artifacts_without_policy_events(tmp_path: Path) -> None:
+    artifact_path = write_valid_rollout(tmp_path)
+
+    artifact = validate_rollout(artifact_path)
+
+    assert all(
+        event.event_type
+        not in {
+            ExecutionEventType.POLICY_REQUESTED,
+            ExecutionEventType.POLICY_RESPONDED,
+        }
+        for event in artifact.events
+    )
+
+
+@pytest.mark.parametrize(
+    ("event_index", "payload", "message"),
+    [
+        (1, {}, "POLICY_REQUESTED.*source_observation_id"),
+        (
+            2,
+            {"source_observation_id": 0},
+            "POLICY_RESPONDED.*chunk_id",
+        ),
+        (2, {"chunk_id": "chunk-0"}, "POLICY_RESPONDED.*source_observation_id"),
+    ],
+)
+def test_writer_rejects_policy_events_with_missing_exact_payload_keys(
+    tmp_path: Path,
+    event_index: int,
+    payload: dict[str, object],
+    message: str,
+) -> None:
+    events = list(valid_policy_events())
+    events[event_index] = replace(events[event_index], payload=payload)
+
+    with pytest.raises(RolloutValidationError, match=message):
+        RolloutWriter(tmp_path, "rollout-1").write(
+            valid_record(events=tuple(events))
+        )
+
+
+@pytest.mark.parametrize(
+    ("event_index", "payload"),
+    [
+        (1, {"source_observation_id": 1}),
+        (2, {"chunk_id": "chunk-0", "source_observation_id": 1}),
+        (2, {"chunk_id": "chunk-1", "source_observation_id": 0}),
+    ],
+)
+def test_writer_rejects_policy_observation_or_chunk_mismatch(
+    tmp_path: Path,
+    event_index: int,
+    payload: dict[str, object],
+) -> None:
+    events = list(valid_policy_events())
+    events[event_index] = replace(events[event_index], payload=payload)
+
+    with pytest.raises(RolloutValidationError, match="POLICY_.*(match|preceding)"):
+        RolloutWriter(tmp_path, "rollout-1").write(
+            valid_record(events=tuple(events))
+        )
+
+
+def test_writer_rejects_policy_response_before_request(tmp_path: Path) -> None:
+    events = list(valid_policy_events())
+    request = replace(
+        events[1],
+        monotonic_time_ns=120,
+        wall_time_ns=10_020,
+    )
+    response = replace(
+        events[2],
+        monotonic_time_ns=115,
+        wall_time_ns=10_015,
+    )
+    events[1:3] = [response, request]
+    events = [replace(event, sequence_id=index) for index, event in enumerate(events)]
+
+    with pytest.raises(RolloutValidationError, match="POLICY_RESPONDED.*preceding"):
+        RolloutWriter(tmp_path, "rollout-1").write(
+            valid_record(events=tuple(events))
+        )
+
+
+def test_writer_rejects_chunk_generated_before_policy_response(
+    tmp_path: Path,
+) -> None:
+    events = list(valid_policy_events())
+    events[2] = replace(
+        events[2],
+        monotonic_time_ns=121,
+        wall_time_ns=10_021,
+    )
+
+    with pytest.raises(RolloutValidationError, match="generated before POLICY_RESPONDED"):
+        RolloutWriter(tmp_path, "rollout-1").write(
+            valid_record(events=tuple(events))
+        )
+
+
+def test_writer_rejects_chunk_acceptance_ordered_before_policy_response(
+    tmp_path: Path,
+) -> None:
+    events = list(valid_policy_events())
+    response = replace(
+        events.pop(2),
+        monotonic_time_ns=130,
+        wall_time_ns=10_030,
+    )
+    events.insert(3, response)
+    events = [replace(event, sequence_id=index) for index, event in enumerate(events)]
+    actions = valid_actions()
+    actions = (replace(actions[0], generated_time_ns=130), actions[1])
+
+    with pytest.raises(RolloutValidationError, match="CHUNK_ACCEPTED.*POLICY_RESPONDED"):
+        RolloutWriter(tmp_path, "rollout-1").write(
+            valid_record(events=tuple(events), actions=actions)
+        )
 
 
 def test_writer_preserves_a_chunk_rejected_after_expiry(tmp_path: Path) -> None:

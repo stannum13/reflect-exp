@@ -95,6 +95,42 @@ def test_fixture_command_writes_replayable_deterministic_artifact(
         assert first_file.read_bytes() == (second_root / ROLLOUT_ID / first_file.name).read_bytes()
 
 
+def test_fixture_policy_lifecycle_is_coherent() -> None:
+    fixture_module = importlib.import_module("scripts.write_p1_fixture")
+    events_module = importlib.import_module("reflect.events")
+    provenance = fixture_module.fixture_sentinel_provenance()
+
+    record = fixture_module.fixture_record(provenance)
+
+    request = next(
+        event
+        for event in record.events
+        if event.event_type is events_module.ExecutionEventType.POLICY_REQUESTED
+    )
+    response = next(
+        event
+        for event in record.events
+        if event.event_type is events_module.ExecutionEventType.POLICY_RESPONDED
+    )
+    action = record.actions[0]
+    acceptance = next(
+        event
+        for event in record.events
+        if event.event_type is events_module.ExecutionEventType.CHUNK_ACCEPTED
+    )
+
+    assert request.payload == {"source_observation_id": 0}
+    assert response.payload == {
+        "chunk_id": "p1-action-chunk",
+        "source_observation_id": 0,
+    }
+    assert request.monotonic_time_ns < response.monotonic_time_ns
+    assert response.monotonic_time_ns == action.generated_time_ns
+    assert response.payload["chunk_id"] == action.chunk_id
+    assert response.payload["source_observation_id"] == action.source_observation_id
+    assert response.sequence_id < acceptance.sequence_id
+
+
 def test_fixture_command_refuses_to_overwrite_existing_rollout(tmp_path: Path) -> None:
     repository = _copied_repository(tmp_path)
     output_root = tmp_path / "output"

@@ -560,6 +560,9 @@ _CHUNK_EVENT_TYPES = frozenset(
         ExecutionEventType.CHUNK_REPLACED,
     }
 )
+_POLICY_REQUEST_OBSERVATION_KEY = "source_observation_id"
+_POLICY_RESPONSE_CHUNK_KEY = "chunk_id"
+_POLICY_RESPONSE_OBSERVATION_KEY = "source_observation_id"
 
 
 def _reference_id(
@@ -678,6 +681,10 @@ def _validate_contents(
     observation_event_counts = {observation_id: 0 for observation_id in observation_by_id}
     chunk_lifecycle = {chunk_id: "unseen" for chunk_id in action_by_id}
     executed_reference_keys: set[tuple[str, int]] = set()
+    received_observation_ids: set[int] = set()
+    pending_policy_requests: dict[int, int] = {}
+    policy_response_order_by_chunk: dict[str, int] = {}
+    chunk_acceptance_order_by_id: dict[str, int] = {}
 
     def referenced_action(event: ExecutionEvent, key: str) -> ActionChunk:
         chunk_id = _reference_id(event.payload, key, str, event.event_type.value)
@@ -700,7 +707,7 @@ def _validate_contents(
                     )
         return action
 
-    for event in events:
+    for event_order, event in enumerate(events):
         try:
             event_from_dict(event_to_dict(event))
         except (EventValidationError, TypeError, ValueError) as exc:
@@ -741,6 +748,62 @@ def _validate_contents(
                     "OBSERVATION_RECEIVED skill_id does not match observation"
                 )
             observation_event_counts[observation_id] += 1
+            received_observation_ids.add(observation_id)
+        if event.event_type is ExecutionEventType.POLICY_REQUESTED:
+            observation_id = _reference_id(
+                event.payload,
+                _POLICY_REQUEST_OBSERVATION_KEY,
+                int,
+                event.event_type.value,
+            )
+            observation = observation_by_id.get(observation_id)
+            if observation is None:
+                raise RolloutValidationError(
+                    "POLICY_REQUESTED source_observation_id is not stored"
+                )
+            if observation_id not in received_observation_ids:
+                raise RolloutValidationError(
+                    "POLICY_REQUESTED does not match a preceding "
+                    "OBSERVATION_RECEIVED event"
+                )
+            if event.skill_id != observation.current_skill_id:
+                raise RolloutValidationError(
+                    "POLICY_REQUESTED skill_id does not match its source observation"
+                )
+            if observation_id in pending_policy_requests:
+                raise RolloutValidationError(
+                    "POLICY_REQUESTED has an ambiguous outstanding request for "
+                    "source_observation_id"
+                )
+            pending_policy_requests[observation_id] = event_order
+        if event.event_type is ExecutionEventType.POLICY_RESPONDED:
+            observation_id = _reference_id(
+                event.payload,
+                _POLICY_RESPONSE_OBSERVATION_KEY,
+                int,
+                event.event_type.value,
+            )
+            action = referenced_action(event, _POLICY_RESPONSE_CHUNK_KEY)
+            if observation_id != action.source_observation_id:
+                raise RolloutValidationError(
+                    "POLICY_RESPONDED source_observation_id does not match "
+                    f"action {action.chunk_id}"
+                )
+            if observation_id not in pending_policy_requests:
+                raise RolloutValidationError(
+                    "POLICY_RESPONDED requires one preceding matching "
+                    "POLICY_REQUESTED event"
+                )
+            if action.generated_time_ns < event.monotonic_time_ns:
+                raise RolloutValidationError(
+                    f"action {action.chunk_id} was generated before POLICY_RESPONDED"
+                )
+            if action.chunk_id in policy_response_order_by_chunk:
+                raise RolloutValidationError(
+                    f"POLICY_RESPONDED chunk_id {action.chunk_id} is ambiguous"
+                )
+            del pending_policy_requests[observation_id]
+            policy_response_order_by_chunk[action.chunk_id] = event_order
         if event.event_type in _CHUNK_EVENT_TYPES:
             action = referenced_action(event, "chunk_id")
             chunk_id = action.chunk_id
@@ -769,6 +832,7 @@ def _validate_contents(
                         f"{event.event_type.value} accepted an expired or not-yet-valid chunk"
                     )
                 chunk_lifecycle[chunk_id] = "accepted"
+                chunk_acceptance_order_by_id[chunk_id] = event_order
             elif event.event_type is ExecutionEventType.CHUNK_REJECTED_EXPIRED:
                 if event.monotonic_time_ns < action.expires_at_ns:
                     raise RolloutValidationError(
@@ -822,6 +886,12 @@ def _validate_contents(
                 if chunk_id not in action_by_id:
                     raise RolloutValidationError(f"event {key} is not stored")
         previous_event = event
+    for chunk_id, response_order in policy_response_order_by_chunk.items():
+        acceptance_order = chunk_acceptance_order_by_id.get(chunk_id)
+        if acceptance_order is not None and acceptance_order < response_order:
+            raise RolloutValidationError(
+                f"CHUNK_ACCEPTED for {chunk_id} cannot precede POLICY_RESPONDED"
+            )
     if any(count != 1 for count in observation_event_counts.values()):
         raise RolloutValidationError(
             "each stored observation requires exactly one OBSERVATION_RECEIVED event"
