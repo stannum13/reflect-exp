@@ -1,0 +1,151 @@
+from __future__ import annotations
+
+import hashlib
+import importlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+import pytest
+
+
+artifacts = importlib.import_module("experiments.01_policy_control.src.artifacts")
+
+
+def _json(path: Path) -> dict[str, object]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _assert_completion_marker_is_last(completion: Path) -> None:
+    marker_time = completion.stat().st_mtime_ns
+    assert marker_time >= max(
+        path.stat().st_mtime_ns for path in completion.parent.rglob("*") if path.is_file()
+    )
+
+
+@pytest.fixture
+def base_pilot(tmp_path: Path) -> tuple[Path, Path, Path, str]:
+    repo = Path(__file__).resolve().parents[3]
+    config = Path(__file__).parents[1] / "configs/base.yaml"
+    gate = tmp_path / "p3-gate.yaml"
+    gate.write_text("schema_version: 1\n", encoding="utf-8")
+    implementation_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repo, text=True,
+    ).strip()
+    protocol = tmp_path / "protocol"
+    revision = protocol / "revision-manifest.json"
+    manifest = protocol / "base-manifest.json"
+    artifacts.prepare_manifest(
+        "revision", None, revision, config, gate,
+        implementation_sha=implementation_sha,
+    )
+    artifacts.prepare_manifest(
+        "base", revision, manifest, config, gate,
+        implementation_sha=implementation_sha,
+    )
+    return manifest, config, gate, "P1:base:000"
+
+
+def _supervise(
+    base_pilot: tuple[Path, Path, Path, str], output: Path, **overrides: object,
+) -> str:
+    manifest, config, gate, shard_id = base_pilot
+    return artifacts.run_supervised_shard(
+        manifest, shard_id, output, config, gate, 3,
+        repo_root=Path(__file__).resolve().parents[3], **overrides,
+    )
+
+
+def test_private_worker_rejects_missing_or_wrong_pipe_capability_before_inputs(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(artifacts.ArtifactError, match="capability"):
+        artifacts.run_worker_shard(
+            tmp_path / "missing-manifest.json", "P1:base:000", tmp_path / "stage",
+            tmp_path / "missing-config.yaml", -1, "0" * 64,
+        )
+
+    read_fd, write_fd = os.pipe()
+    try:
+        os.write(write_fd, b"parent-only-capability")
+        os.close(write_fd)
+        write_fd = -1
+        with pytest.raises(artifacts.ArtifactError, match="capability"):
+            artifacts.run_worker_shard(
+                tmp_path / "missing-manifest.json", "P1:base:000", tmp_path / "stage",
+                tmp_path / "missing-config.yaml", read_fd, "f" * 64,
+            )
+    finally:
+        os.close(read_fd)
+        if write_fd >= 0:
+            os.close(write_fd)
+    assert not (tmp_path / "stage").exists()
+
+
+def test_supervisor_success_bounds_child_output_and_publishes_marker_last(
+    base_pilot: tuple[Path, Path, Path, str], tmp_path: Path,
+) -> None:
+    manifest, config, _, shard_id = base_pilot
+    script = (
+        "import importlib,sys;"
+        "a=importlib.import_module('experiments.01_policy_control.src.artifacts');"
+        "print('x'*200000);"
+        "raise SystemExit(a.run_worker_shard("
+        f"__import__('pathlib').Path({str(manifest)!r}),{shard_id!r},"
+        "__import__('pathlib').Path(sys.argv[3]),"
+        f"__import__('pathlib').Path({str(config)!r}),int(sys.argv[1]),sys.argv[2]))"
+    )
+    output = tmp_path / "results"
+    assert _supervise(
+        base_pilot, output,
+        worker_argv=(sys.executable, "-c", script, "{capability_fd}",
+                     "{capability_sha256}", "{stage_dir}"),
+    ) == "published"
+
+    completion_paths = tuple(output.rglob("completion.json"))
+    assert len(completion_paths) == 1
+    completion = _json(completion_paths[0])
+    shard_dir = completion_paths[0].parent
+    ledger = shard_dir / "resource-ledger.jsonl"
+    assert completion["state"] == "COMPLETE"
+    assert completion["resource_ledger_sha256"] == hashlib.sha256(ledger.read_bytes()).hexdigest()
+    assert completion["completed_output_identities"] == completion["expected_output_identities"]
+    assert all(path.stat().st_size <= 2 * 65_536 for path in shard_dir.rglob("*output*") if path.is_file())
+    _assert_completion_marker_is_last(completion_paths[0])
+
+
+def test_supervisor_timeout_is_declared_invalid_with_bounded_readable_output(
+    base_pilot: tuple[Path, Path, Path, str], tmp_path: Path,
+) -> None:
+    script = "import sys,time;sys.stdout.write('y'*200000);sys.stdout.flush();time.sleep(60)"
+    output = tmp_path / "timeout-results"
+    assert _supervise(
+        base_pilot, output, deadline_s=0.05, term_grace_s=0.05,
+        worker_argv=(sys.executable, "-c", script),
+    ) == "declared-invalid"
+
+    completion_paths = tuple(output.rglob("completion.json"))
+    assert len(completion_paths) == 1
+    completion = _json(completion_paths[0])
+    shard_dir = completion_paths[0].parent
+    failure = (shard_dir / "failure-disposition.jsonl").read_text(encoding="utf-8")
+    assert completion["state"] == "DECLARED_INVALID"
+    assert failure.count("\n") == 3
+    assert all(json.loads(row)["reason"] == "PROCESS_TIMEOUT" for row in failure.splitlines())
+    assert all(path.stat().st_size <= 2 * 65_536 for path in shard_dir.rglob("*output*") if path.is_file())
+    _assert_completion_marker_is_last(completion_paths[0])
+
+
+def test_real_p1_base_shard_runs_all_three_declared_conditions(
+    base_pilot: tuple[Path, Path, Path, str], tmp_path: Path,
+) -> None:
+    output = tmp_path / "real-results"
+    assert _supervise(base_pilot, output) == "published"
+    completion_paths = tuple(output.rglob("completion.json"))
+    assert len(completion_paths) == 1
+    completion = _json(completion_paths[0])
+    assert completion["state"] == "COMPLETE"
+    assert len(completion["completed_output_identities"]) == 3
+    assert len(completion["rollout_sha256s"]) == 3
