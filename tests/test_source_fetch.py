@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 from datetime import datetime, timezone
 import json
 import os
@@ -53,7 +52,7 @@ REPO_URL = "https://github.com/example/project"
 COMMIT_URL = f"https://api.github.com/repos/example/project/git/commits/{COMMIT_SHA}"
 TREE_URL = f"https://api.github.com/repos/example/project/git/trees/{TREE_SHA}?recursive=1"
 ROOT_TREE_URL = f"https://api.github.com/repos/example/project/git/trees/{TREE_SHA}"
-LICENSE_URL = f"https://api.github.com/repos/example/project/git/blobs/{LICENSE_SHA}"
+LICENSE_URL = f"https://api.github.com/repos/example/project/license?ref={COMMIT_SHA}"
 
 
 def _fixture(name: str) -> bytes:
@@ -80,14 +79,14 @@ class FixtureTransport:
         self,
         *,
         tree: bytes | None = None,
-        license_blob: bytes | None = None,
+        license_response: bytes | HttpResponse | None = None,
         extra: dict[str, bytes | HttpResponse] | None = None,
         ls_remote: str | None = None,
     ) -> None:
         self.responses: dict[str, bytes | HttpResponse] = {
             COMMIT_URL: _fixture("github-repository.json"),
             TREE_URL: tree or _fixture("github-tree.json"),
-            LICENSE_URL: license_blob or _fixture("github-license.json"),
+            LICENSE_URL: license_response or _fixture("github-license.json"),
         }
         self.responses.update(extra or {})
         self.ls_remote = ls_remote or (
@@ -359,81 +358,77 @@ def test_literal_tree_prefix_and_root_glob_matching_preserve_requested_strings()
     }
 
 
-def test_license_is_discovered_from_exact_tree_blob() -> None:
+def test_gitlink_is_accepted_as_exact_path_but_not_traversed() -> None:
+    locked = resolve_entry(
+        _entry("vendor/dependency", "vendor/dependency/README.md"),
+        FixtureTransport(),
+        _clock,
+    )
+    assert locked.path_statuses == {
+        "vendor/dependency": PathStatus.EXISTS,
+        "vendor/dependency/README.md": PathStatus.MISSING,
+    }
+
+
+def test_pinned_repository_license_is_discovered_with_exact_tree_identity() -> None:
     locked = resolve_entry(_entry("README.md"), FixtureTransport(), _clock)
     assert locked.license_status is LicenseStatus.DISCOVERED
     assert locked.license_spdx == "MIT"
     assert locked.license_evidence_url == LICENSE_URL
 
 
-def _blob(text: str, *, sha: str = LICENSE_SHA, content: str | None = None) -> bytes:
-    encoded = content if content is not None else base64.b64encode(text.encode()).decode()
-    return json.dumps({"sha": sha, "encoding": "base64", "content": encoded}).encode()
+def _license_response(
+    *, spdx: object = "MIT", path: object = "LICENSE", sha: object = LICENSE_SHA
+) -> bytes:
+    return json.dumps(
+        {
+            "name": "MIT License",
+            "path": path,
+            "sha": sha,
+            "type": "file",
+            "license": {
+                "key": "mit",
+                "name": "MIT License",
+                "spdx_id": spdx,
+                "url": "https://api.github.com/licenses/mit",
+            },
+        }
+    ).encode()
 
 
-MIT_TEXT = """MIT License
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies.
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
-IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM.
-"""
-
-
-def test_license_base64_accepts_only_ascii_whitespace_and_strict_decoding() -> None:
-    encoded = base64.b64encode(MIT_TEXT.encode()).decode()
-    multiline = "\n\t".join(encoded[index : index + 12] for index in range(0, len(encoded), 12))
-    discovered = resolve_entry(
-        _entry("README.md"), FixtureTransport(license_blob=_blob("", content=multiline)), _clock
-    )
-    assert discovered.license_spdx == "MIT"
-
-    non_ascii_space = encoded[:12] + "\u00a0" + encoded[12:]
-    unknown = resolve_entry(
-        _entry("README.md"), FixtureTransport(license_blob=_blob("", content=non_ascii_space)), _clock
-    )
-    assert unknown.license_status is LicenseStatus.UNKNOWN
+def test_license_noassertion_and_malformed_metadata_remain_unknown() -> None:
+    for response in (
+        _license_response(spdx="NOASSERTION"),
+        _license_response(spdx=""),
+        _license_response(spdx=None),
+        json.dumps({"license": "MIT"}).encode(),
+    ):
+        locked = resolve_entry(
+            _entry("README.md"), FixtureTransport(license_response=response), _clock
+        )
+        assert locked.license_status is LicenseStatus.UNKNOWN
+        assert locked.license_spdx is None
+        assert locked.license_evidence_url == LICENSE_URL
 
 
 @pytest.mark.parametrize(
-    "text",
+    "response",
     [
-        "Permission is not hereby granted, free of charge. THE SOFTWARE IS PROVIDED \"AS IS\".",
-        "Excerpt: Permission is hereby granted, free of charge. THE SOFTWARE IS PROVIDED \"AS IS\".",
+        _license_response(path="COPYING"),
+        _license_response(sha="d" * 40),
     ],
 )
-def test_license_negations_and_excerpts_remain_unknown(text: str) -> None:
-    locked = resolve_entry(_entry("README.md"), FixtureTransport(license_blob=_blob(text)), _clock)
+def test_license_path_or_sha_conflict_with_pinned_tree_remains_unknown(
+    response: bytes,
+) -> None:
+    locked = resolve_entry(
+        _entry("README.md"), FixtureTransport(license_response=response), _clock
+    )
     assert locked.license_status is LicenseStatus.UNKNOWN
     assert locked.license_spdx is None
 
 
-def test_gpl_only_and_or_later_are_distinct() -> None:
-    core = """GNU GENERAL PUBLIC LICENSE
-Version 2, June 1991
-TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
-0. This License applies to any program.
-1. You may copy and distribute verbatim copies.
-2. You may modify your copy.
-3. You may copy and distribute the Program.
-NO WARRANTY
-END OF TERMS AND CONDITIONS
-"""
-    only = resolve_entry(_entry("README.md"), FixtureTransport(license_blob=_blob(core)), _clock)
-    later = resolve_entry(
-        _entry("README.md"),
-        FixtureTransport(license_blob=_blob(core + "either version 2 of the License, or (at your option) any later version")),
-        _clock,
-    )
-    assert only.license_spdx == "GPL-2.0-only"
-    assert later.license_spdx == "GPL-2.0-or-later"
-
-
-def test_suffix_license_files_produce_deterministic_dual_license() -> None:
+def test_multiple_suffix_license_files_remain_ambiguous_unknown() -> None:
     apache_sha = "d" * 40
     mit_sha = "e" * 40
     tree = json.loads(_fixture("github-tree.json"))
@@ -441,49 +436,35 @@ def test_suffix_license_files_produce_deterministic_dual_license() -> None:
         {"path": "LICENSE-MIT", "type": "blob", "sha": mit_sha},
         {"path": "LICENSE-APACHE", "type": "blob", "sha": apache_sha},
     ]
-    apache = """Apache License Version 2.0, January 2004
-Terms and Conditions for Use, Reproduction, and Distribution
-1. Definitions. 2. Grant of Copyright License. 3. Grant of Patent License.
-4. Redistribution. 5. Submission of Contributions. 6. Trademarks.
-7. Disclaimer of Warranty. 8. Limitation of Liability. 9. Accepting Warranty.
-END OF TERMS AND CONDITIONS
-"""
     transport = FixtureTransport(
         tree=json.dumps(tree).encode(),
-        extra={
-            f"https://api.github.com/repos/example/project/git/blobs/{apache_sha}": _blob(apache, sha=apache_sha),
-            f"https://api.github.com/repos/example/project/git/blobs/{mit_sha}": _blob(MIT_TEXT, sha=mit_sha),
-        },
+        license_response=_license_response(path="LICENSE-MIT", sha=mit_sha),
     )
     locked = resolve_entry(_entry("README.md"), transport, _clock)
-    assert locked.license_spdx == "Apache-2.0 OR MIT"
+    assert locked.license_status is LicenseStatus.UNKNOWN
+    assert locked.license_spdx is None
+    assert transport.http_calls[-1] == LICENSE_URL
 
 
-def test_unrecognized_license_text_is_unknown() -> None:
-    payload = json.dumps(
-        {
-            "sha": LICENSE_SHA,
-            "encoding": "base64",
-            "content": "UHJvcHJpZXRhcnkgdGV4dA==",
-        }
-    ).encode()
+def test_absent_repository_license_response_is_unknown() -> None:
+    absent = HttpResponse(url=LICENSE_URL, status=404, headers={}, body=b"not found")
     locked = resolve_entry(
-        _entry("README.md"), FixtureTransport(license_blob=payload), _clock
+        _entry("README.md"), FixtureTransport(license_response=absent), _clock
     )
     assert locked.license_status is LicenseStatus.UNKNOWN
     assert locked.license_spdx is None
     assert locked.license_evidence_url == LICENSE_URL
 
 
-def test_absent_root_license_is_unavailable_with_tree_evidence() -> None:
+def test_absent_root_license_is_unknown_with_license_api_evidence() -> None:
     tree = json.loads(_fixture("github-tree.json"))
     tree["tree"] = [item for item in tree["tree"] if item["path"] != "LICENSE"]
     locked = resolve_entry(
         _entry("README.md"), FixtureTransport(tree=json.dumps(tree).encode()), _clock
     )
-    assert locked.license_status is LicenseStatus.UNAVAILABLE
+    assert locked.license_status is LicenseStatus.UNKNOWN
     assert locked.license_spdx is None
-    assert locked.license_evidence_url == TREE_URL
+    assert locked.license_evidence_url == LICENSE_URL
 
 
 def test_truncated_tree_walks_only_requested_prefixes_and_root_license() -> None:
@@ -631,7 +612,7 @@ def test_rate_limit_response_stops_current_invocation_even_with_valid_cache(tmp_
     for key, endpoint, payload in (
         ("commit", COMMIT_URL, _fixture("github-repository.json")),
         (f"tree-recursive-{TREE_SHA}", TREE_URL, _fixture("github-tree.json")),
-        (f"blob-{LICENSE_SHA}", LICENSE_URL, _fixture("github-license.json")),
+        (f"license-{COMMIT_SHA}", LICENSE_URL, _fixture("github-license.json")),
     ):
         cache.write(
             "example",
@@ -665,7 +646,7 @@ def test_rate_limit_response_stops_current_invocation_even_with_valid_cache(tmp_
     assert LimitedThenFixture.calls == [COMMIT_URL]
 
 
-@pytest.mark.parametrize("status", [200, 403])
+@pytest.mark.parametrize("status", [200, 429])
 def test_rate_limit_persists_reset_stops_calls_and_later_invocation_resumes(
     tmp_path: Path, status: int
 ) -> None:
@@ -674,7 +655,7 @@ def test_rate_limit_persists_reset_stops_calls_and_later_invocation_resumes(
         ("ls-remote", f"git ls-remote --symref {REPO_URL} HEAD", f"ref: refs/heads/main\tHEAD\n{COMMIT_SHA}\tHEAD\n".encode()),
         ("commit", COMMIT_URL, _fixture("github-repository.json")),
         (f"tree-recursive-{TREE_SHA}", TREE_URL, _fixture("github-tree.json")),
-        (f"blob-{LICENSE_SHA}", LICENSE_URL, _fixture("github-license.json")),
+        (f"license-{COMMIT_SHA}", LICENSE_URL, _fixture("github-license.json")),
     )
     for key, endpoint, payload in cached:
         cache.write("example", key, endpoint=endpoint, payload=payload, retrieved_at="2026-08-22T10:11:12Z")
@@ -712,6 +693,38 @@ def test_rate_limit_persists_reset_stops_calls_and_later_invocation_resumes(
     later = CachingTransport(Runner(), NoHttp(), cache, _clock, "example")
     locked = resolve_entry(_entry("README.md"), later, _clock)
     assert locked.metadata_status is MetadataStatus.RESOLVED
+
+
+@pytest.mark.parametrize("reset", [None, "malformed"])
+def test_http_429_without_valid_reset_aborts_even_with_cache(
+    tmp_path: Path, reset: str | None
+) -> None:
+    cache = CacheStore(tmp_path)
+    cache.write(
+        "example",
+        "commit",
+        endpoint=COMMIT_URL,
+        payload=_fixture("github-repository.json"),
+        retrieved_at="2026-08-22T10:11:12Z",
+    )
+
+    class Limited:
+        calls: list[str] = []
+
+        def get(self, url: str) -> HttpResponse:
+            self.calls.append(url)
+            headers = {} if reset is None else {"x-ratelimit-reset": reset}
+            return HttpResponse(url=url, status=429, headers=headers, body=b"secret")
+
+    live = Limited()
+    transport = CachingTransport(FixtureTransport(), live, cache, _clock, "example")
+    with pytest.raises(SourceFetchError, match="rate limit.*reset unknown") as failure:
+        transport.get(COMMIT_URL)
+    with pytest.raises(SourceFetchError, match="rate limit"):
+        transport.get(TREE_URL)
+    assert live.calls == [COMMIT_URL]
+    assert cache.active_rate_limit(_clock) is None
+    assert "secret" not in str(failure.value)
 
 
 def test_active_rate_limit_cache_miss_makes_no_http_call(tmp_path: Path) -> None:
@@ -1003,8 +1016,8 @@ def test_failed_resolution_preserves_existing_lock(tmp_path: Path) -> None:
     lock_path.write_bytes(b"previous\n")
     limited = HttpResponse(
         url=COMMIT_URL,
-        status=403,
-        headers={"x-ratelimit-remaining": "0", "x-ratelimit-reset": "1787395200"},
+        status=429,
+        headers={},
         body=b"limited",
     )
     transport = FixtureTransport(extra={COMMIT_URL: limited})

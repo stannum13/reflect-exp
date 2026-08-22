@@ -5,9 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-import base64
-import binascii
 import fnmatch
+import re
 from pathlib import PurePosixPath
 from types import MappingProxyType
 from typing import Protocol
@@ -103,7 +102,7 @@ def _tree_response(
             or not path
             or path.startswith("/")
             or "//" in path
-            or kind not in {"blob", "tree"}
+            or kind not in {"blob", "tree", "commit"}
         ):
             raise SourceFetchError(f"tree response contains an invalid entry: {endpoint}")
         _require_sha(sha, "tree entry")
@@ -119,13 +118,12 @@ def _root_licenses(entries: Sequence[_TreeEntry]) -> tuple[_TreeEntry, ...]:
     for entry in entries:
         if entry.kind == "blob" and "/" not in entry.path:
             blobs.setdefault(entry.path.casefold(), []).append(entry)
-    for candidate in _PRIMARY_LICENSE_NAMES:
-        if candidate in blobs:
-            return (sorted(blobs[candidate], key=lambda item: item.path)[0],)
-    suffixed: list[_TreeEntry] = []
-    for candidate in _SUFFIX_LICENSE_NAMES:
-        suffixed.extend(blobs.get(candidate, ()))
-    return tuple(sorted(suffixed, key=lambda item: (item.path.casefold(), item.path)))
+    discovered: list[_TreeEntry] = []
+    for candidate in (*_PRIMARY_LICENSE_NAMES, *_SUFFIX_LICENSE_NAMES):
+        discovered.extend(blobs.get(candidate, ()))
+    return tuple(
+        sorted(discovered, key=lambda item: (item.path.casefold(), item.path))
+    )
 
 
 def _literal_status(path: str, entries: Sequence[_TreeEntry]) -> PathStatus:
@@ -179,155 +177,40 @@ def _walk_literal(
     raise SourceFetchError(f"could not resolve requested path: {requested}")
 
 
-def _classify_license(text: str) -> str | None:
-    lowered = " ".join(text.casefold().split())
-    if any(
-        marker in lowered
-        for marker in (
-            "excerpt",
-            "abridged",
-            "summary of",
-            "not licensed under",
-            "does not grant",
-            "no license is granted",
-            "for reference only",
-        )
-    ):
-        return None
-    identifiers: set[str] = set()
-    if all(
-        marker in lowered
-        for marker in (
-            "permission is hereby granted, free of charge, to any person obtaining a copy",
-            "to deal in the software without restriction",
-            "the above copyright notice and this permission notice shall be included",
-            'the software is provided "as is", without warranty of any kind',
-            "in no event shall the authors or copyright holders be liable",
-        )
-    ):
-        identifiers.add("MIT")
-    if all(
-        marker in lowered
-        for marker in (
-            "apache license version 2.0, january 2004",
-            "terms and conditions for use, reproduction, and distribution",
-            "grant of copyright license",
-            "grant of patent license",
-            "redistribution",
-            "submission of contributions",
-            "trademarks",
-            "disclaimer of warranty",
-            "limitation of liability",
-            "end of terms and conditions",
-        )
-    ):
-        identifiers.add("Apache-2.0")
-    if all(
-        marker in lowered
-        for marker in (
-            "mozilla public license version 2.0",
-            "1. definitions",
-            "2. license grants and conditions",
-            "3. responsibilities",
-            "10. responsibility for claims",
-            "exhibit a - source code form license notice",
-        )
-    ):
-        identifiers.add("MPL-2.0")
-    if all(
-        marker in lowered
-        for marker in (
-            "redistribution and use in source and binary forms",
-            "redistributions of source code must retain the above copyright notice",
-            "redistributions in binary form must reproduce the above copyright notice",
-            'this software is provided by the copyright holders and contributors "as is"',
-            "in no event shall the copyright holder or contributors be liable",
-        )
-    ):
-        if "neither the name" in lowered:
-            identifiers.add("BSD-3-Clause")
-        else:
-            identifiers.add("BSD-2-Clause")
-    gpl2_markers = (
-        "gnu general public license version 2, june 1991",
-        "terms and conditions for copying, distribution and modification",
-        "no warranty",
-        "end of terms and conditions",
-    )
-    if all(marker in lowered for marker in gpl2_markers):
-        suffix = (
-            "or-later"
-            if "either version 2" in lowered and "any later version" in lowered
-            else "only"
-        )
-        identifiers.add(f"GPL-2.0-{suffix}")
-    gpl3_markers = (
-        "gnu general public license version 3, 29 june 2007",
-        "terms and conditions",
-        "15. disclaimer of warranty",
-        "16. limitation of liability",
-        "end of terms and conditions",
-    )
-    if all(marker in lowered for marker in gpl3_markers):
-        suffix = (
-            "or-later"
-            if "either version 3" in lowered and "any later version" in lowered
-            else "only"
-        )
-        identifiers.add(f"GPL-3.0-{suffix}")
-    return " OR ".join(sorted(identifiers)) if identifiers else None
+_SPDX_IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+-]*\Z")
 
 
 def _license_observation(
     identity: GitHubIdentity,
     transport: Transport,
-    entry: _TreeEntry | None,
-    tree_evidence: str,
+    entries: Sequence[_TreeEntry],
+    commit_sha: str,
 ) -> tuple[str | None, LicenseStatus, str]:
-    if entry is None:
-        return None, LicenseStatus.UNAVAILABLE, tree_evidence
-    endpoint = identity.blob_url(entry.sha)
-    raw = _json_object(transport.get(endpoint), endpoint)
+    endpoint = identity.license_url(commit_sha)
+    response = transport.get(endpoint)
+    if response.url != endpoint:
+        raise SourceFetchError(
+            f"GitHub response URL does not match requested endpoint: {endpoint}"
+        )
+    if response.status == 404:
+        return None, LicenseStatus.UNKNOWN, endpoint
+    raw = _json_object(response, endpoint)
+    license_data = raw.get("license")
+    if not isinstance(license_data, dict):
+        return None, LicenseStatus.UNKNOWN, endpoint
+    spdx = license_data.get("spdx_id")
     if (
-        raw.get("sha") != entry.sha
-        or raw.get("encoding") != "base64"
-        or type(raw.get("content")) is not str
+        type(spdx) is not str
+        or not _SPDX_IDENTIFIER.fullmatch(spdx)
+        or spdx == "NOASSERTION"
+        or raw.get("type") != "file"
+        or len(entries) != 1
     ):
         return None, LicenseStatus.UNKNOWN, endpoint
-    try:
-        content = raw["content"]
-        ascii_whitespace = " \t\r\n\v\f"
-        if any(character.isspace() and character not in ascii_whitespace for character in content):
-            return None, LicenseStatus.UNKNOWN, endpoint
-        compact = content.translate(str.maketrans("", "", ascii_whitespace))
-        decoded = base64.b64decode(compact, validate=True).decode("utf-8")
-    except (binascii.Error, UnicodeDecodeError, ValueError):
-        return None, LicenseStatus.UNKNOWN, endpoint
-    spdx = _classify_license(decoded)
-    if spdx is None:
+    entry = entries[0]
+    if raw.get("path") != entry.path or raw.get("sha") != entry.sha:
         return None, LicenseStatus.UNKNOWN, endpoint
     return spdx, LicenseStatus.DISCOVERED, endpoint
-
-
-def _license_observations(
-    identity: GitHubIdentity,
-    transport: Transport,
-    entries: Sequence[_TreeEntry],
-    tree_evidence: str,
-) -> tuple[str | None, LicenseStatus, str]:
-    if not entries:
-        return None, LicenseStatus.UNAVAILABLE, tree_evidence
-    observations = [
-        _license_observation(identity, transport, entry, tree_evidence)
-        for entry in entries
-    ]
-    evidence = observations[0][2]
-    if any(status is not LicenseStatus.DISCOVERED for _, status, _ in observations):
-        return None, LicenseStatus.UNKNOWN, evidence
-    identifiers = sorted({spdx for spdx, _, _ in observations if spdx is not None})
-    if not identifiers:
-        return None, LicenseStatus.UNKNOWN, evidence
-    return " OR ".join(identifiers), LicenseStatus.DISCOVERED, evidence
 
 
 def resolve_entry(
@@ -365,7 +248,6 @@ def resolve_entry(
     path_statuses: dict[str, PathStatus] = {}
     path_evidence: dict[str, str] = {}
     license_entries = recursive_entries
-    license_tree_evidence = recursive_endpoint
     if not truncated:
         for requested in entry.selected_paths:
             if "/" not in requested and any(character in requested for character in "*?["):
@@ -386,7 +268,6 @@ def resolve_entry(
         )
         metadata_evidence["tree_fallback_root"] = root_endpoint
         license_entries = root_entries
-        license_tree_evidence = root_endpoint
         fetched: dict[str, tuple[tuple[_TreeEntry, ...], str]] = {}
         for requested in entry.selected_paths:
             if "/" not in requested and any(character in requested for character in "*?["):
@@ -404,11 +285,11 @@ def resolve_entry(
                 )
             path_statuses[requested] = status
             path_evidence[requested] = evidence
-    license_spdx, license_status, license_evidence = _license_observations(
+    license_spdx, license_status, license_evidence = _license_observation(
         identity,
         transport,
         _root_licenses(license_entries),
-        license_tree_evidence,
+        commit_sha,
     )
     return LockedEntry(
         name=entry.name,

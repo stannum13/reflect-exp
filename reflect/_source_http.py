@@ -22,7 +22,11 @@ _IDENTIFIER = re.compile(r"[A-Za-z0-9_.-]+\Z")
 _SHA40 = re.compile(r"[0-9a-f]{40}\Z")
 _API_ENDPOINT = re.compile(
     r"https://api\.github\.com/repos/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/"
-    r"git/(commits|trees|blobs)/([0-9a-f]{40})(\?recursive=1)?\Z"
+    r"git/(commits|trees)/([0-9a-f]{40})(\?recursive=1)?\Z"
+)
+_LICENSE_ENDPOINT = re.compile(
+    r"https://api\.github\.com/repos/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/"
+    r"license\?ref=([0-9a-f]{40})\Z"
 )
 _USER_AGENT = "reflect-lite-source-metadata/0.1"
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
@@ -74,9 +78,12 @@ class GitHubIdentity:
         suffix = "?recursive=1" if recursive else ""
         return f"https://api.github.com/repos/{self.owner}/{self.repo}/git/trees/{sha}{suffix}"
 
-    def blob_url(self, sha: str) -> str:
-        _require_sha(sha, "blob")
-        return f"https://api.github.com/repos/{self.owner}/{self.repo}/git/blobs/{sha}"
+    def license_url(self, commit_sha: str) -> str:
+        _require_sha(commit_sha, "commit")
+        return (
+            f"https://api.github.com/repos/{self.owner}/{self.repo}/license"
+            f"?ref={commit_sha}"
+        )
 
 
 @dataclass(frozen=True)
@@ -134,8 +141,10 @@ def _timestamp(clock: Callable[[], datetime]) -> str:
 
 def _validate_api_endpoint(url: str) -> None:
     match = _API_ENDPOINT.fullmatch(url)
-    if match is None:
+    if match is None and _LICENSE_ENDPOINT.fullmatch(url) is None:
         raise SourceFetchError("HTTP endpoint is not an exact derived GitHub API object")
+    if match is None:
+        return
     object_type = match.group(3)
     recursive = match.group(5)
     if recursive and object_type != "trees":

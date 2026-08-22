@@ -22,6 +22,7 @@ from reflect._source_http import (
     SourceFetchError,
     Transport,
     _API_ENDPOINT,
+    _LICENSE_ENDPOINT,
     _MAX_RESPONSE_BYTES,
     _timestamp,
 )
@@ -338,6 +339,9 @@ class CacheStore:
 
 
 def _cache_key(url: str) -> str:
+    license_match = _LICENSE_ENDPOINT.fullmatch(url)
+    if license_match is not None:
+        return f"license-{license_match.group(3)}"
     match = _API_ENDPOINT.fullmatch(url)
     if match is None:
         raise SourceFetchError("cannot cache a non-derived GitHub endpoint")
@@ -350,7 +354,7 @@ def _cache_key(url: str) -> str:
         return f"tree-recursive-{sha}"
     if object_type == "trees":
         return f"tree-{sha}"
-    return f"blob-{sha}"
+    raise SourceFetchError("cannot cache an unsupported GitHub endpoint")
 
 
 class CachingTransport:
@@ -446,8 +450,7 @@ class CachingTransport:
         remaining = response.headers.get("x-ratelimit-remaining")
         reset = response.headers.get("x-ratelimit-reset", "")
         valid_reset = reset if reset.isdecimal() else None
-        primary_limit = response.status in {403, 429} and valid_reset is not None
-        if remaining == "0" or primary_limit:
+        if remaining == "0" or response.status == 429:
             if valid_reset is not None:
                 self._cache.record_rate_limit(valid_reset)
             self._rate_limit_state[0] = True
