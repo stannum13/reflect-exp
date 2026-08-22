@@ -41,6 +41,7 @@ class GitHubIdentity:
     def from_url(cls, url: str) -> "GitHubIdentity":
         try:
             parsed = urllib.parse.urlsplit(url)
+            port = parsed.port
         except (TypeError, ValueError) as exc:
             raise SourceFetchError("repository URL is not a canonical GitHub identity") from exc
         parts = parsed.path.split("/")
@@ -49,7 +50,7 @@ class GitHubIdentity:
             or parsed.netloc != "github.com"
             or parsed.username is not None
             or parsed.password is not None
-            or parsed.port is not None
+            or port is not None
             or parsed.query
             or parsed.fragment
             or len(parts) != 3
@@ -155,7 +156,9 @@ class UrllibTransport:
             raise ValueError("transport bounds must be positive")
         self._timeout = timeout
         self._max_response_bytes = max_response_bytes
-        self._opener = opener or urllib.request.build_opener(_RejectRedirect())
+        self._opener = opener or urllib.request.build_opener(
+            urllib.request.ProxyHandler({}), _RejectRedirect()
+        )
 
     def get(self, url: str) -> HttpResponse:
         _validate_api_endpoint(url)

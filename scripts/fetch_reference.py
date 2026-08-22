@@ -39,7 +39,6 @@ def _parser() -> argparse.ArgumentParser:
     selectors.add_argument("--all-metadata-only", action="store_true")
     selectors.add_argument("--name")
     parser.add_argument("--metadata-only", action="store_true")
-    parser.add_argument("--update-lock", action="store_true")
     return parser
 
 
@@ -93,8 +92,7 @@ def main(
             names[0],
         )
     candidate = resolve_registry(registry, names, transport, clock)
-    publish = arguments.all_metadata_only or arguments.update_lock
-    if publish:
+    if arguments.all_metadata_only:
         atomic_write_lock(source_lock_path, candidate)
     else:
         sys.stdout.write(lock_yaml_bytes(candidate).decode("utf-8"))

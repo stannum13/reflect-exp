@@ -42,7 +42,7 @@ from reflect.sources import (
 )
 
 
-_LICENSE_NAMES = (
+_PRIMARY_LICENSE_NAMES = (
     "license",
     "license.md",
     "license.txt",
@@ -50,6 +50,14 @@ _LICENSE_NAMES = (
     "copying.md",
     "copying.txt",
     "copyright",
+)
+_SUFFIX_LICENSE_NAMES = (
+    "license-apache",
+    "license-apache.md",
+    "license-apache.txt",
+    "license-mit",
+    "license-mit.md",
+    "license-mit.txt",
 )
 
 
@@ -106,15 +114,18 @@ def _tree_response(
     return tuple(entries), truncated
 
 
-def _root_license(entries: Sequence[_TreeEntry]) -> _TreeEntry | None:
+def _root_licenses(entries: Sequence[_TreeEntry]) -> tuple[_TreeEntry, ...]:
     blobs: dict[str, list[_TreeEntry]] = {}
     for entry in entries:
         if entry.kind == "blob" and "/" not in entry.path:
             blobs.setdefault(entry.path.casefold(), []).append(entry)
-    for candidate in _LICENSE_NAMES:
+    for candidate in _PRIMARY_LICENSE_NAMES:
         if candidate in blobs:
-            return sorted(blobs[candidate], key=lambda item: item.path)[0]
-    return None
+            return (sorted(blobs[candidate], key=lambda item: item.path)[0],)
+    suffixed: list[_TreeEntry] = []
+    for candidate in _SUFFIX_LICENSE_NAMES:
+        suffixed.extend(blobs.get(candidate, ()))
+    return tuple(sorted(suffixed, key=lambda item: (item.path.casefold(), item.path)))
 
 
 def _literal_status(path: str, entries: Sequence[_TreeEntry]) -> PathStatus:
@@ -170,25 +181,101 @@ def _walk_literal(
 
 def _classify_license(text: str) -> str | None:
     lowered = " ".join(text.casefold().split())
-    if (
-        "permission is hereby granted, free of charge" in lowered
-        and 'the software is provided "as is"' in lowered
+    if any(
+        marker in lowered
+        for marker in (
+            "excerpt",
+            "abridged",
+            "summary of",
+            "not licensed under",
+            "does not grant",
+            "no license is granted",
+            "for reference only",
+        )
     ):
-        return "MIT"
-    if "apache license" in lowered and "version 2.0" in lowered:
-        return "Apache-2.0"
-    if "mozilla public license version 2.0" in lowered:
-        return "MPL-2.0"
-    if "redistribution and use in source and binary forms" in lowered:
+        return None
+    identifiers: set[str] = set()
+    if all(
+        marker in lowered
+        for marker in (
+            "permission is hereby granted, free of charge, to any person obtaining a copy",
+            "to deal in the software without restriction",
+            "the above copyright notice and this permission notice shall be included",
+            'the software is provided "as is", without warranty of any kind',
+            "in no event shall the authors or copyright holders be liable",
+        )
+    ):
+        identifiers.add("MIT")
+    if all(
+        marker in lowered
+        for marker in (
+            "apache license version 2.0, january 2004",
+            "terms and conditions for use, reproduction, and distribution",
+            "grant of copyright license",
+            "grant of patent license",
+            "redistribution",
+            "submission of contributions",
+            "trademarks",
+            "disclaimer of warranty",
+            "limitation of liability",
+            "end of terms and conditions",
+        )
+    ):
+        identifiers.add("Apache-2.0")
+    if all(
+        marker in lowered
+        for marker in (
+            "mozilla public license version 2.0",
+            "1. definitions",
+            "2. license grants and conditions",
+            "3. responsibilities",
+            "10. responsibility for claims",
+            "exhibit a - source code form license notice",
+        )
+    ):
+        identifiers.add("MPL-2.0")
+    if all(
+        marker in lowered
+        for marker in (
+            "redistribution and use in source and binary forms",
+            "redistributions of source code must retain the above copyright notice",
+            "redistributions in binary form must reproduce the above copyright notice",
+            'this software is provided by the copyright holders and contributors "as is"',
+            "in no event shall the copyright holder or contributors be liable",
+        )
+    ):
         if "neither the name" in lowered:
-            return "BSD-3-Clause"
-        return "BSD-2-Clause"
-    if "gnu general public license" in lowered:
-        if "version 3" in lowered:
-            return "GPL-3.0-only"
-        if "version 2" in lowered:
-            return "GPL-2.0-only"
-    return None
+            identifiers.add("BSD-3-Clause")
+        else:
+            identifiers.add("BSD-2-Clause")
+    gpl2_markers = (
+        "gnu general public license version 2, june 1991",
+        "terms and conditions for copying, distribution and modification",
+        "no warranty",
+        "end of terms and conditions",
+    )
+    if all(marker in lowered for marker in gpl2_markers):
+        suffix = (
+            "or-later"
+            if "either version 2" in lowered and "any later version" in lowered
+            else "only"
+        )
+        identifiers.add(f"GPL-2.0-{suffix}")
+    gpl3_markers = (
+        "gnu general public license version 3, 29 june 2007",
+        "terms and conditions",
+        "15. disclaimer of warranty",
+        "16. limitation of liability",
+        "end of terms and conditions",
+    )
+    if all(marker in lowered for marker in gpl3_markers):
+        suffix = (
+            "or-later"
+            if "either version 3" in lowered and "any later version" in lowered
+            else "only"
+        )
+        identifiers.add(f"GPL-3.0-{suffix}")
+    return " OR ".join(sorted(identifiers)) if identifiers else None
 
 
 def _license_observation(
@@ -208,13 +295,39 @@ def _license_observation(
     ):
         return None, LicenseStatus.UNKNOWN, endpoint
     try:
-        decoded = base64.b64decode(raw["content"], validate=True).decode("utf-8")
+        content = raw["content"]
+        ascii_whitespace = " \t\r\n\v\f"
+        if any(character.isspace() and character not in ascii_whitespace for character in content):
+            return None, LicenseStatus.UNKNOWN, endpoint
+        compact = content.translate(str.maketrans("", "", ascii_whitespace))
+        decoded = base64.b64decode(compact, validate=True).decode("utf-8")
     except (binascii.Error, UnicodeDecodeError, ValueError):
         return None, LicenseStatus.UNKNOWN, endpoint
     spdx = _classify_license(decoded)
     if spdx is None:
         return None, LicenseStatus.UNKNOWN, endpoint
     return spdx, LicenseStatus.DISCOVERED, endpoint
+
+
+def _license_observations(
+    identity: GitHubIdentity,
+    transport: Transport,
+    entries: Sequence[_TreeEntry],
+    tree_evidence: str,
+) -> tuple[str | None, LicenseStatus, str]:
+    if not entries:
+        return None, LicenseStatus.UNAVAILABLE, tree_evidence
+    observations = [
+        _license_observation(identity, transport, entry, tree_evidence)
+        for entry in entries
+    ]
+    evidence = observations[0][2]
+    if any(status is not LicenseStatus.DISCOVERED for _, status, _ in observations):
+        return None, LicenseStatus.UNKNOWN, evidence
+    identifiers = sorted({spdx for spdx, _, _ in observations if spdx is not None})
+    if not identifiers:
+        return None, LicenseStatus.UNKNOWN, evidence
+    return " OR ".join(identifiers), LicenseStatus.DISCOVERED, evidence
 
 
 def resolve_entry(
@@ -291,11 +404,10 @@ def resolve_entry(
                 )
             path_statuses[requested] = status
             path_evidence[requested] = evidence
-    license_entry = _root_license(license_entries)
-    license_spdx, license_status, license_evidence = _license_observation(
+    license_spdx, license_status, license_evidence = _license_observations(
         identity,
         transport,
-        license_entry,
+        _root_licenses(license_entries),
         license_tree_evidence,
     )
     return LockedEntry(

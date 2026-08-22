@@ -50,16 +50,55 @@ def _safe_component(value: str, label: str) -> str:
     return value
 
 
-def _read_regular(path: Path, limit: int) -> bytes:
+_DIRECTORY_FLAGS = (
+    os.O_RDONLY
+    | getattr(os, "O_DIRECTORY", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+)
+
+
+def _open_directory_chain(path: Path, *, create: bool) -> int:
+    """Open a path one no-follow component at a time and retain the final anchor."""
+    absolute = Path(os.path.abspath(os.fspath(path)))
+    descriptor = os.open(absolute.anchor, _DIRECTORY_FLAGS)
+    try:
+        for component in absolute.parts[1:]:
+            if create:
+                try:
+                    os.mkdir(component, 0o700, dir_fd=descriptor)
+                except FileExistsError:
+                    pass
+            child = os.open(component, _DIRECTORY_FLAGS, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        return descriptor
+    except OSError:
+        os.close(descriptor)
+        raise
+
+
+def _open_child_directory(parent: int, name: str, *, create: bool) -> int:
+    if create:
+        try:
+            os.mkdir(name, 0o700, dir_fd=parent)
+        except FileExistsError:
+            pass
+    return os.open(name, _DIRECTORY_FLAGS, dir_fd=parent)
+
+
+def _read_regular_at(directory: int, name: str, limit: int) -> bytes:
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
     try:
-        descriptor = os.open(path, flags)
+        descriptor = os.open(name, flags, dir_fd=directory)
+    except FileNotFoundError:
+        raise
     except OSError as exc:
-        raise SourceFetchError(f"cache entry is not a readable regular file: {path.name}") from exc
+        raise SourceFetchError(f"cache entry is not a readable regular file: {name}") from exc
     try:
         value = os.fstat(descriptor)
         if not stat.S_ISREG(value.st_mode) or value.st_size > limit:
-            raise SourceFetchError(f"cache entry is not a bounded regular file: {path.name}")
+            raise SourceFetchError(f"cache entry is not a bounded regular file: {name}")
         data = bytearray()
         while len(data) <= limit:
             chunk = os.read(descriptor, min(1024 * 1024, limit + 1 - len(data)))
@@ -67,23 +106,33 @@ def _read_regular(path: Path, limit: int) -> bytes:
                 break
             data.extend(chunk)
         if len(data) > limit:
-            raise SourceFetchError(f"cache entry exceeds size limit: {path.name}")
+            raise SourceFetchError(f"cache entry exceeds size limit: {name}")
         return bytes(data)
     finally:
         os.close(descriptor)
 
 
-def _atomic_cache_file(path: Path, data: bytes) -> None:
-    directory = path.parent
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    descriptor = os.open(
-        directory,
-        os.O_RDONLY
-        | getattr(os, "O_DIRECTORY", 0)
-        | getattr(os, "O_NOFOLLOW", 0)
-        | getattr(os, "O_CLOEXEC", 0),
-    )
-    temporary = f".{path.name}.{secrets.token_hex(16)}"
+def _verify_child_directory(parent: int, name: str, child: int) -> None:
+    try:
+        bound = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        opened = os.fstat(child)
+    except OSError as exc:
+        raise SourceFetchError("cache directory changed during operation") from exc
+    if (
+        not stat.S_ISDIR(bound.st_mode)
+        or (bound.st_dev, bound.st_ino) != (opened.st_dev, opened.st_ino)
+    ):
+        raise SourceFetchError("cache directory changed during operation")
+
+
+def _atomic_cache_file_at(
+    descriptor: int,
+    name: str,
+    data: bytes,
+    *,
+    validate_directory: Callable[[], None] | None = None,
+) -> None:
+    temporary = f".{name}.{secrets.token_hex(16)}"
     file_descriptor = -1
     try:
         file_descriptor = os.open(
@@ -103,7 +152,9 @@ def _atomic_cache_file(path: Path, data: bytes) -> None:
         os.fsync(file_descriptor)
         os.close(file_descriptor)
         file_descriptor = -1
-        os.replace(temporary, path.name, src_dir_fd=descriptor, dst_dir_fd=descriptor)
+        if validate_directory is not None:
+            validate_directory()
+        os.replace(temporary, name, src_dir_fd=descriptor, dst_dir_fd=descriptor)
         os.fsync(descriptor)
     finally:
         if file_descriptor >= 0:
@@ -112,8 +163,6 @@ def _atomic_cache_file(path: Path, data: bytes) -> None:
             os.unlink(temporary, dir_fd=descriptor)
         except FileNotFoundError:
             pass
-        finally:
-            os.close(descriptor)
 
 
 class CacheStore:
@@ -123,11 +172,30 @@ class CacheStore:
         self.root = Path(root)
         self._max_payload_bytes = max_payload_bytes
 
-    def _paths(self, name: str, key: str) -> tuple[Path, Path]:
+    def _names(self, name: str, key: str) -> tuple[str, str, str]:
         safe_name = _safe_component(name, "repository name")
         safe_key = _safe_component(key, "record key")
-        directory = self.root / safe_name
-        return directory / f"{safe_key}.payload", directory / f"{safe_key}.json"
+        return safe_name, f"{safe_key}.payload", f"{safe_key}.json"
+
+    def _root_descriptor(self, *, create: bool) -> int:
+        try:
+            return _open_directory_chain(self.root, create=create)
+        except FileNotFoundError:
+            raise
+        except OSError as exc:
+            raise SourceFetchError("cache directory ancestry is not safe") from exc
+
+    def _repository_descriptor(self, name: str, *, create: bool) -> tuple[int, int]:
+        root = self._root_descriptor(create=create)
+        try:
+            repository = _open_child_directory(root, name, create=create)
+        except FileNotFoundError:
+            os.close(root)
+            raise
+        except OSError as exc:
+            os.close(root)
+            raise SourceFetchError("cache directory ancestry is not safe") from exc
+        return root, repository
 
     def write(
         self,
@@ -147,7 +215,7 @@ class CacheStore:
             raise SourceFetchError("cache retrieval timestamp must be a non-empty string")
         if etag is not None and type(etag) is not str:
             raise SourceFetchError("cache ETag must be text or null")
-        payload_path, metadata_path = self._paths(name, key)
+        safe_name, payload_name, metadata_name = self._names(name, key)
         digest = hashlib.sha256(payload).hexdigest()
         metadata = json.dumps(
             {
@@ -159,22 +227,42 @@ class CacheStore:
             sort_keys=True,
             separators=(",", ":"),
         ).encode("utf-8") + b"\n"
+        root = repository = -1
         try:
-            _atomic_cache_file(payload_path, payload)
-            _atomic_cache_file(metadata_path, metadata)
+            root, repository = self._repository_descriptor(safe_name, create=True)
+            validate = lambda: _verify_child_directory(root, safe_name, repository)
+            _atomic_cache_file_at(
+                repository, payload_name, payload, validate_directory=validate
+            )
+            _atomic_cache_file_at(
+                repository, metadata_name, metadata, validate_directory=validate
+            )
         except OSError as exc:
             raise SourceFetchError(f"could not write metadata cache for {name}") from exc
+        finally:
+            if repository >= 0:
+                os.close(repository)
+            if root >= 0:
+                os.close(root)
 
     def load(self, name: str, key: str, *, endpoint: str) -> MetadataEvidence | None:
-        payload_path, metadata_path = self._paths(name, key)
-        if not payload_path.exists() or not metadata_path.exists():
-            return None
+        safe_name, payload_name, metadata_name = self._names(name, key)
+        root = repository = -1
         try:
-            metadata_bytes = _read_regular(metadata_path, 64 * 1024)
-            payload = _read_regular(payload_path, self._max_payload_bytes)
+            root, repository = self._repository_descriptor(safe_name, create=False)
+            _verify_child_directory(root, safe_name, repository)
+            metadata_bytes = _read_regular_at(repository, metadata_name, 64 * 1024)
+            payload = _read_regular_at(repository, payload_name, self._max_payload_bytes)
             metadata = json.loads(metadata_bytes)
-        except (SourceFetchError, OSError, UnicodeError, json.JSONDecodeError):
+        except FileNotFoundError:
             return None
+        except (UnicodeError, json.JSONDecodeError):
+            return None
+        finally:
+            if repository >= 0:
+                os.close(repository)
+            if root >= 0:
+                os.close(root)
         if not isinstance(metadata, dict) or set(metadata) != {
             "endpoint",
             "etag",
@@ -208,28 +296,35 @@ class CacheStore:
             sort_keys=True,
             separators=(",", ":"),
         ).encode("utf-8") + b"\n"
+        descriptor = -1
         try:
-            _atomic_cache_file(self.root / ".rate-limit.json", marker)
+            descriptor = self._root_descriptor(create=True)
+            _atomic_cache_file_at(descriptor, ".rate-limit.json", marker)
         except OSError as exc:
             raise SourceFetchError("could not write GitHub rate-limit cache marker") from exc
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
 
     def active_rate_limit(self, clock: Callable[[], datetime]) -> str | None:
-        marker_path = self.root / ".rate-limit.json"
-        if not marker_path.exists():
-            return None
+        descriptor = -1
         try:
-            raw = json.loads(_read_regular(marker_path, 4096))
+            descriptor = self._root_descriptor(create=False)
+            raw = json.loads(_read_regular_at(descriptor, ".rate-limit.json", 4096))
             reset = raw["x-ratelimit-reset"]
             now = clock()
+        except FileNotFoundError:
+            return None
         except (
             KeyError,
-            SourceFetchError,
-            OSError,
             TypeError,
             UnicodeError,
             json.JSONDecodeError,
         ):
             return None
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
         if (
             not isinstance(raw, dict)
             or set(raw) != {"x-ratelimit-reset"}
@@ -268,20 +363,36 @@ class CachingTransport:
         cache: CacheStore,
         clock: Callable[[], datetime],
         name: str,
+        _rate_limit_state: list[bool] | None = None,
     ) -> None:
         self._runner = runner
         self._http = http
         self._cache = cache
         self._clock = clock
         self._name = _safe_component(name, "repository name")
+        self._rate_limit_state = _rate_limit_state or [False]
 
     def for_repository(self, name: str) -> "CachingTransport":
-        return CachingTransport(self._runner, self._http, self._cache, self._clock, name)
+        return CachingTransport(
+            self._runner,
+            self._http,
+            self._cache,
+            self._clock,
+            name,
+            self._rate_limit_state,
+        )
 
     def run_ls_remote(self, url: str) -> str:
+        if self._rate_limit_state[0]:
+            raise SourceFetchError("GitHub rate limit was reached during this invocation")
         command = f"git ls-remote --symref {url} HEAD"
         cached = self._cache.load(self._name, "ls-remote", endpoint=command)
-        if self._cache.active_rate_limit(self._clock) is not None and cached is not None:
+        active_reset = self._cache.active_rate_limit(self._clock)
+        if active_reset is not None and cached is None:
+            raise SourceFetchError(
+                f"GitHub rate limit remains active for {url}; reset {active_reset}"
+            )
+        if active_reset is not None:
             try:
                 output = cached.payload.decode("utf-8")
             except UnicodeDecodeError as exc:
@@ -308,6 +419,8 @@ class CachingTransport:
         return output
 
     def get(self, url: str) -> HttpResponse:
+        if self._rate_limit_state[0]:
+            raise SourceFetchError("GitHub rate limit was reached during this invocation")
         key = _cache_key(url)
         cached = self._cache.load(self._name, key, endpoint=url)
         active_reset = self._cache.active_rate_limit(self._clock)
@@ -330,9 +443,17 @@ class CachingTransport:
             return HttpResponse(url=url, status=200, headers={"x-cache": "fallback"}, body=cached.payload)
         if response.url != url:
             raise SourceFetchError(f"GitHub response URL does not match requested endpoint: {url}")
-        if response.headers.get("x-ratelimit-remaining") == "0":
-            self._cache.record_rate_limit(
-                response.headers.get("x-ratelimit-reset", "")
+        remaining = response.headers.get("x-ratelimit-remaining")
+        reset = response.headers.get("x-ratelimit-reset", "")
+        valid_reset = reset if reset.isdecimal() else None
+        primary_limit = response.status in {403, 429} and valid_reset is not None
+        if remaining == "0" or primary_limit:
+            if valid_reset is not None:
+                self._cache.record_rate_limit(valid_reset)
+            self._rate_limit_state[0] = True
+            shown_reset = valid_reset or "unknown"
+            raise SourceFetchError(
+                f"GitHub rate limit exhausted for {url}; reset {shown_reset}"
             )
         if response.status >= 400:
             if cached is not None:

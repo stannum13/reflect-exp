@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
+import urllib.request
 from types import MappingProxyType
 from typing import Any
 
@@ -128,6 +131,9 @@ def test_github_identity_rejects_noncanonical_repository_urls() -> None:
         with pytest.raises(SourceFetchError, match="canonical GitHub"):
             GitHubIdentity.from_url(url)
 
+    with pytest.raises(SourceFetchError, match="canonical GitHub"):
+        GitHubIdentity.from_url("https://github.com:malformed/example/project")
+
 
 def test_ls_remote_parsing_is_order_independent_and_accepts_branch_slashes() -> None:
     output = (
@@ -146,6 +152,7 @@ def test_ls_remote_parsing_is_order_independent_and_accepts_branch_slashes() -> 
         ("ref: refs/heads/main\tHEAD\n", "HEAD SHA"),
         (f"ref: refs/tags/v1\tHEAD\n{COMMIT_SHA}\tHEAD\n", "symbolic HEAD"),
         (f"ref: refs/heads/bad branch\tHEAD\n{COMMIT_SHA}\tHEAD\n", "malformed"),
+        (f"ref: refs/heads/bad./branch\tHEAD\n{COMMIT_SHA}\tHEAD\n", "malformed"),
         (f"ref: refs/heads/main\tHEAD\n{'a' * 64}\tHEAD\n", "40-character"),
         (
             "ref: refs/heads/main\tHEAD\n"
@@ -175,6 +182,7 @@ def test_git_runner_uses_fixed_arguments_and_isolated_noninteractive_config(
     def fake_run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         captured["args"] = args
         captured.update(kwargs)
+        captured["cwd_entries"] = tuple(Path(kwargs["cwd"]).iterdir())
         return subprocess.CompletedProcess(args, 0, f"ref: refs/heads/main\tHEAD\n{COMMIT_SHA}\tHEAD\n", "")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -185,19 +193,68 @@ def test_git_runner_uses_fixed_arguments_and_isolated_noninteractive_config(
     output = GitRunner(timeout=7).run_ls_remote(REPO_URL)
 
     assert COMMIT_SHA in output
-    assert captured["args"] == ["git", "ls-remote", "--symref", REPO_URL, "HEAD"]
+    assert captured["args"] == [
+        "git",
+        "-c",
+        "credential.helper=",
+        "-c",
+        "http.followRedirects=false",
+        "-c",
+        "http.proxy=",
+        "-c",
+        "https.proxy=",
+        "ls-remote",
+        "--symref",
+        REPO_URL,
+        "HEAD",
+    ]
     assert captured["capture_output"] is True
     assert captured["text"] is True
     assert captured["timeout"] == 7
     assert captured["check"] is False
+    assert captured["cwd_entries"] == ()
     environment = captured["env"]
     assert environment["GIT_CONFIG_GLOBAL"] == "/dev/null"
     assert environment["GIT_CONFIG_SYSTEM"] == "/dev/null"
     assert environment["GIT_CONFIG_NOSYSTEM"] == "1"
     assert environment["GIT_TERMINAL_PROMPT"] == "0"
+    assert environment["GIT_CEILING_DIRECTORIES"] == captured["cwd"]
+    assert environment["GIT_DISCOVERY_ACROSS_FILESYSTEM"] == "0"
     assert "GIT_ASKPASS" not in environment
     assert "HTTPS_PROXY" not in environment
     assert "GIT_TRACE" not in environment
+
+
+def test_git_runner_real_process_ignores_hostile_repository_and_ambient_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    remote = tmp_path / "hostile-remote.git"
+    (remote / "refs" / "heads").mkdir(parents=True)
+    (remote / "HEAD").write_text("ref: refs/heads/main\n", encoding="ascii")
+    (remote / "refs" / "heads" / "main").write_text(f"{COMMIT_SHA}\n", encoding="ascii")
+    (remote / "config").write_text("[core]\n\tbare = true\n", encoding="ascii")
+    hostile = tmp_path / "hostile-worktree"
+    (hostile / ".git").mkdir(parents=True)
+    (hostile / ".git" / "config").write_text(
+        f'[url "file://{remote}"]\n\tinsteadOf = {REPO_URL}\n', encoding="utf-8"
+    )
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    shim = binary / "git"
+    shim.write_text(
+        "#!/bin/sh\nexec /usr/bin/git -c protocol.https.allow=never \"$@\"\n",
+        encoding="ascii",
+    )
+    shim.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{binary}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("GIT_DIR", str(hostile / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(hostile))
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", f"url.file://{remote}.insteadOf")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", REPO_URL)
+
+    with pytest.raises(SourceFetchError, match="git ls-remote failed"):
+        GitRunner(timeout=5).run_ls_remote(REPO_URL)
 
 
 def test_git_runner_reports_failure_without_stderr_secrets(
@@ -250,6 +307,23 @@ def test_default_http_redirect_policy_refuses_to_follow_response_location() -> N
         )
 
 
+def test_default_http_transport_disables_environment_proxies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: tuple[object, ...] = ()
+
+    def fake_build_opener(*handlers: object) -> object:
+        nonlocal captured
+        captured = handlers
+        return object()
+
+    monkeypatch.setenv("HTTPS_PROXY", "https://proxy.invalid")
+    monkeypatch.setattr(urllib.request, "build_opener", fake_build_opener)
+    UrllibTransport()
+    proxy = next(handler for handler in captured if isinstance(handler, urllib.request.ProxyHandler))
+    assert proxy.proxies == {}
+
+
 def test_resolver_uses_commit_tree_sha_and_exact_evidence_urls() -> None:
     transport = FixtureTransport()
     locked = resolve_entry(_entry("src/example", "README.md", "missing"), transport, _clock)
@@ -290,6 +364,99 @@ def test_license_is_discovered_from_exact_tree_blob() -> None:
     assert locked.license_status is LicenseStatus.DISCOVERED
     assert locked.license_spdx == "MIT"
     assert locked.license_evidence_url == LICENSE_URL
+
+
+def _blob(text: str, *, sha: str = LICENSE_SHA, content: str | None = None) -> bytes:
+    encoded = content if content is not None else base64.b64encode(text.encode()).decode()
+    return json.dumps({"sha": sha, "encoding": "base64", "content": encoded}).encode()
+
+
+MIT_TEXT = """MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM.
+"""
+
+
+def test_license_base64_accepts_only_ascii_whitespace_and_strict_decoding() -> None:
+    encoded = base64.b64encode(MIT_TEXT.encode()).decode()
+    multiline = "\n\t".join(encoded[index : index + 12] for index in range(0, len(encoded), 12))
+    discovered = resolve_entry(
+        _entry("README.md"), FixtureTransport(license_blob=_blob("", content=multiline)), _clock
+    )
+    assert discovered.license_spdx == "MIT"
+
+    non_ascii_space = encoded[:12] + "\u00a0" + encoded[12:]
+    unknown = resolve_entry(
+        _entry("README.md"), FixtureTransport(license_blob=_blob("", content=non_ascii_space)), _clock
+    )
+    assert unknown.license_status is LicenseStatus.UNKNOWN
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Permission is not hereby granted, free of charge. THE SOFTWARE IS PROVIDED \"AS IS\".",
+        "Excerpt: Permission is hereby granted, free of charge. THE SOFTWARE IS PROVIDED \"AS IS\".",
+    ],
+)
+def test_license_negations_and_excerpts_remain_unknown(text: str) -> None:
+    locked = resolve_entry(_entry("README.md"), FixtureTransport(license_blob=_blob(text)), _clock)
+    assert locked.license_status is LicenseStatus.UNKNOWN
+    assert locked.license_spdx is None
+
+
+def test_gpl_only_and_or_later_are_distinct() -> None:
+    core = """GNU GENERAL PUBLIC LICENSE
+Version 2, June 1991
+TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+0. This License applies to any program.
+1. You may copy and distribute verbatim copies.
+2. You may modify your copy.
+3. You may copy and distribute the Program.
+NO WARRANTY
+END OF TERMS AND CONDITIONS
+"""
+    only = resolve_entry(_entry("README.md"), FixtureTransport(license_blob=_blob(core)), _clock)
+    later = resolve_entry(
+        _entry("README.md"),
+        FixtureTransport(license_blob=_blob(core + "either version 2 of the License, or (at your option) any later version")),
+        _clock,
+    )
+    assert only.license_spdx == "GPL-2.0-only"
+    assert later.license_spdx == "GPL-2.0-or-later"
+
+
+def test_suffix_license_files_produce_deterministic_dual_license() -> None:
+    apache_sha = "d" * 40
+    mit_sha = "e" * 40
+    tree = json.loads(_fixture("github-tree.json"))
+    tree["tree"] = [item for item in tree["tree"] if item["path"] != "LICENSE"] + [
+        {"path": "LICENSE-MIT", "type": "blob", "sha": mit_sha},
+        {"path": "LICENSE-APACHE", "type": "blob", "sha": apache_sha},
+    ]
+    apache = """Apache License Version 2.0, January 2004
+Terms and Conditions for Use, Reproduction, and Distribution
+1. Definitions. 2. Grant of Copyright License. 3. Grant of Patent License.
+4. Redistribution. 5. Submission of Contributions. 6. Trademarks.
+7. Disclaimer of Warranty. 8. Limitation of Liability. 9. Accepting Warranty.
+END OF TERMS AND CONDITIONS
+"""
+    transport = FixtureTransport(
+        tree=json.dumps(tree).encode(),
+        extra={
+            f"https://api.github.com/repos/example/project/git/blobs/{apache_sha}": _blob(apache, sha=apache_sha),
+            f"https://api.github.com/repos/example/project/git/blobs/{mit_sha}": _blob(MIT_TEXT, sha=mit_sha),
+        },
+    )
+    locked = resolve_entry(_entry("README.md"), transport, _clock)
+    assert locked.license_spdx == "Apache-2.0 OR MIT"
 
 
 def test_unrecognized_license_text_is_unknown() -> None:
@@ -459,7 +626,7 @@ def test_caching_transport_uses_one_valid_cache_fallback_after_live_failure(
     assert http.calls == 1
 
 
-def test_resumable_rate_limit_uses_preexisting_valid_cache(tmp_path: Path) -> None:
+def test_rate_limit_response_stops_current_invocation_even_with_valid_cache(tmp_path: Path) -> None:
     cache = CacheStore(tmp_path)
     for key, endpoint, payload in (
         ("commit", COMMIT_URL, _fixture("github-repository.json")),
@@ -493,9 +660,155 @@ def test_resumable_rate_limit_uses_preexisting_valid_cache(tmp_path: Path) -> No
             raise AssertionError("active rate-limit resume must not issue another HTTP call")
 
     transport = CachingTransport(Runner(), LimitedThenFixture(), cache, _clock, "example")
-    locked = resolve_entry(_entry("README.md"), transport, _clock)
-    assert locked.metadata_status is MetadataStatus.RESOLVED
+    with pytest.raises(SourceFetchError, match="rate limit.*1787395200"):
+        resolve_entry(_entry("README.md"), transport, _clock)
     assert LimitedThenFixture.calls == [COMMIT_URL]
+
+
+@pytest.mark.parametrize("status", [200, 403])
+def test_rate_limit_persists_reset_stops_calls_and_later_invocation_resumes(
+    tmp_path: Path, status: int
+) -> None:
+    cache = CacheStore(tmp_path)
+    cached = (
+        ("ls-remote", f"git ls-remote --symref {REPO_URL} HEAD", f"ref: refs/heads/main\tHEAD\n{COMMIT_SHA}\tHEAD\n".encode()),
+        ("commit", COMMIT_URL, _fixture("github-repository.json")),
+        (f"tree-recursive-{TREE_SHA}", TREE_URL, _fixture("github-tree.json")),
+        (f"blob-{LICENSE_SHA}", LICENSE_URL, _fixture("github-license.json")),
+    )
+    for key, endpoint, payload in cached:
+        cache.write("example", key, endpoint=endpoint, payload=payload, retrieved_at="2026-08-22T10:11:12Z")
+
+    class Runner:
+        calls = 0
+        def run_ls_remote(self, url: str) -> str:
+            self.calls += 1
+            return cached[0][2].decode()
+
+    class Limited:
+        calls: list[str] = []
+        def get(self, url: str) -> HttpResponse:
+            self.calls.append(url)
+            headers = {"x-ratelimit-reset": "1787395200"}
+            if status == 200:
+                headers["x-ratelimit-remaining"] = "0"
+            return HttpResponse(
+                url=url,
+                status=status,
+                headers=headers,
+                body=b"limited",
+            )
+
+    first = CachingTransport(Runner(), Limited(), cache, _clock, "example")
+    with pytest.raises(SourceFetchError, match="rate limit"):
+        resolve_entry(_entry("README.md"), first, _clock)
+    assert Limited.calls == [COMMIT_URL]
+    assert cache.active_rate_limit(_clock) == "1787395200"
+
+    class NoHttp:
+        def get(self, url: str) -> HttpResponse:
+            raise AssertionError("later rate-limited invocation must stay offline")
+
+    later = CachingTransport(Runner(), NoHttp(), cache, _clock, "example")
+    locked = resolve_entry(_entry("README.md"), later, _clock)
+    assert locked.metadata_status is MetadataStatus.RESOLVED
+
+
+def test_active_rate_limit_cache_miss_makes_no_http_call(tmp_path: Path) -> None:
+    cache = CacheStore(tmp_path)
+    cache.record_rate_limit("1787395200")
+
+    class NoHttp:
+        calls = 0
+        def get(self, url: str) -> HttpResponse:
+            self.calls += 1
+            raise AssertionError("HTTP must not be called")
+
+    http = NoHttp()
+    transport = CachingTransport(FixtureTransport(), http, cache, _clock, "example")
+    with pytest.raises(SourceFetchError, match="rate limit remains active"):
+        transport.get(COMMIT_URL)
+    assert http.calls == 0
+
+
+def test_cache_rejects_symlinked_root_and_repository_directory(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    root_link = tmp_path / "root-link"
+    root_link.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(SourceFetchError, match="cache directory"):
+        CacheStore(root_link).write(
+            "example", "commit", endpoint=COMMIT_URL, payload=b"secret", retrieved_at="now"
+        )
+    assert not (outside / "example").exists()
+
+    root = tmp_path / "cache"
+    root.mkdir()
+    (root / "example").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(SourceFetchError, match="cache directory"):
+        CacheStore(root).write(
+            "example", "commit", endpoint=COMMIT_URL, payload=b"secret", retrieved_at="now"
+        )
+    assert not (outside / "commit.payload").exists()
+
+
+def test_cache_does_not_read_outside_payload_through_symlink(tmp_path: Path) -> None:
+    root = tmp_path / "cache"
+    repository = root / "example"
+    repository.mkdir(parents=True)
+    outside = tmp_path / "outside.payload"
+    outside.write_bytes(b"outside secret")
+    (repository / "commit.payload").symlink_to(outside)
+    (repository / "commit.json").write_text(
+        json.dumps(
+            {
+                "endpoint": COMMIT_URL,
+                "etag": None,
+                "retrieved_at": "now",
+                "sha256": "0" * 64,
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(SourceFetchError, match="regular file"):
+        CacheStore(root).load("example", "commit", endpoint=COMMIT_URL)
+
+
+def test_cache_rejects_repository_swap_before_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "cache"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    cache = CacheStore(root)
+    real_fsync = os.fsync
+    swapped = False
+
+    def swap_before_directory_validation(descriptor: int) -> None:
+        nonlocal swapped
+        mode = os.fstat(descriptor).st_mode
+        if stat.S_ISREG(mode) and not swapped:
+            swapped = True
+            (root / "example").rename(root / "original-example")
+            (root / "example").symlink_to(outside, target_is_directory=True)
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", swap_before_directory_validation)
+    with pytest.raises(SourceFetchError, match="changed during operation"):
+        cache.write(
+            "example", "commit", endpoint=COMMIT_URL, payload=b"secret", retrieved_at="now"
+        )
+    assert not (outside / "commit.payload").exists()
+
+
+def test_rate_limit_marker_rejects_symlinked_cache_root(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    root = tmp_path / "cache"
+    root.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(SourceFetchError, match="cache directory"):
+        CacheStore(root).record_rate_limit("1787395200")
+    assert not (outside / ".rate-limit.json").exists()
 
 
 def test_resolve_registry_uses_exact_selectors_and_registry_order() -> None:
@@ -638,6 +951,7 @@ def test_single_name_cli_prints_deterministic_yaml_without_publishing(
 ) -> None:
     registry_path = _write_cli_registry(tmp_path)
     lock_path = tmp_path / "repos.lock.yaml"
+    lock_path.write_bytes(b"previous bytes\n")
     result = fetch_main(
         ["--name", "example", "--metadata-only"],
         root=tmp_path,
@@ -649,7 +963,23 @@ def test_single_name_cli_prints_deterministic_yaml_without_publishing(
     output = capsys.readouterr().out.encode()
     assert result == 0
     assert yaml.safe_load(output)["entries"][0]["name"] == "example"
-    assert not lock_path.exists()
+    assert lock_path.read_bytes() == b"previous bytes\n"
+
+
+def test_cli_rejects_partial_update_lock_and_preserves_bytes(tmp_path: Path) -> None:
+    registry_path = _write_cli_registry(tmp_path)
+    lock_path = tmp_path / "repos.lock.yaml"
+    lock_path.write_bytes(b"previous bytes\n")
+    with pytest.raises(SystemExit):
+        fetch_main(
+            ["--name", "example", "--metadata-only", "--update-lock"],
+            root=tmp_path,
+            registry_path=registry_path,
+            lock_path=lock_path,
+            resolution_transport=FixtureTransport(),
+            clock=_clock,
+        )
+    assert lock_path.read_bytes() == b"previous bytes\n"
 
 
 def test_all_metadata_cli_atomically_publishes_complete_candidate(tmp_path: Path) -> None:
@@ -688,3 +1018,4 @@ def test_failed_resolution_preserves_existing_lock(tmp_path: Path) -> None:
             clock=_clock,
         )
     assert lock_path.read_bytes() == b"previous\n"
+    assert transport.http_calls == [COMMIT_URL]

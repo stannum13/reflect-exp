@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tempfile
 from typing import Protocol
 
 from reflect._source_http import GitHubIdentity, SourceFetchError, _require_sha
@@ -31,7 +32,9 @@ def _valid_branch(value: str) -> bool:
             for character in value
         )
         or any(
-            component.startswith(".") or component.endswith(".lock")
+            component.startswith(".")
+            or component.endswith(".")
+            or component.endswith(".lock")
             for component in components
         )
     )
@@ -81,19 +84,10 @@ class GitRunner:
 
     def run_ls_remote(self, url: str) -> str:
         identity = GitHubIdentity.from_url(url)
-        environment = dict(os.environ)
-        blocked_exact = {
-            "GIT_ASKPASS",
-            "SSH_ASKPASS",
-            "GIT_PROXY_COMMAND",
-            "GIT_SSH",
-            "GIT_SSH_COMMAND",
+        environment = {
+            key: value for key, value in os.environ.items() if not key.startswith("GIT_")
         }
-        blocked_prefixes = (
-            "GIT_CONFIG_",
-            "GIT_TRACE",
-            "GIT_CREDENTIAL",
-        )
+        blocked_exact = {"SSH_ASKPASS"}
         blocked_proxy = {
             "http_proxy",
             "https_proxy",
@@ -102,9 +96,7 @@ class GitRunner:
         }
         for key in tuple(environment):
             if (
-                key in blocked_exact
-                or key.startswith(blocked_prefixes)
-                or key.lower() in blocked_proxy
+                key in blocked_exact or key.lower() in blocked_proxy
             ):
                 environment.pop(key, None)
         environment.update(
@@ -115,16 +107,39 @@ class GitRunner:
                 "GIT_TERMINAL_PROMPT": "0",
             }
         )
-        args = ["git", "ls-remote", "--symref", identity.repository_url, "HEAD"]
+        args = [
+            "git",
+            "-c",
+            "credential.helper=",
+            "-c",
+            "http.followRedirects=false",
+            "-c",
+            "http.proxy=",
+            "-c",
+            "https.proxy=",
+            "ls-remote",
+            "--symref",
+            identity.repository_url,
+            "HEAD",
+        ]
         try:
-            completed = subprocess.run(
-                args,
-                capture_output=True,
-                text=True,
-                timeout=self._timeout,
-                check=False,
-                env=environment,
-            )
+            with tempfile.TemporaryDirectory(prefix="reflect-git-") as directory:
+                isolated_environment = dict(environment)
+                isolated_environment.update(
+                    {
+                        "GIT_CEILING_DIRECTORIES": directory,
+                        "GIT_DISCOVERY_ACROSS_FILESYSTEM": "0",
+                    }
+                )
+                completed = subprocess.run(
+                    args,
+                    capture_output=True,
+                    text=True,
+                    timeout=self._timeout,
+                    check=False,
+                    env=isolated_environment,
+                    cwd=directory,
+                )
         except (OSError, subprocess.SubprocessError) as exc:
             raise SourceFetchError(
                 f"git ls-remote failed for {identity.repository_url}: {type(exc).__name__}"
