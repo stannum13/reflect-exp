@@ -383,6 +383,19 @@ the end of each pass it writes `RUN_REPORT.md`, identifies the highest-value
 justified next action, updates the run manifest, and launches the next eligible
 lane within the global ceilings.
 
+After P3 opens local execution, no autonomous pass may consist only of scaffolding,
+environment checks, or baseline-metric estimation while an eligible bounded pilot can
+run. Each such pass must execute at least one data-producing pilot shard or record the
+exact gate/resource failure that made every eligible shard impossible. Comparative
+pilots retain the canonical baseline but also include the strongest locally executable
+non-baseline alternatives and decision-relevant ablations; a baseline-only result
+cannot support an interface choice. Reports analyze aggregate effects and regime
+shifts across task geometry, timing/delay, perturbation/failure class, and model or
+representation family, preserving the paired raw evidence behind each slice. Support
+code stops growing once the next pilot is safe, deterministic, resumable, and capable
+of producing the frozen evidence contract; generalized reuse is deferred until an
+observed second consumer justifies it.
+
 It pauses only for authority or substrate that cannot be inferred: credentials,
 paid/remote capacity, destructive action, physical communication, or an
 irreducibly ambiguous safety choice. Scientific uncertainty produces another
