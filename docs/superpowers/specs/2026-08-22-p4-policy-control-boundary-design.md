@@ -620,11 +620,11 @@ Per protocol revision, each non-P5 stack runs at most
 or 164 total. P5 runs those 60 plus
 `2 additional smoothness * 4 * 3 = 24` tuning episodes and the same 104 evaluation
 episodes, or 188 total. With all six stacks surviving, the exact maximum is
-`5 * 164 + 188 = 1,008` pilot episodes, 6,300 simulated seconds, and 1,008 MiB under
+`5 * 164 + 188 = 1,008` pilot episodes, 6,300 simulated seconds, and 2,016 MiB under
 the per-rollout cap plus the existing 128 MiB pilot allowance. Every stack remains
 below the autonomous 256-pilot-episode per-revision ceiling. If both permitted
 revisions are used, the lifecycle maximum is 2,016 pilot episodes, 12,600 simulated
-seconds, 2,016 MiB of rollout payload, and two 128 MiB allowances. Reused evaluations
+seconds, 4,032 MiB of rollout payload, and two 128 MiB allowances. Reused evaluations
 are addressed by their complete parameter-vector hash and are never executed or
 counted twice.
 
@@ -671,12 +671,16 @@ pilot-evaluation shard, and 26 or 27 for a confirmation shard depending on wheth
 that seed includes the negative control. Thus a confirmation shard contains at most
 168.75 simulated seconds and is subject to the 60-minute wall-clock command ceiling.
 
-Each rollout has a hard 1 MiB serialized-artifact limit checked before publication.
-The maximum confirmation payload is therefore 5,016 MiB plus a 256 MiB aggregate/
-manifest/plot allowance. Across both permitted pilot revisions, pilot is at most
-2,016 MiB plus two 128 MiB allowances. The combined declared maximum is 7,544 MiB,
-inside the 10 GiB generated-artifact ceiling, and the complete phase refuses to start
-unless remaining budget covers that maximum.
+Each rollout has a hard 2 MiB serialized-artifact limit checked before publication.
+This cap follows a measured canonical P1 artifact of 1,644,875 bytes including the
+required raw metric rows; evidence is never truncated to meet the cap. The maximum
+confirmation payload is therefore 10,032 MiB plus a 256 MiB aggregate/manifest/plot
+allowance. Confirmation executes as two immutable 16-seed checkpoint waves, each
+creating at most 5,016 MiB of rollouts plus a disjoint 128 MiB allowance, so every
+autonomous pass stays below 10 GiB. Across both permitted pilot revisions, pilot is at
+most 4,032 MiB plus two 128 MiB allowances. The combined lifecycle maximum is 14,576
+MiB, inside the configured 50 GiB run ceiling; the phase and each next wave refuse to
+start unless their respective remaining budgets cover those maxima.
 
 The analysis uses a deterministic 10,000-resample paired percentile bootstrap over
 seed-level primary values. The five contrasts against P1 form one multiplicity family
@@ -927,7 +931,7 @@ Unit and property tests cover:
 - canonical rollout write, load, validation, event lifecycle, and replay;
 - SVG determinism and required plot labels;
 - CLI config validation, dry run, headless enforcement, seed/output/max-episode/shard
-  handling, 60-minute shard bounds, 1 MiB rollout cap, and create-only
+  handling, 60-minute shard bounds, 2 MiB rollout cap, and create-only
   validate-and-skip resumption including mismatch refusal; and
 - full repository, lock, safety, secret, artifact-size, and diff checks.
 

@@ -15,7 +15,7 @@
 - Use exact 3R values: links `.30/.25/.20 m`, joint limits `[-2.70,2.70]`, damping `.10`, torque `[-12,12]`, zero gravity, `dt=.002 s`, 6.25 s.
 - `ActionChunk.representation` is a string. Stack identity is only `metadata["stack_id"]`.
 - Global shared PD/IK applies to every survivor; only P5 has a separate smoothness selection.
-- Rollouts are create-only, `<=1 MiB`; resume is full validate-and-skip. One shard is `<=27` episodes, `<=168.75` simulated seconds, `<=60` wall minutes.
+- Rollouts are create-only, `<=2 MiB`; resume is full validate-and-skip. One shard is `<=27` episodes, `<=168.75` simulated seconds, `<=60` wall minutes.
 - Raw `experiments/01_policy_control/results/` stays ignored/local. Commit only source/tests/configs, small manifests/digests/SVGs/reports.
 - All commands run from repository root with `UV_CACHE_DIR=.cache/uv uv run`.
 
@@ -86,7 +86,7 @@ class Condition:
     fault: FaultKind
 ```
 
-Every array constructor copies float64 C-order bytes and marks them read-only. Strict YAML rejects missing/extra keys, booleans-as-int, and nonfinite values. `base.yaml` records every number in spec §§Arm, stacks, timing, metrics, pilot, confirmation, thresholds, resources: exact IK equations/constants; MPC 79-candidate grid/cost; P6 nominal; 5/10/20 Hz, 0/100/300/700 ms, 1/2 moves; two probes/control; 8 pilot seeds split 4+4, two revisions; 32/64 confirmation; 10,000 bootstrap; `-.10/+.10`, `.95/.90`, `.01/.05`, `1.5`; `1 MiB/60 min/7,544 MiB`.
+Every array constructor copies float64 C-order bytes and marks them read-only. Strict YAML rejects missing/extra keys, booleans-as-int, and nonfinite values. `base.yaml` records every number in spec §§Arm, stacks, timing, metrics, pilot, confirmation, thresholds, resources: exact IK equations/constants; MPC 79-candidate grid/cost; P6 nominal; 5/10/20 Hz, 0/100/300/700 ms, 1/2 moves; two probes/control; 8 pilot seeds split 4+4, two revisions; 32/64 confirmation; 10,000 bootstrap; `-.10/+.10`, `.95/.90`, `.01/.05`, `1.5`; `2 MiB/60 min/14,576 MiB`.
 
 Run: `UV_CACHE_DIR=.cache/uv uv run pytest experiments/01_policy_control/tests/test_contracts.py tests/test_types.py -q`
 
@@ -514,7 +514,7 @@ Expected: collection FAIL with missing `artifacts`.
 
 - [ ] GREEN artifacts: absent output uses `RolloutWriter.write`, then size, `validate_rollout`, `replay_rollout`. Existing output validates exact file/artifact/protocol/source/scenario/condition hashes, metadata, events, observation/action/reference bytes, and terminal replay; never rewrites. Implement the parent/worker supervisor exactly above; the parent alone publishes shard-local ledgers, failure rows, and completion markers. Phase/shard manifests use `O_EXCL`, fsync, absent rename. `ReplayResult` fields are exactly rollout_id/events/observations/frames/final_state.
 - [ ] GREEN evidence guard: capture the protocol's implementation SHA and the exact implementation-owned paths listed in Task 14 through hardened local Git commands. Immediately before a shard command and again before its completion/failure publication, require every tracked implementation path byte-identical to that SHA and require `git ls-files --others --exclude-standard` to report no untracked path below those implementation-owned paths. The after-snapshot must equal the before-snapshot. A mismatch writes no scientific artifact or disposition and exits 2. Apply the same guard around pilot/confirmation analyze. Report generation applies it to every implementation path except its enumerated Markdown/SVG/digest output targets, whose reviewed-placeholder or absent precondition and exact intended postcondition are checked separately. The final report records the clean implementation after-snapshot.
-- [ ] GREEN resource guard: derive retained bytes from validated manifests plus filesystem measurements, temp/quarantine from descriptor-held directories, free bytes from `statvfs`, and wall/CPU by canonically aggregating validated shard-local ledgers. Reserve the entire next shard or stage before importing MuJoCo or opening output. Pilot permits at most two retained revisions; each exact 128 MiB non-rollout allowance is 16 MiB final manifests/digests + 32 MiB temporary peak + 64 MiB quarantine + 16 MiB headroom. The exact 256 MiB confirmation allowance is 64 MiB aggregate/report + 64 MiB temporary peak + 96 MiB quarantine + 32 MiB headroom. No bucket borrows from another. The full experiment remains at most 7,544 MiB (`2,016 + 5,016` rollout MiB plus `128 + 128 + 256` MiB). The pilot/confirmation wall ceilings are 8/24 hours and CPU ceilings 80/240 hours; each supervisor enforces the 60-minute shard deadline. Integer byte/ns comparisons are inclusive at the cap and refuse strictly above it. Refusal/resource exhaustion is canonical, creates no fabricated rollout, atomically records a phase-terminal disposition, returns exit `3`, and makes the lifecycle `INCONCLUSIVE`; it is never eligible for the one-accidental-invalid-seed rule.
+- [ ] GREEN resource guard: derive retained bytes from validated manifests plus filesystem measurements, temp/quarantine from descriptor-held directories, free bytes from `statvfs`, and wall/CPU by canonically aggregating validated shard-local ledgers. Reserve the entire next shard or stage before importing MuJoCo or opening output. Pilot permits at most two retained revisions; each exact 128 MiB non-rollout allowance is 16 MiB final manifests/digests + 32 MiB temporary peak + 64 MiB quarantine + 16 MiB headroom. The exact 256 MiB confirmation allowance is split into two disjoint 128 MiB 16-seed checkpoint-wave allowances. No bucket borrows from another. A measured canonical P1 rollout is 1,644,875 bytes with required raw rows, so the hard reservation is 2 MiB and evidence is never truncated. The full lifecycle remains at most 14,576 MiB (`4,032 + 10,032` rollout MiB plus `128 + 128 + 256` MiB). Each confirmation wave creates at most 5,016 rollout MiB plus 128 MiB, preserving the 10 GiB per-pass ceiling and the configured 50 GiB run ceiling. The pilot/confirmation wall ceilings are 8/24 hours and CPU ceilings 80/240 hours; each supervisor enforces the 60-minute shard deadline. Integer byte/ns comparisons are inclusive at the cap and refuse strictly above it. Refusal/resource exhaustion is canonical, creates no fabricated rollout, atomically records a phase-terminal disposition, returns exit `3`, and makes the lifecycle `INCONCLUSIVE`; it is never eligible for the one-accidental-invalid-seed rule.
 - [ ] GREEN CLI: safety/P3 gate precedes local imports; root-contain all paths. Dry-run prints canonical sorted JSON. Freeze validates all pilot artifacts and writes config plus external digest (no self digest). Confirmation generator requires frozen protocol/new RNG. Analyze/report never import physics. Report atomically replaces only the reviewed Task 12 placeholder report bytes, and an exact reissue validates-and-skips; it writes the two Markdown reports and five canonical SVGs named in Task 15. Reports preserve the bounded stack-level claim.
 - [ ] Add this literal root target; missing `SHARD` exits before Python, and the CLI validates that it names one three-episode base shard:
 
@@ -583,7 +583,7 @@ UV_CACHE_DIR=.cache/uv uv run python -m experiments.01_policy_control.run --conf
 
 Expected: all exit 0; the two preparation commands publish only small manifests without
 MuJoCo; preflight prints canonical `ALLOW` only after reserving the complete remaining
-7,544 MiB phase maximum and pilot wall/CPU bounds; and the final dry-run prints exactly
+14,576 MiB lifecycle maximum and pilot wall/CPU bounds; and the final dry-run prints exactly
 three sorted episodes without creating results.
 - [ ] Independent Draft review PASS, then:
 
@@ -812,7 +812,9 @@ Expected: both commits succeed; the binding contains the first commit's 40-hex S
 the Git-blob/content hashes of both manifests; status prints nothing. Every later shard
 requires this binding and records that same preregistration SHA.
 
-- [ ] Preflight the full 7,544 MiB ceiling before importing MuJoCo or opening a result.
+- [ ] Preflight the full 14,576 MiB lifecycle ceiling and the next 16-seed confirmation
+  wave's 5,144 MiB ceiling before importing MuJoCo or opening a result. Run seeds 0--15,
+  seal the checkpoint, then run seeds 16--31 without changing the frozen protocol.
 The command recomputes retained, temporary, quarantine, and free-space counters, reads
 bounded wall/CPU totals from the canonical ledger, reserves the complete remaining
 confirmation maximum, and exits `3` with a create-only phase-terminal `INCONCLUSIVE`
@@ -865,8 +867,8 @@ run_p4_confirmation_all
 
 Expected: the first four seeds use 27 episodes including the stationary control and
 all later seeds use 26; each manifest-derived shard runs exactly once. Maximum remains
-836 paired bundles, 5,016 rollouts, 31,350 simulated seconds, and 5,016 MiB plus
-256 MiB. Exact reissue validates-and-skips. A supervised process timeout, missing
+836 paired bundles, 5,016 rollouts, 31,350 simulated seconds, and 10,032 MiB plus
+256 MiB across two immutable 16-seed checkpoint waves. Exact reissue validates-and-skips. A supervised process timeout, missing
 output, or corrupt output is converted once into its bounded shard-local failure rows;
 the executor continues without fabricating a rollout. Analysis invalidates that
 `(stack, seed)` primary value and excludes that seed only from paired contrasts involving
@@ -907,7 +909,7 @@ git ls-files --others --exclude-standard -- Makefile pyproject.toml uv.lock expe
 git diff --check
 ```
 
-Expected: all exit 0; the secret query prints nothing; size is at most 7,544 MiB; the
+Expected: all exit 0; the secret query prints nothing; size is at most 14,576 MiB; the
 implementation diff, untracked-path scan, and whitespace check print nothing. `audit_references` supplies
 the tracked-checkout/model scan; `analyze` has already replayed every complete shard.
 
