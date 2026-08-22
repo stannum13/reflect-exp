@@ -6,2269 +6,758 @@
 
 **Scope:** Reflect Lite Experiment 06
 
-## 1. Decision and authority boundary
+## 1. Decision boundary
 
-Experiment 06 tests whether compact learned prediction improves the ordering and
-selection of eight fixed planar-pushing candidates. NumPy supplies a deterministic
-precursor used for generator/model development, training, tuning, validation, and
-physical sanity checks. It does not produce canonical co-primary evidence.
+Experiment 06 asks one bounded question: on a fixed planar-pushing benchmark, does a
+small learned predictor order eight meaningful action candidates better than a strong
+non-dynamics baseline and the frozen W1 heuristic, with acceptable CPU latency?
 
-The P3-pinned MuJoCo package/version/distribution artifact, source lock, and compatibility
-decision are mandatory prerequisites. P3 does not supply or pin Experiment 06 model
-bytes. Section 13.1 instead defines the experiment-local deterministic Push-T MJCF
-generator and binds every generated model digest to the precursor and evidence
-protocols. MuJoCo is the sole exact rollout ground truth
-for the disjoint pilot that fits only permitted output/calibration values and margins,
-and for unseen confirmation.
-Canonical W2, actual candidate costs, rank correlation, selection regret, safety
-labels, scientific decisions, and runtime authority all use pinned MuJoCo outcomes.
-This follows the program's explicit MuJoCo ground-truth choice
-(`Reflect Lite Research Program.md:1909-1915`) and prevents a simplified NumPy contact
-model from silently changing the claim.
+NumPy is a deterministic development precursor. It validates the task, generates the
+training/tuning/validation data, and selects one configuration each for W3, W4, and W5.
+It never produces canonical co-primary evidence. The P3-pinned MuJoCo package/runtime
+is the only source of exact pilot and confirmation outcomes. A missing or failing P3
+MuJoCo compatibility decision makes P7 `BLOCKED`; it does not authorize NumPy evidence.
 
-The benchmark remains CPU-only, local, and free of downloaded checkpoints. It does not
-test general
-manipulation, real-R1 transfer, image plausibility, latent MPC, CEM/MPPI, foundation
-encoders, or online learning (`Reflect Lite Research Program.md:1888-1930`).
+The benchmark is local, CPU-only, and free of downloaded checkpoints. It does not test
+general manipulation, real-R1 transfer, visual plausibility, latent MPC, CEM/MPPI,
+foundation encoders, online learning, or action execution. P7 can promote a prediction
+and candidate-selection protocol, but it grants no action-routing authority. A later
+executor-prefix test requires its own reviewed design and a passing P4 stack-`P4`
+artifact at the exact `10 Hz, 300 ms` condition.
 
-## 2. Alternatives and trade-offs
+The implementation is deliberately experiment-local. It reuses the existing
+`RolloutWriter`, canonical JSON encoder, shared `WorldModelPrediction`, and replay CLI.
+It adds no sandbox framework, capability broker, generalized lifecycle engine, new
+database, hardened Git publisher, quarantine service, or cross-experiment artifact
+abstraction.
 
-### A. NumPy-only exact benchmark
+## 2. Scientific unit, world, and partitions
 
-This is cheapest and maximally deterministic, but it conflicts with the named MuJoCo
-ground truth and could grant authority from an oversimplified collision model. It is
-retained only as a precursor and negative-control simulator.
+### 2.1 Scene and anchor unit
 
-### B. MuJoCo for all development and evidence
+The analysis unit is a `scene_seed`. One scene owns its physical parameters, probe
+rollout, four ordered anchor snapshots, all adjacent frames, all eight counterfactual
+branches per anchor, and all renderings. Metrics average anchors within scene first;
+paired inference resamples scenes. No descendant of a scene crosses a split.
 
-This removes simulator shift but makes every data-generation and debugging loop depend
-on the heavier P3 environment. It is valid but needlessly expensive before candidate,
-leakage, model, and artifact contracts stabilize.
+The world has a velocity-controlled circular end effector, one movable disk or
+rectangle, a target pose, zero or one wall/obstacle, bounded workspace, randomized
+mass/friction/geometry, and exact branch outcomes. NumPy and MuJoCo use one frozen
+state/action/cost projection; only MuJoCo outcomes are canonical truth.
 
-### C. Frozen precursor, then NumPy selection and MuJoCo pilot/confirmation — selected
+ID scenes sample object center uniformly from `[-0.30,0.30]^2`, target bearing from
+`[0,2*pi)`, target distance from `[0.25,0.45]`, target yaw from `[-pi,pi)`, mass from
+`[0.8,1.2] kg`, and friction from `[0.40,0.60]`. Geometry is an equiprobable disk with
+radius `[0.055,0.075] m` or rectangle with half-extents `x=[0.050,0.070]` and
+`y=[0.040,0.060] m`. The obstacle is absent with probability 0.5; otherwise it is the
+frozen target-axis-parallel side segment. MASS_OOD changes only mass to `[1.40,1.60]`,
+FRICTION_OOD only friction to `[0.75,0.90]`, GEOMETRY_OOD only geometry to disk radius
+`[0.085,0.095]` or rectangle half-extents `x=[0.080,0.095], y=[0.030,0.040]`, and
+OBSTACLE_OOD only the obstacle to the frozen perpendicular center barrier. Up to 32
+domain-separated proposals may seek a feasible nonpenetrating initial state; exhaustion
+is invalid and never changes the scene seed.
 
-NumPy provides cheap exhaustive development data and deterministic contract tests. A
-pre-precursor contract freeze prevents either simulator from redefining the task after
-results. A disjoint MuJoCo pilot validates the selected model path, permits only the
-predeclared output-head refit/calibration, and sets margins/resources before one common
-evidence freeze. Unseen MuJoCo confirmation then answers the claim. The extra
-transition makes simulator authority explicit and permits negative NumPy validity
-results to stop work before expensive MuJoCo evidence.
+The two-second probe has four 0.5-second phases: approach the target-opposite contact,
+push 0.10 m toward target, retreat 0.08 m, and move 0.08 m along the positive target
+perpendicular. Immutable post-step snapshots at `0.50,1.00,1.50,2.00 s` are the four
+anchors.
 
-## 3. Scientific unit, world, and candidates
-
-### 3.1 Scene and anchor unit
-
-The analysis unit is a `scene_seed`. One seed owns physical parameters, probe rollout,
-four ordered anchor snapshots, all adjacent frames, all eight branches per anchor,
-and all renderings. Anchor metrics average within scene first; paired inference uses
-scene-level values. No frame, candidate, or rendering descendant crosses a split.
-
-The bounded 2D world has a velocity-controlled circular end effector, one movable
-disk or rectangle, a target pose, zero or one wall/obstacle, bounded workspace, and
-randomized mass/friction/geometry. NumPy and MuJoCo implement one frozen state/action/
-cost mapping, but only MuJoCo outcomes are canonical truth.
-
-### 3.2 Stable identities
-
-IDs are globally unique within the experiment:
+Stable IDs are:
 
 ```text
-scene_id    = exp06/scene/<16-lowercase-hex-seed>
-anchor_id   = <scene_id>/anchor/<zero-padded-anchor-index>
-strategy_id = DIRECT | LEFT_EDGE | RIGHT_EDGE | BELOW | DIAGONAL |
-              RETREAT_REPOSITION | SLOW_CONSERVATIVE | HOLD
+scene_id     = exp06/scene/<16-lowercase-hex-scene-seed>
+anchor_id    = <scene_id>/anchor/<zero-padded-index>
+strategy_id  = DIRECT | LEFT_EDGE | RIGHT_EDGE | BELOW | DIAGONAL |
+               RETREAT_REPOSITION | SLOW_CONSERVATIVE | HOLD
 candidate_id = <anchor_id>/candidate/<strategy_id>
 prediction_id = <candidate_id>/prediction/<64-lowercase-hex-model-sha256>
 ```
 
-`strategy_id` is the reusable semantic strategy; `candidate_id` is the globally
-unique instance. Every prediction, truth row, selection, action row, and event carries
-both. `prediction_id` is globally unique because its candidate and generating model are
-identity-bound, including across configurations and refitted checkpoints; its final
-component must equal the row's complete `model_sha256`. W4F/W5F selections reference
-the chosen raw W4/W5 or W1 prediction ID
-rather than inventing a composition prediction. IDs cannot be derived from labels or
-row positions.
+IDs are never derived from row position. A duplicate ID or seed invalidates the run.
 
-### 3.3 Exact K=8 action generation
+### 2.2 Fixed partitions
 
-At every anchor the deterministic waypoint controller emits exactly one one-second
-planar velocity chunk for each strategy:
+Named PCG64 roots are the first 128 big-endian bits of SHA-256 of the literal root name.
+Every scene/probe/model/bootstrap stream has a separate domain string and a fresh
+generator. No generator object crosses a scene, model member, anchor, or phase.
 
-1. `DIRECT`: approach from target-opposite contact and push toward target.
-2. `LEFT_EDGE`: push through the object's local left edge.
-3. `RIGHT_EDGE`: mirrored right-edge push.
-4. `BELOW`: approach from the negative world-y support side, then push.
-5. `DIAGONAL`: use the deterministic target-facing corner.
-6. `RETREAT_REPOSITION`: retreat, reposition, then push in frozen phase fractions.
-7. `SLOW_CONSERVATIVE`: direct strategy with the frozen speed multiplier.
-8. `HOLD`: zero velocity for the whole horizon.
+| Partition | Scenes | Use |
+|---|---:|---|
+| NumPy train | 96 | preprocessing, PCA, model fitting |
+| NumPy tuning | 24 | rank the frozen three-configuration grid |
+| NumPy validation | 24 | mechanically select one checkpoint/method |
+| MuJoCo adaptation | 20, four in each stratum | permitted output refit, calibration, thresholds |
+| MuJoCo pilot evaluation | 20, four in each stratum | margins and resource ceilings only |
+| MuJoCo confirmation | 80, sixteen in each stratum | sole confirmatory evidence |
 
-Each action has two digests. `action_content_sha256` covers only the canonical
-little-endian float64 command shape/bytes, `dt_s`, horizon, and command limits; it is
-independent of scene, anchor, strategy, candidate, and row position. `action_sha256`
-is the identity-bound cross-link digest over `action_content_sha256`, strategy ID,
-candidate ID, scene ID, and anchor ID. The eight candidates must have eight distinct
-content digests and eight bytewise-distinct command trajectories; distinct IDs cannot
-make duplicate commands valid. Before any branch runs, an independent regeneration
-pass reconstructs all actions from the sealed anchor/config and requires byte equality
-and both digest equalities. Duplicate content, missing/reordered candidates, or
-nondeterministic regeneration makes the scene bundle `INVALID`; candidates are never
-dropped, perturbed, or resampled. This is the program's meaningful, non-Gaussian K=8
-taxonomy (`Reflect Lite Research Program.md:1943-1956`).
+The five MuJoCo strata have equal 0.20 weight:
 
-## 4. NumPy precursor validity gate
+```text
+ID
+MASS_OOD
+FRICTION_OOD
+GEOMETRY_OOD
+OBSTACLE_OOD
+```
 
-Before the first validity-gate run, a checked-in precursor protocol freezes the task
-and scene distributions, NumPy equations and MuJoCo state/action mapping, candidate
-factory/controller/timing/limits, K=8 IDs/order, actual/predicted cost components and
-weights, success/safety labels, W0 seed rule, the complete W1 formula/weights/ties,
-split sizes/roots, validity tolerances, and finite model/PCA configuration grids. The
-finite grids contain exactly three W3 configurations, three W4 configurations, and
-three W5 configurations, covering every allowed feature/degree/regularization/ensemble
-or channel/PCA-dimension/tolerance/latent-transition choice; neither
-NumPy outcomes nor MuJoCo pilot may add a choice. This is a contract freeze, not the
-later evidence freeze: learned coefficients, calibration values, effect margins, and
-measured resource ceilings do not exist yet.
+The NumPy roots and the 40-scene MuJoCo pilot root freeze before any outcome. Within
+each pilot stratum, sorted scene IDs 0-3 are adaptation and 4-7 are pilot evaluation.
+The confirmation root is generated only after the common evidence freeze by exactly
+one `os.urandom(16)` call. The committed confirmation manifest stores only the derived
+root and exact scene rows, never the raw entropy. Confirmation data cannot alter any
+model, threshold, margin, exclusion, cost, or gate.
 
-The NumPy simulator uses fixed-step semi-implicit integration, deterministic contact
-ordering, explicit terminal reasons, and immutable snapshots. It must pass all three
-gate classes before data may train a model:
+The split manifest records partition, stratum, RNG roots, scene/probe seeds, parameter
+cell, anchor/candidate IDs, source simulator/config SHA-256, state/render hashes, and
+both action hashes. Shared ancestry or content across any two partitions is `INVALID`.
 
-1. **Analytic invariants:** HOLD preserves a zero-velocity free state; no-contact
-   constant-velocity motion matches its closed form within the frozen tolerance;
-   wrapped orientation, clipping, and cost components match hand calculations.
-2. **Physical invariants:** damping/friction never adds kinetic energy in an
-   unforced step; contact impulse opposes penetration; post-step penetration remains
-   within tolerance; mirrored scenes/actions produce mirrored states/costs; every
-   branch remains finite and inside declared bounds.
-3. **Step-halving convergence:** every strategy in a frozen validation grid runs at
-   `dt` and `dt/2`; endpoint state, each cost component, collision/failure label, and
-   candidate ordering must remain inside pre-precursor frozen tolerances. Order uses Kendall
-   disagreement count with average-rank ties.
+### 2.3 Preregistered outcome-coverage gate
 
-The validity grid is exactly 80 cases per protocol revision: 16 analytic hand cases
-(eight free-motion/HOLD and eight wrap/clip/cost cases), 24 physical cases (all eight
-strategies in each of free, single-contact, and obstacle-contact fixtures), and 40
-step-halving cases (all eight strategies in one frozen prototype from each of the five
-strata). No random or adaptively added gate case is allowed. One create-only
-`numpy-validity` aggregate bundle contains all inputs, per-step summaries, endpoints,
-labels, order comparisons, and hand expectations; it has a 64 MiB and 60-minute ceiling
-per revision. A case timeout or cap breach fails the gate rather than disappearing.
+The program requires success, failure, collision, no-op, and recovery trajectories.
+After a partition's complete truth table exists and before it can be consumed, a fixed
+coverage validator requires:
 
-The 80 cases are algorithmically complete and admit no plan-time choices. All fixture
-states use float64, `dt=0.002`, gravity zero, workspace `[-1,1]^2`, zero unlisted
-velocities, disk geometry unless stated, and the Section 13.1 equations. Analytic case
-IDs and literal inputs are:
+- at least one `success=true`, one `terminal_failure=true`, and one `collision=true`
+  candidate outcome in the partition;
+- exactly one HOLD and one RETREAT_REPOSITION candidate at every anchor; and
+- all eight strategies at every anchor.
 
-| IDs | Inputs | Hand expectation |
-|---|---|---|
-| `A00..A03` | no bodies/contact/friction; point starts `(0,0)` with velocity respectively `(0.10,0)`, `(0,0.10)`, `(-0.10,0.05)`, `(0.05,-0.10)`; steps `1,10,50,125` respectively | `p_n=p_0+n*dt*v_0`, byte-equal unchanged velocity |
-| `A04..A07` | free disk center respectively `(0,0)`, `(0.20,-0.10)`, `(-0.25,0.15)`, `(0.30,0.30)`; HOLD; zero velocity; steps `1,10,50,125` | every state byte-equal to its initial state and zero energy |
-| `A08,A09` | wrap input `pi+0.25`, `-pi-0.25` | `-pi+0.25`, `pi-0.25` |
-| `A10,A11` | unclipped command `(0.30,-0.30)`, `(-0.26,0.10)` | `(0.25,-0.25)`, `(-0.25,0.10)` |
-| `A12..A15` | `(position_error,orientation_error,collision,energy,failure,success)` respectively `(0,0,0,0,0,1)`, `(0.10,0.20,0,0.50,1,0)`, `(0.20,-0.30,1,1.00,1,0)`, `(0.05,pi+0.25,0,0.25,0,1)` | literal Section 13.1 weighted-cost formula after wrapping orientation |
+For MuJoCo pilot evaluation and confirmation, the three outcome-presence checks also
+apply independently in every stratum. The validator writes counts for every category.
+It never adds, drops, or resamples a seed. Missing coverage makes development data
+`INVALID`; missing confirmation coverage makes the scientific result `INCONCLUSIVE`.
 
-Physical cases are the Cartesian product of all eight strategies in Section 3.3 with
-the following three base fixtures, ordered `P00..P23` by fixture then frozen strategy
-order. Each case also executes the exact world-x-axis reflection of its already
-generated base scene and command bytes (negate every y position/velocity, yaw, angular
-velocity, and command-y component) inside the same case. This is a physics-invariance
-probe, not a second candidate-factory call or semantic strategy relabel. It requires
-the reflected endpoint, identical scalar cost/labels, and reflected impulse vectors;
-this subexecution does not create another case.
+## 3. Exact K=8 candidate compiler
 
-| Fixture | `eef`, object, target | physical parameters and obstacle |
-|---|---|---|
-| `FREE` | `(-0.20,0)`, disk `(0,0,0)`, `(0.35,0,0)` | mass `1.0`, friction `0.50`, radius `0.065`, no obstacle |
-| `SINGLE_CONTACT` | `(-0.13,0.02)`, rectangle `(0,0,0.20)`, `(0.32,0.08,0.10)` | mass `1.1`, friction `0.45`, half-extents `(0.060,0.050)`, no obstacle |
-| `OBSTACLE_CONTACT` | `(-0.20,-0.05)`, disk `(0,0,0)`, `(0.35,0.05,0)` | mass `0.9`, friction `0.55`, radius `0.060`; segment `(0.12,-0.16)` to `(0.12,0.16)`, thickness `0.04` |
+At each anchor, a deterministic waypoint controller emits exactly 50 planar velocity
+commands at `dt=0.02 s`, one second total, for:
 
-Step-halving cases are all eight strategies in each literal prototype below, ordered
-`S00..S39` by prototype then strategy. `eef=(-0.20,0)`, object center `(0,0)`, target
-`(0.35,0.05,0.10)`, and zero velocities are common. Each runs the same one-second
-candidate at `0.002` and `0.001`; the latter uses two physics steps per original step
-while the 50 command rows retain their exact 0.02-second boundaries.
+1. direct push;
+2. left-edge push;
+3. right-edge push;
+4. push from world-below;
+5. target-facing diagonal push;
+6. retreat, reposition, then push;
+7. slow direct push; and
+8. HOLD/no-op.
 
-| Prototype | mass | friction | geometry | obstacle |
-|---|---:|---:|---|---|
-| `ID` | `1.00` | `0.50` | disk `r=0.065` | absent |
-| `MASS_OOD` | `1.50` | `0.50` | disk `r=0.065` | absent |
-| `FRICTION_OOD` | `1.00` | `0.825` | disk `r=0.065` | absent |
-| `GEOMETRY_OOD` | `1.00` | `0.50` | rectangle half-extents `(0.0875,0.035)` at yaw `0.20` | absent |
-| `OBSTACLE_OOD` | `1.00` | `0.50` | disk `r=0.065` | `CENTER_BARRIER`, endpoints `(.175,.025) +/- .25*(-.05,.35)/sqrt(.125)`, thickness `0.04` |
+The workspace is `[-1,1]^2`; end-effector radius is `0.04 m`; command components clamp
+to `[-0.25,0.25] m/s`. Let `c` be object center, `g` target center,
+`u=unit(g-c)`, `v=(-u_y,u_x)`, and `h(n)` the exact object support radius along `n`.
+The checked-in configuration freezes every waypoint, phase boundary, contact offset,
+speed multiplier, and the zero-displacement `u=(1,0)` rule.
 
-The checked-in validity manifest contains exactly these IDs, literal values, derived
-hand expectations, and a SHA-256 of this table's canonical transcription. Unknown,
-duplicate, reordered, or derived-from-random cases fail before simulation.
+With `contact(n,offset)=c-(h(n)+0.01)n+offset`, the exact waypoint table is:
 
-Every invariant and candidate must pass. A failure makes the NumPy precursor
-`INVALID` and P7 `STOPPED`; moving directly to MuJoCo would require a new reviewed
-protocol, not an automatic workaround. Passing this gate still grants no authority.
-
-## 5. Data partitions and leakage prevention
-
-### 5.1 NumPy development partitions
-
-NumPy uses 96 training, 24 tuning, and 24 validation scene seeds, with four anchors
-and K=8 branches per scene. Training fits preprocessing and models. Tuning chooses
-among the already frozen finite configuration grid. Validation mechanically selects
-one W3/W4/W5 checkpoint and the predeclared calibration/fallback *method*; it cannot
-fit the final calibration map or threshold, change W1, or add a configuration. These
-144 seeds and their RNG ancestors are permanently excluded from MuJoCo
-pilot/confirmation.
-
-### 5.2 MuJoCo evidence partitions
-
-After NumPy selection, a disjoint MuJoCo pilot uses five strata with eight scene seeds
-per stratum, 40 total. Within each stratum, the first four sorted scene IDs are
-adaptation seeds and the final four are untouched pilot-evaluation seeds. NumPy
-preprocessing, feature maps, PCA, model structures, regularization, and W1 freeze before
-MuJoCo pilot. On adaptation seeds only, permitted W3/W4/W5 linear output coefficients
-are refit once on the union of NumPy training and MuJoCo adaptation rows. W3 may refit
-exactly `position,orientation,collision,energy,terminal_failure,unsafe,success`; W4 may
-refit exactly `state_delta,collision,terminal_failure,unsafe,success`; and W5 may refit
-exactly `position,orientation,collision,energy,terminal_failure,unsafe,success`. W5
-`latent_next` coefficients/intercepts, every feature map, input preprocessing, PCA, and
-all other selected-model members remain byte-identical to the NumPy-selected model.
-Calibration maps for W3-W5 and fallback/critic thresholds for W4/W5 fit adaptation
-seeds only under the already selected method.
-No other parameter may use MuJoCo adaptation. Pilot-evaluation seeds validate the
-state/action mapping and set only margins/resource ceilings once; they cannot trigger
-refit, recalibration, model selection, task/cost/W1 changes, or exclusions. The whole
-pilot is labelled exploratory and cannot support a claim.
-
-Only after implementation, experiment-local model, calibration, P3 package/runtime
-provenance, protocol, and MuJoCo pilot
-hashes freeze does the orchestrator generate a new unseen MuJoCo confirmation root.
-Confirmation has five strata with 16 scene seeds each, 80 total. Confirmation data do
-not exist before freeze and cannot change parameters, preprocessing, models, cost,
-fallback, exclusions, or gates.
-
-The five strata and their primary weights are exact:
-
-| Stratum | Definition | Weight |
+| Strategy | `(phase end, waypoint)` | multiplier |
 |---|---|---:|
-| ID | all physical parameters inside training support | 0.20 |
-| MASS_OOD | mass outside training support; other factors ID | 0.20 |
-| FRICTION_OOD | object/table friction outside support; others ID | 0.20 |
-| GEOMETRY_OOD | withheld disk/rectangle scale/shape cell; others ID | 0.20 |
-| OBSTACLE_OOD | withheld obstacle layout cell; others ID | 0.20 |
+| DIRECT | `(0.35,contact(u,0v)); (1.00,g-(h(u)-0.02)u)` | 1.0 |
+| LEFT_EDGE | `(0.35,contact(u,+0.75h(v)v)); (1.00,g+0.25h(v)v)` | 1.0 |
+| RIGHT_EDGE | `(0.35,contact(u,-0.75h(v)v)); (1.00,g-0.25h(v)v)` | 1.0 |
+| BELOW | `(0.35,contact((0,1),0v)); (1.00,g-(0,h((0,1))-0.02))` | 1.0 |
+| DIAGONAL | `(0.25,c-(h(u)+0.08)u+0.60h(v)v); (0.55,contact(u,+0.60h(v)v)); (1.00,g)` | 1.0 |
+| RETREAT_REPOSITION | `(0.20,e0-0.08u); (0.55,contact(u,0v)); (1.00,g)` | 1.0 |
+| SLOW_CONSERVATIVE | DIRECT waypoints | 0.5 |
+| HOLD | `(1.00,e0)` with exact zero commands | 0.0 |
 
-Within stratum, anchors and scenes have equal weight. Overall scene metrics are first
-averaged within stratum, then combined with the fixed 0.20 weights; no stratum is
-weighted by row count.
-
-### 5.3 Fail-closed ancestry rules
-
-The split manifest records RNG root/stream, scene seed, probe seed, rollout, anchor,
-candidate, parameter cell, state/render hashes, both action digests, simulator, and
-partition. All
-adjacent frames, candidates, augmentations, and simulator ports descended from one
-scene remain together. Any shared ancestor or content hash across train, tune,
-validation, MuJoCo pilot, or confirmation makes the dataset `INVALID`.
-
-Train-only statistics include normalization, feature maps, PCA, and ensemble resamples;
-every fit row has weight exactly `1.0` and no class weighting is permitted. Tuning
-mechanically ranks only frozen-grid configurations by the frozen key; validation
-mechanically selects NumPy checkpoints and the declared
-fallback method by the same fixed rule. MuJoCo adaptation alone performs the one
-predeclared output-coefficient refit and calibration/threshold fit. MuJoCo pilot
-evaluation sets only margins and resource ceilings. Confirmation is read once after
-the evidence freeze.
-
-## 6. W0-W5 and exact prediction envelope
-
-Every selector receives the same ordered candidate IDs/actions and its declared current
-input. W0/W1/W3/W4/W5 cannot open simulator APIs, actual outcomes, W2 scores, or truth
-paths. Each raw-selector process receives one sealed `selector-input-v1` descriptor and
-one create-exclusive output descriptor. The input descriptor has exact keys
-`schema_version,phase,scene_id,anchor_id,selector_id,observation_id,protocol_sha256,
-projection_kind,projection_sha256,candidate_actions_sha256,model_manifest_sha256,
-generating_model_sha256,preprocessing_sha256,pca_sha256,calibration_sha256,
-fallback_threshold_sha256,cost_contract_sha256`. W0/W1 use null learned-artifact fields;
-W3 requires model/preprocessing/calibration but uses null PCA and null fallback threshold;
-W4 requires model/preprocessing/calibration/fallback but uses null PCA; and W5 requires
-all learned-artifact fields. The
-learned hashes bind read-only canonical bytes embedded in the same input capability;
-no model path or separately openable model file exists in the child. NumPy-selected
-rows use the selected training-model SHA, while pilot-evaluation and confirmation rows
-use the complete composed-adapted-model SHA from Section 6.5. Any phase/model/hash/
-nullability mismatch is invalid. `model_manifest_sha256` is the selected training-
-manifest SHA for NumPy evaluation and the adaptation aggregate-manifest SHA for composed
-MuJoCo evaluation; each manifest transitively binds every member byte.
-
-The capability is one canonical ZIP_STORED container, at most 80 MiB and never retained.
-It contains `input.json`, `projection.bin`, and, when nonnull, exact members
-`model-binding.json`, `model.npz`, optional `adapted-models.npz`, `preprocessing.json`,
-`pca.npz`, `calibration-output.npz`, and `thresholds.json`; W0/W1 contain only the first
-two.
-`input.json` is the exact-key row above and hashes every other member. The broker creates
-the container in its private directory, opens it read-only, unlinks it, passes only that
-descriptor, and closes it after child exit. The child validates canonical ZIP framing,
-member set, every hash, and cross-artifact model identity before decoding immutable
-values. The 80 MiB transient fits the existing 96 MiB live-writer allowance and is not
-multiplied by anchor count because only one input capability exists at a time.
-
-The exact observation projections are: W0 receives IDs and actions; W1 receives eef
-position, object center/yaw/shape/dimensions, target center/yaw, obstacle geometry,
-workspace, labels/cost constants, and actions; W3/W4 receive the exact ordered
-privileged vector, labels/cost constants, and actions; and W5 receives only its raster,
-labels/cost constants, and actions. All receive identity/timing fields needed to build
-the envelope. A projection contains no actual outcome, branch-terminal state/raster, W2
-score, another selector's output, or truth/source path.
-
-Raw W1, W4, and W5 outputs seal before a separate trusted `compose_fallback` process
-runs. That process receives only read-only W1 rows, one learned variant's raw rows, its
-frozen threshold, identities, and one create-exclusive output capability; it receives
-no scene projection, model, simulator, or truth capability. It sorts each complete raw envelope
-by Section 6.2, takes the raw top candidate's cost uncertainty as the anchor uncertainty,
-and uses the complete raw learned ranking when that value is at most the threshold;
-otherwise it uses the complete W1 ranking. Thus fallback is whole-anchor, never
-candidate-wise hybridization. Coverage is the equally weighted fraction of anchors that
-use the learned ranking, first averaged within scene and then by the fixed stratum rule.
-The chosen ranking, candidate, threshold comparison, coverage contribution, reason, and
-all input/output hashes seal before truth. W4F/W5F reference the selected raw learned or
-W1 prediction ID; they never synthesize a prediction.
-
-For each complete MuJoCo pilot-evaluation or confirmation phase, every raw selector and
-trusted composition for every declared scene validates, publishes an immutable
-scene-selector component bundle, exits, and enters one create-only phase selector freeze
-before canonical branch truth for any scene is materialized. Only after that global
-freeze does the orchestrator materialize phase truth-source descriptors and permit
-per-scene pinned-MuJoCo truth/scoring. No selector or composer process is ever launched
-again for that phase. Consequently a selector is never alive while current-phase truth
-exists, and no current- or prior-phase truth descriptor/path is visible or reachable
-inside its OS sandbox. Prior published truth may remain in the parent namespace solely
-for audit and scoring. NumPy training and MuJoCo adaptation are the only phases allowed
-to consume their own declared training targets; their fitted outputs seal before any
-evaluation selector runs.
-
-Omitting a path argument and setting `close_fds` are not the isolation boundary. P7
-implements an experiment-local `p7-selector-fs-v1` sandbox with the same host-contract
-terminology as P6 but imports no P6 code or generic sandbox framework. Linux uses a
-checked-in Landlock ruleset plus seccomp filter; macOS uses a checked-in Seatbelt
-profile. The exact policy paths are
-`experiments/06_world_model/sandbox/p7-selector-fs-v1.linux.json` and
-`experiments/06_world_model/sandbox/p7-selector-fs-v1.sb`. Their source, compiled
-policy bytes, selected OS key, kernel enforcement probe, interpreter, and selector
-zipapp hashes freeze before MuJoCo adaptation. An unavailable backend, policy mismatch,
-or failed denial probe makes P7 `BLOCKED` before any selector.
-
-The parent launches each selector from an empty mode-0700 broker working directory.
-The only experiment data inherited are one prevalidated read-only `selector-input-v1`
-descriptor and one output file created with `O_CREAT|O_EXCL|O_CLOEXEC|O_NOFOLLOW` in
-fixed descriptor slots 3 and 4.
-The sandbox permits read-only interpreter/dependency/selector-zipapp mappings and those
-descriptors, but denies repository/result/private-root traversal, all other file opens,
-descriptor discovery, network, process creation, ptrace, and simulator loading. After
-installing the policy the child drops setup capability. Selector callbacks receive
-decoded immutable values, never a descriptor, path, loader, environment handle, or
-generic file API.
-
-MuJoCo adaptation publishes exactly 20 descriptor-safe `mujoco-pilot-adaptation` source
-bundles under protocol 03 before fitting. The privileged adaptation controller consumes
-only those validated descriptors, fits the predeclared output heads/calibration, and
-seals the adapted aggregate. Pilot-evaluation selectors receive neither those descriptors
-nor paths; the experiment-local OS policy denies the complete scene/result root and the
-hostile probe explicitly attempts every adaptation-bundle path. This makes protocol 03's
-20-scene count factual without an anonymous-input exception or post-selection
-regeneration path.
-
-Hostile pilot-evaluation and confirmation tests run after earlier truth has existed.
-They enumerate arguments, environment, cwd/parents, imports, and descriptors and attempt
-absolute, relative, symlink, hard-link, `/proc`/`/dev/fd`, inherited-FD, socket,
-subprocess, ptrace, repository-result, private-root, current/prior truth, scorer,
-aggregate, and decision access. Every attempt must receive an OS denial while the
-declared projection read and output write still succeed.
-
-### W0 — random
-
-A fresh per-anchor PCG64 generator chooses uniformly from K=8. Its 128-bit seed is the
-first 16 bytes, interpreted big-endian, of
-`SHA256(canonical_json(["exp06-w0-v1", w0_root_hex, scene_id, anchor_id]))`; it makes
-exactly one `Generator(PCG64(seed)).integers(0,8,endpoint=False,dtype=uint64)` call and
-maps that integer into frozen candidate order. PCG64 is treated as a stateful bit
-generator, not called counter-based. W0 emits a selection, not a prediction order.
-
-### W1 — strong heuristic and fallback
-
-W1 estimates nominal endpoint, orientation, straight-line collision risk, contact-side
-alignment, and known action energy without simulation or learned parameters. Its
-weights and tie rule freeze. W1 is both the anchor baseline and mandatory fallback.
-
-### W2 — pinned MuJoCo exact oracle
-
-Canonical W2 restores the pinned MuJoCo anchor snapshot, executes all eight candidates,
-computes canonical actual cost, and chooses a true minimum. It is labelled
-`ORACLE_EXACT_MUJOCO`, has zero regret by construction, is never deployable, and cannot
-supply a feature or prediction. An exact actual-cost tie selects lowest candidate ID.
-NumPy's analogous pilot oracle is labelled
-`PRECURSOR_ORACLE_NUMPY` and never enters canonical metrics.
-
-### W3 — non-dynamics learned baseline
-
-Regularized multi-head ridge uses current privileged state plus endpoint displacement,
-path length, velocity moments, contact-side encoding, strategy ID, and obstacle-line
-intersection. It predicts scalar envelope components without predicting future state
-or latent.
-
-### W4 — privileged-state dynamics
-
-A deterministic bootstrap ensemble of the frozen polynomial ridge configurations
-consumes current state plus the complete resampled action chunk and predicts horizon
-state delta and probability heads. Position/orientation terms are derived from its
-predicted state; action energy is derived from the known chunk.
-
-### W5 — observation-latent dynamics
-
-A deterministic 64-by-64 multichannel render is encoded by train-only PCA. A ridge
-latent transition consumes current latent plus the complete action chunk and predicts
-future latent and scalar component heads. No pixel/reconstruction loss enters ranking
-or gates; no checkpoint or foundation encoder is downloaded
-(`Reflect Lite Research Program.md:1980-1984`).
-
-### 6.1 PCA canonicalization
-
-PCA uses float64 centered training rows in canonical sample/hash order. Singular values
-sort descending. For a singular-value group under the Section 6.4 tie tolerance,
-project standard pixel basis vectors in ascending pixel index into the tied subspace and apply deterministic
-modified Gram-Schmidt, accepting the first vector above the frozen norm tolerance,
-until the subspace is spanned. For each final component, find the maximum-absolute
-loading; the lowest pixel index breaks ties, and its sign is forced positive. Components,
-means, singular values, tolerance, and input hashes are serialized. This canonicalizes
-both signs and equal-singular-value ordering across repeated CPU runs.
-
-### 6.2 Prediction envelope and scalar cost
-
-W1/W3/W4/W5 emit one exact envelope per candidate:
+The command compiler is independent of candidate physics. It starts
+`nominal_eef = anchor_eef`. At tick `t`, the later phase owns an exact phase-boundary
+equality; the controller computes
 
 ```text
-prediction_id, observation_id, scene_id, anchor_id, candidate_id, strategy_id,
-action_content_sha256, action_sha256,
-model_id, model_sha256, horizon_s,
-predicted_progress,
-predicted_position_error_m, predicted_orientation_error_rad,
-predicted_collision_probability, predicted_action_energy,
-predicted_failure_probabilities, predicted_success_probability,
-predicted_state_sha256 | null, predicted_latent_sha256 | null,
-uncertainty, inference_ms, predicted_cost
+raw = multiplier * (waypoint - nominal_eef) / max(0.02, phase_end - t)
+command = component_clip(raw, -0.25, 0.25)
+nominal_eef = nominal_eef + 0.02 * command
 ```
 
-`predicted_progress` is finite. `predicted_failure_probabilities` has exactly the
-sorted keys `collision`, `terminal_failure`, and `unsafe`; every probability is finite
-in `[0,1]`. Errors, energy, uncertainty, and inference time are finite and
-nonnegative. `predicted_collision_probability` must equal the `collision` map entry.
-The scalar formula is identical across W1/W3/W4/W5:
+HOLD emits exact zero commands and leaves `nominal_eef` unchanged. The resulting 50
+commands are frozen before any branch simulation and are replayed unchanged in NumPy or
+MuJoCo. No simulated candidate state feeds command generation or another candidate.
+
+`action_content_sha256` hashes the canonical header
 
 ```text
-predicted_cost =
-    w_position * predicted_position_error_m^2
-  + w_orientation * wrapped(predicted_orientation_error_rad)^2
-  + w_collision * predicted_collision_probability
-  + w_energy * predicted_action_energy
-  + w_failure * predicted_failure_probabilities["terminal_failure"]
-  - w_success * predicted_success_probability
+["exp06-action-content-v1",[50,2],"<f8",0.02,1.0,[-0.25,-0.25],[0.25,0.25]]
 ```
 
-Actual MuJoCo cost substitutes actual component values and binary collision/failure/
-success indicators into the same formula. W3/W5 predict every scalar component
-directly; W4 derives state-dependent errors from predicted state; W1 computes its
-declared analytic estimates. Candidate order is `(predicted_cost ascending,
-uncertainty ascending, candidate_id ascending)`. No variant-specific cost or tie rule
-is allowed.
-
-`prediction_id` is exactly the Section 3.2 identity and must match the row's candidate
-and complete model hash. W1 uses `model_id=W1`, its frozen configuration hash as `model_sha256`, uncertainty
-`0.0`, and null state/latent hashes. W3 uses null state/latent hashes. W4 requires a
-predicted-state hash and null latent hash; W5 requires a predicted-latent hash and null
-state hash. W4's decoded `predicted_state` is exactly ten float64 values in order
-`eef_x,eef_y,eef_vx,eef_vy,object_x,object_y,object_yaw,object_vx,object_vy,object_omega`
-at the one-second horizon. It is current dynamic state plus the fitted delta, with yaw
-wrapped by the frozen rule. W5's decoded `predicted_latent` is exactly 16, 24, or 32
-float64 values for selected CFG01, CFG02, or CFG03 respectively, in canonical PCA
-component order. The envelope validator rejects any other nullability, shape, or order.
-
-### 6.3 Exact shared-contract adapter
-
-Before a prediction row can seal, `EnvelopeAdapter.to_shared` constructs the current
-immutable `reflect.types.WorldModelPrediction` with this exact mapping:
+without its trailing LF, one NUL byte, and the 800 little-endian float64 C-order command
+bytes. `action_sha256` hashes canonical JSON
 
 ```text
-observation_id                  <- envelope.observation_id
-candidate_id                    <- envelope.candidate_id
-horizon_s                       <- envelope.horizon_s
-predicted_progress              <- envelope.predicted_progress
-predicted_success_probability   <- envelope.predicted_success_probability
-predicted_failure_probabilities <- the exact three-key mapping above
-predicted_state                 <- decoded vector for W4, else null
-predicted_latent                <- decoded vector for W5, else null
-uncertainty                     <- envelope.uncertainty
-inference_ms                    <- envelope.inference_ms
+["exp06-action-identity-v1",action_content_sha256,strategy_id,
+ candidate_id,scene_id,anchor_id]
 ```
 
-The adapter calls `validate_contract` and then round-trips a freshly reconstructed
-contract. W4/W5 vectors live in `prediction-vectors.npz`; the member key is
-`sha256(prediction_id).hexdigest() + ".npy"`, and `predictions.parquet` stores that key.
-The validator recomputes the key, rejects duplicate IDs/keys, and requires exactly one
-vector member for every W4/W5 row and none for W1/W3. Their canonical little-endian
-float64 C-order bytes hash to the envelope state/latent digest. The sidecar stores every
-remaining experiment-local
-cost component. A canonical `WORLD_MODEL_PREDICTED` payload carries integer
-`observation_id`, string `prediction_id`, candidate/model/action IDs and hashes, and the SHA-256 of the complete
-envelope row plus referenced vector. `WORLD_MODEL_SELECTED` carries the same integer
-observation ID, selected `prediction_id`, and selected row digest. Bundle validation
-reconstructs the shared
-contract before accepting either event. `RolloutRecord` remains unchanged; the exact
-contract/vector sidecars are bundle-owned optional evidence, not invented rollout-core
-fields.
+Independent regeneration must reproduce all bytes and hashes. Every anchor requires
+eight distinct command byte strings and content hashes. A duplicate or nondeterministic
+candidate makes that run `INVALID`; IDs cannot disguise duplicate actions.
 
-### 6.4 Deterministic numeric and encoding profile
+## 4. NumPy precursor validity
 
-All processes use the pinned lock and CPU-only environment with `PYTHONHASHSEED=0`,
-`LC_ALL=C`, `TZ=UTC`, and `OMP_NUM_THREADS=MKL_NUM_THREADS=OPENBLAS_NUM_THREADS=1`;
-unknown BLAS/thread settings fail preflight. NumPy runs float64 with `seterr(all="raise")`.
-Inputs, rows, feature columns, ensemble resamples, and reductions use frozen hash order;
-no unordered mapping/set iteration or parallel reduction may affect bytes.
+Before NumPy data generation, `config/frozen.json` freezes the task, splits, simulator
+equations, MuJoCo mapping, candidates, cost, labels, W0/W1, model grid, schemas, numeric
+profile, validity cases, and resource ceilings. It is a checked-in canonical JSON file,
+reviewed with the implementation. Learned coefficients, calibration values, measured
+margins, and confirmation root do not yet exist.
 
-PCA clusters singular values when `abs(s_i-s_j) <= 1e-12*max(1,s_0)` and applies the
-projected-standard-basis construction in Section 6.1 to the whole cluster. Thus a
-numerically split tied subspace cannot evade canonicalization. The implementation
-records NumPy/PyArrow/Python versions, BLAS identity, thread profile, and CPU
-architecture; a mismatch is a new protocol environment, never a resume.
+The NumPy simulator uses float64 fixed-step semi-implicit integration at `dt=0.002`,
+deterministic contact order, explicit terminal reasons, and immutable snapshots. The
+exact 80 preregistered validity cases are:
 
-Canonical JSON is UTF-8, NFKC, sorted-key, compact-separator, finite-only, and ends in
-one newline. Integers use base-10 without leading zeros; float negative zero normalizes
-to `0.0` and other floats use CPython 3.11's shortest round-trip representation with
-lowercase `e` and no `+` exponent sign. Parquet uses the pinned PyArrow version, explicit schema/column order,
-frozen row order, one full-table row group, no dictionary encoding, no compression,
-no statistics, and data-page version 1.0. Canonical NPZ is a lexicographically ordered
-ZIP_STORED archive: every member is an explicit little-endian C-order `.npy` v2.0
-stream with timestamp `1980-01-01T00:00:00`, mode `0600`, no extra/comment fields, and
-no duplicate names. Golden fixtures require byte identity across two fresh processes;
-any mismatch invalidates the environment before evidence generation.
+- 16 analytic free-motion, HOLD, wrap, clip, and hand-cost cases;
+- 24 physical cases: all eight strategies in free, single-contact, and obstacle-contact
+  fixtures, each with a world-x-axis mirror subexecution; and
+- 40 step-halving cases: all eight strategies in one prototype for each of ID,
+  MASS_OOD, FRICTION_OOD, GEOMETRY_OOD, and OBSTACLE_OOD.
 
-### 6.5 Exact sidecar schemas and digest preimages
+Analytic absolute/relative tolerance is `1e-12`; mirror endpoint tolerance is `1e-10`;
+maximum penetration is `0.002 m`; unforced energy increase tolerance is `1e-12 J`;
+step-halving endpoint L-infinity and per-component/cost tolerances are `0.001`; labels
+must match; allowed Kendall disagreement is zero. Every case and candidate must pass.
+Failure yields `INVALID` and `STOPPED`; going directly to MuJoCo requires a new reviewed
+revision.
 
-Every Arrow field below is nonnullable unless marked `?`; strings are UTF-8 `string`,
-hashes are validated lowercase 64-hex strings, and no dictionary or extension type is
-permitted. Exact schemas and column order are:
+## 5. MuJoCo truth and cost
+
+P3 supplies only the pinned MuJoCo runtime. P7 owns one checked-in Push-T MJCF template
+and pure `build_mjcf(scene_parameters) -> bytes` function. Canonical UTF-8/LF output,
+literal element/attribute order, `.17g` finite floats, negative-zero normalization,
+joint/geom order, solver options, timestep, friction mapping, and restore-vector layout
+freeze in `config/frozen.json`. Every scene binds generated model SHA-256, template and
+generator hashes, P3 package version/distribution hash, and restore-vector hash.
+
+MuJoCo uses a mocap end effector, object `x/y/yaw` joints, no actuator, gravity, plugin,
+callback, or hidden controller. Each 0.02-second command is held for ten 0.002-second
+`mj_step` calls. Every candidate starts from an independently restored byte-equal anchor;
+no `mjData` or contact cache crosses candidates.
+
+Success requires terminal object-center error `<=0.05 m`, wrapped yaw error
+`<=0.20 rad`, and no unsafe event. Collision means object/end-effector contact with an
+obstacle or wall above `0.05 N-s`. Unsafe means workspace escape, penetration above
+`0.002 m`, nonfinite state, or impulse above `2.0 N-s`. Terminal failure is `not
+success`. Action energy is `sum_t ||a_t||^2*0.02`.
+
+Actual and predicted scalar costs use the same weights:
 
 ```text
-anchors.parquet:
-  scene_id:string, anchor_id:string, observation_id:int64, anchor_index:int16,
-  source_time_ns:int64, generator_snapshot_sha256:string,
-  state_member_key:string, privileged_vector_sha256:string
-candidate_actions.parquet:
-  scene_id:string, anchor_id:string, candidate_id:string, strategy_id:string,
-  dt_s:float64, horizon_s:float64, command_rows:int16,
-  commands:fixed_size_list<float64>[100],
-  command_min:fixed_size_list<float64>[2], command_max:fixed_size_list<float64>[2],
-  action_content_sha256:string, action_sha256:string
-predictions.parquet:
-  prediction_id:string, observation_id:int64, scene_id:string, anchor_id:string,
-  candidate_id:string, strategy_id:string, action_content_sha256:string,
-  action_sha256:string, model_id:string, model_sha256:string, horizon_s:float64,
-  predicted_progress:float64, predicted_position_error_m:float64,
-  predicted_orientation_error_rad:float64, predicted_collision_probability:float64,
-  predicted_action_energy:float64, failure_collision:float64,
-  failure_terminal:float64, failure_unsafe:float64,
-  predicted_success_probability:float64, predicted_state_sha256:string?,
-  predicted_latent_sha256:string?, vector_member_key:string?, uncertainty:float64,
-  inference_ms:float64, predicted_cost:float64
-selections.parquet:
-  selector_id:string, observation_id:int64, scene_id:string, anchor_id:string,
-  selected_prediction_id:string?, candidate_id:string, strategy_id:string,
-  action_content_sha256:string, action_sha256:string, selected_model_id:string?,
-  selected_row_sha256:string, used_fallback:bool, fallback_reason:string?
-candidate_truth.parquet:
-  scene_id:string, anchor_id:string, candidate_id:string, strategy_id:string,
-  action_content_sha256:string, action_sha256:string, model_sha256:string,
-  terminal_state_member_key:string, terminal_state_sha256:string,
-  terminal_raster_member_key:string, terminal_raster_sha256:string,
-  terminal_position_error_m:float64, terminal_orientation_error_rad:float64,
-  collision:bool, action_energy:float64, terminal_failure:bool, success:bool,
-  unsafe:bool, actual_cost:float64, w2_selected:bool
-evaluation-predictions.parquet:
-  partition:string, scene_id:string, anchor_id:string, candidate_id:string,
-  model_id:string, model_sha256:string, prediction_row_sha256:string,
-  actual_cost:float64, predicted_cost:float64, selected:bool
+position_error^2
++ 0.10 * wrapped(orientation_error)^2
++ 2.00 * collision_probability
++ 0.01 * action_energy
++ 4.00 * terminal_failure_probability
+- 1.00 * success_probability
 ```
 
-`selector-selections.parquet` uses the exact `selections.parquet` schema and row order
-but permits only W0/W1/W3/raw-W4/raw-W5/W4F/W5F; W2 is forbidden before truth. Final
-`selections.parquet` requires exactly those rows plus one W2 row per anchor.
+Actual values substitute binary truth. There is no hidden penalty.
 
-Rows sort by `(scene_id,anchor_id,candidate_id,model_id)` after omitting inapplicable
-suffixes: anchors stop at anchor, actions/truth at candidate, and selections sort by
-selector then candidate. `observation_id` is exactly `4*scene_ordinal+anchor_index`, with
-zero-based manifest `scene_ordinal` and `anchor_index`; anchors require a bijection and
-every prediction, selection, event, and shared contract uses that integer. W0/W2 alone
-have null prediction/model IDs; a W4F/W5F row selecting W1 has `used_fallback=true`
-and a nonnull reason, while the ordinary W1 row has `used_fallback=false`; all other
-selection nullability is rejected. Prediction vector nullability
-remains exactly Section 6.2. Arrow metadata is empty.
+## 6. Selectors, models, and leakage boundary
 
-`action_content_sha256` is SHA-256 of canonical JSON header
-`["exp06-action-content-v1",[50,2],"<f8",dt_s,horizon_s,command_min,command_max]`
-without its trailing LF, followed by one NUL byte and the 800 C-order command bytes.
-`action_sha256` hashes canonical JSON
-`["exp06-action-identity-v1",action_content_sha256,strategy_id,candidate_id,scene_id,
-anchor_id]`. A prediction ID is
-`candidate_id + "/prediction/" + model_sha256`; a prediction-row digest hashes canonical
-JSON of every scalar/ID field in schema order plus the referenced vector digest, never
-the Parquet bytes. The privileged-vector digest hashes canonical JSON
-`["exp06-anchor-vector-v1",scene_id,anchor_id,"<f8",shape]` without its LF, one NUL,
-then the little-endian C-order vector bytes. The generator-snapshot digest hashes
-canonical JSON `["exp06-generator-snapshot-v1",scene_id,simulator,state_layouts,
-ordered_state_member_keys,ordered_state_member_sha256s]`; each member digest hashes its
-exact canonical NPY member bytes. Selection and truth row digests hash their complete
-schema-ordered scalar fields excluding only their own digest field, prefixed respectively
-by `exp06-selection-v1` and `exp06-truth-v1`. Events carry those already recomputable
-row digests and introduce no separate event-link digest. A model, PCA, preprocessing,
-calibration, or adapted-model digest is SHA-256 over its complete canonical file bytes;
-the training manifest binds those digests but is not itself in any of their preimages.
-All preimages use NFKC strings, exact schema order, finite JSON numbers, and no implicit
-concatenation. A validator recomputes every digest from bytes rather than trusting a
-stored digest, and any self-reference, omitted field, alternate prefix, or ambiguity is
-invalid.
+### 6.1 W0-W5
 
-`prediction-vectors.npz` contains exactly one member
-`sha256(prediction_id).hexdigest()+".npy"` for each W4/W5 prediction and no other member.
-`candidate-outcomes.npz` contains exactly two members per candidate. For
-`k=sha256(candidate_id).hexdigest()`, `k+".state.npy"` is the canonical little-endian
-float64 terminal ten-vector in the Section 6.2 state order and `k+".raster.npy"` is the
-canonical uint8 `(64,64,6)` terminal raster in the Section 13.1 row/column/channel
-order. The state and raster member keys and SHA-256 values are nonnull fields of the
-matching truth row. Rendering occurs from the sealed terminal state with the frozen
-scene parameters; training converts raster bytes to float64 values in `{0.0,1.0}` before
-the already-frozen PCA transform. The validator requires exactly 64 members per scene,
-recomputes both terminal representations from branch outcome state, and rejects missing,
-extra, duplicate, wrongly typed, or unlinked members. W4 `state_delta`, W5
-`latent_next`, and future-state error consume only these validated terminal members;
-they never rerun physics or infer a target from scalar cost fields.
-For W5, `pca.npz` has exactly `mean.npy` shape `(24576,)`, `components.npy` shape
-`(d,24576)`, and `singular_values.npy` shape `(d,)`; W3/W4 use the exact zero-byte marker
-named by the training manifest. `model.npz` member names are exactly
-`member/<two-digit-member>/<head>/{coef,intercept}.npy`; coefficients are float64 with
-shape `(feature_count,output_count)` and intercepts `(output_count,)`. Head order is W3
-`position,orientation,collision,energy,terminal_failure,unsafe,success`; W4
-`state_delta,collision,terminal_failure,unsafe,success`; and W5
-`latent_next,position,orientation,collision,energy,terminal_failure,unsafe,success`.
-The derived feature/output counts, ensemble count, selected PCA dimension, every member
-shape/dtype/hash, and ordered training-input hashes are exact rows in
-`training-manifest.json`. `adapted-models.npz` contains only the permitted changed
-heads enumerated in Section 5, using the same member names prefixed by `<variant>/`;
-an unchanged head is forbidden rather than redundantly copied. For each variant,
-`composed_adapted_model_sha256` hashes canonical JSON
-`["exp06-composed-adapted-model-v1",variant,selected_model_sha256,
-adapted_models_sha256,ordered_changed_member_keys,ordered_changed_member_sha256s,
-ordered_unchanged_member_keys,ordered_unchanged_member_sha256s]`. Validation resolves
-changed members from the adaptation archive and every unchanged member from the
-selected NumPy model, recomputes both ordered sets, and requires W5 `latent_next` to be
-in the unchanged set with byte/hash equality. `calibration-output.npz` uses exactly
-`<variant>/<probability-head>/{breakpoints,values}.npy` for the ordered heads
-`collision,terminal_failure,unsafe,success`, plus
-`<variant>/{fallback_threshold,critic_threshold}.npy` for W4/W5 only. W3 has neither
-threshold member because it is only a strong learned comparison baseline.
-Breakpoint/value shapes and semantics are exactly Section 13.1; duplicate, missing,
-extra, wrong-shape, or
-non-little-endian members fail validation.
+- **W0 random:** one PCG64 draw per anchor from a domain-separated seed; emits only a
+  selection.
+- **W1 heuristic:** predicts nominal endpoint, yaw error, line-intersection collision,
+  workspace risk, and known action energy. For action displacement
+  `q=sum_t command_t*0.02`, `alignment=max(0,dot(unit(q),u))` (zero for `q=0`) and
+  `push=max(0,dot(q,u)-max(0,dot(c-e0,u)-h(u)-0.04))`; predicted object center is
+  `c+alignment*push*u`, yaw is unchanged, collision is exact polyline intersection with
+  obstacles expanded by 0.04 m, and unsafe is workspace exit. Its formula, cost weights,
+  and candidate-ID tie rule freeze.
+- **W2 exact oracle:** restores the pinned MuJoCo anchor, evaluates all eight branches,
+  and chooses the actual minimum; it is nondeployable and has zero regret.
+- **W3 non-dynamics baseline:** ridge ensemble over current privileged state, strategy,
+  action summaries, contact-side encoding, and obstacle-line intersection.
+- **W4 privileged dynamics:** ridge ensemble over current privileged state plus the full
+  50x2 candidate chunk and strategy; predicts ten-dimensional terminal state delta and
+  collision/failure/unsafe/success heads.
+- **W5 observation-latent dynamics:** train-only PCA of a deterministic 64x64x6 raster
+  plus full candidate chunk and strategy; predicts future latent and scalar
+  position/orientation/energy/collision/failure/unsafe/success heads.
 
-`preprocessing.json` has exact keys `schema_version,variant,configuration,
-feature_names,mean,scale,zero_variance,training_rows_sha256`; arrays match the frozen
-feature order and length. `training-input-manifest.json` has exact keys
-`schema_version,protocol_sha256,partition,ordered_scene_bundle_sha256s,row_count,
-input_sha256`. `fit_metrics.json` has exact keys `schema_version,variant,configuration,
-member_metrics,training_cpu_ns,model_bytes`; member rows sort by ordinal and contain
-exactly `member,root_sha256,row_count,losses`. `training-manifest.json` has exact keys
-`schema_version,bundle_key,protocol_sha256,variant,configuration,preprocessing_sha256,
-pca_sha256,model_sha256,evaluation_predictions_sha256,fit_metrics_sha256,
-training_input_sha256,feature_count,output_heads,ensemble_count,pca_dimension,
-bootstrap_draws,model_members,total_bytes`; `bootstrap_draws` is member-ordinal order
-with exact-key rows `member,scene_ordinals`, each containing the exact 96 uint64-valued
-draws serialized as JSON integers; each model-member row has exactly
-`member_key,dtype,shape,sha256`. Every JSON loader rejects aliases, duplicate, missing,
-unknown, bool-as-int, nonfinite, noncanonical, or wrongly ordered set-like arrays.
+W1/W3/W4/W5 emit one row per candidate. Candidate order is
+`(predicted_cost, uncertainty, candidate_id)` ascending. W4 requires a terminal-state
+vector; W5 requires a terminal-latent vector. Those vectors are stored in a canonical
+NPZ sidecar. W3 has neither. `predicted_progress` is derived from predicted position
+error and frozen initial error. Prediction rows contain no wall-clock timing field;
+all measured latency lives only in `latency.jsonl`. When adapting a row to the existing
+shared `WorldModelPrediction`, `inference_ms` is the fixed sentinel `0.0`, documented as
+non-authoritative. Replay and decisions read the latency sidecar instead.
 
-## 7. Contract freeze, mechanical selection, and evidence freeze
+### 6.2 Exact truth-free selector input
 
-The sequence is strict:
+Selectors are ordinary pure functions. Their only argument is an immutable
+`SelectorInput` containing identities, one declared observation projection, the ordered
+K=8 actions, and the already fitted artifacts appropriate to that selector. It has no
+simulator, branch outcome, W2 score, truth table, result path, file loader, subprocess,
+or network member. API-level tests pass hostile stand-ins and prove that predictor code
+cannot request undeclared fields. For pilot and confirmation, the pipeline writes and
+hashes every raw prediction and composition for every scene before it runs any candidate
+branch truth. The prediction stage cannot call the truth runner; the truth stage cannot
+call a selector.
 
-1. **Precursor contract freeze:** freeze task/physics/mapping, scene/split roots,
-   candidates/actions, scalar cost, W0/W1, labels, validity gates/tolerances, schemas,
-   and every finite W3/W4/W5/PCA/calibration-method choice described in Section 4.
-2. Pass the NumPy validity gate without changing that contract.
-3. Fit each frozen-grid configuration's preprocessing/W3-W5 parameters on NumPy
-   training only.
-4. Mechanically rank the three frozen configurations per variant on NumPy tuning,
-   then mechanically select one checkpoint/method on NumPy validation by regret,
-   rank correlation, calibration error, model bytes, then configuration ID. No human
-   or pilot-dependent choice is admitted.
-5. Run the disjoint MuJoCo adaptation half. Apply only the predeclared linear output-
-   coefficient refit and calibration-map/fallback-threshold fit; never change inputs,
-   PCA, transitions, model structure, task, candidates, cost, W1, or NumPy selection.
-6. Run the untouched MuJoCo pilot-evaluation half. It may set only preregistered
-   effect/non-inferiority margins and measured latency/byte/time ceilings by Section
-   13 formulas. It cannot refit, recalibrate, exclude, or alter any prior contract.
-7. **Common evidence freeze:** freeze fitted output coefficients, calibration/fallback
-   values, margins/resources, P3 MuJoCo identity, implementation, schemas, manifests,
-   and all prior contract hashes in one protocol.
-8. Generate the unseen MuJoCo confirmation manifest after that freeze and run once.
-
-A change to steps 1-6 begins a new protocol revision with new disjoint MuJoCo pilot
-roots; a post-evidence-freeze change also requires a new unseen confirmation root. No
-pilot output can be `SUPPORTED`
-(`docs/superpowers/specs/2026-08-22-reflect-lite-autonomous-run-design.md:127-181`).
-
-## 8. Uncertainty and authority-bearing fallback
-
-W3-W5 use the exact deterministic scene-seed bootstrap ensembles in Section 13.1. Cost
-uncertainty is member-cost population variance and each failure uncertainty is
-member-probability population variance, always dividing by the complete ensemble count.
-The MuJoCo adaptation half fits the preregistered monotone calibration maps for W3-W5
-and one uncertainty rejection plus critic threshold for W4/W5; pilot-evaluation outcomes
-cannot change them.
-
-The only authority-bearing W4/W5 selectors are compositions:
+The ordered action-set artifact has exact header:
 
 ```text
-W4F = W4 raw prediction when uncertainty <= threshold, otherwise W1
-W5F = W5 raw prediction when uncertainty <= threshold, otherwise W1
+{
+  "schema_version":1,
+  "scene_id":string,
+  "anchor_id":string,
+  "candidate_ids":[8 strings in frozen strategy order],
+  "strategy_ids":[8 strings in frozen strategy order],
+  "action_content_sha256s":[8 hashes],
+  "action_sha256s":[8 hashes],
+  "shape":[8,50,2],
+  "dtype":"<f8",
+  "dt_s":0.02,
+  "horizon_s":1.0
+}
 ```
 
-The fallback decision, chosen candidate, coverage, and reason are sealed before truth
-joins. Canonical co-primary and authority metrics use W4F/W5F. Raw W4/W5 ranking,
-regret, calibration, and coverage-risk curves are descriptive only. Confirmation may
-not choose raw versus fallback after outcomes.
+`candidate_actions_sha256` is SHA-256 of canonical JSON bytes of that header without its
+LF, one NUL, then the concatenated `(8,50,2)` little-endian float64 C-order bytes.
 
-Calibration reports Brier score, fixed-bin ECE, uncertainty-error correlation, error/
-regret by uncertainty decile, coverage-risk, fallback frequency, and W1-relative
-fallback regret.
+Projection kinds and exact byte payloads are:
 
-## 9. Metrics and exact inference
+- `W0_IDS`: zero-length bytes;
+- `W1_GEOMETRY`: little-endian float64 vector in order `eef_xy, object_xyyaw,
+  geometry_onehot, geometry_dims, target_xyyaw, obstacle_present_xyxy,
+  workspace_xyxy, cost_weights`;
+- `PRIVILEGED_25`: end-effector `(x,y,vx,vy)`, object
+  `(x,y,yaw,vx,vy,omega)`, target `(x,y,yaw)`, mass, friction, geometry one-hot,
+  geometry dimensions, and obstacle present/endpoints; and
+- `RASTER_64`: uint8 C-order `(64,64,6)` raster, channels end effector, object, target,
+  obstacle, object-mask-times-sine-yaw, object-mask-times-cosine-yaw.
 
-### 9.1 Rank and regret definitions
+For every kind, `projection_sha256` hashes canonical JSON
+
+```text
+["exp06-projection-v1",projection_kind,scene_id,anchor_id,dtype,shape]
+```
+
+without its LF, one NUL, and exactly those bytes. `selector_input_sha256` hashes canonical
+JSON of the exact-key row:
+
+```text
+schema_version, phase, scene_id, anchor_id, observation_id, selector_id,
+projection_kind, projection_sha256, candidate_actions_sha256,
+generating_model_sha256, preprocessing_sha256, pca_sha256,
+calibration_sha256, fallback_threshold_sha256, cost_contract_sha256
+```
+
+Raw W4/W5 inputs bind their model, preprocessing, and calibration map but require
+`fallback_threshold_sha256=null`. Thresholds are stored separately from calibration
+maps. The trusted `compose_fallback` function alone receives a complete sealed W1
+ranking, one complete sealed raw W4 or W5 ranking, and the corresponding threshold/hash.
+It receives no projection, model, simulator, or truth. Composition input hashes use
+canonical JSON
+
+```text
+["exp06-fallback-input-v1",phase,scene_id,anchor_id,composition_id,
+ w1_ranking_sha256,learned_ranking_sha256,fallback_threshold_sha256]
+```
+
+This makes the model/fallback boundary executable without an OS sandbox or capability
+container.
+
+### 6.3 Model grid and exact fit
+
+The privileged vector has 25 columns. W3's frozen base vector has 51 columns after
+strategy, endpoint displacement, path length, per-axis velocity moments, six-way
+contact-side encoding, and obstacle intersection. W4's base vector has 133 columns:
+25 privileged, 100 action scalars, and eight strategy indicators. W5 transition input
+has PCA dimension plus the same 100 action scalars and eight strategy indicators.
+
+Each variant has exactly three configurations:
+
+| ID | W3 | W4 | W5 | ensemble | calibration |
+|---|---|---|---|---:|---|
+| CFG01 | degree 1, ridge `1e-3` | degree 1, ridge `1e-3` | PCA 16, degree 1, ridge `1e-3` | 4 | identity clip |
+| CFG02 | degree 2 interactions, ridge `1e-2` | degree 2 interactions, ridge `1e-2` | PCA 24, action-latent interactions, ridge `1e-2` | 8 | PAV, 8 equal-count bins |
+| CFG03 | CFG02 plus univariate cubes, ridge `1e-1` | CFG02 plus univariate cubes, ridge `1e-1` | PCA 32, full degree 2, ridge `1e-1` | 16 | PAV, 16 equal-count bins |
+
+Raw features expand in total-degree then lexicographic source-column order. Train-only
+population z-score applies independently to every expanded non-intercept column after
+expansion; zero-variance columns become exact zero. One canonical 32-component PCA fits
+the 3,072 repeated current-anchor training raster rows; CFG01/CFG02 use byte-identical
+16/24-component prefixes. Terminal rasters never enter PCA fitting.
+
+Each ensemble member draws 96 scene ordinals with replacement in one exact PCG64 call;
+each scene occurrence contributes all 32 candidate rows. Ridge uses centered float64
+primal Cholesky for `p<=n` and dual Cholesky for `p>n`, an unregularized intercept, no
+jitter or solver substitution, and the frozen KKT residual bound. Two fresh processes
+under the pinned BLAS/thread profile must produce byte-identical parameters.
+
+`fit` consumes only 96 training scenes and writes exactly nine create-only model files.
+It writes no tuning or validation predictions. `numpy-select` subsequently loads those
+nine immutable models and exactly the 24 tuning plus 24 validation scenes, writes one
+exact `numpy-evaluation.parquet`, and mechanically selects one configuration each for
+W3/W4/W5 using `regret, negative rank correlation, calibration error, model bytes,
+configuration ID`. No human or MuJoCo result chooses a configuration.
+
+### 6.4 Adaptation and calibration
+
+For each selected ensemble member, MuJoCo adaptation appends each of the 20 adaptation
+scenes once to that member's original 96-scene NumPy bootstrap multiset. It reruns the
+same Cholesky compiler with frozen preprocessing and may refit only:
+
+- W3: position, orientation, collision, energy, terminal-failure, unsafe, success;
+- W4: state delta, collision, terminal-failure, unsafe, success; and
+- W5: position, orientation, collision, energy, terminal-failure, unsafe, success.
+
+W5 latent-transition parameters, PCA, feature maps, and every other member remain
+byte-identical. The adapted-model hash binds changed and unchanged member hashes.
+
+Probability member outputs clip once to `[0,1]`. Calibration fits the arithmetic mean of
+clipped member probabilities. CFG01 is identity. CFG02/CFG03 use stable probability/ID
+order, 8x80 or 16x40 equal-count bins across the 640 adaptation rows, count-weighted
+equal-x merging, weighted monotone PAV, and frozen `numpy.interp` semantics. Evaluation
+first averages clipped member probabilities and applies the map once. For uncertainty
+only, the same map applies separately to each member; cost uncertainty is population
+variance of member costs. This preserves one fit/evaluation operator.
+
+W4/W5 fallback threshold candidates are `-inf`, adaptation uncertainty quartiles, and
+`+inf`. Choose minimum adaptation regret subject to zero unsafe selections and learned
+coverage `>=0.50`, then the lower threshold. Whole-anchor fallback uses the raw learned
+ranking exactly when its top candidate's uncertainty is `<=` threshold; otherwise it
+uses the complete W1 ranking. Candidate-wise hybridization is forbidden. Critic score is
+the maximum calibrated collision/failure/unsafe probability; its grid is
+`0.00,0.05,...,1.00`, with positive defined as `score >= threshold`. Choose maximum
+recall subject to precision `>=0.90` and zero unsafe veto, then the higher threshold.
+
+## 7. Evidence tables and replay
+
+Every scene writes one ordinary canonical rollout for each authority-relevant selector
+W1, W3, W4F, and W5F using the existing `RolloutWriter`; raw W4/W5, W0, and W2 remain
+sidecar evidence. Canonical rollout `actions.parquet` is empty because P7 routes no
+runtime action. `WORLD_MODEL_PREDICTED` and `WORLD_MODEL_SELECTED` events resolve to the
+sidecar rows. `python -m reflect.rollout replay <rollout-path>` remains the only replay
+command and reconstructs observation order, rankings, fallback, selection, and the
+explicit absence of executed control references without rerunning models or physics.
+
+Prediction stages write `candidate_inputs.parquet`; truth stages copy its identity/action
+fields byte-for-byte into the previously absent final `candidates.parquet` and append
+the fixed truth/execution dispositions. No file changes state in place. The complete
+experiment sidecar files are:
+
+```text
+anchors.parquet
+candidate_inputs.parquet
+candidates.parquet
+predictions.parquet
+selections.parquet
+candidate_truth.parquet
+candidate_outcomes.npz
+prediction_vectors.npz
+latency.jsonl
+metrics.json
+```
+
+Every final candidate row has exact fields:
+
+```text
+scene_id, anchor_id, observation_id, candidate_id, strategy_id,
+candidate_source="DETERMINISTIC_STRATEGY", dt_s, horizon_s, commands,
+action_content_sha256, action_sha256, truth_evaluated, executed
+```
+
+`truth_evaluated=true` only after the exact NumPy/MuJoCo counterfactual branch was run.
+`executed=false` for every P7 row because this ranking baseline never routes an action.
+`candidate_inputs.parquet` contains the exact prefix through `action_sha256` and has no
+truth or selection field. Prediction receipts hash that file; truth receipts require
+the final table's prefix to match before accepting its appended dispositions.
+Every prediction row contains predicted components/cost/outcome, uncertainty, model and
+action hashes, and `selected` for that raw selector. Every selection row binds one
+selector, chosen candidate/action, chosen raw prediction when applicable, fallback flag
+and reason. Candidate truth contains actual components/cost/outcome, W2 selection, exact
+terminal ten-state and 64x64x6 raster member hashes. Collectively these fields preserve
+the program's candidate source, full chunk, predicted outcome, actual outcome, selected
+flag, truth-evaluation flag, and execution flag without implying that W2 branch rollout
+was runtime execution.
+
+Rows use explicit nonnullable PyArrow schemas, fixed order, no dictionary encoding, one
+row group, no compression, and no statistics. NPZ uses sorted ZIP_STORED little-endian
+NPY members. JSON uses the repository canonical encoder plus one LF. Every row/file hash
+has a domain-separated preimage documented beside its schema. Validators recompute
+hashes and require exact IDs/counts/types; they do not repair or normalize evidence.
+
+## 8. Metrics, latency, and inference
 
 Actual and predicted costs use average ranks for ties. Spearman is Pearson correlation
-of those ranks. If actual costs are constant and predictions are constant, rank score
-is `1.0`; if actual costs are constant but predictions are not, it is `0.0`; if actual
-costs are nonconstant but predictions are constant, it is `0.0`. Selection regret is
-actual selected cost minus W2's minimum actual cost and is always nonnegative within
-the frozen floating tolerance; a larger negative value invalidates the scorer.
-W0 has no predicted ordering, so its rank correlation is `NOT_APPLICABLE`; only its
-seeded selection regret/top-1 metrics are reported. W2's predicted ordering is actual
-ordering, so its rank score is `1.0` and regret is zero.
+of ranks, with fixed constant-vector rules: both constant is `1.0`; only one constant is
+`0.0`. Selection regret is actual selected cost minus W2 minimum and must be nonnegative
+within frozen tolerance. Metrics average anchors to scenes, scenes within strata, then
+combine strata with exact 0.20 weights.
 
-Anchor metrics average to scene, scenes average within stratum, and overall uses fixed
-0.20 stratum weights. Secondary metrics are top-1 accuracy, pairwise accuracy,
-oracle-gap closure, future-state error, calibration, failure precision/recall,
-per-stratum results, model bytes, training CPU time, p50/p95 inference, and uncertainty
-versus error (`Reflect Lite Research Program.md:2010-2020`).
+Primary contrasts are W4F and W5F versus W1 for overall rank improvement and regret
+reduction. The four endpoints form one Bonferroni family with 98.75% marginal intervals.
+For each composition, both lower bounds must strictly exceed pilot-frozen effects.
 
-### 9.2 Canonical co-primary family
+Held-out regret reductions in MASS_OOD, FRICTION_OOD, GEOMETRY_OOD, and OBSTACLE_OOD for
+both compositions form one eight-contrast family with 99.375% intervals. Every held-out
+lower bound for a composition must pass. Overall regret against W3 forms one
+two-contrast family with 97.5% intervals. If both compositions pass, W5F replaces W4F
+only when one six-endpoint 99.1666667% family proves overall-regret superiority plus
+overall-rank and four held-out-regret non-inferiority.
 
-The four primary contrasts are W4F and W5F versus W1 on overall rank-correlation
-improvement and overall regret reduction. For composition `X`, the beneficial-positive
-contrasts are `rank_X - rank_W1` and `regret_W1 - regret_X`. They form one Bonferroni family with
-98.75% marginal intervals for 95% simultaneous coverage. A learned composition
-establishes the claim only if both endpoints' lower bounds strictly exceed their
-frozen minimum effects. Neither primary can be demoted.
+All intervals use paired scene-seed differences and 10,000 deterministic percentile
+bootstrap resamples. Overall resampling draws 16 scenes independently within each
+stratum and recombines with 0.20 weights; pooling 80 scenes is forbidden. Exact sorted
+endpoint indices freeze in config. Equality fails superiority and passes
+non-inferiority.
 
-### 9.3 Held-out and strong-baseline gates
+Pilot-evaluation margins are
+`ceil_to_unit(max(one_task_unit,0.5*paired_scene_sample_SD))`. Pilot latency ceilings are
+`ceil_to_0.1ms(1.25*pilot_p95)`. Pilot may set only these margins and resource ceilings;
+unattainable values yield `INCONCLUSIVE`, never clipping or a changed task.
 
-Regret reduction `regret_W1 - regret_X` versus W1 for both W4F and W5F in MASS_OOD, FRICTION_OOD,
-GEOMETRY_OOD, and OBSTACLE_OOD forms one eight-contrast family with 99.375% marginal
-intervals. For a composition to advance, all four of its held-out lower bounds must
-clear their frozen effects; controlling the single eight-way family prevents choosing
-between W4F/W5F after seeing strata. W4F/W5F must also beat W3 on beneficial-positive
-overall contrast `regret_W3 - regret_X` in one two-contrast family with 97.5%
-intervals. These gates are simultaneous and cannot be replaced by the weighted
-overall result.
+Latency is isolated from deterministic predictions. Under the pinned single-thread CPU
+profile, each pilot/confirmation anchor performs five warmups and then 20 repetitions:
 
-Authority additionally requires frozen p95 single-candidate and K=8 batch CPU latency,
-model-byte/context limits, calibration/failure limits, leakage/oracle/artifact validity,
-and no safety violation. This is stricter than the program's W1 regret/latency hard
-gate (`Reflect Lite Research Program.md:2022-2030`).
+- raw single-candidate inference for W1, W3, W4, and W5, in candidate-ID order; and
+- full K=8 batch inference/ordering for W1 and W3, and full raw inference plus trusted
+  whole-anchor composition for W4F and W5F.
 
-### 9.4 W5-versus-W4 family
+Thus each anchor writes `20*(4*8 + 4)=720` latency rows: 57,600 pilot rows and 230,400
+confirmation rows. A single row never performs fallback. A W4F/W5F batch row always
+reruns all eight raw candidates and composition. Timing begins immediately before
+projection decoding/model work and ends after canonical in-memory envelope/selection
+construction; it excludes file I/O, process startup, truth, and serialization. Timed
+outputs must equal untimed outputs after excluding timing, which is not a prediction
+field. Authority gates use raw W4/W5 single-candidate p95 and composed W4F/W5F K=8 batch
+p95, both within their separately frozen ceilings.
 
-If both W4F and W5F pass all authority gates, W5F replaces the simpler W4F only if one
-six-endpoint Bonferroni family passes:
+Secondary evidence includes top-1 and pairwise accuracy, oracle-gap closure,
+future-state/latent error, calibration, failure precision/recall, per-stratum results,
+model bytes, training CPU time, coverage-risk, fallback frequency, and uncertainty-error
+association.
 
-1. overall regret superiority of W5F over W4F;
-2. overall rank-correlation non-inferiority; and
-3. regret non-inferiority in each of the four held-out strata.
+## 9. Scientific and role decisions
 
-The beneficial-positive regret contrast is `regret_W4F - regret_W5F`; the rank
-contrast is `rank_W5F - rank_W4F`. The same regret orientation applies in every
-held-out stratum.
+Artifact status is `VALID | INVALID`, prerequisite status `READY | BLOCKED`, scientific
+result `SUPPORTED | NOT_SUPPORTED | INCONCLUSIVE`, and promotion status
+`SELECTOR_PROTOCOL_PROMOTED | STOPPED`. These states never substitute for one another.
 
-Marginal intervals are `99.1666667%`, giving 95% simultaneous coverage. The regret-
-superiority lower bound must exceed its frozen margin; every non-inferiority lower
-bound may equal the negative frozen margin. Calibration, latency, and bytes must also
-pass their absolute W5 limits. Otherwise W4F remains selected. This family is evaluated
-only after both compositions independently pass, preserving hierarchical error control.
+W4F or W5F is `AUTHORITY_PASS` only if every co-primary, held-out, W3, calibration,
+latency, byte, coverage, leakage, and safety gate passes. It is `AUTHORITY_REJECTED` when
+complete valid evidence conclusively rejects any required endpoint; otherwise it is
+`AUTHORITY_UNRESOLVED`. The result is `SUPPORTED` if at least one composition passes,
+`NOT_SUPPORTED` only if both are rejected, and `INCONCLUSIVE` otherwise.
 
-### 9.5 Bootstrap mechanics
+For `VALID + READY` evidence, exactly one required role is assigned by first match:
 
-All contrasts use paired scene-seed differences and deterministic 10,000-resample
-percentile bootstrap. Complete scene IDs sort ascending. PCG64 seed is the first 128
-big-endian bits of SHA-256 over canonical JSON
-`[protocol_hash, family_id, contrast_id, stratum_id, "exp06-bootstrap-v1"]`. A
-stratum-specific contrast draws 16 paired scene indices with replacement from that
-stratum. Every overall replicate independently draws 16 paired indices inside each of
-the five strata using the corresponding stratum seed/substream, computes each stratum
-mean, then combines those five replicate means with the exact frozen 0.20 weights.
-Pooling 80 scenes or allowing resampled stratum proportions is forbidden.
-
-Sorted bootstrap values use endpoint index `max(0, ceil(p * 10000) - 1)` without
-interpolation or tie deduplication. Exact two-sided percentile pairs and zero-based
-indices are: 95%, `(0.025,0.975)->(249,9749)`; 97.5%,
-`(0.0125,0.9875)->(124,9874)`; 98.3333333%,
-`(1/120,119/120)->(83,9916)`; 98.75%,
-`(0.00625,0.99375)->(62,9937)`; 99.1666667%,
-`(1/240,239/240)->(41,9958)`; and 99.375%,
-`(0.003125,0.996875)->(31,9968)`; and 99.6875%,
-`(0.0015625,0.9984375)->(15,9984)`. Equality fails superiority and passes
-non-inferiority. A validly declared learned timeout uses W1 in the authority
-composition; its raw endpoint receives rank `-1`, maximum finite frozen regret,
-Brier/ECE `1`, critic precision/recall `0`, and a latency-gate failure. Missing output
-without the declared timeout disposition or any integrity breach invalidates the
-bundle; phase resource exhaustion yields `INCONCLUSIVE`.
-
-### 9.6 Exact serial latency contract
-
-Latency is measured inside an OS-isolated measurement child under the same policy and
-pinned numeric/thread profile used for evidence, on the CPU architecture bound by the
-protocol. W3 receives its exact selector input. W4F/W5F each receive the exact learned
-selector input plus the already sealed W1 rows and threshold; for every repetition they
-rerun raw inference then the trusted whole-anchor composition and require the resulting
-canonical bytes to equal the untimed evidence output. For every pilot-evaluation and
-confirmation anchor and each W3/W4F/W5F selector, the child first
-performs five unrecorded warmups, then exactly 20 single-candidate repetitions for each
-candidate in candidate-ID order and 20 K=8 batch repetitions. Repetition order is
-`single repetition, candidate 0..7`, then `batch repetition`, repeated 20 times. W1 is
-run identically as the nonlearned reference but has no authority threshold.
-
-The timed single-candidate boundary begins immediately before projection decoding and
-ends after model inference, component/envelope construction, shared-contract validation,
-calibration, uncertainty/fallback decision, and canonical row construction. The batch
-boundary begins before decoding the shared projection and ends after all eight rows,
-calibration/fallback, universal sorting, and final selection. It excludes IPC, file I/O,
-process startup, sandbox setup, warmup, truth, and artifact serialization. The worker
-uses `time.perf_counter_ns`, disables cyclic GC only for each timed block, restores it
-afterward, performs no parallel work, and records nonnegative integer nanoseconds plus
-the clock implementation/resolution and process/user/system CPU deltas.
-
-Durations sort as integers; nearest-rank p50/p95 use index `ceil(p*n)-1`. The hard
-single and batch values are the p95 over all measured repetitions in the phase, reported
-also per stratum and scene. Pilot ceilings are separately
-`ceil_to_100000ns(1.25*pilot_p95_ns)` and must be no greater than the precursor-frozen
-1,000,000,000 ns emergency bound. Confirmation passes equality and fails strictly above
-either frozen ceiling. One call crossing the emergency bound is terminated and receives
-the declared timeout treatment in Section 9.5; any undeclared missing duration,
-negative/boolean duration, count drift, clock change, thread drift, or parallel overlap
-makes the latency artifact invalid.
-
-`latency.json` has exact keys `schema_version,phase,protocol_sha256,cpu_identity,
-clock_implementation,clock_resolution_ns,warmup_count,repetition_count,
-scene_latency_sha256s,
-single_p50_ns,single_p95_ns,batch_p50_ns,batch_p95_ns,cpu_user_ns,cpu_system_ns,
-timeout_count`. Each sorted scene row has exact keys `scene_id,row_count,sha256` and
-requires `row_count=2880`. The referenced per-scene `latency-rows.jsonl` row has exact
-keys `selector_id,stratum,scene_id,anchor_id,
-candidate_id,single_ns,batch_ns`; a single row has nonnull candidate/single and null
-batch, while a batch row has null candidate/single and nonnull batch. Rows use
-the execution order above: 180 rows per anchor/selector, exactly 57,600 pilot rows and
-230,400 confirmation rows across W1/W3/W4F/W5F. Each JSONL row is canonical compact
-JSON plus one LF; the small global JSON is sealed and digest-bound by the selector
-freeze before truth exists without duplicating the per-scene rows.
-
-## 10. Separate states and ordered role mapping
-
-Lifecycle is `DRAFT -> CONTRACT_FROZEN -> NUMPY_VALIDATED -> NUMPY_SELECTED ->
-MUJOCO_ADAPTATION -> MUJOCO_PILOT_EVALUATED -> EVIDENCE_FROZEN -> CONFIRMATION ->
-DECISION -> SELECTOR_PROTOCOL_PROMOTED | STOPPED`. Artifact state is separately `VALID | INVALID`;
-scientific result is `SUPPORTED | NOT_SUPPORTED | INCONCLUSIVE`; prerequisite/resource
-state is `READY | BLOCKED`; P7 promotion state is
-`SELECTOR_PROTOCOL_PROMOTED | STOPPED`. Executor integration remains outside this
-baseline lifecycle. Invalid evidence has no scientific result, and a blocker is not
-negative evidence.
-
-Scientific classification is computed before and independently of the role ladder.
-For every beneficial-positive superiority endpoint with frozen margin `M`, status is
-`PASS` when the adjusted lower bound is strictly greater than `M`,
-`CONCLUSIVELY_REJECTED` when the adjusted upper bound is strictly less than `M`, and
-`UNRESOLVED` otherwise; equality at either boundary is unresolved. For every
-non-inferiority endpoint with margin `M`, status is `PASS` when the adjusted lower bound
-is at least `-M`, `CONCLUSIVELY_REJECTED` when the adjusted upper bound is strictly less
-than `-M`, and `UNRESOLVED` otherwise. A complete, valid absolute gate is `PASS` at or
-inside its frozen bound and `CONCLUSIVELY_REJECTED` outside it. Missing/corrupt evidence,
-resource exhaustion, an invalid baseline/control, or a precision failure is never a
-rejection; it is `INCONCLUSIVE` under the existing artifact/resource rules.
-
-Each of W4F and W5F is `AUTHORITY_PASS` only when every required co-primary, four
-held-out, W3, calibration, latency/byte, and safety endpoint passes. It is
-`AUTHORITY_REJECTED` when at least one required endpoint or complete valid absolute gate
-is conclusively rejected, because the preregistered joint rule can no longer pass. It
-is `AUTHORITY_UNRESOLVED` otherwise. The candidate-ranking result is `SUPPORTED` if at
-least one composition is `AUTHORITY_PASS`; `NOT_SUPPORTED` only if both compositions
-are `AUTHORITY_REJECTED`; and `INCONCLUSIVE` otherwise. W5-versus-W4 chooses between two
-passing compositions but cannot change this result. Exact endpoint statuses, bounds,
-and the first decisive reason in frozen endpoint order are serialized.
-
-For `VALID + READY` confirmation, exactly one role is chosen by first matching rule:
-
-1. `CANDIDATE_SELECTOR` if at least one learned+W1-fallback composition passes every
-   co-primary, held-out, W3, latency, calibration, safety, and selection gate. If both
-   pass, Section 9.4 selects W5F only when its six-endpoint family passes; otherwise
-   W4F is selected.
-2. `FAILURE_CRITIC` if rule 1 fails but W4 or W5 passes its eight held-out
-   precision/recall endpoints inside the one frozen 16-endpoint, two-head family with
-   99.6875% marginal intervals, plus calibration, latency, and zero-unsafe-veto gates.
-   Every lower bound must clear its frozen minimum. W4 is chosen before W5 if both
-   pass. The experiment records only the counterfactual occasions on which the critic
-   would replace a learned choice with W1; it cannot rank, introduce, veto, replace,
-   route, or execute an action in this experiment or downstream.
-3. `SHADOW_OBSERVER` if rules 1-2 fail and W4F or W5F passes its endpoints inside the
-   one frozen 16-endpoint, two-composition 99.6875% family: upper bounds for held-out
-   Brier and fixed-bin ECE in MASS_OOD, FRICTION_OOD, GEOMETRY_OOD, and OBSTACLE_OOD
-   must be at or below their absolute ceilings, and p95 single/batch latency and model
-   bytes must pass. W4F is chosen before W5F if both pass. It emits no action-affecting
-   event.
-4. `OFFLINE_ANALYSIS_ONLY` if rules 1-3 fail but at least one member of the frozen
-   six-endpoint descriptive family passes: overall rank improvement and regret
-   reduction versus W1 for raw W3, W4, and W5, each with a 99.1666667% Bonferroni
-   interval whose lower bound strictly exceeds its endpoint's frozen minimum effect.
-   Fixed order W3, W4, W5 then rank, regret records the first passing endpoint; this
-   role has no runtime authority.
+1. `CANDIDATE_SELECTOR` when at least one learned+W1 composition is `AUTHORITY_PASS`;
+2. `FAILURE_CRITIC` when selector authority fails but one raw model passes the frozen
+   held-out precision/recall, calibration, latency, and zero-unsafe-veto family. The
+   four strata times precision/recall times W4/W5 form one 16-endpoint family with
+   99.6875% marginal intervals; every endpoint for the chosen model must pass;
+3. `SHADOW_OBSERVER` when critic fails but a composition passes frozen held-out
+   calibration, latency, and byte ceilings. Brier/ECE times four held-out strata times
+   W4F/W5F form one 16-endpoint family with 99.6875% intervals;
+4. `OFFLINE_ANALYSIS_ONLY` when at least one raw learned model passes a frozen overall
+   descriptive rank or regret endpoint. W3/W4/W5 rank/regret form one six-endpoint
+   family with 99.1666667% intervals; or
 5. `NOT_USEFUL_YET` otherwise.
 
 `LATENT_SUBGOAL_MODEL_WORTH_TESTING` and `DIRECT_PLANNER_WORTH_TESTING` are unreachable
-because this benchmark does not test those claims. Rules 2-5 record the best bounded
-lesser role but do not determine or overwrite the scientific result above: the same
-role may accompany `NOT_SUPPORTED` or `INCONCLUSIVE`. `INCONCLUSIVE`, `INVALID`, or
-`BLOCKED` cannot promote. `VALID + SUPPORTED + READY + CANDIDATE_SELECTOR` promotes only
-the frozen prediction-envelope and candidate-selector protocol as eligible for the
-program's conditional extension; it grants no action-affecting runtime authority.
-`FAILURE_CRITIC`, `SHADOW_OBSERVER`, and
-`OFFLINE_ANALYSIS_ONLY` remain descriptive/unpromoted under both `NOT_SUPPORTED` and
-`INCONCLUSIVE`; they cannot veto, replace, rank, select, route, or otherwise affect an
-action. Granting critic authority would require a separate reviewed experiment and
-preregistered claim. This preserves Experiment 06's hard rule that failure to beat W1
-on held-out regret/latency stops world-model authority.
+because P7 did not test those claims. Only `VALID + READY + SUPPORTED +
+CANDIDATE_SELECTOR` sets `SELECTOR_PROTOCOL_PROMOTED`. Other roles remain descriptive
+and cannot veto, replace, rank, select, route, or execute an action downstream without a
+new reviewed experiment.
 
-After, and only after, the selector-protocol result is committed, the program's
-executor-prefix extension may receive a separate reviewed design. P7 implements no P4
-adapter, prefix manifest, action execution, or `ACTION_ROUTING_ELIGIBLE` state during
-this baseline. The extension cannot alter P7's already sealed scientific result.
+## 10. Small write-once pipeline
 
-That later design is eligible only when the validated P4 `decision.json` contains an
-exact `promoted_stacks` row for stack ID `P4`, not merely the deduplicated
-`promoted_wire_representations` value `EEF_TRAJECTORY`. The row's complete configuration
-hash must resolve through P4 `frozen.yaml` to the `(H,2)` Cartesian-trajectory semantics
-and the exact `10 Hz, 300 ms` condition must have passed. A future manifest must bind
-that stack row, configuration hash, P4 frozen hash, and final `artifact-digests.json`.
-A promoted P3 one-knot Cartesian target does not qualify. Until the later protocol
-proves an adapter and executor, P7 promotion has no action-routing authority and
-reserves no prefix-conformance artifact budget.
+### 10.1 Files and ownership
 
-## 11. Atomic scene evidence and separate training/aggregate bundles
-
-The canonical `RolloutWriter` remains unchanged. The experiment-local `AtomicBundle`
-helper wraps its output after separately sealed generator truth and selector prediction
-components validate. Pilot-evaluation and confirmation use the exact evidence layout:
+P7 implementation is limited to:
 
 ```text
-scene-evidence-bundle/
-  selector-reference.json
-  rollouts/
-    W1/
-      metadata.json, config.json, metrics.json, events.jsonl
-      observations.npz, actions.parquet, summary.md
-    W3/
-      <same canonical files>
-    W4F/
-      <same canonical files>
-    W5F/
-      <same canonical files>
-  exp06/
-    selector-inputs.json
-    generator-snapshot.json
-    generator-snapshot.npz
-    anchors.parquet
-    candidate_actions.parquet
-    predictions.parquet
-    prediction-vectors.npz
-    selector-selections.parquet
-    selections.parquet
-    latency-rows.jsonl
-    candidate_truth.parquet
-    candidate-outcomes.npz
-    score_metrics.json
-    replay.json
-  bundle-manifest.json
+experiments/06_world_model/
+  CLAIM.md
+  config/frozen.json
+  manifests/numpy.json
+  manifests/mujoco-pilot.json
+  model.py
+  world.py
+  run.py
+  report.py
+  tests/
 ```
 
-NumPy training/tuning/validation and MuJoCo adaptation must precede final selector
-outputs, so their scene key selects a different exact **source** layout rather than
-pretending W3/W4F/W5F already exist:
+`world.py` owns scene generation, K=8 candidates, NumPy precursor, generated MJCF, and
+MuJoCo truth. `model.py` owns projections, W0-W5, fitting, calibration, fallback, and
+metrics. `run.py` owns only the fixed stage dispatcher, exact input counts, write-once
+files, and receipts. `report.py` validates the final manifest and creates
+`WORLD_MODEL_DECISION.md`. Experiment-specific schemas and thresholds remain here.
 
-```text
-scene-source-bundle/
-  rollout/generator/
-    metadata.json, config.json, metrics.json, events.jsonl
-    observations.npz, actions.parquet, summary.md
-  exp06/
-    generator-snapshot.json
-    generator-snapshot.npz
-    anchors.parquet
-    candidate_actions.parquet
-    candidate_truth.parquet
-    candidate-outcomes.npz
-    replay.json
-  bundle-manifest.json
-```
+There is no reusable artifact framework. A local `write_new(path, bytes)` helper writes
+one sibling temporary regular file, fsyncs it, links it to the previously absent final
+path (so an existing destination cannot be replaced), unlinks the temporary, and fsyncs
+the parent. A stage writes its small `receipt.json` last. A complete stage validates and
+skips on reissue. An interrupted stage remains evidence-bearing and is resumed only by
+validating its complete file prefix; conflicting or unknown bytes stop that run and use
+a new run ID. Nothing is deleted, overwritten, repaired in place, or quarantined by P7.
 
-The source layout is valid only for `numpy-train`, `numpy-tuning`,
-`numpy-validation`, and `mujoco-pilot-adaptation`; the evidence layout is valid only
-for `mujoco-pilot-evaluation` and `mujoco-confirmation`. The phase-bound validator
-rejects missing selector outputs in an evidence scene and rejects predictions,
-selections, score metrics, or selector rollouts in a source scene. Both layouts remain
-scene-local and have the same 16 MiB cap.
+The final `result-manifest.json` is the one authoritative result manifest. It lists every
+stage receipt and retained evidence file by project-relative path, byte count, and
+SHA-256; it excludes itself. Its own SHA-256 is computed by the report command. Stage
+receipts are local completion markers, not a generalized lifecycle or nested manifest
+hierarchy.
 
-In the evidence layout, each subdirectory under `rollouts/` is an unchanged independently replayable canonical
-rollout. This prevents multiple selectors from emitting duplicate candidate IDs into
-one shared replay state. `candidate_actions.parquet` stores all K=8 IDs, strategy IDs,
-arrays, timing, `action_content_sha256`, and identity-bound `action_sha256`.
-`predictions.parquet` stores the exact W1/W3/W4/W5 raw envelopes with their global
-prediction IDs. `selector-selections.parquet` stores W0/W1/W3/raw W4/raw W5/W4F/W5F
-rows sealed before truth; final `selections.parquet` stores those byte-equivalent rows
-plus W2. Together they store
-uncertainty decision, selected candidate/both action hashes, and W1 fallback reason.
-W0/W2 have null `prediction_id`; W1/W3/raw W4/raw W5 reference their same-model raw
-prediction, and W4F/W5F reference respectively the chosen raw W4/W5 prediction or the
-raw W1 prediction after fallback. No composed prediction row exists.
-`candidate_truth.parquet` plus `candidate-outcomes.npz` are scorer-only MuJoCo truth
-with actual cost components/outcomes, exact terminal state/raster targets, and W2
-selection. Primary ranking-only canonical `actions.parquet` tables are
-empty; the deferred short-prefix extension is not part of a P7 bundle or command.
+### 10.2 Exact commands and counts
 
-Within each W1/W3/W4F/W5F canonical rollout, exactly one `WORLD_MODEL_PREDICTED` event
-cross-links each globally unique candidate ID and one `WORLD_MODEL_SELECTED` per anchor
-cross-links the sealed selection. W4F/W5F events use the learned envelope below the
-threshold and the W1 envelope after fallback, never both. The existing replay invariant—
-selection resolves to exactly one prediction—therefore remains usable
-(`reflect/replay.py:299-317`). Raw W4/W5 and W0/W2 remain sidecar-only. The bundle
-validator additionally requires:
+Every command runs from the project root, uses the pinned environment, requires a clean
+implementation allowlist, records full Git HEAD/P2 lock/P3 evidence hashes, disables
+network/CUDA/remote/physical flags, and refuses unknown arguments. Preflight requires a
+complete P2 lock plus P3's `ADVANCE` decision, compatibility table, unique passing
+MuJoCo runtime fragment, exact distribution artifact hash, and smoke command/status to
+agree. Every later receipt must match preflight's HEAD/config/P2/P3 hashes; freeze also
+binds every selected/adapted model, calibration, threshold, pilot prediction/truth, and
+margin hash, and every confirmation command must match that freeze. These are the only
+P7 evidence commands:
 
-The exact `WORLD_MODEL_PREDICTED` payload keys are
-`observation_id,prediction_id,scene_id,anchor_id,candidate_id,strategy_id,
-action_content_sha256,action_sha256,model_id,prediction_row_sha256`; the exact
-`WORLD_MODEL_SELECTED` payload keys are
-`observation_id,prediction_id,scene_id,anchor_id,candidate_id,strategy_id,
-action_content_sha256,action_sha256,model_id,selection_row_sha256,used_fallback,
-fallback_reason`. `observation_id` is a nonnegative JSON integer; `used_fallback` is a
-JSON boolean; every other nonnull value is a string. Prediction payload strings are
-always nonnull. Selection `fallback_reason` is nonnull exactly when `used_fallback` is
-true and null otherwise; all its other fields are nonnull because canonical rollout
-selectors W1/W3/W4F/W5F always resolve to a prediction. Unknown, missing, duplicate,
-wrong-type, noncanonical, or sidecar-disagreeing keys fail. The two row digests are the
-Section 6.5 prediction/selection digests, not hashes of event JSON; events introduce no
-additional digest. Values are copied from sealed sidecar rows and cannot be synthesized
-or normalized during publication.
-
-- exactly eight candidate/action/truth rows per anchor, eight distinct content digests,
-  eight distinct identity hashes, and eight bytewise-distinct command trajectories;
-- regenerated candidate bytes and both hashes equal the stored action rows;
-- every prediction references one candidate/both action hashes/model hash;
-- every non-W0/W2 selection references one prediction and the same two action hashes;
-  W0/W2 have null prediction/model IDs and still bind the selected action hashes;
-- every truth row references one candidate/both action hashes, pinned MuJoCo snapshot,
-  and exactly one validated terminal state/raster member pair;
-- every prediction/selection event matches exactly one selector-specific sidecar row
-  and ordering, with no candidate duplicated inside one canonical rollout;
-- every canonical `actions.parquet` is empty; and
-- all scene/anchor/candidate/strategy IDs and counts agree across files.
-
-Replay reconstructs observations, candidate actions, prediction envelopes, fallback
-decisions, selections, events, terminal state/raster targets, truth joins, W2, scores,
-and terminal cross-link state without rerunning physics or models. It verifies evidence,
-not counterfactual dynamics.
-
-P7 uses the existing canonical `RolloutWriter` unchanged and one experiment-local
-`AtomicBundle` helper. The helper is deliberately small: it owns one descriptor-held
-sibling temporary directory, accepts a closed expected-file manifest from a typed
-validator, writes the manifest last, fsyncs, and performs one rename-no-replace into an
-absent destination. It contains no experiment schema, phase state machine, replay logic,
-or cross-experiment abstraction. The five typed validators remain ordinary functions:
-`validate_scene_source_bundle`, `validate_selector_component_bundle`,
-`validate_evidence_bundle`, `validate_training_bundle`, and
-`validate_aggregate_bundle`. Only `validate_evidence_bundle` invokes canonical rollout
-validation and reconstruction.
-
-Evidence phases use a mandatory global two-pass coordinator. Pass S visits every scene
-in canonical manifest order, generates the anchor snapshot only in coordinator memory,
-computes its commitment, derives the truth-free projections, runs W0/W1/W3/W4/W5 and
-the W4F/W5F trusted composers, and publishes one immutable selector component bundle:
-
-```text
-scene-selector-component-bundle/
-  selector-inputs.json
-  predictions.parquet
-  prediction-vectors.npz
-  selector-selections.parquet
-  latency-rows.jsonl
-  component-manifest.json
-```
-
-Its key is `(selector-component,revision,phase,stratum,scene_seed)`, destination is
-`phase-components/<revision>/<phase>/scenes/<stratum>/<seed>/`, cap is 4 MiB, and exact
-resume is validate-and-skip. `selector-inputs.json` contains one sorted exact-key row per
-anchor/raw selector plus one row per W4F/W5F composition; it binds the Section 6 input
-descriptor hash, generator snapshot commitment, output hash, model/artifact hashes, and
-composition inputs. Rows sort by `(anchor_id,input_kind,selector_id)` and have exact keys
-`scene_id,anchor_id,selector_id,input_kind,input_sha256,projection_sha256,
-generator_snapshot_sha256,candidate_actions_sha256,model_manifest_sha256,
-generating_model_sha256,preprocessing_sha256,pca_sha256,calibration_sha256,
-fallback_threshold_sha256,w1_output_sha256,raw_learned_output_sha256,
-selector_output_sha256`; `input_kind` is `RAW_SELECTOR | FALLBACK_COMPOSITION` and
-nullability follows Section 6. Raw rows have null W1/raw-learned output hashes;
-composition rows require those two hashes, the learned generating-model SHA, candidate-
-actions SHA, and fallback-threshold SHA, while projection/model-manifest/preprocessing/
-PCA/calibration fields are null because the raw output already binds them.
-Full snapshot bytes are destroyed after the component publishes and
-are never written during pass S. Selector children receive only fixed descriptors,
-`close_fds`, a sanitized environment, and no path argument. The OS sandbox denies the
-repository/results roots, adaptation source bundles, another component, MuJoCo, network,
-subprocess, and descriptor discovery.
-
-Pass S completes only after exactly 20 or 80 component bundles validate and every child
-has exited. It then publishes one create-only `selector-freeze.json` with exact keys
-`schema_version,phase,protocol_sha256,implementation_sha256,scene_manifest_sha256,
-sandbox_profile_sha256,latency_sha256,scene_count,anchor_count,candidate_count,raw_selector_ids,
-composition_ids,component_rows,total_component_bytes`. `component_rows` sorts by scene
-ID and has exact keys `scene_id,stratum,component_path,component_manifest_sha256,
-generator_snapshot_sha256,latency_rows_sha256`; there are exactly `scene_count` rows.
-The phase-global `latency.json` is computed only from finalized component rows, publishes
-before the freeze, and is bound by `latency_sha256`. The freeze otherwise hashes finalized
-component manifests only; no component or scene manifest
-contains the selector-freeze hash, so no hash cycle exists. Once the freeze exists, the
-launcher permanently refuses to run a selector or composer for that phase.
-
-Pass T processes one scene at a time. It validates the global freeze and the finalized
-selector component, regenerates the full snapshot from the frozen seed, requires the
-snapshot and every derived projection to match pass S, runs pinned MuJoCo/W2 and the
-scorer, and uses one fresh `AtomicBundle` transaction to publish the exact
-`scene-evidence-bundle` layout above. `selector-reference.json` has exact keys
-`schema_version,selector_freeze_sha256,component_path,component_manifest_sha256,
-copied_file_sha256s`; the five selector data files copied into `exp06/` must be byte-equal
-to their finalized component versions. `copied_file_sha256s` is path-sorted and contains
-exact-key rows `path,sha256` for exactly `selector-inputs.json`, `predictions.parquet`,
-`prediction-vectors.npz`, `selector-selections.parquet`, and `latency-rows.jsonl`.
-Pass T constructs `selections.parquet` by preserving every validated selector-selection
-row byte-for-byte and merging only the newly available W2 row per anchor into the frozen
-selector order; it rejects any other difference. The final 16
-MiB scene cap includes those copies,
-terminal outcome members, truth, scoring, and canonical rollouts. There is never more
-than one evidence-scene temporary tree. A pass-T crash quarantines or resumes only that
-one held transaction; already finalized selector components and evidence scenes validate
-and skip.
-
-`generator-snapshot.json` has exact keys
-`schema_version,scene_id,simulator,anchor_ids,generator_snapshot_sha256,projection_sha256s,
-state_member_keys,state_layouts,model_sha256,p3_evidence_sha256`; `simulator` is exactly
-`NUMPY_PRECURSOR` or `MUJOCO_PINNED`. `generator-snapshot.npz` contains one canonical
-float64 member per anchor. Every row begins with the Section 13.1 privileged vector; a
-NumPy row then contains complete integrator/contact state and a MuJoCo row contains the
-complete qpos, qvel, act, mocap, userdata, time, and named physical-parameter arrays.
-`projection_sha256s` sorts by `(anchor_id,projection_kind)` with exact keys
-`anchor_id,projection_kind,sha256`; `state_member_keys` sorts by anchor ID with exact
-keys `anchor_id,member_key`; and byte-offset-ordered `state_layouts` rows have exact keys
-`name,offset,count,shape,dtype`. The validator rebuilds every projection and rejects
-unknown keys, overlapping/gapped offsets, or member/layout disagreement.
-
-Reversing phase order, materializing current-phase branch truth before the selector
-freeze, running a selector after freeze, or exposing any truth path during pass S
-invalidates the phase. Before freeze, exact finalized components validate-and-skip and
-only a single current temporary may resume; after freeze, pass T alone runs and missing
-evidence scenes resume in manifest order. A `truth-complete.json` receipt binds the
-freeze and all final scene-manifest hashes before aggregation.
-
-`bundle-manifest.json` lists every other immutable file with path/media type/bytes/
-SHA-256, excludes itself and temporary files, contains no field for its own digest, and
-is created last. Extra/missing files, a self-digest, cross-link mismatch, corruption,
-or overwrite attempt fail closed.
-
-The tree above is a **scene bundle only**. Training and aggregation have separate keys,
-roots, schemas, validators, and manifests; neither may contain a `rollouts/` tree or
-scene-local truth:
-
-```text
-training-bundle/
-  preprocessing.json
-  pca.npz | pca.empty
-  model.npz
-  evaluation-predictions.parquet
-  fit_metrics.json
-  training-input-manifest.json
-  training-manifest.json
-
-aggregate-bundle/
-  input-scene-manifest.json
-  aggregate_metrics.json
-  margins-resources.json | margins-resources.empty
-  adapted-models.npz | adapted-models.empty
-  calibration-output.npz | calibration-output.empty
-  decision.json | decision.empty
-  aggregate-manifest.json
-```
-
-A training bundle may contain one variant/configuration fit and its input scene hashes;
-it cannot contain candidate truth, confirmation metrics, or another configuration. An
-aggregate bundle consumes sealed scene/training bundle descriptors and contains only
-the output appropriate to its named phase: NumPy selection, MuJoCo adaptation outputs,
-MuJoCo pilot-evaluation margins/resources, confirmation metrics, or final decision.
-Unused typed files are the declared empty marker so schemas never vary implicitly.
-Every `AtomicBundle` use validates its exact typed file set, fsyncs, then performs one
-absent-destination rename; every manifest excludes itself and is written last. Cross-type
-nesting, a mixed key, in-place repair, or overwrite is invalid. The helper opens the
-configured output root once as a directory descriptor with
-no-follow semantics, verifies its device/inode against the frozen root identity, and
-walks or creates every descendant descriptor-relatively. Each component must be a real
-directory or regular file owned by the run; symlinks, hard-linked files, mount/device
-changes, unexpected link counts, and path re-resolution fail. Temporary creation uses
-mode 0700 and a create-exclusive name; publication uses descriptor-relative
-rename-no-replace between the building and final names under the same held parent,
-followed by parent fsync. No safety decision relies on `Path.resolve`.
-
-During its creating process, cleanup may remove only an unsealed temporary tree whose
-descriptor and inode have been continuously held since exclusive creation. A restart
-may resume the one recognized temporary only when its protocol-derived name, inode, and
-complete file-prefix hashes validate; it never rewrites a sealed file. Any other
-temporary entry is opened no-follow and descriptor-relatively renamed into absent
-`quarantine/<bundle-key>.<nonce>`. Restart never deletes or publishes an orphan.
-Foreign, malformed, multiple, symlinked, or changing temporaries fail closed. Quarantine
-remains evidence-bearing and byte-accounted; no new phase begins until a review
-disposition is recorded. Scene replay alone returns anchor/candidate state; training
-replay returns fit/input hashes, and aggregate replay returns only its declared phase
-output and input-bundle hashes.
-
-## 12. Evidence commands, shards, resume, and resources
-
-The launcher requires `cwd` to equal the symlink-resolved project root returned by
-`git rev-parse --show-toplevel`; all CLI paths are project-root-relative, and absolute
-or `..` paths fail. Bundle types and keys are disjoint:
-
-- scene: `(scene, protocol_revision, phase, stratum, scene_seed)`, where phase is
-  `numpy-train | numpy-tuning | numpy-validation | mujoco-pilot-adaptation |
-  mujoco-pilot-evaluation | mujoco-confirmation`;
-- selector component: `(selector-component, protocol_revision, phase, stratum,
-  scene_seed)`, where phase is `mujoco-pilot-evaluation | mujoco-confirmation`;
-- training: `(training, protocol_revision, variant, configuration)`, with variant
-  `W3 | W4 | W5` and one of the three frozen configuration IDs; and
-- aggregate: `(aggregate, protocol_revision, phase, aggregate_id)`, where phase is
-  `numpy-validity | numpy-selection | mujoco-adaptation | mujoco-pilot-evaluation |
-  mujoco-confirmation | final-decision` and `aggregate_id=all`.
-
-### 12.1 Exact lifecycle artifacts and publication commands
-
-Every lifecycle publisher is create-only, takes no network or simulator capability,
-uses the descriptor-relative writer in Section 11, and refuses a dirty tracked or
-untracked tree. It runs Git under the hardened environment in this section, requires
-the full `--expected-head` commit, proves the implementation allowlist byte-equal to
-the implementation SHA, and records both values. After publication, each small
-protocol/config/manifest is committed alone; the next publisher requires that clean
-commit. Raw scene/selector-component/training/aggregate results remain ignored and are
-digest-bound inputs, not Git commits.
-
-Before `precursor-frozen.yaml`, P7 publishes one experiment-local, create-only P3 gate
-adapter. It does not rerun MuJoCo or reinterpret P3; it validates and binds P3's existing
-authoritative evidence. `p3-gate.yaml` is canonical JSON-as-YAML and has exactly the
-top-level keys
-`schema_version,p2_lock_sha256,operation_manifest_sha256,compatibility_sha256,
-licenses_sha256,source_map_sha256,results_sha256,interface_findings_sha256,
-mujoco_fragment_path,mujoco_fragment_sha256,mujoco_package,audit_commands,
-advance_decision,p3_evidence_commit,p3_report_commit,publication_parent_sha256`.
-`mujoco_package` has exactly
-`name,version,distribution_artifact_sha256,python_version,platform,smoke_status,
-smoke_command`; `audit_commands` is the ordered exact pair
-`["uv","run","python","scripts/audit_references.py","--require-complete"]` and
-`["uv","run","python","scripts/source_audit.py","--check"]`,
-each represented by an exact-key row
-`command,exit_status,stdout_sha256,stderr_sha256`; `command` is the project-relative
-argument vector, `exit_status` is integer zero, and the two stream hashes cover exact
-captured bytes. `advance_decision` is
-exactly `ADVANCE`, and the two named P3 commits are full 40-lowercase-hex ancestors of
-the current HEAD. The adapter requires the P2 lock and P3 operation manifest, compatibility CSV,
-`references/licenses.md`, `docs/SOURCE_MAP.md`, Experiment 00 results/interface report,
-and the unique passing MuJoCo package-runtime fragment to validate and agree on package,
-artifact, lock, and commit identity. Missing, ambiguous, failed, dirty, or
-noncanonical evidence fails without writing.
-
-Publish and commit it alone before the precursor freeze:
-
-```text
-uv run python experiments/06_world_model/p3_gate.py --write \
+```bash
+uv run python experiments/06_world_model/run.py preflight \
+  --config experiments/06_world_model/config/frozen.json \
   --p2-lock references/repos.lock.yaml \
-  --operation-manifest experiments/00_source_audit/configs/operation-manifest.yaml \
-  --compatibility experiments/00_source_audit/results/compatibility.csv \
-  --licenses references/licenses.md --source-map docs/SOURCE_MAP.md \
-  --results experiments/00_source_audit/RESULTS.md \
-  --interface-findings experiments/00_source_audit/INTERFACE_FINDINGS.md \
-  --fragments experiments/00_source_audit/results/fragments \
-  --expected-head "$(git rev-parse HEAD)" \
-  --output experiments/06_world_model/configs/p3-gate.yaml
-git add experiments/06_world_model/configs/p3-gate.yaml
-git commit -m "docs: bind P7 to passing P3 evidence"
+  --p3-operation experiments/00_source_audit/configs/operation-manifest.yaml \
+  --p3-compatibility experiments/00_source_audit/results/compatibility.csv \
+  --p3-results experiments/00_source_audit/RESULTS.md \
+  --p3-fragments experiments/00_source_audit/results/fragments \
+  --run-id r1 --output results/06_world_model/r1
+
+uv run python experiments/06_world_model/run.py numpy-validity \
+  --run-id r1 --cases 80 --output results/06_world_model/r1
+
+uv run python experiments/06_world_model/run.py numpy-data \
+  --run-id r1 --train-scenes 96 --tuning-scenes 24 --validation-scenes 24 \
+  --output results/06_world_model/r1
+
+uv run python experiments/06_world_model/run.py fit \
+  --run-id r1 --input-scenes 96 --variants 3 --configurations 3 --models 9 \
+  --output results/06_world_model/r1
+
+uv run python experiments/06_world_model/run.py numpy-select \
+  --run-id r1 --tuning-scenes 24 --validation-scenes 24 --models 9 \
+  --evaluation-rows 41472 --selected-models 3 --output results/06_world_model/r1
+
+uv run python experiments/06_world_model/run.py mujoco-adapt \
+  --run-id r1 --scenes 20 --selected-models 3 --adapted-models 3 \
+  --output results/06_world_model/r1
+
+uv run python experiments/06_world_model/run.py pilot-predict \
+  --run-id r1 --scenes 20 --anchors 80 --candidates 640 \
+  --selector-inputs 560 --raw-predictions 2560 --latency-rows 57600 \
+  --output results/06_world_model/r1
+
+uv run python experiments/06_world_model/run.py pilot-truth \
+  --run-id r1 --scenes 20 --anchors 80 --candidates 640 \
+  --output results/06_world_model/r1
+
+uv run python experiments/06_world_model/run.py freeze \
+  --run-id r1 --pilot-scenes 20 --selected-models 3 \
+  --output results/06_world_model/r1
+
+uv run python experiments/06_world_model/run.py confirmation-manifest \
+  --run-id r1 --strata 5 --scenes-per-stratum 16 \
+  --output results/06_world_model/r1
+
+uv run python experiments/06_world_model/run.py confirmation-predict \
+  --run-id r1 --scenes 80 --anchors 320 --candidates 2560 \
+  --selector-inputs 2240 --raw-predictions 10240 --latency-rows 230400 \
+  --output results/06_world_model/r1
+
+uv run python experiments/06_world_model/run.py confirmation-truth \
+  --run-id r1 --scenes 80 --anchors 320 --candidates 2560 \
+  --output results/06_world_model/r1
+
+uv run python experiments/06_world_model/run.py decide \
+  --run-id r1 --confirmation-scenes 80 --output results/06_world_model/r1
+
+uv run python experiments/06_world_model/report.py \
+  --result-manifest results/06_world_model/r1/result-manifest.json \
+  --output experiments/06_world_model/WORLD_MODEL_DECISION.md
 ```
 
-The command requires a clean tree, takes `p3_evidence_commit` from the exact evidence
-SHA named by P3's report provenance, derives `p3_report_commit` as the unique common
-last-modifying commit of the two P3 report files, and records the literal pre-output
-HEAD as `publication_parent_sha256`. All three are full 40-lowercase-hex commits;
-evidence precedes report, report is an ancestor of publication parent, and the two
-reports must be byte-identical to their report commit. After the dedicated gate commit,
-`freeze-precursor` requires the gate path tracked and byte-identical and its publication
-parent an ancestor of the new clean HEAD. Reissue against an existing byte-identical
-gate validates-and-skips before any write; a conflicting file starts a reviewed
-protocol revision rather than overwriting.
+`pilot-predict` and `confirmation-predict` seal every prediction, selection, composition,
+and latency row before their matching truth command is accepted. Truth commands cannot
+import selector functions. `freeze` consumes the 20 untouched pilot scenes and writes
+only margins, resource ceilings, selected/adapted model hashes, calibration hashes, and
+fallback/critic thresholds. `confirmation-manifest` is impossible before that receipt.
+`decide` reads confirmation once and writes the final manifest last.
 
-`precursor-frozen.yaml` has exactly the top-level keys
-`schema_version,protocol_revision,implementation_sha256,implementation_paths,
-publication_parent_sha256,
-p2_lock_sha256,p3_gate_sha256,p3_mujoco_package,task,candidate_factory,numpy_simulator,
-mujoco_model_generator,cost,labels,w0,w1,model_grid,splits,validity_grid,schemas,
-sandbox_profiles,latency_contract,numeric_profile,hard_budgets`.
-Every nested key/value is the frozen Section 13.1
-transcription; unknown/missing keys fail. Publish it exactly:
+### 10.3 Resource ledger
+
+Each source/evidence scene, including terminal state/raster targets and selector tables,
+has a 2 MiB cap. Training models retain the existing configuration-specific caps: eight
+at 32 MiB and W5 CFG03 at 64 MiB. Adaptation/calibration has 32 MiB; all global
+evaluation/metrics/receipts/final output share 128 MiB; one current sibling temporary has
+96 MiB; checked-in config/manifests/report have 16 MiB. At most two protocol revisions
+may remain, with confirmation only on the final revision:
 
 ```text
-uv run python experiments/06_world_model/lifecycle.py freeze-precursor \
-  --base experiments/06_world_model/configs/base.yaml \
-  --validity-manifest experiments/06_world_model/manifests/numpy-validity-cases.json \
-  --p3-gate experiments/06_world_model/configs/p3-gate.yaml \
-  --expected-head "$(git rev-parse HEAD)" \
-  --output experiments/06_world_model/configs/precursor-frozen.yaml
+two revisions of 184 NumPy/pilot scenes
+  plus 80 final confirmation scenes:
+  (2 * 184 + 80) * 2 MiB                     = 896 MiB
+two revisions of nine training models:
+  2 * (8 * 32 + 1 * 64) MiB                 = 640 MiB
+two revisions of adaptation/calibration       =  64 MiB
+global evaluation, metrics, receipts, report  = 128 MiB
+one current write temporary                    =  96 MiB
+checked-in configuration and final decision   =  16 MiB
+-------------------------------------------------------
+maximum retained P7 total                     = 1,840 MiB
 ```
 
-Each of the six `phase-protocol.json` files has exact keys
-`schema_version,protocol_id,revision,phase,implementation_sha256,
-publication_parent_sha256,parent_path,parent_sha256,p2_lock_sha256,p3_gate_sha256,
-config_path,config_sha256,input_manifest_path,input_manifest_sha256,exact_counts,
-budgets`. `exact_counts` always has exact integer keys
-`validity_cases,scene_bundles,selector_component_bundles,training_bundles,
-input_aggregates`; the six rows are:
-
-| protocol path | phase | counts `(validity,scenes,selector-components,training,aggregates)` |
-|---|---|---|
-| `protocols/r1/01-numpy-validity.json` | `numpy-validity` | `(80,0,0,0,0)` |
-| `protocols/r1/02-numpy-selection.json` | `numpy-selection` | `(0,144,0,9,1)` |
-| `protocols/r1/03-mujoco-adaptation.json` | `mujoco-adaptation` | `(0,20,0,3,1)` |
-| `protocols/r1/04-mujoco-pilot-evaluation.json` | `mujoco-pilot-evaluation` | `(0,20,20,0,1)` |
-| `protocols/r1/05-mujoco-confirmation.json` | `mujoco-confirmation` | `(0,80,80,0,2)` |
-| `protocols/r1/06-final-decision.json` | `final-decision` | `(0,0,0,0,1)` |
-
-The first three protocols publish serially with these exact commands; each parent must
-already validate and the named output is committed before the next command:
-
-```text
-uv run python experiments/06_world_model/lifecycle.py publish-phase --phase numpy-validity --config experiments/06_world_model/configs/precursor-frozen.yaml --parent experiments/06_world_model/configs/precursor-frozen.yaml --input-manifest experiments/06_world_model/manifests/numpy-validity-cases.json --validity-cases 80 --scene-bundles 0 --selector-component-bundles 0 --training-bundles 0 --input-aggregates 0 --expected-head "$(git rev-parse HEAD)" --output experiments/06_world_model/protocols/r1/01-numpy-validity.json
-uv run python experiments/06_world_model/lifecycle.py publish-phase --phase numpy-selection --config experiments/06_world_model/configs/precursor-frozen.yaml --parent results/06_world_model/aggregates/r1/numpy-validity/all/aggregate-manifest.json --input-manifest experiments/06_world_model/manifests/numpy-development.json --validity-cases 0 --scene-bundles 144 --selector-component-bundles 0 --training-bundles 9 --input-aggregates 1 --expected-head "$(git rev-parse HEAD)" --output experiments/06_world_model/protocols/r1/02-numpy-selection.json
-uv run python experiments/06_world_model/lifecycle.py publish-phase --phase mujoco-adaptation --config experiments/06_world_model/configs/precursor-frozen.yaml --parent results/06_world_model/aggregates/r1/numpy-selection/all/aggregate-manifest.json --input-manifest experiments/06_world_model/manifests/mujoco-pilot.json --validity-cases 0 --scene-bundles 20 --selector-component-bundles 0 --training-bundles 3 --input-aggregates 1 --expected-head "$(git rev-parse HEAD)" --output experiments/06_world_model/protocols/r1/03-mujoco-adaptation.json
-```
-
-The fourth protocol is permitted only after the third phase has executed and this exact
-create-only adapter has published and committed `pilot-evaluation.yaml`. That file has
-the precursor keys plus exact top-level `selected_model_hashes,adapted_output_heads,
-composed_adapted_model_hashes,calibration_maps,fallback_thresholds,
-adaptation_input_hashes`; it contains no pilot-
-evaluation outcomes, margins, measured budgets, or confirmation root:
-
-```text
-uv run python experiments/06_world_model/lifecycle.py freeze-pilot-evaluation \
-  --precursor experiments/06_world_model/configs/precursor-frozen.yaml \
-  --numpy-selection results/06_world_model/aggregates/r1/numpy-selection/all/aggregate-manifest.json \
-  --adaptation results/06_world_model/aggregates/r1/mujoco-adaptation/all/aggregate-manifest.json \
-  --expected-head "$(git rev-parse HEAD)" \
-  --output experiments/06_world_model/configs/pilot-evaluation.yaml
-
-uv run python experiments/06_world_model/lifecycle.py publish-phase --phase mujoco-pilot-evaluation --config experiments/06_world_model/configs/pilot-evaluation.yaml --parent results/06_world_model/aggregates/r1/mujoco-adaptation/all/aggregate-manifest.json --input-manifest experiments/06_world_model/manifests/mujoco-pilot.json --validity-cases 0 --scene-bundles 20 --selector-component-bundles 20 --training-bundles 0 --input-aggregates 1 --expected-head "$(git rev-parse HEAD)" --output experiments/06_world_model/protocols/r1/04-mujoco-pilot-evaluation.json
-```
-
-After the pilot-evaluation aggregate validates, the common freeze command consumes only
-the already declared pilot outputs. `frozen.yaml` has the precursor keys plus exact
-top-level `selected_models,adapted_output_heads,composed_adapted_model_hashes,
-calibration_maps,fallback_thresholds,
-pilot_margins,measured_budgets,pilot_input_hashes,confirmation_contract`; it cannot
-self-hash or contain a confirmation seed/root:
-
-```text
-uv run python experiments/06_world_model/lifecycle.py freeze-evidence \
-  --precursor experiments/06_world_model/configs/precursor-frozen.yaml \
-  --numpy-selection results/06_world_model/aggregates/r1/numpy-selection/all/aggregate-manifest.json \
-  --adaptation results/06_world_model/aggregates/r1/mujoco-adaptation/all/aggregate-manifest.json \
-  --pilot-evaluation results/06_world_model/aggregates/r1/mujoco-pilot-evaluation/all/aggregate-manifest.json \
-  --expected-head "$(git rev-parse HEAD)" --output experiments/06_world_model/configs/frozen.yaml
-```
-
-Only after that file is committed does the following command generate the unseen
-confirmation root and manifest. The manifest has exact keys
-`schema_version,protocol_sha256,generated_after_freeze_commit,rng_algorithm,rng_root,
-strata,scenes`; `strata` is the five names in frozen order, and `scenes` is exactly 80
-rows sorted by `(stratum,scene_id)` with exact keys
-`stratum,ordinal,scene_seed,scene_id,probe_seed,parameter_cell_sha256`. It rejects any
-pilot/NumPy ancestor or content hash:
-
-```text
-uv run python experiments/06_world_model/lifecycle.py generate-confirmation \
-  --frozen experiments/06_world_model/configs/frozen.yaml \
-  --expected-head "$(git rev-parse HEAD)" --strata 5 --scenes-per-stratum 16 \
-  --output experiments/06_world_model/manifests/mujoco-confirmation.json
-```
-
-Commit that manifest alone, then publish protocol 05 exactly:
-
-```text
-uv run python experiments/06_world_model/lifecycle.py publish-phase --phase mujoco-confirmation --config experiments/06_world_model/configs/frozen.yaml --parent experiments/06_world_model/configs/frozen.yaml --input-manifest experiments/06_world_model/manifests/mujoco-confirmation.json --validity-cases 0 --scene-bundles 80 --selector-component-bundles 80 --training-bundles 0 --input-aggregates 2 --expected-head "$(git rev-parse HEAD)" --output experiments/06_world_model/protocols/r1/05-mujoco-confirmation.json
-```
-
-Commit protocol 05, run its complete selector freeze, truth phase, and confirmation
-aggregate, and validate that aggregate without report or decision access. Only then may
-protocol 06 bind the now-existing confirmation aggregate and publish exactly:
-
-```text
-uv run python experiments/06_world_model/lifecycle.py publish-phase --phase final-decision --config experiments/06_world_model/configs/frozen.yaml --parent results/06_world_model/aggregates/r1/mujoco-confirmation/all/aggregate-manifest.json --input-manifest experiments/06_world_model/manifests/mujoco-confirmation.json --validity-cases 0 --scene-bundles 0 --selector-component-bundles 0 --training-bundles 0 --input-aggregates 1 --expected-head "$(git rev-parse HEAD)" --output experiments/06_world_model/protocols/r1/06-final-decision.json
-```
-
-Commit protocol 06 alone before final-decision aggregation. A protocol 06 file that
-predates, does not hash, or does not name the complete confirmation aggregate is invalid.
-
-The shell substitution must resolve to one literal full 40-hex SHA before the Python
-process starts; the CLI records and independently rechecks it. Any output, manifest,
-aggregate, or source change after its parent commit starts a new protocol revision.
-
-One scene bundle contains exactly four anchors and 32 candidate branches. Pilot-
-evaluation and confirmation selectors run only through the global pass-S commands
-below. Each command validates every named scene/component and publishes the phase
-selector freeze only after the complete exact count; neither command can import or
-materialize MuJoCo truth:
-
-Before those evidence passes, NumPy and MuJoCo-adaptation source generation plus the
-privileged adaptation controller execute through these exact manifest-wide commands.
-`run_sources.py` derives each create-only bundle key from the
-manifest row and phase (`scene:r1:<source-phase>:<stratum>:<16-lowercase-hex-seed>`),
-requires every expected key exactly once, and has no selector-output writer. The NumPy
-command creates exactly 96 train, 24 tuning, and 24 validation bundles. The second
-source command creates exactly 20 MuJoCo adaptation source bundles. The adaptation
-controller runs only after both NumPy selection and those bundles validate, consumes
-the three selected training bundles plus exactly those 20 sources, fits only permitted
-outputs, and publishes the adaptation aggregate:
-
-```text
-uv run python experiments/06_world_model/run_sources.py \
-  --protocol experiments/06_world_model/protocols/r1/02-numpy-selection.json \
-  --scene-manifest experiments/06_world_model/manifests/numpy-development.json \
-  --phase numpy-selection --output-root results/06_world_model/scenes \
-  --headless --max-train-scenes 96 --max-tuning-scenes 24 \
-  --max-validation-scenes 24 --max-scenes 144 --expected-head "$(git rev-parse HEAD)"
-
-uv run python experiments/06_world_model/run_sources.py \
-  --protocol experiments/06_world_model/protocols/r1/03-mujoco-adaptation.json \
-  --scene-manifest experiments/06_world_model/manifests/mujoco-pilot.json \
-  --partition adaptation --phase mujoco-pilot-adaptation \
-  --output-root results/06_world_model/scenes --headless \
-  --max-train-scenes 0 --max-tuning-scenes 0 --max-validation-scenes 0 \
-  --max-scenes 20 --expected-head "$(git rev-parse HEAD)"
-
-uv run python experiments/06_world_model/run_adaptation.py \
-  --protocol experiments/06_world_model/protocols/r1/03-mujoco-adaptation.json \
-  --scene-manifest experiments/06_world_model/manifests/mujoco-pilot.json \
-  --partition adaptation --phase mujoco-adaptation \
-  --scene-root results/06_world_model/scenes \
-  --training-root results/06_world_model/training \
-  --numpy-selection results/06_world_model/aggregates/r1/numpy-selection/all/aggregate-manifest.json \
-  --output-root results/06_world_model/aggregates --headless \
-  --max-input-scenes 20 --max-training-bundles 3 --max-input-aggregates 1 \
-  --max-output-aggregates 1 --expected-head "$(git rev-parse HEAD)"
-```
-
-Any missing, extra, duplicate, wrongly partitioned, or differently keyed input fails
-the whole phase. `train_all.py` iterates the fixed ordered Cartesian product
-`{W3,W4,W5} x {CFG01,CFG02,CFG03}`, derives each key, and accepts only the 96 NumPy-train
-source descriptors named by protocol 02. Its only invocation is:
-
-```text
-uv run python experiments/06_world_model/train_all.py \
-  --protocol experiments/06_world_model/protocols/r1/02-numpy-selection.json \
-  --scene-root results/06_world_model/scenes \
-  --output-root results/06_world_model/training --headless \
-  --max-input-scenes 96 --max-configurations-per-variant 3 \
-  --max-variants 3 --max-training-bundles 9 --expected-head "$(git rev-parse HEAD)"
-```
-
-The phase must contain exactly nine training bundle keys before NumPy selection
-aggregation; caller-supplied configuration names or bundle keys are rejected.
-
-```text
-uv run python experiments/06_world_model/run_selectors.py \
-  --protocol experiments/06_world_model/protocols/r1/04-mujoco-pilot-evaluation.json \
-  --scene-manifest experiments/06_world_model/manifests/mujoco-pilot.json \
-  --phase mujoco-pilot-evaluation \
-  --component-root results/06_world_model/phase-components \
-  --selector-freeze results/06_world_model/phase-components/r1/mujoco-pilot-evaluation/selector-freeze.json \
-  --headless --max-scenes 20 --max-anchors 80 --max-candidates 640 --max-selectors 5 --max-composers 2 \
-  --expected-head "$(git rev-parse HEAD)"
-
-uv run python experiments/06_world_model/run_selectors.py \
-  --protocol experiments/06_world_model/protocols/r1/05-mujoco-confirmation.json \
-  --scene-manifest experiments/06_world_model/manifests/mujoco-confirmation.json \
-  --phase mujoco-confirmation \
-  --component-root results/06_world_model/phase-components \
-  --selector-freeze results/06_world_model/phase-components/r1/mujoco-confirmation/selector-freeze.json \
-  --headless --max-scenes 80 --max-anchors 320 --max-candidates 2560 --max-selectors 5 --max-composers 2 \
-  --expected-head "$(git rev-parse HEAD)"
-```
-
-Pass T starts only after the matching selector freeze validates. `run_truth_phase.py`
-is the sole manifest iterator: in sorted manifest order it opens one validated finalized
-selector component, regenerates/materializes its truth source, runs W2/MuJoCo, scores,
-and publishes one new final evidence bundle without starting a selector. It
-derives the bundle key internally and rejects a
-caller-supplied key or arbitrary runner arguments. These are the exact two invocations;
-they require exactly 20 pilot-evaluation or 80 confirmation keys before aggregation:
-
-```text
-uv run python experiments/06_world_model/run_truth_phase.py \
-  --protocol experiments/06_world_model/protocols/r1/04-mujoco-pilot-evaluation.json \
-  --scene-manifest experiments/06_world_model/manifests/mujoco-pilot.json \
-  --partition pilot-evaluation --phase mujoco-pilot-evaluation \
-  --selector-freeze results/06_world_model/phase-components/r1/mujoco-pilot-evaluation/selector-freeze.json \
-  --component-root results/06_world_model/phase-components \
-  --output-root results/06_world_model/scenes --headless \
-  --max-scenes 20 --max-anchors-per-scene 4 --max-candidates-per-anchor 8 \
-  --expected-head "$(git rev-parse HEAD)"
-
-uv run python experiments/06_world_model/run_truth_phase.py \
-  --protocol experiments/06_world_model/protocols/r1/05-mujoco-confirmation.json \
-  --scene-manifest experiments/06_world_model/manifests/mujoco-confirmation.json \
-  --phase mujoco-confirmation \
-  --selector-freeze results/06_world_model/phase-components/r1/mujoco-confirmation/selector-freeze.json \
-  --component-root results/06_world_model/phase-components \
-  --output-root results/06_world_model/scenes --headless \
-  --max-scenes 80 --max-anchors-per-scene 4 --max-candidates-per-anchor 8 \
-  --expected-head "$(git rev-parse HEAD)"
-
-uv run python experiments/06_world_model/validate_numpy.py \
-  --protocol experiments/06_world_model/protocols/r1/01-numpy-validity.json \
-  --bundle-key aggregate:r1:numpy-validity:all \
-  --output-root results/06_world_model/aggregates --headless --max-cases 80 \
-  --expected-head "$(git rev-parse HEAD)"
-
-uv run python experiments/06_world_model/aggregate.py \
-  --protocol experiments/06_world_model/protocols/r1/04-mujoco-pilot-evaluation.json \
-  --bundle-key aggregate:r1:mujoco-pilot-evaluation:all \
-  --scene-root results/06_world_model/scenes \
-  --training-root results/06_world_model/training \
-  --output-root results/06_world_model/aggregates --headless \
-  --max-training-bundles 0 --max-scenes 20 --max-input-aggregates 1 \
-  --expected-head "$(git rev-parse HEAD)"
-```
-
-The iterator has no generic path or subprocess argument and a component exit other
-than zero fails the phase; it never skips a missing key. Its create-only receipt at
-`phase-components/r1/<phase>/truth-complete.json` has exact keys
-`schema_version,phase,protocol_sha256,selector_freeze_sha256,scene_count,
-ordered_bundle_keys,bundle_manifest_sha256s` and must validate before aggregation.
-
-The same aggregate shape uses `--protocol
-experiments/06_world_model/protocols/r1/05-mujoco-confirmation.json` and `--max-scenes 80` for
-`aggregate:r1:mujoco-confirmation:all`, with zero training bundles and two input
-aggregates. Exact aggregate inputs are: NumPy validity, the frozen 80-case fixture and
-no prior bundle; NumPy selection, nine training bundles plus 24 tuning and 24
-validation scene bundles plus the one validity aggregate; MuJoCo
-adaptation, 20 validated adaptation source bundles plus the three selected NumPy
-training bundles and the NumPy-selection aggregate in the single adaptation controller;
-pilot evaluation, 20 evaluation scene bundles plus the one adaptation
-aggregate; confirmation, 80 confirmation scene bundles plus the adaptation and
-pilot-evaluation aggregates; final decision, the one confirmation aggregate. The CLI
-requires corresponding exact `--max-training-bundles`, `--max-scenes`, and
-`--max-input-aggregates` values, using zero for an inapplicable kind. Destinations
-derive respectively as
-`scenes/<revision>/<phase>/<stratum>/<seed>/`,
-`phase-components/<revision>/<phase>/scenes/<stratum>/<seed>/`,
-`training/<revision>/<variant>/<configuration>/`, and
-`aggregates/<revision>/<phase>/all/`. A command cannot write another type's root or
-carry another type's flags. NumPy generation/training/selection require their
-checked-in phase protocols descending from `precursor-frozen.yaml`; MuJoCo adaptation/
-evaluation require their phase-bound protocols; confirmation/final decision require
-their protocols descending from `frozen.yaml`. Parent hashes and allowed phase are
-validated, so a later protocol cannot be substituted retroactively.
-
-All non-validity aggregate and final-report invocations are exact, not examples:
-
-```text
-uv run python experiments/06_world_model/aggregate.py --protocol experiments/06_world_model/protocols/r1/02-numpy-selection.json --bundle-key aggregate:r1:numpy-selection:all --scene-root results/06_world_model/scenes --training-root results/06_world_model/training --output-root results/06_world_model/aggregates --headless --max-training-bundles 9 --max-scenes 48 --max-input-aggregates 1 --expected-head "$(git rev-parse HEAD)"
-uv run python experiments/06_world_model/aggregate.py --protocol experiments/06_world_model/protocols/r1/04-mujoco-pilot-evaluation.json --bundle-key aggregate:r1:mujoco-pilot-evaluation:all --scene-root results/06_world_model/scenes --training-root results/06_world_model/training --output-root results/06_world_model/aggregates --headless --max-training-bundles 0 --max-scenes 20 --max-input-aggregates 1 --expected-head "$(git rev-parse HEAD)"
-uv run python experiments/06_world_model/aggregate.py --protocol experiments/06_world_model/protocols/r1/05-mujoco-confirmation.json --bundle-key aggregate:r1:mujoco-confirmation:all --scene-root results/06_world_model/scenes --training-root results/06_world_model/training --output-root results/06_world_model/aggregates --headless --max-training-bundles 0 --max-scenes 80 --max-input-aggregates 2 --expected-head "$(git rev-parse HEAD)"
-```
-
-The confirmation command must complete before the Section 12.1 protocol-06 publisher;
-protocol 06 is then committed alone. Only after that barrier are these exact commands
-allowed:
-
-```text
-uv run python experiments/06_world_model/aggregate.py --protocol experiments/06_world_model/protocols/r1/06-final-decision.json --bundle-key aggregate:r1:final-decision:all --scene-root results/06_world_model/scenes --training-root results/06_world_model/training --output-root results/06_world_model/aggregates --headless --max-training-bundles 0 --max-scenes 0 --max-input-aggregates 1 --expected-head "$(git rev-parse HEAD)"
-uv run python experiments/06_world_model/report.py --protocol experiments/06_world_model/protocols/r1/06-final-decision.json --decision results/06_world_model/aggregates/r1/final-decision/all/decision.json --artifact-manifest results/06_world_model/aggregates/r1/final-decision/all/aggregate-manifest.json --output experiments/06_world_model/WORLD_MODEL_DECISION.md --headless --expected-head "$(git rev-parse HEAD)"
-```
-
-The final aggregate create-only publishes `decision.json` with exact keys
-`schema_version,protocol_sha256,confirmation_aggregate_sha256,lifecycle_status,
-artifact_status,blocker_status,scientific_result,authority_readiness,assigned_role,
-promotion_status,composition_results,endpoint_results,input_hashes`; its arrays use
-the frozen Section 10 order and unknown/duplicate/missing keys fail. The aggregate sets
-`promotion_status=SELECTOR_PROTOCOL_PROMOTED` only for the exact supported selector
-case and `STOPPED` otherwise; `ACTION_ROUTING_ELIGIBLE` is forbidden in this decision.
-The report command validates every upstream hash and create-only publishes the previously absent
-`WORLD_MODEL_DECISION.md` by sibling temporary file, fsync, rename-no-replace, and
-parent fsync; exact reissue validates-and-skips without rewriting bytes. The Markdown
-has exact headings `Provenance`, `Validity`, `Canonical co-primary results`, `Secondary
-results`, `Authority decision`, `Resources`, and `Artifacts`, in that order, and ends
-with the decision/artifact/config/protocol SHA-256 values. It records the separate
-lifecycle/artifact/blocker/scientific/role/promotion states and cannot promote any role
-unless the Section 10 selector rule permits it.
-
-The validity command alone accepts `--max-cases`, which must equal 80. Every other
-command rejects that flag. NumPy scene generation and training are blocked until the
-matching complete validity aggregate validates.
-
-Every command rejects an unknown/mismatched key, wrong cwd/root, missing headless mode,
-incomplete exact count, unpinned MuJoCo where required, dirty implementation,
-network/CUDA/physical/remote enablement, or undeclared input. Reissuing the byte-identical
-command is the only resume operation: it validates the completed type-specific bundle
-and skips an exact match. A missing/extra file, corrupt/partial temporary tree, input-
-manifest mismatch, mixed bundle type, or existing invalid destination fails without
-overwrite, deletion, or in-place repair. Every typed publication uses the one
-experiment-local `AtomicBundle` helper and the atomic rules in Section 11.
-
-Git provenance runs with `GIT_DIR`, `GIT_WORK_TREE`, replacement refs, alternates,
-hooks, and external diff/text-conversion variables removed; it binds the frozen full
-HEAD SHA and exact P2/P3 audit/compatibility hashes. The launcher checks HEAD and a
-clean tracked/untracked worktree before spawning any component and repeats both checks
-after component exit immediately before publication. A mismatch discards only the
-same-process held temporary bundle and fails; it never publishes mixed-source evidence.
-The exact read-only sequence is `git rev-parse --verify HEAD`,
-`git status --porcelain=v1 --untracked-files=all`, and
-`git diff --exit-code <implementation_sha256> -- <implementation_paths...>` under that
-hardened environment. `implementation_paths` is the sorted, duplicate-free list of
-`pyproject.toml`, `uv.lock`, `reflect/types.py`, `reflect/events.py`,
-`reflect/rollout.py`, `reflect/replay.py`, their direct contract tests, and every
-Experiment 06 source/test/asset/sandbox/base-config path;
-it excludes only ignored results and later create-only protocol/report evidence. HEAD
-must equal the command's literal `--expected-head`, status and implementation diff must
-be empty, and SHA must be a real 40-lowercase-hex commit both before spawn and after
-component exit. No command runs after any failed check.
-
-Each scene bundle has a 16 MiB/60-minute ceiling. W3 CFG01-CFG03, W4 CFG01-CFG03,
-and W5 CFG01-CFG02 training bundles each have a 32 MiB/60-minute ceiling; W5 CFG03
-alone has a 64 MiB/60-minute ceiling. There are exactly three configurations for each
-of W3, W4, and W5, nine per revision. The larger cap is mandatory rather than
-outcome-derived: W5 CFG03 has 140 transition inputs, `140+140*141/2=10,010` features,
-39 outputs, and 16 members, so coefficient/intercept arrays occupy exactly 49,974,912
-bytes; its fixed PCA arrays occupy 6,488,320 bytes, already 53.85 MiB before the other
-typed files. Its validator additionally enforces nonborrowing subcaps of 50 MiB for
-`model.npz` including canonical ZIP framing, 7 MiB for `pca.npz`, 4 MiB for
-`evaluation-predictions.parquet`, and 3 MiB total for preprocessing/metrics/manifests;
-their sum is the 64 MiB bundle cap. Every aggregate has a 60-minute wall ceiling. Aggregate byte
-maxima are exact: per revision NumPy validity is 64 MiB, NumPy selection is 32 MiB,
-MuJoCo adaptation is 64 MiB,
-and pilot evaluation is 64 MiB; final-revision confirmation is 96 MiB and final
-decision is 32 MiB. Checked-in generated lifecycle/config/manifest/report evidence has
-a separate create-only 32 MiB total allowance. Scratch/quarantine has two nonborrowing
-96 MiB slots: one live largest-writer/staging slot and one retained prior-revision orphan
-slot. The worst permitted adaptation coefficient payload is exactly 26,697,216 bytes:
-1,280,384 for W3 CFG03's seven changed heads, 16,446,976 for W4 CFG03's fourteen
-outputs, and 8,969,856 for W5 CFG03's seven changed scalar heads; unchanged W5
-`latent_next` is referenced rather than copied. Calibration and manifests therefore
-remain inside nonborrowing adaptation subcaps of 28 MiB for `adapted-models.npz`,
-4 MiB for `calibration-output.npz`, and 32 MiB for all remaining typed aggregate files;
-their sum is the 64 MiB adaptation cap. Typed aggregates and shared allowances total
-`2*(64+32+64+64)+96+32+192+32 = 800 MiB`. The evidence scene's
-copied selector payload and truth/outcomes/scorer/rollout payload share its one 16 MiB
-cap. Finalized selector components remain separately charged at 4 MiB each. With two allowed
-protocol revisions and confirmation only on the final revision, retained maximum is:
-
-```text
-two revisions of NumPy+MuJoCo pilot scenes:
-  2 * (144 + 40) * 16 MiB = 5,888 MiB
-final MuJoCo confirmation:
-  80 * 16 MiB             = 1,280 MiB
-two revisions of training shards:
-  2 * (8 * 32 + 1 * 64) MiB = 640 MiB
-typed aggregates + two scratch/quarantine slots
-  + tracked lifecycle/report evidence       =   800 MiB
-two revisions of pilot selector components:
-  2 * 20 * 4 MiB                            =   160 MiB
-final confirmation selector components:
-  80 * 4 MiB                                =   320 MiB
-phase-global latency/freezes/receipts        =    16 MiB
------------------------------------------------------
-maximum retained P7 total                  = 9,104 MiB
-```
-
-The scene count is `144 NumPy + 20 MuJoCo adaptation + 20 MuJoCo pilot evaluation =
-184` per revision, so the first line remains exact. The count includes truth,
-predictions, scorer output, and canonical rollout inside scene bundles and all fitted
-models/metrics inside training/aggregate bundles. The 32 MiB tracked bucket charges
-`precursor-frozen.yaml`, `pilot-evaluation.yaml`, `frozen.yaml`, all six protocols, all
-checked-in validity/development/pilot/confirmation manifests, sandbox profiles, and
-`WORLD_MODEL_DECISION.md`; their actual regular-file bytes are measured before and
-after every publication. Nothing is off-ledger.
-
-Before any typed phase starts or resumes, preflight computes projected occupancy without
-double charging. It adds: (a) actual bytes of every finalized bundle outside the current
-phase; (b) actual bytes of every validated finalized current-phase scene, selector-
-component, training, and aggregate key; (c) the per-type cap once for each exact
-current-phase key still missing; (d) the full 96 MiB live-writer
-slot and full 96 MiB retained-orphan/quarantine slot exactly once each, regardless of
-their current occupancy; and (e) actual tracked-evidence bytes plus only its remaining
-32 MiB allowance plus the remaining 16 MiB phase-global allowance. The single
-recognized temporary occupies the live-writer slot and a
-quarantine entry occupies the retained-orphan slot; its actual bytes are validated
-against that slot but is never added again. Multiple temporaries, multiple retained
-orphans, an entry over its slot, or an unknown key fail closed. The exact projected
-formula and every actual/missing key are written to preflight evidence. It requires both
-the 9,104 MiB experiment cap and inherited 10 GiB/free-disk ceilings. Thus initial and
-resumed preflights have the same maximum projection, and a completed key replaces rather
-than supplements its reserved cap. No published artifact is deleted until final
-decision. A cap or timeout yields `INCONCLUSIVE`, never evidence against a model.
-
-## 13. Frozen fields and pilot-derived margins/resources
-
-The precursor contract freezes, before the NumPy validity gate, every value that
-defines the task or available hypothesis space:
-
-1. NumPy equations, pinned MuJoCo mapping, step/contact tolerances, and all analytic/
-   physical/step-halving validity thresholds;
-2. workspace, object, target, obstacle, mass, friction, and held-out parameter ranges;
-3. probe policy, four-anchor rule, action interval/limits/phases/offsets/speed, and all
-   identity/content digest encodings;
-4. success/safety labels, actual/predicted scalar-cost components and weights, missing-
-   output penalty, and all ties;
-5. the complete W0 seed rule and W1 formula, weights, collision rule, and fallback form;
-6. the three W3 and three W4 finite feature/degree/regularization/ensemble configurations;
-7. the three W5 channel/PCA-dimension/tolerance/latent-transition/
-   regularization configurations and PCA canonicalization;
-8. calibration family/bins, uncertainty aggregation, threshold-fitting algorithm,
-   fallback coverage rule, and failure-critic form;
-9. split counts/roots, strata/weights, bootstrap seeds/mechanics, numerical solver
-   tolerances, hard inherited resource caps, and every schema/command rule.
-
-NumPy tuning/validation then chooses configurations/checkpoints only by the frozen
-lexicographic key `regret, negative rank correlation, calibration error, model bytes,
-configuration ID`; it creates no new numeric option. MuJoCo adaptation may fit only
-selected linear output coefficients, the declared calibration-map coefficients, and
-fallback/critic thresholds by the frozen algorithms. Those fitted values are sealed
-before pilot evaluation.
-
-The 20 untouched MuJoCo pilot-evaluation scenes set only: (a) co-primary, held-out,
-W3, W5-versus-W4, shadow Brier/ECE ceilings, offline-family effects, calibration, and
-failure-critic effect/non-inferiority margins; and
-(b) measured model/context/inference-latency and scene-runtime ceilings. They cannot alter any
-field in the preceding lists, any fitted coefficient/threshold, exclusions, or metric
-definitions.
-
-For each scientific endpoint, margin is
-`ceil_to_unit(max(one_task_unit, 0.5 * paired_scene_sample_SD))`, computed only from
-the 20 untouched MuJoCo pilot-evaluation scenes, with sample SD denominator `n-1`;
-`ceil_to_unit(x)=ceil(x/unit)*unit`. Rank-correlation unit is `0.001`; probability/rate
-unit is one anchor outcome over its fixed pilot denominator; regret/cost unit is the
-smallest positive frozen cost quantum and bytes round to 1024. The two latency ceilings
-use Section 9.6's separate p95 formula and 0.1 ms unit. Other measured resource limits
-use `ceil_to_unit(1.25 * maximum_usage)` across only those 20 pilot-evaluation scenes and
-must remain under the already frozen inherited caps. Zero
-SD yields one unit; unattainable margins make the result `INCONCLUSIVE`, never clipped.
-No pilot-evaluation statistic enters configuration selection or fitting.
-
-For each shadow composition and held-out Brier/ECE endpoint, the absolute ceiling is
-`ceil_to_unit(max_scene_metric + 0.5*sample_SD)` on pilot evaluation, with unit 0.001;
-larger than 1.0 is unattainable and yields `INCONCLUSIVE`. Offline-family and critic
-minimum effects use the preceding scientific-endpoint margin formula. These values are
-computed for every predeclared endpoint even if a higher role later passes.
-
-### 13.1 Complete precursor configuration appendix
-
-The checked-in precursor protocol must contain exactly the values below. An
-implementation plan may transcribe them but may not choose substitutes.
-
-**World, roots, and integration.** Named PCG64 roots are the SHA-256-derived first
-128 big-endian bits of the literal strings `exp06-r1-numpy-train`,
-`exp06-r1-numpy-tuning`, `exp06-r1-numpy-validation`, `exp06-r1-mujoco-adaptation`,
-and `exp06-r1-mujoco-pilot-evaluation`; revision 2 replaces `r1` with `r2` and shares
-no ancestor. W0 uses the separate literal root `exp06-r1-w0` (or `r2` for revision 2).
-The unseen confirmation root is generated only after freeze as already
-specified. The workspace is `[-1.0,1.0]^2`; end-effector radius is 0.04 m; command
-horizon is 1.0 s with 50 little-endian float64 planar-velocity rows at 0.02 s and
-component clamp `[-0.25,0.25] m/s`. MuJoCo uses the experiment-local generated model
-below with the P3-pinned runtime, timestep 0.002 s, ten physics steps per command, the
-Euler semi-implicit integrator, gravity disabled, and the same initial state/action/cost
-projection as NumPy.
-
-**Exact seed and draw compiler.** A named literal root is the first 16 bytes of
-`SHA256(UTF8(literal))`, interpreted big-endian. After evidence freeze the controller
-calls `os.urandom(16)` exactly once for confirmation entropy, rejects a short/error
-result, derives the root as the first 16 bytes of
-`SHA256(canonical_json(["exp06-confirmation-root-v1",entropy.hex()]))`, destroys the
-entropy, and publishes only the derived root in the committed confirmation manifest. No fallback
-clock, UUID, PID, or library-global RNG is allowed. For every partition/stratum/ordinal,
-the 64-bit `scene_seed` is the first eight bytes of
-`SHA256(canonical_json(["exp06-scene-id-v1",root_hex,partition,stratum,ordinal]))`;
-`scene_id` is its 16-lowercase-hex encoding. `probe_seed` uses the same tuple with domain
-`exp06-probe-v1`. Any seed/ID collision invalidates the manifest rather than advancing
-or resampling.
-
-Each proposal ordinal `0..31` gets a fresh PCG64 seed from the first 16 big-endian bytes
-of `SHA256(canonical_json(["exp06-scene-parameters-v1",root_hex,partition,stratum,
-ordinal,proposal_ordinal]))`. The generator makes exactly these float64 calls in order:
-`object_x, object_y, target_bearing, target_distance, target_yaw, mass_u, friction_u,
-geometry_choice, disk_radius_u, rectangle_half_x_u, rectangle_half_y_u,
-obstacle_choice, obstacle_side, object_yaw`; continuous draws use one
-`Generator.random(dtype=float64)` and `low+(high-low)*u`, while choices use one
-`integers(0,n,endpoint=False,dtype=uint64)`. Both disk and rectangle dimension draws and
-both obstacle draws are consumed even when inapplicable. The named OOD stratum changes
-only the stated interval/forced choice; every other call and position remains identical.
-The first feasible proposal wins, all rejected proposal ordinals/reasons are recorded,
-and exhaustion is `INVALID`. Candidate generation, bootstrap, ensemble members, and W0
-each use their separately specified domain and a fresh generator; no generator object or
-state crosses a scene, proposal, model member, anchor, or phase.
-
-**Experiment-local MuJoCo model.** P3 contributes only the validated MuJoCo runtime.
-Experiment 06 owns `assets/push_t_template.xml` and a pure
-`build_mjcf(scene_parameters) -> bytes` generator. The template and generator source
-hash freeze before NumPy validity. Output is UTF-8/LF with one trailing newline; element
-and attribute order are literal template order, all inserted finite floats use
-lowercase `format(value, ".17g")`, negative zero normalizes to `0`, and XML escaping is
-the standard five-character mapping. No XML pretty-printer or platform serializer may
-rewrite evidence bytes.
-
-The generated root is `mujoco model="exp06_push_t_v1"`. Its option is exactly
-`timestep="0.002" gravity="0 0 0" integrator="Euler" cone="pyramidal"
-jacobian="dense" solver="Newton" iterations="20" tolerance="0" impratio="1"`;
-coordinates are local, angles radians, and inertia derives from geoms. All dynamic
-joints have `damping="0" armature="0" limited="false"`. Contact geoms use
-`condim="3" solref="0.002 1" solimp="0.9 0.95 0.001"`, restitution zero,
-`contype="1" conaffinity="1"`, and friction tuple `(scene_friction,0.005,0.0001)`.
-There is no gravity, floor, hidden actuator, sensor, equality, tendon, plugin, or
-callback.
-
-The worldbody order is fixed: noncolliding target site; mocap end-effector; dynamic
-object; optional obstacle; walls `-x,+x,-y,+y`. The end effector is a vertical cylinder
-of radius `0.04`, half-height `0.02`, center z `0.02`. The object body has ordered joints
-`object_x` slide `(1,0,0)`, `object_y` slide `(0,1,0)`, and `object_yaw` hinge `(0,0,1)`;
-its geom is either a cylinder `(radius,0.02)` or box `(half_x,half_y,0.02)` with the
-sampled total mass. Slide-joint `frictionloss` is exactly
-`scene_friction*mass*9.81/sqrt(2)` and yaw `frictionloss` is
-`scene_friction*mass*9.81*max(h((1,0)),h((0,1)),0.01)`. An obstacle segment becomes one
-static box centered at the endpoint midpoint, half-size
-`(segment_length/2,0.02,0.02)`, yaw `atan2(dy,dx)`. The four static wall boxes have
-inner faces exactly at workspace `+/-1`, thickness `0.04`, and overlap corners by
-`0.04`. Target and all noncontact markers have `contype="0" conaffinity="0"`.
-
-There are no MuJoCo actuators (`nu=0`). At every 0.002-second physics step the executor
-holds the current 0.02-second action row, updates mocap x/y by `0.002*command`, leaves
-mocap z/quaternion fixed, then calls exactly one `mj_step`; thus each command row owns
-ten steps. Commands are never recomputed from resulting candidate state. The anchor
-restore first calls `mj_resetData`, then assigns time; qpos in exact order
-`object_x,object_y,object_yaw`; qvel in exact order
-`object_vx,object_vy,object_omega`; empty act; mocap position/quaternion; and userdata
-`mass,friction,geometry_code,dim_0,dim_1,dim_2,obstacle_present,model_revision`, then
-calls one `mj_forward`. Every candidate receives an independent byte-equal restored
-anchor; no `mjData` instance or contact cache crosses candidates.
-
-`model_sha256=SHA256(build_mjcf(scene_parameters))` is scene-specific. The precursor
-protocol binds template/generator hashes and the complete parameter-to-MJCF mapping;
-each scene manifest binds model bytes, digest, P3 package version/distribution hash,
-and restore-vector digest. Validation rebuilds bytes independently, loads them through
-the P3-pinned package, checks `nq=3,nv=3,nu=0,nmocap=1,nuserdata=8`, named joint/geom
-order, options, and round-trip restore before W2. Alternate, user-supplied, or P3-smoke
-model bytes are rejected.
-
-NumPy also steps at 0.002 s. The velocity-controlled end effector takes the commanded
-velocity exactly and updates position after contacts. Object linear speed loses
-`friction*9.81*dt` toward zero each unforced step; angular speed loses
-`friction*9.81*dt/max(h((1,0)),h((0,1)),0.01)` toward zero. For a contact with unit
-normal n from actuator/static body into object, penetration delta, and precontact
-relative normal speed `v_n` defined positive when closing, normal impulse is
-`j_n=max(0,mass*(v_n+0.20*delta/dt))`; tangential impulse opposes relative tangent and
-is clipped to `friction*j_n`. Static-body inverse mass is zero. Apply impulse, then
-semi-implicit position/yaw update, then the minimum positional projection needed to
-remove residual overlap. Contacts sort exactly `EEF_OBJECT`, obstacle ID, then wall
-`-x,+x,-y,+y`; rectangle features sort local vertex then edge index. Restitution is
-zero and no other damping, compliance, substep, or solver iteration exists.
-
-Each scene samples object center uniformly from `[-0.30,0.30]^2`; target bearing
-uniformly from `[0,2*pi)`, distance from `[0.25,0.45]`, and target yaw uniformly from
-`[-pi,pi)`; robot center is the object
-center minus 0.20 m on that bearing. ID mass is `[0.8,1.2]` kg and ID sliding friction
-is `[0.40,0.60]`. ID geometry is equiprobable disk radius `[0.055,0.075]` m or rectangle
-half-extents `x=[0.050,0.070], y=[0.040,0.060]` m. An ID obstacle is absent with
-probability 0.5, otherwise it is one 0.04 m-thick segment parallel to u with endpoints
-`midpoint +/- 0.15u`, whose center is displaced by `+0.18v` for `LEFT` or `-0.18v`
-for `RIGHT`. Initial yaw is uniform `[-pi,pi)`; all velocities are zero. Up to 32 named
-proposal ordinals may be tried to obtain in-bounds, nonpenetrating initial geometry;
-exhaustion makes the scene invalid and never changes the seed.
-
-MASS_OOD alone replaces mass by `[1.40,1.60]`; FRICTION_OOD alone replaces friction by
-`[0.75,0.90]`; GEOMETRY_OOD alone uses an equiprobable disk radius `[0.085,0.095]` or
-rectangle half-extents `x=[0.080,0.095], y=[0.030,0.040]`; OBSTACLE_OOD alone always
-uses the withheld perpendicular `CENTER_BARRIER` segment with endpoints
-`midpoint +/- 0.25v`. Every nonnamed factor remains
-ID. Stratum membership is validated from generated parameters, not trusted from a
-label.
-
-The two-second probe uses four 0.5-second phases: move to the target-opposite contact,
-push 0.10 m toward target, retreat 0.08 m, then move 0.08 m along the positive
-perpendicular. The four anchors are the immutable post-step snapshots at 0.50, 1.00,
-1.50, and 2.00 s. A zero target displacement uses world `+x`; the positive
-perpendicular is `(-u_y,u_x)`.
-
-**Candidate factory.** Let `c` be object center, `g` target center, `u=unit(g-c)`,
-`v=(-u_y,u_x)`, and `h(n)` the exact support radius: disk radius or
-`abs(n_x)*half_x+abs(n_y)*half_y` for the oriented rectangle after rotating n into its
-local frame.
-Let `contact(n,offset)=c-(h(n)+0.01)n+offset`. The frozen waypoint/phase table is:
-
-| Strategy | Waypoints `(phase_end_s, end-effector waypoint)` | Speed multiplier |
-|---|---|---:|
-| DIRECT | `(0.35, contact(u,0v)); (1.00, g-(h(u)-0.02)u)` | 1.0 |
-| LEFT_EDGE | `(0.35, contact(u,+0.75h(v)v)); (1.00, g+0.25h(v)v)` | 1.0 |
-| RIGHT_EDGE | `(0.35, contact(u,-0.75h(v)v)); (1.00, g-0.25h(v)v)` | 1.0 |
-| BELOW | `(0.35, contact((0,1),0v)); (1.00, g-(0,h((0,1))-0.02))` | 1.0 |
-| DIAGONAL | `(0.25, c-(h(u)+0.08)u+0.60h(v)v); (0.55, contact(u,+0.60h(v)v)); (1.00, g)` | 1.0 |
-| RETREAT_REPOSITION | `(0.20, e_0-0.08u); (0.55, contact(u,0v)); (1.00, g)` | 1.0 |
-| SLOW_CONSERVATIVE | the DIRECT waypoints | 0.5 |
-| HOLD | `(1.00,e_0)` with exact zero commands | 0.0 |
-
-At each command tick, the non-HOLD controller emits the component-clipped
-`multiplier*(waypoint-current_eef)/max(0.02, phase_end-current_time)` for the current
-phase. Phase boundaries are half-open and the later phase owns equality. No feedback
-from a candidate branch enters another candidate. The eight byte trajectories and
-content hashes must be distinct before physics, as Section 3.3 requires.
-
-**Truth, cost, and labels.** Success means terminal object-center error <=0.05 m and
-wrapped yaw error <=0.20 rad with no unsafe event. Collision is true when object or
-end effector contacts an obstacle/wall with normal impulse >0.05 N-s. Unsafe is true
-for workspace escape, penetration >0.002 m, nonfinite state, or impulse >2.0 N-s.
-Terminal failure is `not success`. Action energy is `sum_t ||a_t||^2*0.02`.
-The cost weights are `w_position=1.0`, `w_orientation=0.10`, `w_collision=2.0`,
-`w_energy=0.01`, `w_failure=4.0`, and `w_success=1.0`; no hidden penalty exists.
-`predicted_progress=clip(1-position_error/max(initial_position_error,0.05),-1,1)`.
-
-**W1 and model grids.** W1 integrates the known end-effector commands without contact.
-Let `q=sum_t a_t*0.02`, `alignment=max(0,dot(unit(q),u))` (zero for `q=0`), and
-`push=max(0,dot(q,u)-max(0,dot(c-e_0,u)-h(u)-0.04))`. Its predicted object center is
-`c+alignment*push*u`, yaw is unchanged, collision probability is the exact binary
-intersection of the end-effector command polyline with obstacles expanded by 0.04 m,
-unsafe probability is the binary workspace-exit test, terminal-failure probability is
-the complement of its predicted success label, and energy is the known action energy.
-
-The ordered privileged-state vector is end-effector `(x,y,vx,vy)`, object
-`(x,y,yaw,vx,vy,omega)`, target `(x,y,yaw)`, mass, friction, one-hot geometry, geometry
-dimensions, and obstacle-present/endpoints. W3 appends strategy one-hot, endpoint
-displacement, path length, per-axis mean/standard-deviation/minimum/maximum velocity,
-the six-column contact-side one-hot in order
-`TARGET_OPPOSITE,LEFT,RIGHT,WORLD_BELOW,TARGET_CORNER,NO_CONTACT`, and obstacle-line
-intersection. DIRECT/SLOW_CONSERVATIVE/RETREAT_REPOSITION map to `TARGET_OPPOSITE`,
-LEFT_EDGE to `LEFT`, RIGHT_EDGE to `RIGHT`, BELOW to `WORLD_BELOW`, DIAGONAL to
-`TARGET_CORNER`, and HOLD to `NO_CONTACT`. The privileged vector has exactly 25
-columns and the W3 base vector exactly 51. W4 instead appends all 100 action
-scalars in time-major order plus strategy one-hot. W5 receives those same action
-scalars and a six-channel 64-by-64 orthographic raster over `[-1,1]^2`: end-effector,
-object, target, and obstacle binary occupancy, followed by object-mask times `sin(yaw)`
-and `cos(yaw)`. Pixel centers own boundaries, rows run world y descending, columns x
-ascending, channels are last, and flattening is C order. No antialiasing, texture,
-lighting, hidden parameter, future frame, or renderer metadata is present.
-
-The geometry one-hot order is `(disk,rectangle)`. Geometry dimensions are
-`(disk_radius,rectangle_half_x,rectangle_half_y)` with every inapplicable entry exactly
-zero. Obstacle fields are `(present,x1,y1,x2,y2)` with four exact zeros when absent and
-lexicographically ordered endpoints when present. Strategy one-hot order is the Section
-3.2 order. These conventions make the privileged vector and every base-feature column
-count/order mechanical.
-
-Each variant has exactly these three configurations; all ridge intercepts are
-unregularized. The transform order is invariant: construct the complete raw base vector,
-expand every declared polynomial/interaction column in the frozen order, then fit and
-apply a train-only z-score independently to every expanded non-intercept column;
-zero-variance columns become exact zero. Neither standardized base values nor a mixture
-of raw and standardized columns enters polynomial expansion:
-
-| ID | W3 | W4 | W5 | bootstrap ensemble | calibration |
-|---|---|---|---|---:|---|
-| CFG01 | degree-1 stated features, ridge `1e-3` | degree-1 W4 base vector, ridge `1e-3` | PCA 16, degree-1 latent transition, ridge `1e-3` | 4 | identity clip |
-| CFG02 | degree-2 interactions, ridge `1e-2` | W4 base vector degree-1 terms plus every `x_i*x_j` for `i<=j`, ridge `1e-2` | PCA 24, degree-1 transition plus action-latent interactions, ridge `1e-2` | 8 | monotone PAV, 8 equal-count bins |
-| CFG03 | degree-3 univariate plus degree-2 interactions, ridge `1e-1` | CFG02 terms plus every univariate `x_i^3`, ridge `1e-1` | PCA 32, degree-2 transition, ridge `1e-1` | 16 | monotone PAV, 16 equal-count bins |
-
-The W4 base vector `x` is exactly the ordered privileged-state vector, followed by all
-100 raw action scalars in time-major `(tick,x,y)` order, then the eight strategy one-hot
-columns. No action moment replaces or augments those scalars. CFG01 contains intercept
-and every `x_i`; CFG02 contains those terms then the stated quadratic terms; CFG03
-contains CFG02 then the stated cubes. Polynomial expansion order is total degree, then
-lexicographic source-column indices; no other W4 term is present. W4's ten output heads
-are the ordered one-second dynamic-state deltas frozen in Section 6.2.
-
-For W5, the selected PCA dimension is also the current/future latent dimension: CFG01,
-CFG02, and CFG03 use 16, 24, and 32 respectively. Its transition input is current latent,
-the same 100 raw action scalars, and strategy one-hot. Degree 1 is affine in those
-columns; action-latent interactions are every latent-by-action-scalar product; degree 2
-is every pair `x_i*x_j` for `i<=j` over the complete transition input. Term order uses
-the same rule and no other latent or action summary exists. Bootstrap member roots hash protocol, variant, configuration,
-and member ordinal. The adaptation fallback-threshold candidates are `-inf`, the 25th,
-50th, and 75th nearest-rank adaptation uncertainty, and `+inf`; choose minimum paired
-regret subject to zero unsafe selections and coverage >=0.50, then lower threshold.
-The failure-critic threshold grid is exactly `0.00,0.05,...,1.00`; choose maximum recall
-subject to precision >=0.90 and zero unsafe veto, then higher threshold. Empty-positive
-precision is zero.
-
-**Exact fit, ensemble, adaptation, and calibration compiler.** A training row is one
-candidate branch. The 96 NumPy training scene IDs sort ascending and each scene expands
-to its 32 rows in `(anchor_id,candidate_id)` order. Variant/configuration preprocessing
-fits once on those 3,072 unique rows after its complete feature expansion; population
-mean/variance use divisor `N`, scale is
-`sqrt(variance)`, and an exactly zero scale maps the complete standardized column to
-zero. W5 separately fits one canonical 32-component PCA on the 3,072 current-anchor
-training rasters in candidate-row order (the same anchor raster intentionally repeats
-for its eight branches); terminal rasters are transformed by that PCA but never enter
-its fit. CFG01 and CFG02 use exact prefixes `components[0:16]` and `components[0:24]` plus the
-same mean/singular-value prefixes, while CFG03 uses all 32. No configuration refits PCA.
-No tuning, validation, or MuJoCo row enters those statistics. For W3, CFG01 is the
-intercept plus its 51 ordered base columns, CFG02 adds every `x_i*x_j` for `i<=j`, and
-CFG03 adds those terms plus every `x_i^3`; term order is the W4 rule. W4 and W5 use the
-exact terms already stated above.
-
-For member ordinal `m`, the bootstrap seed is the first 16 big-endian bytes of
-`SHA256(canonical_json(["exp06-model-bootstrap-v1",protocol_sha256,variant,
-configuration,m]))`. A fresh `Generator(PCG64(seed))` makes exactly one vectorized call
-`integers(0,96,size=96,endpoint=False,dtype=uint64)`. Draw order is retained; each drawn
-scene occurrence contributes all 32 rows in canonical intra-scene order. There is no
-row bootstrap, stratification, deduplication, balancing, rejection, or second draw.
-The draw vector is serialized in `training-manifest.json` and independently regenerated.
-
-For feature matrix `X` with `n` rows and `p` columns, ordered multi-output target matrix
-`Y`, and positive frozen ridge value `lambda`, let `xbar` and `ybar` be float64
-arithmetic means over the member's ordered row multiset, `Xc=X-xbar`, and `Yc=Y-ybar`.
-Fit by the smaller exact ridge system. For `p<=n`, compute
-
-```text
-A = Xc.T @ Xc + lambda*identity(p)
-L = numpy.linalg.cholesky(A)
-coef = solve(L.T, solve(L, Xc.T @ Yc))
-```
-
-For `p>n`, compute the dual system
-
-```text
-A = Xc @ Xc.T + lambda*identity(n)
-L = numpy.linalg.cholesky(A)
-alpha = solve(L.T, solve(L, Yc))
-coef = Xc.T @ alpha
-```
-
-and in both cases finish with
-
-```text
-intercept = ybar - xbar @ coef
-```
-
-Operations occur in that written left-to-right matrix order with float64 identity and
-arrays. A nonpositive/nonfinite Cholesky diagonal or factorization failure invalidates
-the fit; no jitter or solver substitution is allowed. The KKT residual
-`R=Xc.T@(Xc@coef-Yc)+lambda*coef` must satisfy
-`max(abs(R)) <= 1e-9*max(1,max(abs(Xc.T@Yc)))`. There is no `rcond`, pseudoinverse,
-iterative solver, class weight, or regularization on the intercept. Inputs and outputs
-must be finite, shapes must match the manifest, and two fresh processes under the frozen
-BLAS/CPU/thread profile must produce byte-identical coefficient/intercept arrays or the
-environment is invalid.
-Continuous heads retain their finite ridge values. Each binary-head member output is
-clipped once to `[0,1]` before calibration; the four probability heads are independent
-and are not renormalized to sum to one.
-
-MuJoCo adaptation preserves each selected member's original 96-entry NumPy bootstrap
-draw vector. For that member it appends each of the 20 adaptation scenes exactly once in
-ascending scene-ID order, with all 32 rows per scene, yielding 116 equal-weight scene
-occurrences and 3,712 ordered rows. It then reruns the exact centered primal/dual
-Cholesky ridge procedure above using
-the frozen NumPy preprocessing and refits only the Section 5 permitted heads. It does
-not bootstrap adaptation scenes, rebalance domains/classes, or change a member root.
-W5 `latent_next` and every other forbidden member remain byte-identical. Thus “union”
-means one fixed NumPy member multiset followed by one copy of every adaptation scene,
-not an implementation-selected mixture.
-
-Before calibration, a probability prediction is the arithmetic mean of the memberwise
-clipped values. CFG01's map is exact identity with float64 breakpoints `[0.0,1.0]` and
-values `[0.0,1.0]`. For CFG02/CFG03 and each variant/probability head, sort the 640
-adaptation rows by `(precalibration_probability,scene_id,anchor_id,candidate_id)` and
-split by stable row position into respectively 8 bins of 80 or 16 bins of 40. Each bin
-starts as `(mean_probability,mean_binary_label,row_count)`. Merge adjacent equal-x bins
-first using count-weighted x/y means. Then run weighted PAV left-to-right: while the
-preceding y is strictly greater than the following y, replace the pair by their
-count-weighted x/y mean and summed count and step back; equality does not merge.
-The remaining x values are strictly increasing. Serialize them as breakpoints and the
-fitted y values as values, prepending `0.0` with the first value and/or appending `1.0`
-with the last value when absent. If one PAV block remains, serialize breakpoints
-`[0.0,1.0]` with its value repeated. Calibration is exactly
-`numpy.interp(clip(p,0,1),breakpoints,values,left=values[0],right=values[-1])`.
-No smoothing, tie jitter, cross-head pooling, or extrapolation is allowed.
-
-At evaluation, first take the arithmetic mean of clipped member probabilities, then
-apply the head-specific frozen map exactly once; this is the same operator on which the
-640-row map was fitted. Vector/continuous predictions are arithmetic member means. For
-uncertainty only, apply the same map independently to each clipped member probability
-and combine that member's calibrated heads with its continuous/vector values to form a
-member cost. The envelope `uncertainty` is the population variance
-`sum((cost_i-member_mean_cost)^2)/M`; memberwise mapped values never replace the
-ensemble-mean calibrated envelope value. Per-head failure uncertainties use the same
-memberwise population-variance rule and are descriptive sidecar fields. All reductions
-run in member-ordinal order. The fallback threshold uses only envelope cost uncertainty.
-The critic score is
-`max(collision,terminal_failure,unsafe)` after calibration, with a positive label when
-any corresponding binary truth is true. Final calibration maps and fallback/critic
-thresholds fit only adaptation rows. NumPy tuning/validation configuration keys use
-the uncalibrated clipped ensemble probabilities for their frozen calibration-error term;
-they fit no temporary or final calibration map.
-
-**Validity and calibration constants.** Analytic absolute/relative tolerance is
-`1e-12`; mirror endpoint tolerance is `1e-10`; maximum penetration is `0.002 m`;
-unforced energy increase tolerance is `1e-12 J`; step-halving endpoint L-infinity
-tolerance is `0.001`, per-component/cost tolerance is `0.001`, labels must match
-exactly, and allowed Kendall disagreement count is zero. PCA tie tolerance is Section
-6.4's `1e-12` relative rule. Fixed-bin ECE uses ten equal-width probability bins
-`[0,.1),...,[.9,1]`, empty bins contribute zero, and Brier averages the exact binary
-target. These values, all schemas, and the 80-case validity grid freeze before the
-first validity run.
-
-## 14. Verification design
-
-Tests cover:
-
-- create-only P7 P3-gate adapter schema/command/commit barrier, exact P2/P3 output and
-  MuJoCo distribution/smoke binding, alternate-runtime refusal, and refusal of any model
-  bytes not rebuilt by the Section 13.1 generator;
-- exact `A00..A15/P00..P23/S00..S39` NumPy analytic, physical, mirror, and
-  five-prototype step-halving gate, 64 MiB bundle, timeout behavior, and hand fixtures;
-- exact K=8 IDs, globally unique candidate IDs, eight distinct ID-independent content
-  digests and bytewise trajectories, identity-bound cross-link hashes, independent
-  regeneration, and invalid duplicate/nondeterministic disposition;
-- immutable snapshots, exact domain-separated scene/probe/proposal/W0 PCG64 calls and
-  collision refusal, named RNG independence, pinned numeric/thread environment,
-  tolerance-group PCA, canonical JSON/Parquet/NPZ, and fresh-process byte identity;
-- split ancestry/content leakage across all five partitions;
-- fit spies proving preprocessing/PCA/models/calibration see only allowed partitions,
-  exact raw-expansion-then-z-score order and one canonical 32-component PCA whose
-  16/24-component configurations are byte-identical prefixes,
-  exact scene-bootstrap PCG64 draws, centered primal/dual Cholesky ridge bytes and KKT
-  bound, equal scene/row weights,
-  member-preserving adaptation union through the same Cholesky compiler, population
-  ensemble reductions, ensemble-mean clip/equal-bin/PAV/interpolation calibration,
-  memberwise uncertainty-only mapping, exact permitted adaptation heads,
-  byte-identical W5 `latent_next`, composed adapted model hashes, and absence of
-  unchanged heads from the adaptation archive;
-- precursor contract freeze before NumPy validity, mechanical tuning/validation,
-  adaptation-only output refit/calibration, pilot-evaluation-only margins/resources,
-  and nonexistent unseen confirmation before the evidence freeze;
-- W0-W5 exact selector-input/model/config/calibration capability boundaries, complete
-  W1 yaw/cost input, whole-anchor trusted fallback composition, phase-global snapshot
-  commitments and projection links, exact 20/80 finalized component rows plus
-  560/2,240 selector/composition input rows for pilot/confirmation, absence of current-
-  phase branch truth until all selectors exit, permanent no-selector-after-freeze,
-  component validate-and-skip plus truth-only resume, Linux Landlock/seccomp and macOS
-  Seatbelt enforcement probes, denial of the 20 prior adaptation source bundles, and
-  hostile absolute/relative/symlink/hard-link/descriptor/ptrace access to current/prior-
-  scene truth, pilot/confirmation result roots, MuJoCo/import, socket, and subprocess;
-- exact global prediction IDs, prediction envelope fields, finite/range checks, scalar
-  cost components, all exact Arrow types/order/nullability, NPZ/model member grammars,
-  domain-separated digest preimages, observation-ID bijection, shared
-  `WorldModelPrediction` round-trip/vector keys/hashes and exact no-extra-digest
-  prediction/selection event payload schemas,
-  ten-field W4 state and per-configuration W5 latent dimensions, W3/W4/W5 derivation,
-  exact terminal state/raster outcome members as W4/W5 targets, and universal tie
-  ordering;
-- PCA sign and equal-singular-subspace canonicalization;
-- average-rank Spearman plus both constant-actual/predicted cases and regret tolerance;
-- exact 16-draw-per-stratum 0.20 bootstrap aggregation,
-  co-primary/held-out/W3/W5-vs-W4/shadow/offline families, all percentile indices,
-  equality boundaries, and missing rules;
-- learned+W1 fallback as the sole selector-protocol result, raw metrics descriptive,
-  no P4 adapter/action execution in the baseline, and future-extension eligibility only
-  from an exact promoted stack `P4` configuration at `10 Hz, 300 ms`, never from the
-  deduplicated `EEF_TRAJECTORY` enum alone;
-- scientific endpoint pass/reject/unresolved boundaries and joint classification before
-  the mechanically ordered mutually exclusive selector/critic/shadow/offline roles,
-  with separate lifecycle/artifact/scientific/blocker/promotion states;
-- unchanged canonical rollout, exact scene sidecars/cross-links/replay, disjoint
-  scene/selector-component/training/aggregate schemas and roots, manifest self-exclusion,
-  corruption, finalized pass-S components, acyclic global freeze, one-at-a-time pass-T
-  scene publication through the small `AtomicBundle` helper, exact resume/quarantine,
-  and foreign/ambiguous-temp refusal;
-- exact repo-root lifecycle/selector/truth/scene/training/aggregate/report commands and
-  keys, six phase-protocol schemas/counts, type-mixing refusal,
-  create-only validate-and-skip resume, exact component/final-scene root separation,
-  32/64 MiB configuration-specific training caps, adaptation coefficient arithmetic,
-  9,104 MiB retained arithmetic, initial/resumed missing-key preflight without current-
-  phase or scratch-slot double charging, and per-type wall/size ceilings; and
-- exact five-warmup/20-repetition single/K=8 latency timing and nearest-rank gates,
-  serial latency, offline/no-network/no-CUDA/no-physical/no-remote, clean tree, full
-  tests, source audit, secret scan, artifact size, and diff checks.
-
-## 15. Dependencies and downstream boundaries
-
-NumPy, PyArrow, and PyYAML remain the only model/data dependencies
-(`pyproject.toml:5-15`). MuJoCo is consumed only through the complete passing P3 pinned
-package/runtime lock and compatibility output; all Push-T MJCF/model bytes remain
-experiment-local and bind to the Section 13.1 generator. A missing/failed P3 gate is
-`BLOCKED`; it cannot be replaced by NumPy confirmation.
-
-P4 is not a prerequisite for the Experiment 06 ranking claim and P7 implements no P4
-adapter or executor-prefix conformance. A later separately reviewed extension may begin
-only after P7 selector support and must bind P4's exact promoted stack-`P4`
-configuration, frozen protocol, and artifact digests. A deduplicated wire enum, P3
-one-knot target, or missing/stopped P4 output is insufficient and cannot alter P7's
-already sealed scientific result.
-
-Experiment 07 may reuse the frozen planar task, scenario/candidate factory, cost
-components, IDs, and metrics regardless of the P7 authority result
-(`docs/superpowers/specs/2026-08-22-reflect-lite-autonomous-run-design.md:102-106`).
-R1 transfer consumes only a separately promoted prediction/critic/selector protocol,
-and no critic, shadow, or action-routing protocol can be promoted unless this
-experiment's canonical selector result is `SUPPORTED` as well as satisfying its own
-separately reviewed gate;
-W2 never transfers and W4 privileged input requires an explicit adapter. Mini-Reflect
-may consume a promoted selector protocol only as shadow output; action routing remains
-outside P7 and requires a separately reviewed extension and integration adapter.
-Executor validation and W1 fallback remain
-mandatory (`Reflect Lite Research Program.md:2454-2537`).
-
-Only the smallest validated prediction envelope and selector/critic invariant may be
-promoted. NumPy/MuJoCo environments, candidates, costs, models, PCA, thresholds,
-plots, and bundles remain experiment-local, matching the program's interface boundary
-(`Reflect Lite Research Program.md:3153-3181`).
-
-## 16. Parallel-safe preparation and decision output
-
-Preparation may use ownership-isolated world/candidate, dataset/split, baseline,
-learned-model, evaluator, and artifact/replay workstreams. Candidate/state schemas,
-IDs/both action hashes, scalar cost, W1, finite model/PCA grids, typed bundle schemas,
-NumPy validity fixtures/tolerances, and MuJoCo mapping freeze before the validity gate
-or parallel fitting. NumPy mechanical selection may run after that contract freeze.
-MuJoCo adaptation, pilot evaluation, evidence freeze, confirmation-manifest generation,
-confirmation, serial latency, role decision, and promotion remain serial orchestrator
-operations.
-
-`WORLD_MODEL_DECISION.md` links immutable pilot/confirmation bundles and records the
-separate lifecycle, validity, blocker, scientific, role, and promotion states. It
-reports both canonical primaries, all strata/families, W3 and W5/W4 decisions,
-fallback/calibration/latency, and rejected roles. Exactly one reachable role is named,
-based on held-out ranking, regret, calibration, and latency rather than visual
-plausibility (`Reflect Lite Research Program.md:2048-2062`).
+Each development/pilot revision has 144 NumPy, 20 adaptation, and 20 pilot-evaluation
+scenes; only the final revision has 80 confirmation scenes. Prediction files are charged
+inside their matching scene/global buckets, never both. Before each stage, the simple
+preflight sums actual completed bytes, the cap
+for every missing required output, and one 96 MiB temporary. It records the arithmetic
+in the stage receipt and requires both the 1,840 MiB P7 ceiling and inherited free-disk
+ceiling. `fit` has a 120-minute wall limit; every other stage has 60 minutes. A resource
+limit yields `INCONCLUSIVE`, not evidence against a model.
+
+## 11. Verification
+
+Tests must cover:
+
+- P3 MuJoCo gate binding and refusal of NumPy as canonical truth;
+- all 80 NumPy analytic/physical/mirror/step-halving validity cases;
+- exact K=8 identities, strategy order, nominal-EEF update, distinct command bytes,
+  independent regeneration, and both action hashes;
+- exact split ancestry/content isolation and the nonadaptive outcome-coverage gate;
+- projection/action-set encodings and digest preimages for W0/W1/W3/W4/W5;
+- API-level hostile selector inputs proving no simulator/truth/W2/path/process/network
+  access, raw W4/W5 threshold absence, and composer-only threshold use;
+- preprocessing/PCA/model fit spies, one 32-component PCA with exact prefixes, scene
+  bootstrap, primal/dual Cholesky, adaptation-only permitted heads, calibration operator
+  identity, and unchanged W5 latent transition;
+- the separate nine-model fit and 41,472-row tuning/validation evaluation producer;
+- terminal state/raster targets, exact candidate source/selected/truth-evaluated/executed
+  fields, shared prediction adaptation with `inference_ms=0.0`, and replay with no
+  executed control reference;
+- pilot/confirmation global prediction-before-truth barriers and refusal of selector
+  calls from truth stages;
+- average-rank Spearman, regret, all simultaneous families, stratum-respecting bootstrap,
+  margin boundaries, fallback coverage, and role ordering;
+- raw single-candidate versus full K=8 composed latency boundaries and exact
+  57,600/230,400 row counts;
+- simple create-only file publication, receipt-last resume, conflict refusal, final
+  manifest self-exclusion, corruption detection, and 1,840 MiB arithmetic; and
+- full offline tests, source audit, secret scan, physical/remote/CUDA/network refusal,
+  artifact-size checks, and clean diff.
+
+## 12. Dependencies and downstream use
+
+NumPy, PyArrow, PyYAML, and the P3-pinned MuJoCo package are the only experiment
+dependencies. P4 is not a P7 prerequisite. Experiment 07 may reuse the planar task,
+candidate factory, cost, IDs, and metrics regardless of the P7 result. R1 or Mini-Reflect
+may consume only a separately promoted protocol; W2 never transfers, W4 privileged input
+requires an adapter, and action routing always requires a later reviewed integration
+test with executor validation and W1 fallback.
+
+Only the shared prediction-envelope invariant may be proposed for promotion. The task,
+models, PCA, thresholds, costs, scene generator, plots, and evidence writer remain
+experiment-local. `WORLD_MODEL_DECISION.md` names exactly one required role and reports
+provenance, validity, co-primary and held-out results, W3/W4/W5 comparisons,
+calibration/fallback/latency, resources, and immutable artifact hashes.
