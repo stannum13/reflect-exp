@@ -36,6 +36,29 @@ _COMPASS = np.array(
 _COMPASS /= np.linalg.norm(_COMPASS, axis=1, keepdims=True)
 
 
+@dataclass
+class EpisodeTargetOwner:
+    """The sole mutable owner of the simulator's live target."""
+
+    scenario: Scenario
+    current_target: np.ndarray
+
+    @classmethod
+    def from_scenario(cls, scenario: Scenario) -> "EpisodeTargetOwner":
+        return cls(scenario, np.array(scenario.initial_target, dtype=np.float64, copy=True))
+
+    def set_target(self, target: np.ndarray) -> None:
+        value = np.array(target, dtype=np.float64, copy=True)
+        if value.shape != (2,) or not np.isfinite(value).all():
+            raise ValueError("live target must be a finite XY vector")
+        self.current_target = value
+
+    def snapshot(self) -> np.ndarray:
+        result = np.array(self.current_target, dtype=np.float64, copy=True)
+        result.setflags(write=False)
+        return result
+
+
 def _rng(seed: int, namespace: str) -> np.random.Generator:
     digest = hashlib.sha256(f"{seed}:{namespace}".encode()).digest()
     return np.random.Generator(np.random.PCG64(int.from_bytes(digest[:16], "big")))
@@ -152,13 +175,14 @@ def negative_control_passes(errors_after_1_5_s: np.ndarray, *, recovery_event: b
 def run_episode(stack: CommandStack, condition: Condition, seed: int, config: ExperimentConfig) -> RolloutRecord:
     """Run one bounded simulator episode using only request-time target snapshots."""
     scenario = generate_scenario(seed, config)
+    target_owner = EpisodeTargetOwner.from_scenario(scenario)
     arm = PlanarArm(config)
     arm.reset(scenario.q0)
     rollout_id = f"{stack.value}-{condition.condition_id}-{seed:08d}"
     period_ticks = int(round(1.0 / condition.policy_hz / config.arm.timestep_s))
     latency_ticks = int(round(condition.latency_ms / 1000 / config.arm.timestep_s))
     targets = scenario.stationary_path if condition.fault is FaultKind.STATIONARY_CONTROL else (scenario.one_move_path if condition.move_count == 1 else scenario.two_move_path)
-    target = np.array(targets[0], copy=True)
+    target_owner.set_target(targets[0])
     pending: list[tuple[int, int, object]] = []
     observations: list[Observation] = []
     actions = []
@@ -184,12 +208,13 @@ def run_episode(stack: CommandStack, condition: Condition, seed: int, config: Ex
     def snapshot(tick: int) -> Observation:
         nonlocal observation_sequence
         q, dq = arm.state()
+        target_snapshot = target_owner.snapshot()
         value = Observation(
             observation_sequence,
             tick * 2_000_000,
             tick * 2_000_000,
             RobotState(q, dq),
-            (ObjectBelief("target", "target", np.array(target, copy=True), 1.0, {}, 1.0, tick * 2_000_000, ("synthetic",)),),
+            (ObjectBelief("target", "target", target_snapshot, 1.0, {}, 1.0, tick * 2_000_000, ("synthetic",)),),
             "track",
             "track_target",
         )
@@ -200,15 +225,16 @@ def run_episode(stack: CommandStack, condition: Condition, seed: int, config: Ex
 
     for tick in range(config.timing.episode_ticks):
         if tick == 1000 and len(targets) >= 2:
-            target = np.array(targets[1], copy=True)
+            target_owner.set_target(targets[1])
         if tick == 2000 and len(targets) >= 3:
-            target = np.array(targets[2], copy=True)
+            target_owner.set_target(targets[2])
 
         observation = snapshot(tick) if tick % 5 == 0 else None
         if tick % period_ticks == 0:
             if observation is None:
                 observation = snapshot(tick)
             q, _ = arm.state()
+            target = target_owner.snapshot()
             target_pose = Pose(np.array([target[0], target[1], 0.0]), np.array([1.0, 0.0, 0.0, 0.0]))
             skill = SkillSpec("track", "track_target", ("target",), target_pose, (Constraint("workspace", {"radius_m": 0.70}),), Predicate("eef_error", {"max_m": 0.025}), 6.25, 0)
             initial_q_target = absolute_ik(scenario.initial_target, scenario.q0, config.arm.link_lengths_m, config.controller.ik_damping_candidates[0], config)
@@ -269,7 +295,7 @@ def run_episode(stack: CommandStack, condition: Condition, seed: int, config: Ex
                 append_event(ExecutionEventType.ACTION_EXECUTED, tick, {"source_chunk_id": reference.source_chunk_id})
         arm.step(torque)
         if tick >= 1000:
-            error = float(np.linalg.norm(np.asarray(target) - arm.site_xy()))
+            error = float(np.linalg.norm(target_owner.snapshot() - arm.site_xy()))
             errors.append(error)
 
     if len(metric_references) < 4:
