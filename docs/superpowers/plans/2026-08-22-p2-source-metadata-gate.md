@@ -307,6 +307,7 @@ git commit -m "feat: audit locked source metadata"
 
 **Files:**
 - Create: `references/repos.lock.yaml`
+- Create: `references/p2-live-attempts.yaml`
 - Create: `scripts/write_p2_report.py`
 - Create: `tests/test_p2_commands.py`
 - Modify: `docs/ASSUMPTIONS.md`
@@ -322,7 +323,9 @@ git commit -m "feat: audit locked source metadata"
 Test that the checked-in lock covers the exact registry digest and 45 names, all
 entries are resolved, all paths have statuses, direct/adapter licenses are
 discovered, the report cites a clean implementation SHA and exact command outcomes,
-and the manifest may advance only when the complete audit passes.
+the resumable attempt log uses canonical UTC timestamps and proves every failed
+window preserved lock bytes, and the manifest may advance only when the complete
+audit passes.
 
 - [ ] **Step 2: Prove RED before live data exists**
 
@@ -359,7 +362,8 @@ Expected: all commands exit zero; physical deployment is false; remote execution
 
 Record the P2 implementation commit, registry digest, retrieval interval, entry/path/
 license counts, exact commands, failures/retries, and source-boundary scan in
-`RUN_REPORT.md`. Add the P2/P3 split, root-glob semantics, GitHub-license caveat,
+`RUN_REPORT.md`, consuming the durable `references/p2-live-attempts.yaml` rather
+than reconstructing network history. Add the P2/P3 split, root-glob semantics, GitHub-license caveat,
 and bootstrap-entry merge to `docs/ASSUMPTIONS.md`. Set `p2: complete`,
 `p3: in_progress`, `current_pass: 3`, and leave all experiment lanes pending.
 
@@ -372,6 +376,6 @@ lock, assumptions, manifest, report generator/test, and run report.
 - [ ] **Step 7: Commit Task 4**
 
 ```bash
-git add references/repos.lock.yaml scripts/write_p2_report.py tests/test_p2_commands.py docs/ASSUMPTIONS.md docs/RUN_MANIFEST.yaml RUN_REPORT.md
+git add references/repos.lock.yaml references/p2-live-attempts.yaml scripts/write_p2_report.py tests/test_p2_commands.py docs/ASSUMPTIONS.md docs/RUN_MANIFEST.yaml RUN_REPORT.md
 git commit -m "chore: verify P2 source metadata gate"
 ```
