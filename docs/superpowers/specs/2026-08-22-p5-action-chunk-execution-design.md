@@ -2,259 +2,278 @@
 
 Date: 2026-08-22
 
-Status: approved autonomous default. P5 execution requires completed P3 provenance
-and a completed P4 confirmation.
+Status: approved autonomous default. P5 execution requires complete P3 provenance and
+completed P4 confirmation.
 
-## Outcome, eligibility, and boundary
+## Outcome and hard P4 eligibility
 
-P5 implements Experiment 02: seven temporal protocols alter only unexecuted future
-actions while the P4 simulated arm continues to move. The claim is a bounded
-latency/reactivity/smoothness trade-off under one deterministic policy-output function.
-It does not establish VLA intelligence, hardware async safety, or RTC equivalence.
+P5 implements Experiment 02: seven protocols decide how a valid new prediction changes
+only unexecuted future actions on P4's simulated arm. It measures a bounded
+latency/reactivity/smoothness trade-off, not VLA intelligence, hardware async safety,
+or RTC equivalence.
 
-P5 is eligible only if P4 promotes at least one CommandVariant whose P4 executor
-provides a multi-step executable horizon with at least K + 1 future control ticks
-after its first issued reference. This permits B to discard future work and guarantees
-that the target perturbation lies inside A's usable horizon. A one-knot joint target,
-MPC goal, or residual is ineligible unless P4 separately measured a multi-step adapter
-for that exact representation. If P4 promotes no eligible row, P5 is
-prerequisite-blocked and makes no protocol decision.
+P5 may execute only if P4's published promotion decision contains exact stack ID P2 or
+P4. Those are the only current P4 stack IDs with multi-knot trajectories; P1, P3, P5,
+and P6 are one-knot and are ineligible. P5 frozen input records every promoted P4 stack
+ID and representation and marks exactly one row PRIMARY: the first promoted eligible
+ID in P4's deterministic promotion order. A promoted second eligible ID is
+DESCRIPTIVE only. If P2/P4 is absent, P5 is prerequisite-blocked; it does not turn a
+one-knot stack into a trajectory or issue a protocol decision.
 
-At freeze, P5 records this P4 input matrix:
+All P5 horizon math is in P4's 2 ms executable ticks, not policy knots. Let D=0.002 s,
+P be the selected P4 policy period, Q=P/D (an integer), H be its P4 knot count, and
+E=ceil(2.5*P/D). The P4 interpolator makes at most
+N_knot=(H-1)*Q+1 tick values and the half-open expiry permits E ticks from delivery.
+P5 usable ticks are N=min(N_knot,E), with U=N-1 future ticks after the first issue.
+Eligibility requires U>=K+1, where K is P5's frozen prefix length. For the two-move
+condition, it requires U>=K+2. The frozen eligibility record includes stack ID,
+representation, H, P, Q, E, N_knot, N, U, K, expiry, and a proof of both inequalities.
 
-| P4 promoted variant in promotion order | representation | frozen executor/horizon | H >= K + 1 | P5 role |
-|---|---|---|---|---|
-| every P4-promoted variant | exact P4 value | exact P4 value | yes/no | PRIMARY, DESCRIPTIVE, or INELIGIBLE |
+The response-delivery tick is n0. The one-move A perturbation is n0+K+1; the two-move
+A perturbations are n0+K+1 and n0+K+2. The eligibility record additionally proves
+each is strictly below n0+N and n0+E, and that final movement plus P4's 2.0 s recovery
+window is at or before the 6.25 s episode end. If any proof fails, that stack is
+ineligible; P5 never relocates an A perturbation. P5 reuses P4 arm/controller/scenario
+generation but uses these acceptance-relative Experiment-02 target times.
 
-The first eligible P4 row is the sole primary stack. A second eligible row may run as
-descriptive evidence only; it does not enter the primary multiplicity family or choose
-a second protocol. P5 consumes the primary P4 task bytes, controller/executor, action
-shape, horizon H, target geometry, success criterion, and provenance hashes without
-changing them. It adds no VLA, checkpoint, server, ROS, CUDA, remote transport, or
-physical communication, and does not assume shared reflect schema changes.
+## Alternatives and boundary
 
-## Alternatives
+1. **P4 task plus project-local virtual-time broker — selected.** It preserves P4's
+   500 Hz controller and its tracking/jerk measures while isolating queue semantics.
+2. **Pure-Python point-mass queue fixture — tests only.** It supports hand-calculated
+   transitions but is not evidence-bearing controller evaluation.
+3. **LeRobot/OpenPI runtime adaptation — deferred.** Server, serialization, trust, and
+   potential flow-model behavior would confound the synthetic broker gate.
 
-1. **P4 planar task plus a project-local virtual-time broker — selected.** It retains
-   P4's 500 Hz controller and meaningful jerk/tracking measures while isolating queue
-   semantics as the treatment.
-2. **Pure-Python point-mass queue model — fixture only.** It is suitable for
-   hand-calculated broker unit tests but not controller evidence.
-3. **LeRobot/OpenPI runtime adaptation — deferred.** Server, serialization, trust,
-   dependency, and possible flow-model behavior would confound the synthetic gate.
+P5 adds no VLA, checkpoint, server, ROS, CUDA, remote transport, physical connection,
+or shared reflect schema change. It consumes the selected P4 task bytes, executor,
+shape, controller, success criterion, and provenance hashes unchanged.
 
-## Data flow and issued-reference immutability
-
-~~~
-P4 arm + target -> immutable request Observation/SkillSpec -> raw proposal arrival
--> protocol broker -> executable ActionChunk -> P4 executor/controller -> MuJoCo
--> ControlReferences, events, metrics, rollout and proposal sidecar
-~~~
-
-All comparisons pair the scenario seed, target path, latency draw, policy function,
-raw payload, and fault schedule. Request times are protocol-specific because they are
-the treatment; they are deterministically derived by the state machines below.
-
-An issued reference has absolute tick n = time_ns / P4_dt_ns. On first issue the
-broker copies the selected action vector to a C-contiguous read-only array and stores
-it in append-only issued[n] and its ControlReference. Later arrivals may read but
-cannot mutate issued entries. Tests compare issued-array byte hashes before and after
-every later response, replacement, ensemble, blend, or conditioning operation.
-
-## Protocol state machines and exact formulas
-
-P is the frozen policy period, H the frozen P4 horizon, and K a frozen positive
-integer satisfying K + 1 <= H. Every request captures one fresh stored observation;
-no state machine may request twice from an observation ID.
-
-| ID | Name | Request trigger / in-flight bound | Valid-arrival result |
-|---|---|---|---|
-| A | OPEN_LOOP | one initial request only | accept raw proposal directly |
-| B | RECEDING_PREFIX | after exactly K issued ticks, discard remaining future then request; at most one in flight | accept raw proposal or safe hold |
-| C | TEMPORAL_ENSEMBLE | periodic epoch mP, up to cap I in flight | ensemble raw proposals into a derived executable chunk |
-| D | LATEST_VALID | periodic epoch mP, up to cap I in flight | newest valid proposal replaces all unissued ticks |
-| E | ASYNC_SAFE_PREFIX | prefetch once when exactly K unissued ticks remain; at most one in flight | continue valid prefix then replace; hold on expiry |
-| F | OVERLAP_BLEND | same periodic trigger/cap as D | replace with deterministic overlap blend |
-| G | RTC_APPROXIMATION | same periodic trigger/cap as D | replace with deterministic committed-prefix conditioning |
-
-For C, at broker time now, let V(t) be raw proposals delivered by now that cover
-absolute tick t; proposal i has action a_i(t) and delivery d_i:
+## Data flow, timing, and immutable issued references
 
 ~~~
-w_i = exp(-lambda * (now_ns - d_i) / 1e9)
-a_C(t) = sum(i in V(t), w_i * a_i(t)) / sum(i in V(t), w_i)
+P4 arm + target -> request Observation/SkillSpec -> raw proposal schedule
+-> broker disposition -> executable ActionChunk -> P4 executor/controller
+-> MuJoCo -> ControlReferences, events, metrics, rollout and proposal sidecar
 ~~~
 
-For F over the first M unissued overlap ticks, old and raw-new values are o_j and r_j:
+VirtualClock is the only behavior-time source. At each 2 ms tick: apply scheduled
+target movement; fire due protocol request trigger and store one observation; schedule,
+drop, or pause the raw proposal; deliver proposals ordered by
+(delivery_tick,request_sequence); apply broker transition; execute P4; store telemetry;
+advance one tick. Host time is measurement only.
+
+Every request has a fresh unique stored observation ID. An issued reference is indexed
+by absolute tick. On first issue it is copied to a C-contiguous read-only array and
+stored in append-only issued[tick] and its ControlReference. Later arrivals can never
+mutate issued values; tests compare their byte hashes after every later delivery.
+
+## Protocol state machines and exact transforms
+
+P is the selected policy period, K is a positive frozen prefix satisfying K+1<=U, and
+I is the frozen periodic in-flight cap. A requests initial ordinal 0 only. B requests
+ordinal j+1 exactly after K ticks issued from accepted ordinal j, discards the remaining
+unissued suffix, and allows one outstanding request. C, D, F, and G request ordinal j
+at periodic ticks jQ while fewer than I requests are outstanding. E requests once when
+the active executable chunk has exactly K unissued ticks and allows one outstanding
+prefetch. No trigger can reuse an observation ID.
+
+| ID | Name | accepted-arrival transition |
+|---|---|---|
+| A OPEN_LOOP | accept raw executable chunk; no later request |
+| B RECEDING_PREFIX | accept raw executable chunk after discarded suffix; hold while absent |
+| C TEMPORAL_ENSEMBLE | recompute unissued absolute ticks into derived executable chunk |
+| D LATEST_VALID | replace all unissued ticks with newest raw executable chunk |
+| E ASYNC_SAFE_PREFIX | continue valid prefix pending prefetch, then replace unissued ticks |
+| F OVERLAP_BLEND | derive old/new overlap then replace unissued ticks |
+| G RTC_APPROXIMATION | derive committed-prefix-conditioned future then replace unissued ticks |
+
+For C, V(t) contains delivered valid raw proposals covering absolute tick t, action
+a_i(t), and delivery d_i:
 
 ~~~
-beta_j = (j + 1) / (M + 1)
-a_F(j) = (1 - beta_j) * o_j + beta_j * r_j, j = 0..M-1
+w_i=exp(-lambda*(now_ns-d_i)/1e9)
+a_C(t)=sum(i in V(t),w_i*a_i(t))/sum(i in V(t),w_i)
 ~~~
 
-After M, F uses r_j. For G over committed prefix L, old committed values are c_j
-and raw-new values r_j:
+For F, over j=0..M-1 overlap ticks with old o_j and new r_j:
 
 ~~~
-gamma_j = (L - j) / L
-a_G(j) = gamma_j * c_j + (1 - gamma_j) * r_j, j = 0..L-1
+beta_j=(j+1)/(M+1)
+a_F(j)=(1-beta_j)*o_j+beta_j*r_j
 ~~~
 
-After L, G uses r_j. P4's unchanged limits and slew processing apply after every
-formula. C/F/G create new immutable executable chunks and never mutate raw proposals.
-G is always RTC_APPROXIMATION. RTC_COMPATIBLE is prohibited unless a P3-provenanced
-compatible flow policy and its real RTC implementation are actually run.
+After M, F uses r_j. For G, over j=0..L-1 committed ticks with old c_j and new r_j:
 
-## Proposal sidecar, executable chunks, and event lifecycle
+~~~
+gamma_j=(L-j)/L
+a_G(j)=gamma_j*c_j+(1-gamma_j)*r_j
+~~~
 
-Canonical rollout actions contain executable chunks only: direct raw chunks for
-A/B/D/E and derived chunks for C/F/G. Every raw proposal is a create-only canonical
-JSONL sidecar outside the rollout directory at
-results/<phase>/proposals/<rollout_id>.jsonl; the phase artifact manifest hashes it.
-Each record has exactly:
+After L, G uses r_j. P4's unchanged executor limits/slew run after these transforms.
+G is always RTC_APPROXIMATION. RTC_COMPATIBLE is forbidden unless a separately
+P3-provenanced compatible flow policy and its real RTC implementation are executed.
+
+## Raw, wrapper, derived, and hold lifecycles
+
+Every raw proposal has a create-only JSONL sidecar record outside the rollout directory:
+results/<phase>/proposals/<rollout_id>.jsonl. The phase artifact manifest hashes it.
+Exact fields are:
 
 ~~~
 proposal_id, rollout_id, request_observation_id, request_observation_time_ns,
-request_sequence, delivery_time_ns, representation, dt_s, actions_shape,
-raw_actions, actions_sha256, disposition, derived_chunk_id, parent_proposal_hashes
+request_sequence, delivery_tick, representation, dt_s, actions_shape, raw_actions,
+actions_sha256, disposition, lifecycle_chunk_id, derived_chunk_id, parent_hashes
 ~~~
 
-raw_actions is a canonical finite nested-float array and actions_sha256 is its
-canonical-JSON hash. Disposition is exactly ACCEPTED_DIRECT, ENSEMBLED, REPLACED,
-BLENDED, CONDITIONED, REJECTED_EXPIRED, REJECTED_OUT_OF_ORDER, DROPPED, or PAUSED.
-A derived executable chunk uses the newest contributing proposal's observation ID/time
-as source. Its metadata contains sorted parent-proposal hashes, rule revision, and
-formula scalars. C assigns the newest delivery contributing to its first executable
-tick as owner; F/G assign the arriving proposal.
+Successful direct A/B/D/E raw proposals become executable chunks. Successful C/F/G raws
+remain sidecar records and map to a derived executable chunk. A derived chunk uses the
+newest contributing raw proposal's observation ID/time; sorted parent hashes, rule
+revision, and formula scalars are metadata. C owner is newest delivery contributing to
+its first executable tick; F/G owner is the arriving raw proposal.
 
-For a delivered raw proposal, POLICY_RESPONDED references the resulting executable
-chunk and includes the broker disposition. A direct or derived replacement emits
-CHUNK_REPLACED for the former executable chunk then CHUNK_ACCEPTED for the new one.
-Raw proposals not made executable are sidecar-only and have no fabricated action
-lifecycle event; expiry/staleness is represented precisely in their disposition.
+Every *delivered rejected* raw proposal also creates and stores a lifecycle-addressable
+immutable wrapper ActionChunk, with the raw action payload/shape, source observation,
+validity interval, and metadata.origin=raw_rejected. POLICY_RESPONDED references this
+wrapper, followed by CHUNK_REJECTED_EXPIRED or CHUNK_REJECTED_OUT_OF_ORDER. Thus every
+response event resolves to stored action data and every rejection is canonical. A
+dropped or paused request has no delivery/wrapper and is a sidecar record plus its
+POLICY_REQUESTED metadata.
 
-Safe hold is a broker-generated supported-representation ActionChunk, never an
-untracked controller side effect. At hold entry, capture/store a current observation,
-create a finite P4-adapter hold horizon with metadata.origin=broker_safe_hold, and
-emit its standard accepted/executed/replaced-or-expired lifecycle. This preserves
-source ownership, validity, age, and execution evidence without extending shared types.
+For valid replacement, emit POLICY_RESPONDED for the new direct/derived executable;
+emit CHUNK_REPLACED only if the old active executable is currently in its half-open
+validity interval; then emit CHUNK_ACCEPTED for the new executable. If old is expired,
+clear it and directly accept the new chunk: no replacement event. Expiry emits no
+additional event.
 
-## Virtual timing, perturbations, and exact applicability
+Safe hold is a broker-generated supported-representation ActionChunk. When no valid
+future exists, capture/store current observation, construct a finite P4-adapter hold
+horizon, set metadata.origin=broker_safe_hold, then directly accept it if active is
+absent/expired or replace the still-valid active chunk before accepting it. Hold has
+ordinary accepted/executed/validity-end lifecycle. A later valid response replaces hold
+only while hold is valid; otherwise clear then accept it. Safe hold is therefore never
+an untracked controller side effect.
 
-VirtualClock is the only behavior-time source. On every P4 2 ms tick: apply target
-movement; fire due protocol trigger/capture observation; schedule/drop/pause raw
-response; deliver arrivals ordered by (delivery_time_ns, request_sequence); apply
-broker disposition; execute one P4 control/MuJoCo step; log telemetry; then advance
-2 ms. Host time is measured only.
+## Core comparison and executable fault probes
 
-For A core conditions, with t0 initial executable acceptance, freeze first target
-movement at t0 + (K - 0.5) * dt. It is strictly after first issue and before the
-(K + 1) future boundary, therefore inside A's usable horizon. The two-move A
-condition is allowed only when frozen P4 horizon/expiry proves both moves fit before
-expiry; otherwise P5 is blocked rather than silently relocating a perturbation. For
-B--G, movements occur while that protocol has an outstanding request.
+The primary comparison contains only eight paired no-fault core cells:
+latency {50,150,300,700} ms x target count {one,two}. Every protocol runs the same
+eight scenario/latency cells per seed; recovery success is calculated only from them.
+Fault probes are separate safety gates and descriptive diagnostics, never pooled into
+the primary recovery estimand.
 
-Core grid: latency {50,150,300,700} ms times one/two target movements with no fault
-(eight episodes per seed/protocol). One-fault probes use 300 ms and one movement:
+Fault cells use 300 ms nominal latency and one target movement. For periodic protocols,
+r1 is the first periodic request after initial acceptance and r2=r1+Q. The target moves
+at r1+1 tick. For B, r1 is its first post-prefix request; for E, r1 is its first
+prefetch request; for A, r0 is initial request and no t0-dependent target is scheduled
+when r0 is dropped or paused. Exact executable cells are:
 
-| Fault | A | B | C | D | E | F | G | expected outcome |
-|---|---|---|---|---|---|---|---|---|
-| first response dropped | initial | post-prefix | periodic | periodic | prefetch | periodic | periodic | hold after no valid future |
-| old after newer | N/A | N/A | yes | yes | N/A | yes | yes | old proposal rejected |
-| policy pause | initial | post-prefix | periodic | periodic | prefetch | periodic | periodic | hold on expiry |
-| differing strategies | N/A | yes | yes | yes | yes | yes | yes | protocol-specific disposition |
-| finite discontinuous proposal | initial | post-prefix | periodic | periodic | prefetch | periodic | periodic | frozen accounting |
+| protocol | drop | old-after-newer | pause | strategies | discontinuity |
+|---|---|---|---|---|---|
+| A | drop r0; no response; hold at start; denominator safety-only | N/A, one request | pause r0; hold at start; safety-only | N/A, no replacement | raw r0 discontinuous; accept/account |
+| B | drop r1 after K issued; suffix absent; hold | N/A, one in flight | pause r1 after K; hold | r1 alternative strategy replaces post-prefix future | r1 discontinuous; accept/account |
+| C | drop r1; continue ensemble then hold if exhausted | r1 delayed to r2+1, r2 arrives first; reject r1 wrapper | pause r1; continue then hold | r1/r2 alternatives ensemble | r1 discontinuous; ensemble/account |
+| D | drop r1; current valid future then hold | r1 delayed to r2+1; reject r1 wrapper | pause r1; continue then hold | r1 replaces unissued future | r1 discontinuous; replace/account |
+| E | drop r1 at K remaining; continue K then hold | N/A, one prefetch | pause r1 at K; continue K then hold | r1 replaces prefetched future | r1 discontinuous; replace/account |
+| F | drop r1; current valid future then hold | r1 delayed to r2+1; reject r1 wrapper | pause r1; continue then hold | r1/r2 blend alternatives | r1 discontinuous; blend/account |
+| G | drop r1; current valid future then hold | r1 delayed to r2+1; reject r1 wrapper | pause r1; continue then hold | r1/r2 conditioned alternatives | r1 discontinuous; condition/account |
 
-N/A is not run or imputed. Episodes per seed are A=11, B=12, C=13, D=13, E=12,
-F=13, G=13: 87 total primary-stack episodes per paired seed. A stationary/no-fault
-negative control runs on the frozen subset of confirmation seeds; it must satisfy P4
-hold success and create no recovery event.
+Every non-N/A row names the request ordinal, queue precondition, transition, event
+form, and continue/hold behavior. An N/A cell is excluded from that protocol's probe
+denominator, never imputed. The target movement for B--G occurs at r1+1 only after r1
+is scheduled; for A no-fault core target times are the eligibility-proved acceptance
+relative ticks above. The table yields A=11, B=12, C=13, D=13, E=12, F=13, G=13
+total cells per seed when core and applicable probes are combined. A stationary no-fault
+negative control is a separate descriptive cell for the first four confirmation seeds.
 
-## Invariants and transition table
+## Invariants
 
-Required invariants: no expired/not-yet-valid execution; no older-observation
-supersession; finite selected shape; frozen bounded queue/in-flight state; immutable
-issued absolute ticks; safe hold instead of indefinite stale action; non-regressing
-events; one request per observation; coherent lifecycle; and no network, remote, or
-physical path.
+The broker must prove: no expired/not-yet-valid execution; no older-observation
+supersession; finite selected shape; bounded queue and in-flight state; immutable issued
+ticks; safe hold instead of stale future; non-regressing events; one request per
+observation; response-addressable action lifecycle; and no network/remote/physical path.
+Tests include direct, derived, rejected-wrapper, expired-active, and hold transitions.
 
-| arrival/state | queue transition | lifecycle | sidecar disposition |
-|---|---|---|---|
-| valid direct A/B/D/E | protocol enqueue/replace unissued | response, old replace if needed, new accept | direct/replaced |
-| valid C/F/G | recompute only unissued, create derived chunk | response for derived, old replace, new accept | ensembled/blended/conditioned |
-| expired or older | unchanged | no executable action event | rejected-expired/rejected-out-of-order |
-| dropped or paused | unchanged until exhaustion | request visible; hold accepted on exhaustion | dropped/paused |
-| no valid future | replace with hold chunk | old replacement/expiry then hold accept/execute | hold metadata |
+## Pilot, freeze, confirmation, resources, and resume
 
-## Pilot, freeze, confirmation, and resume
+Pilot has four tuning seeds and four one-shot validation seeds. For a 13-cell protocol,
+three ordered candidate vectors over four tuning seeds consume 156 rollouts; the chosen
+vector over four validation seeds consumes 52: maximum 208 per protocol. Across A--G,
+the exact maximum is 1,392 rollouts: three tuning vectors times four seeds times 87
+cells plus one validation vector times four seeds times 87 cells. Candidate vectors are
+ordered lexicographically by (K,I,lambda,M,L,timeout) after invalid horizon values are
+removed. Choose highest tuning mean primary-core recovery success among zero-invariant
+candidates; ties choose lexicographically first. If none are feasible, STOP the stack;
+there is no fallback tuning choice.
 
-Pilot uses eight paired seeds: four tuning then four one-shot validation seeds. It has
-at most 104 episodes per protocol and 696 primary-stack episodes. Begin at the base
-vector; choose exactly one vector by tuning-seed mean paired recovery success subject
-to zero invariant violations; run it once on validation seeds without re-selection.
+Finite scalar candidates are K in {1,2,4} with K+1<=U; I in {1,2,4}; lambda in
+{0,1,4}/s; M in {1,2,4} with M<=U; L in {1,2,4} with L<=U; timeout in {1.0,1.5,2.0}P.
+A revision changes one scalar group only; at most two revisions and three vectors per
+protocol/revision are allowed.
 
-Finite pilot sets are K in {1,2,4} with K+1<=H; I in {1,2,4}; lambda in {0,1,4} per
-second; M in {1,2,4} with M<=H; L in {1,2,4} with L<=H; timeout in {1.0,1.5,2.0}P.
-Values outside P4 horizon are omitted, not rounded. One scalar group may change per
-revision; there are at most two revisions and three vectors per protocol/revision.
+Freeze hashes P2-P4 inputs, stack-ID eligibility proof, selected vector, cell table,
+metrics/margins, and bootstrap method. It freezes only the confirmation RNG algorithm,
+candidate-seed procedure, and target count 32. After freeze it generates the immutable
+32-scenario seed manifest before any P5 stack runs.
 
-Freeze hashes code/config/P2-P4 provenance, eligibility matrix, selected scalars,
-grid/fault table, metrics, margins, and bootstrap procedure. It freezes only the
-confirmation RNG procedure and count (32), never future seed values. After freeze the
-orchestrator generates exactly 32 new paired seeds and publishes immutable
-seed-manifest.json before execution.
+Confirmation has 256 primary core rollouts per protocol (32*8), at most 20 applicable
+fault-probe rollouts (five probes over four seeds), and four negative controls: maximum
+280 per protocol. Across all seven protocol diagnostic runs the maximum is 1,944
+rollouts: 1,792 core + 124 applicable probes + 28 controls. One primary plus one
+descriptive stack has at most 560 rollouts. Each rollout is 6.25 simulated seconds and
+at most 1 MiB serialized; all-seven maximum is 12,150 simulated seconds and 1,944 MiB,
+plus 128 MiB aggregate/plot allowance, below 10 GiB. A shard is one
+(phase,stack,vector-or-protocol,seed) tuple: pilot maximum 13 episodes/81.25 simulated
+seconds; confirmation maximum 14 episodes/87.5 simulated seconds. Each serial command
+has a 60-minute wall ceiling and refuses to start unless declared artifact budget remains.
 
-Confirmation is 2,784 primary-stack episodes (32 * 87); no protocol exceeds 416,
-below the 1,024-per-variant ceiling. Run four serial shards of eight confirmation
-seeds; pilot uses two serial shards of four. CLI arguments are --phase,
---seed-manifest, --shard-index, --shard-count, --output-dir, --headless, --dry-run,
-and --max-episodes. Existing outputs are validate-and-skip only when rollout, sidecar,
-and manifest hashes all validate; conflicting, partial, or mismatched outputs fail.
---max-episodes is smoke-only unless it equals a shard's manifest count.
+Evidence-bearing run.py requires --phase, --frozen-config, --seed-manifest,
+--stack-id, --protocol, --shard-index, --shard-count, --output-dir, and --headless;
+--dry-run prints the exact identity. The identity hash covers phase, frozen-config hash,
+P2-P4 hashes, seed-manifest hash, stack ID, protocol, vector, seed, cell, and artifact
+schema revision. Resume validates that identity plus rollout, sidecar, and manifest
+hashes then skips exactly matching create-only outputs; any partial/conflicting output
+fails. --max-episodes is smoke-only unless it equals the shard manifest count.
 
-## Primary decision, multiplicity, and equality
+## Decision, multiplicity, and equality
 
-Primary estimand: paired seed-level recovery-success difference, candidate minus A,
-equal-weighted over that protocol's applicable frozen conditions. Higher is better.
-The six B--G contrasts on the sole primary stack are one family and use deterministic
-10,000-resample paired percentile bootstrap with Bonferroni-adjusted intervals.
+The primary estimand is paired seed-level candidate-minus-A recovery-success difference,
+equal-weighted over the eight core cells only. Higher is beneficial. Six B--G contrasts
+for the one primary stack form one family and use deterministic 10,000-resample paired
+percentile bootstrap with Bonferroni-adjusted intervals. Faults/controls are separate
+safety/descriptive domains.
 
-Pilot derives then freeze records minimum worthwhile improvement delta, maximum p95
-age/jerk/discontinuity, maximum hold/overrun rates, and discontinuity trigger; P4
-supplies recovery deadline. Exact equality at a maximum passes (value <= limit); a
-nonfinite/unclamped unsafe output or invariant violation fails. Efficacy requires the
-adjusted lower endpoint strictly greater than delta; equality does not pass.
+Pilot freezes minimum worthwhile delta, maximum p95 age/jerk/discontinuity, maximum
+hold/overrun rates, and discontinuity trigger; P4 supplies recovery deadline. Equality
+at a maximum passes (value<=limit); any nonfinite/unclamped unsafe output or invariant
+violation fails. Efficacy needs adjusted lower endpoint strictly greater than delta.
 
-Select exactly one safety- and efficacy-eligible candidate by fixed order B,C,D,E,F,G.
-The result is SUPPORTED iff one selection exists. It is NOT_SUPPORTED iff every
-completed valid candidate either has adjusted upper endpoint <= delta or fails a
-frozen non-efficacy gate, with no invalid/imprecise evidence. It is INCONCLUSIVE
-otherwise: any interval straddling/equaling delta, invalid negative control, missing
-artifact, systematic protocol-specific loss, or invalid shard. Descriptive secondary
-results cannot affect the primary label or selected protocol.
+Select exactly one eligible protocol in fixed order B,C,D,E,F,G. SUPPORTED means one
+candidate clears efficacy and all gates. NOT_SUPPORTED means every completed valid
+candidate has adjusted upper endpoint<=delta or a frozen non-efficacy failure, with no
+invalid/imprecise evidence. INCONCLUSIVE covers any interval straddling/equaling delta,
+invalid control, missing/corrupt artifact, systematic protocol loss, invalid shard, or
+P4 eligibility failure. Descriptive-stack results never affect the label.
 
-## Artifact, test, source, and parallel boundaries
+## Artifact, source, and parallel boundary
 
-experiments/02_action_chunks owns claim/experiment/results/interface/decision
-documents; configs/base.yaml and configs/frozen.yaml; run.py; source modules broker,
-protocols, schedule, task_adapter, evaluate; matching tests; pilot/confirmation
-manifests, aggregates, bootstrap/decision output, plots, and proposal sidecars. Every
-rollout and sidecar is create-only. Tests cover all formulas/state rows, source
-ownership/parent hashes, A inside-horizon placement, all applicable faults, safe hold,
-absolute-tick immutability, determinism/resume, metric/bootstrap equality boundaries,
-artifact validation, and headless replay. Confirmation also requires P2/P3 audit, P4
-input hashes, safety guard, full suite, secret/artifact scan, and git diff --check.
+experiments/02_action_chunks owns documents, configs/base.yaml and frozen.yaml, run.py,
+broker/protocol/schedule/task-adapter/evaluate modules, tests, create-only rollouts,
+proposal sidecars, manifests, aggregates, bootstrap/decision outputs, and plots. Tests
+cover all formulas, every table cell, rejected wrappers, direct/derived/hold lifecycle,
+absolute-tick immutability, eligibility proofs, resume identity, equality boundaries,
+and headless replay. Confirmation additionally requires P2/P3 audit, P4 input hashes,
+safety guard, repository tests, secret/artifact scan, and git diff --check.
 
-P5 runtime needs only P3-approved MuJoCo and the P4 local adapter. ACT temporal
-ensembling, LeRobot async/RTC, and OpenPI broker are study-only P3 source seams; P5
-imports/copies none. One worker owns broker/protocol tests, one owns adapter/scheduler/
-evaluator tests, and one owns config/CLI/artifact/report tests. They do not edit P4 or
-reflect; integration is broker, adapter, then artifact/replay validation, and all
-latency-bearing shards run serially.
+P5 runtime needs P3-approved MuJoCo and P4's local adapter. ACT temporal ensembling,
+LeRobot async/RTC, and OpenPI broker are study-only P3 seams; P5 imports/copies none.
+One worker owns broker/protocol tests, one owns scheduler/adapter/evaluator tests, and
+one owns config/CLI/artifact tests. They do not edit P4 or reflect; integration is
+broker, adapter, then artifact/replay validation, and latency-bearing shards are serial.
 
 ## Self-review
 
-The design blocks rather than weakens the multi-step P4 prerequisite, makes request
-timing protocol-specific, serializes raw and derived actions audibly, fixes fault
-denominators and resource counts, selects one primary protocol, and never calls an
-approximation RTC-compatible.
+This revision derives all horizons from P4 interpolation and expiry, hard-gates exact
+P4 stack IDs, makes response/rejection/hold lifecycles addressable, separates core from
+fault evidence, fixes pilot/confirmation maxima and resume identity, selects one primary
+protocol, and never calls an approximation RTC-compatible.
