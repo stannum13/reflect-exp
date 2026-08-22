@@ -6,8 +6,8 @@ The simulation-only repository foundation is operational.
 
 ## Environment
 
-- Generated UTC: 2026-08-22T11:20:54.021653+00:00
-- Git SHA before report commit: `912a511b045c81550eac8d199677c2ae5d65c627`
+- Generated UTC: 2026-08-22T11:27:41.972381+00:00
+- Git SHA before report commit: `cda66bc0219afc64e8e4d23f2e88c4c0ade81fda`
 - Git status before report commit: `clean`
 - Platform: `macOS-15.6.1-arm64-arm-64bit`
 - Python: `3.11.13`
@@ -26,8 +26,8 @@ PHYSICAL_DEPLOYMENT_ALLOWED=false REFLECT_REMOTE_ENABLED=0 UV_CACHE_DIR=.cache/u
 ## Tests
 
 ```text
-.....................................................................    [100%]
-69 passed in 0.40s
+......................................................................   [100%]
+70 passed in 0.40s
 ```
 
 ## Results
@@ -39,7 +39,7 @@ PHYSICAL_DEPLOYMENT_ALLOWED=false REFLECT_REMOTE_ENABLED=0 UV_CACHE_DIR=.cache/u
 
 ## Public-source use
 
-This local evidence generator made no network requests.
+This generator performs no explicit source fetches; subprocess network activity was not measured.
 
 ## Interface findings
 
