@@ -90,8 +90,10 @@ may resume an interrupted pass, but the final lock is published through a
 same-directory temporary file and atomic rename only after the selected set is
 complete and passes structural validation.
 
-Git executes with system/global configuration disabled, terminal prompting disabled,
-and credential, askpass, proxy, and trace environment removed. The output parser is
+Git executes from a fresh non-repository directory with repository discovery,
+system/global configuration, redirects, credentials, and terminal prompting
+disabled, and credential, askpass, proxy, trace, and ambient `GIT_CONFIG_*`
+environment removed. The output parser is
 order-independent, requires exactly one symbolic HEAD and matching full SHA, accepts
 slashes in branch names, and treats detached, unborn, missing, malformed, SHA-256,
 or ambiguous HEAD results as explicit unsupported/invalid metadata rather than
@@ -104,7 +106,8 @@ the process stores validated partial cache entries, reports the reset timestamp,
 exits without publishing the lock. A later invocation resumes from cache; it does
 not sleep for an unbounded interval or issue immediate forbidden retries.
 
-The resolver uses an injectable command runner, HTTPS transport, and clock. Git
+The resolver uses an injectable command runner, direct HTTPS transport with ambient
+proxies disabled, and clock. Git
 execution/parsing, bounded HTTPS, checksummed caching/atomic publication, and
 resolution orchestration live in separate focused modules while
 `reflect.source_fetch` retains the small public facade. It
@@ -113,6 +116,17 @@ change the canonical owner/repository or pinned object identity. Unit
 tests use checked-in fixtures and make no network request. Network errors include
 endpoint or command, status/return code or exception class, and rate-limit
 observations without secrets.
+
+The cache is anchored by a no-follow directory descriptor. All child creation,
+reads, replacements, and rate-limit marker operations are relative to retained
+descriptors; a symlink at the cache root or any intermediate component is rejected.
+
+License blob base64 permits only ASCII base64 whitespace before strict decoding.
+SPDX identification uses high-confidence normalized full-text evidence, never a
+short phrase match. Negated excerpts and ambiguous grants remain `UNKNOWN`;
+`-only`, `-or-later`, and deterministic dual-license observations remain distinct.
+Conventional root filenames including `LICENSE-MIT` and `LICENSE-APACHE` are
+discovered case-insensitively.
 
 ## Audit behavior
 

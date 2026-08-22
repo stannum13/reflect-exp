@@ -160,13 +160,16 @@ https://api.github.com/repos/{owner}/{repo}/git/trees/{tree_sha}
 https://api.github.com/repos/{owner}/{repo}/git/blobs/{license_blob_sha}
 ```
 
-Run Git with a fixed argument vector, noninteractive environment, bounded timeout,
-captured output, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_SYSTEM=/dev/null`,
-`GIT_CONFIG_NOSYSTEM=1`, and `GIT_TERMINAL_PROMPT=0`; remove credential, askpass,
-proxy, and trace environment. Parse records by ref identity rather than line order;
+Run Git from a fresh non-repository directory with a fixed argument vector,
+noninteractive environment, bounded timeout, captured output,
+`GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_SYSTEM=/dev/null`,
+`GIT_CONFIG_NOSYSTEM=1`, `GIT_TERMINAL_PROMPT=0`, repository discovery disabled,
+and redirects/credential helpers disabled by fixed command configuration; remove
+ambient `GIT_CONFIG_*`, repository, credential, askpass, proxy, and trace
+environment. Parse records by ref identity rather than line order;
 require exactly one `ref: refs/heads/... HEAD` and matching 40-character HEAD SHA.
-Use `urllib.request` with a fixed user agent, bounded timeout, bounded response size,
-and no authentication. Reject a final response outside the exact derived API owner/
+Use `urllib.request` with a fixed user agent, `ProxyHandler({})`, bounded timeout,
+bounded response size, and no authentication. Reject a final response outside the exact derived API owner/
 repo and pinned-object path. Surface HTTP status and rate-limit headers without
 response-body secrets.
 
@@ -178,13 +181,18 @@ requested path exists when its exact tree/blob entry exists or when it is a tree
 prefix of an entry. A root glob matches only root entries via `fnmatchcase`. When a
 recursive tree is truncated, walk only requested prefixes by tree SHA and refuse
 unresolved paths. Preserve every requested string in the lock. Discover conventional
-root license filenames case-insensitively, fetch the exact blob by its recorded SHA,
-decode its declared base64 encoding, and classify only recognized SPDX-identifiable
-texts; otherwise record `UNKNOWN` or `UNAVAILABLE` with its evidence endpoint.
+root license filenames case-insensitively, including suffixed `LICENSE-MIT` and
+`LICENSE-APACHE`; fetch exact blobs by their recorded SHAs; remove only permitted
+ASCII base64 whitespace before strict decoding; and classify only high-confidence
+normalized full-license evidence. Negated/excerpted/ambiguous text remains
+`UNKNOWN`; `-only`, `-or-later`, and deterministic dual-license results remain
+distinct. Otherwise record `UNKNOWN` or `UNAVAILABLE` with exact evidence.
 
 - [ ] **Step 5: Implement checksummed cache and atomic lock output**
 
-Write raw JSON/text plus endpoint or Git command, retrieval timestamp, ETag where
+Anchor the cache root with a no-follow directory descriptor and perform child
+creation, reads, writes, replacements, and rate-limit marker operations relative to
+retained descriptors, rejecting root/intermediate symlinks. Write raw JSON/text plus endpoint or Git command, retrieval timestamp, ETag where
 available, and SHA-256 below
 `external/.metadata/{name}/`. Validate cache metadata and payload digest before a
 single fallback. Process requests serially. When `x-ratelimit-remaining` reaches
@@ -197,11 +205,12 @@ and `os.replace`. Clean the temporary file on every error.
 - [ ] **Step 6: Implement the P2 command surface**
 
 `scripts/fetch_reference.py` accepts either `--all-metadata-only` or
-`--name NAME --metadata-only`, plus hidden test-only path/transport injection through
-callable `main(argv)`. It calls `SafetyConfig.from_env().require_simulation_only()`
+`--name NAME --metadata-only`; single-name resolution is stdout-only and no option
+may replace the tracked lock with a partial candidate. It also has hidden test-only path/transport injection through
+callable `main(argv)`. It calls
+`SafetyConfig.from_mapping(os.environ).require_simulation_only()`
 before loading cache or making requests. A single-name run prints deterministic YAML
-to stdout unless `--update-lock` is explicitly present; the all-entry command
-publishes the complete lock.
+to stdout; only the all-entry command publishes the complete lock.
 
 - [ ] **Step 7: Run focused, offline-network-negative, and regression tests**
 
