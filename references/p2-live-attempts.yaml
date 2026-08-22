@@ -1049,3 +1049,120 @@ attempts:
       ifcopenshell, then found the newly pinned IfcOpenShell/files license response
       absent. It made no network request, published no partial lock, and stopped
       without looping before the next window.
+
+  - id: single_metadata_window_8_01_ifcopenshell_test_files
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - ifcopenshell_test_files
+      - --metadata-only
+    started_at_utc: 2026-08-22T23:50:48Z
+    finished_at_utc: 2026-08-22T23:51:03Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [ifcopenshell_test_files]
+    summary: >-
+      Resolved the exact pinned IfcOpenShell/files entry at
+      9fc2267d7f1ff35284c5b0fc28cc97bff7ace8e7. The GitHub license endpoint
+      returned the valid UNKNOWN disposition and the selected ifc path was MISSING;
+      single-name mode published no partial lock.
+    cache_validation: >-
+      Commit, recursive-tree, ls-remote, license observation, and selected-path
+      evidence were accepted by the production validators at generated time
+      2026-08-22T23:50:59Z.
+
+  - id: all_metadata_window_8_live_refresh
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --all-metadata-only
+    started_at_utc: 2026-08-22T23:51:03Z
+    finished_at_utc: 2026-08-22T23:51:55Z
+    exit_code: 1
+    published_lock: false
+    completed_entries:
+      - mujoco
+      - mujoco_mpc
+      - mujoco_menagerie
+      - mink
+      - mjctrl
+      - hydrax
+      - curobo
+      - moveit2
+      - ros2_control
+      - ros2_controllers
+      - mujoco_ros2_control
+      - act
+      - lerobot
+      - openpi
+      - diffusion_policy
+      - behaviortree_cpp
+      - navigation2
+      - spark_dsg
+    incomplete_entry: hydra_scene_graph
+    error: >-
+      GitHub rate limit exhausted for https://api.github.com/repos/MIT-SPARK/Hydra/license?ref=2e58a35baea629eee8838409771876acff015daf; reset 1787446258
+    rate_limit_reset_utc: 2026-08-23T00:50:58Z
+    lock_absence_verified: true
+    cache_validation: >-
+      The live-first refresh validated the canonical prefix through spark_dsg and
+      stopped at the current Hydra license endpoint. It published no partial lock.
+
+  - id: all_metadata_window_8_cache_retry
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --all-metadata-only
+    started_at_utc: 2026-08-22T23:51:55Z
+    finished_at_utc: 2026-08-22T23:51:59Z
+    exit_code: 1
+    published_lock: false
+    completed_entries:
+      - mujoco
+      - mujoco_mpc
+      - mujoco_menagerie
+      - mink
+      - mjctrl
+      - hydrax
+      - curobo
+      - moveit2
+      - ros2_control
+      - ros2_controllers
+      - mujoco_ros2_control
+      - act
+      - lerobot
+      - openpi
+      - diffusion_policy
+      - behaviortree_cpp
+      - navigation2
+      - spark_dsg
+      - hydra_scene_graph
+      - kimera
+      - conceptgraphs
+      - rerun
+      - openusd
+      - ifcopenshell
+    incomplete_entry: ifcopenshell_test_files
+    error: >-
+      GitHub rate limit remains active for https://api.github.com/repos/IfcOpenShell/files/license?ref=9fc2267d7f1ff35284c5b0fc28cc97bff7ace8e7; reset 1787446258
+    rate_limit_reset_utc: 2026-08-23T00:50:58Z
+    lock_absence_verified: true
+    cache_validation: >-
+      The offline active-marker replay exposed a deterministic cache defect: a valid
+      404 license-absence observation was accepted as UNKNOWN during the targeted
+      pass but was not persisted with its HTTP status, so the same exact endpoint
+      became a cache miss. The retry made no HTTP request, published no partial lock,
+      and stopped without looping.
