@@ -53,13 +53,88 @@ The current `docs/RUN_MANIFEST.yaml` must contain closed immutable records at
 report_path, report_git_blob_id, report_sha256, bound_evidence_git_sha,
 artifact_ledger_sha256`; `phase_id` is the matching phase, state is `complete`, report
 path is exactly `RUN_REPORT.md`, the report commit changes exactly that path, and its
-validated report bytes bind the same preceding evidence SHA. The gate reads both
+only parent is exactly `implementation_evidence_git_sha`. The report's validated bytes
+must bind that same SHA, so `bound_evidence_git_sha` and
+`implementation_evidence_git_sha` are byte-identical lowercase 40-hex values. The gate reads both
 reports with `git show <report_commit>:RUN_REPORT.md`; it never treats current working-
 tree `RUN_REPORT.md` bytes as either historical phase report.
 Each record is added only after its report-only commit already exists, in a dedicated
 run-manifest state-index commit whose changed-path set is exactly
 `docs/RUN_MANIFEST.yaml`; the record does not contain that later indexing commit and has
-no self-hash. Subsequent run-manifest commits must preserve the record byte-for-byte.
+no self-hash. Subsequent run-manifest commits must preserve its canonical record.
+
+Here and below, record equality is canonical-record equality, not textual YAML-subtree
+equality. A strict duplicate-key-rejecting YAML loader converts the closed record to the
+JSON data domain. `CanonicalRecordBytes(value)` is UTF-8 JSON from
+`json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+allow_nan=False)`, with no BOM and no trailing newline. Strings must already be NFKC,
+integers may not be booleans, and floats are not permitted in a phase record or artifact
+ledger. `p2_phase_record_sha256` and `p3_phase_record_sha256` are lowercase SHA-256 of
+these exact canonical bytes. A later whole-file YAML rerender may change whitespace,
+comments, or key presentation but must parse to the same closed record and therefore the
+same canonical bytes and hash.
+
+`artifact_ledger_sha256` is not a path or a hash of the state-index commit. It is the
+lowercase SHA-256 of `CanonicalRecordBytes(ArtifactLedger)`, reconstructed from Git. An
+`ArtifactLedger` has exactly `schema_version=1, phase_id,
+implementation_evidence_git_sha, report_commit_git_sha, members`. `members` is an array
+sorted by unsigned UTF-8 path bytes; each member has exactly `path,
+source_commit_git_sha, git_blob_id, sha256`. For every non-report member,
+`source_commit_git_sha` is the implementation/evidence SHA; for `RUN_REPORT.md` it is
+the report commit SHA. The validator obtains each blob with
+`git rev-parse <source_commit>:<path>` and its exact bytes with
+`git cat-file blob <blob-id>`, then hashes those bytes independently. The exact P2
+member set is:
+
+```text
+references/repos.yaml
+references/repos.lock.yaml
+references/p2-live-attempts.yaml
+RUN_REPORT.md
+```
+
+The exact P3 member set is:
+
+```text
+experiments/00_source_audit/configs/operation-manifest.yaml
+experiments/00_source_audit/results/compatibility.csv
+references/licenses.md
+docs/SOURCE_MAP.md
+experiments/00_source_audit/RESULTS.md
+experiments/00_source_audit/INTERFACE_FINDINGS.md
+<the single MuJoCo-smoke fragment path selected by the operation manifest>
+RUN_REPORT.md
+```
+
+The manifest-selected fragment must be a distinct normalized repository-relative path
+beneath `experiments/00_source_audit/results/fragments`; collision with another member
+or path escape is invalid. The ledger excludes `docs/RUN_MANIFEST.yaml`, the phase
+record, its later state-index commit, caches/checkouts, untracked files, and every path
+not in the applicable exact list. Consequently neither the record hash nor ledger hash
+can depend on the commit that publishes the record.
+
+P2 creates and P3 reuses one shared command surface:
+
+```text
+uv run python scripts/publish_phase_record.py publish --phase p2|p3 \
+  --implementation-evidence-git-sha <SHA> --report-commit-git-sha <SHA> \
+  --run-manifest docs/RUN_MANIFEST.yaml
+uv run python scripts/publish_phase_record.py validate --phase p2|p3 \
+  --state-index-commit <SHA> --run-manifest docs/RUN_MANIFEST.yaml
+```
+
+`publish` requires a clean tree at the supplied report commit, verifies that commit's
+single changed path and single parent, validates the report's bound SHA, reconstructs the applicable
+ledger, derives every record field, and refuses a caller-supplied hash/blob/path. It is
+create-only at `phase_records.<phase>`: an absent record may be added through one
+descriptor-anchored atomic replacement of the manifest; a present canonical-equal
+record is validation-only and a different record is refused. All other manifest data
+and every earlier phase record must remain canonically equal. `validate` is read-only,
+requires the state-index commit's only parent to be the report commit and its changed-
+path set to be exactly `docs/RUN_MANIFEST.yaml`, reconstructs both record and ledger
+from historical Git objects, and rejects any self-reference or later-commit member.
+The P2 and P3 plans each require this exact third commit immediately after their
+report-only commit and its postcommit validation.
 
 `P3GateEvidence` is the closed JSON object `schema_version, p2_state, p3_state,
 registry_sha256, p2_lock_sha256, run_manifest_capture_git_sha,
@@ -71,6 +146,13 @@ p3_operation_manifest_sha256, p3_compatibility_sha256, licenses_sha256,
 source_map_sha256, p3_results_sha256, p3_interface_findings_sha256,
 p3_mujoco_smoke_relative_path, p3_mujoco_smoke_sha256, p3_local_lane_open,
 physical_deployment_allowed, remote_execution_allowed, runtime_network_allowed`.
+`p2_evidence_base_git_sha`, `p2_report_commit_git_sha`,
+`p2_report_git_blob_id`, and `p2_report_sha256` must equal the corresponding P2 record
+values (`implementation_evidence_git_sha`, `report_commit_git_sha`,
+`report_git_blob_id`, and `report_sha256`); the four P3 fields must equal the same four
+corresponding P3 record values. The gate independently requires each record's
+`bound_evidence_git_sha` to equal its implementation field and reconstructs its
+`artifact_ledger_sha256` rather than copying either value without validation.
 States must be `complete`, the lane boolean true, and all three authority booleans
 false. File hashes are lowercase 64-hex, Git SHAs lowercase 40-hex, and Git blob IDs
 the repository's validated object format. The P9 factory
@@ -86,7 +168,7 @@ Gate creation records the clean capture commit and Git blob of
 named Git commit/blob/content identity. Later commands validate the committed
 `p3-gate.json` seal and those historical objects. They also perform a separate
 current-state non-regression check: the current run manifest must still contain
-byte-equivalent P2/P3 phase records with both phases complete and safety booleans false,
+canonical-record-equivalent P2/P3 phase records with both phases complete and safety booleans false,
 but later `current_pass`, stage, lane, P9, and report fields may advance. Current
 `RUN_REPORT.md` is deliberately outside this non-regression identity. Therefore a P4-P8
 pass or P9's own state/report commit cannot invalidate or be misidentified as P3

@@ -311,6 +311,8 @@ git commit -m "feat: audit locked source metadata"
 - Modify: `docs/ASSUMPTIONS.md`
 - Modify: `docs/RUN_MANIFEST.yaml`
 - Modify: `tests/test_run_state.py`
+- Modify: `tests/test_p2_commands.py`
+- Create: `scripts/publish_phase_record.py`
 - Generate in a separate report-only commit: `RUN_REPORT.md`
 - Verify existing implementation: `reflect/p2_report.py`
 - Verify existing implementation: `reflect/_p2_report_io.py`
@@ -330,7 +332,12 @@ entries are resolved, all paths have statuses, direct/adapter licenses are
 discovered, the report cites a clean implementation SHA and exact command outcomes,
 the resumable attempt log uses canonical UTC timestamps and proves every failed
 window preserved lock bytes, and the manifest may advance only when the complete
-audit passes.
+audit passes. Add publisher tests for compact sorted canonical JSON with no trailing
+newline; the exact P2/P3 member lists; Git blob/content reconstruction; equality of
+implementation and bound-evidence SHAs; report-parent adjacency; create-only record
+publication; canonical preservation of earlier records and unrelated manifest state;
+and rejection of a state-index self-hash, extra ledger member, caller-supplied digest,
+or index commit changing anything except `docs/RUN_MANIFEST.yaml`.
 
 - [ ] **Step 2: Prove RED before live data exists**
 
@@ -349,6 +356,17 @@ path checks, and mode-`0600` fsynced atomic report publication with cleanup.
 `scripts/write_p2_report.py` remains a thin safety-first CLI orchestrator. It rejects
 physical/remote enablement before running verification, strips ambient `GIT_*`,
 disables fsmonitor/hooks, and never invokes the live resolver.
+`scripts/publish_phase_record.py` implements the shared P2/P3 `publish` and `validate`
+surface from the P9 design. It strictly loads the manifest, canonicalizes records and
+their exact Git-derived ledgers, derives all hashes and blobs internally, publishes only
+an absent record through descriptor-anchored atomic replacement, and validates the
+three-commit parent/path chain without writing. It contains no phase-result judgment and
+cannot rewrite another manifest field or existing record.
+
+Run the focused P2 command tests and full suite, then commit
+`scripts/publish_phase_record.py` and its publisher tests as a reviewed implementation
+commit before starting the evidence-base sequence. They must be clean tracked inputs by
+Step 5, never swept into the exact five-path live-evidence commit.
 
 - [ ] **Step 3: Run the complete live metadata resolution**
 
@@ -426,7 +444,7 @@ git commit -m "chore: bind complete P2 source evidence"
 
 The cached name inventory must be exactly those five paths. Confirm the worktree is
 clean, then record the full lowercase output of `git rev-parse HEAD` as
-`EVIDENCE_BASE_SHA`. The already committed report implementation and tests are
+`EVIDENCE_BASE_SHA`. The already committed report and phase-record implementation and tests are
 review inputs, not files to restage in this evidence commit. `RUN_REPORT.md` retains
 the prior report until the next step and is not staged here.
 
@@ -485,14 +503,45 @@ report commit SHA would rewrite the report and recreate an impossible self-refer
 A corrected report requires a newly reviewed evidence-base/report pair, never an
 amend or manual edit.
 
-- [ ] **Step 9: Run the whole-P2 path-scoped review**
+- [ ] **Step 9: Publish and validate the immutable P2 phase index**
+
+With clean `HEAD` still equal to the P2 report-only commit, record it as
+`P2_REPORT_COMMIT` and run:
+
+```bash
+P2_REPORT_COMMIT="$(git rev-parse HEAD)"
+env UV_CACHE_DIR=.cache/uv uv run python scripts/publish_phase_record.py publish \
+  --phase p2 --implementation-evidence-git-sha "$EVIDENCE_BASE_SHA" \
+  --report-commit-git-sha "$P2_REPORT_COMMIT" \
+  --run-manifest docs/RUN_MANIFEST.yaml
+git add -- docs/RUN_MANIFEST.yaml
+test "$(git diff --cached --name-only)" = docs/RUN_MANIFEST.yaml
+git commit -m "docs: index immutable P2 phase evidence"
+P2_STATE_INDEX_COMMIT="$(git rev-parse HEAD)"
+env UV_CACHE_DIR=.cache/uv uv run python scripts/publish_phase_record.py validate \
+  --phase p2 --state-index-commit "$P2_STATE_INDEX_COMMIT" \
+  --run-manifest docs/RUN_MANIFEST.yaml
+```
+
+The publisher derives the closed `phase_records.p2` record and canonical artifact
+ledger from the exact P2 member set in the P9 design; no digest, blob ID, report path,
+or bound SHA is supplied by hand. It requires
+`implementation_evidence_git_sha == bound_evidence_git_sha == EVIDENCE_BASE_SHA`, the
+report commit's only parent to equal that SHA, and the report bytes to bind it. The
+ledger includes exactly `references/repos.yaml`, `references/repos.lock.yaml`,
+`references/p2-live-attempts.yaml` at the evidence SHA and `RUN_REPORT.md` at the report
+commit. It excludes the manifest, record, and state-index commit. The third commit must
+have the report commit as its only parent and change exactly the manifest; its own SHA
+is derived only by the read-only postcommit validator and never written into the record.
+
+- [ ] **Step 10: Run the whole-P2 path-scoped review**
 
 Review the canonical program Sections 7--9, 11--12, 27, 30, and 34--35; the approved
 autonomous design; this P2 design/plan; and the path-scoped P2 history after the final
 P1 evidence commit. Inspect the registry/bootstrap inputs; source model, Git, HTTP,
 cache, resolver, CLI, audit, and report modules; all source registry/fetch/audit/P2
 report/run-state tests and fixtures; the final lock and attempt log; assumptions and
-manifest; both closeout commits; and the generated report. Bind the review to the
+manifest; all three closeout commits; and the generated report. Bind the review to the
 reporter's captured command outputs plus the post-report checks. Later unrelated
 design commits may share the integration ancestry, so use path-scoped diffs and
 commit history rather than describing the evidence-base SHA as a P2-only commit.

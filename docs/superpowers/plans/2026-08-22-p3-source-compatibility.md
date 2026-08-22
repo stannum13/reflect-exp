@@ -308,6 +308,8 @@ check, and safety check. Commit as `feat: add MuJoCo compatibility smoke`.
 - Modify: `docs/ASSUMPTIONS.md`
 - Modify: `docs/RUN_MANIFEST.yaml`
 - Modify: `RUN_REPORT.md`
+- Create: `scripts/write_p3_report.py`
+- Verify/reuse: `scripts/publish_phase_record.py`
 
 **Interfaces:**
 - Consumes: reviewed Tasks 1–3, complete P2 lock, live sparse checkouts, static/runtime smoke results.
@@ -373,7 +375,71 @@ secret scan, tracked checkout/model scan, and generated-size audit. Verify all
 `p3: complete`, `p4: in_progress`, and open control/world-state/prediction/platform
 lanes without marking any empirical claim beyond Experiment 00.
 
-- [ ] **Step 7: Commit evidence and report**
+- [ ] **Step 7: Commit evidence and the report as two distinct commits**
 
-Commit small manifests/fragments/reports only; do not add checkouts. Use a clean
-implementation/evidence commit followed by a report-only commit bound to that SHA.
+Commit the complete small P3 manifests/fragments/results and durable P3 state only; do
+not add checkouts. Require the staged inventory to equal the reviewed P3 evidence-path
+inventory, commit it, require a clean tree, and record the full lowercase current SHA as
+`P3_EVIDENCE_SHA`. Generate `RUN_REPORT.md` against exactly that clean SHA with the
+reviewed deterministic P3 reporter:
+
+```bash
+env PHYSICAL_DEPLOYMENT_ALLOWED=false REFLECT_REMOTE_ENABLED=0 \
+  UV_CACHE_DIR=.cache/uv uv run python scripts/write_p3_report.py \
+  --evidence-base-sha "$P3_EVIDENCE_SHA"
+```
+
+The reporter validates the complete P2/P3 evidence snapshot and safety state, renders
+the required report sections deterministically, and writes the implementation/evidence
+SHA in a closed provenance field consumed by the phase-record publisher. It performs no
+network or source operation. Validate that the report binds `P3_EVIDENCE_SHA`, then
+stage and commit exactly `RUN_REPORT.md`:
+
+```bash
+git add -- RUN_REPORT.md
+test "$(git diff --cached --name-only)" = RUN_REPORT.md
+git commit -m "docs: publish P3 compatibility report"
+P3_REPORT_COMMIT="$(git rev-parse HEAD)"
+```
+
+The report commit's only parent must be `P3_EVIDENCE_SHA`. Do not amend or regenerate
+the report after this commit; a correction requires a new evidence/report pair.
+
+- [ ] **Step 8: Publish and validate the immutable P3 phase index**
+
+With a clean tree at `P3_REPORT_COMMIT`, run:
+
+```bash
+env UV_CACHE_DIR=.cache/uv uv run python scripts/publish_phase_record.py publish \
+  --phase p3 --implementation-evidence-git-sha "$P3_EVIDENCE_SHA" \
+  --report-commit-git-sha "$P3_REPORT_COMMIT" \
+  --run-manifest docs/RUN_MANIFEST.yaml
+git add -- docs/RUN_MANIFEST.yaml
+test "$(git diff --cached --name-only)" = docs/RUN_MANIFEST.yaml
+git commit -m "docs: index immutable P3 phase evidence"
+P3_STATE_INDEX_COMMIT="$(git rev-parse HEAD)"
+env UV_CACHE_DIR=.cache/uv uv run python scripts/publish_phase_record.py validate \
+  --phase p3 --state-index-commit "$P3_STATE_INDEX_COMMIT" \
+  --run-manifest docs/RUN_MANIFEST.yaml
+```
+
+The publisher derives every `phase_records.p3` field and its canonical artifact-ledger
+hash. The exact ledger members are the operation manifest, compatibility CSV,
+`references/licenses.md`, `docs/SOURCE_MAP.md`, both Experiment 00 reports, the one
+MuJoCo-smoke fragment selected by the operation manifest, all at `P3_EVIDENCE_SHA`, and
+`RUN_REPORT.md` at `P3_REPORT_COMMIT`. It rejects any additional member or caller-
+supplied digest, requires
+`implementation_evidence_git_sha == bound_evidence_git_sha == P3_EVIDENCE_SHA`, and
+requires the report commit's only parent and validated bound SHA to match. The existing
+P2 record must remain canonically equal. The state-index commit has the report commit as
+its only parent, changes exactly `docs/RUN_MANIFEST.yaml`, and is excluded from both the
+record and ledger so no self-reference exists.
+
+- [ ] **Step 9: Reverify the three-commit P3 closeout**
+
+Rerun the complete P2 audit, P3 offline checks, full tests, lock check, safety check,
+repository-boundary checks, and `git diff --check`. Require a clean tree. Validate both
+`phase_records.p2` and `phase_records.p3`; reconstruct each canonical record and
+artifact ledger from Git; verify the P3 evidence, report-only, and state-index changed-
+path sets and parent chain; and confirm current P4/P6/P7/P9 lanes remain exactly those
+opened by the reviewed P3 evidence commit.
