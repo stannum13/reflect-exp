@@ -35,21 +35,37 @@ gates. A static mapping pass cannot establish R1 runtime compatibility or safety
 
 P9 requires a complete passing P2 lock/audit and a complete passing P3 gate. The P9
 protocol binds the exact file hashes for `references/repos.yaml`,
-`references/repos.lock.yaml`, P2's report implementation Git SHA, P3's
+`references/repos.lock.yaml`, `docs/RUN_MANIFEST.yaml`, `RUN_REPORT.md`, P2's clean
+evidence-base Git SHA and report-only commit/hash, P3's clean implementation/evidence
+Git SHA and report-only commit/hash, P3's
 `experiments/00_source_audit/configs/operation-manifest.yaml`,
 `experiments/00_source_audit/results/compatibility.csv`, `references/licenses.md`,
-`docs/SOURCE_MAP.md`, P3's MuJoCo-smoke evidence, and P3's report implementation Git
-SHA. Missing, dirty, incomplete, or hash-mismatched evidence blocks P9 before checkout
-or output creation.
+`docs/SOURCE_MAP.md`, `experiments/00_source_audit/RESULTS.md`,
+`experiments/00_source_audit/INTERFACE_FINDINGS.md`, and the exact MuJoCo-smoke
+fragment path/hash named by P3's operation manifest. Missing, dirty, incomplete, or
+hash-mismatched evidence blocks P9 before checkout or output creation.
 
 `P3GateEvidence` is the closed JSON object `schema_version, p2_state, p3_state,
-registry_sha256, p2_lock_sha256, p2_report_git_sha, p3_operation_manifest_sha256,
-p3_compatibility_sha256, licenses_sha256, source_map_sha256,
-p3_mujoco_smoke_sha256, p3_report_git_sha, p3_local_lane_open,
+registry_sha256, p2_lock_sha256, run_manifest_sha256, run_report_sha256,
+p2_evidence_base_git_sha, p2_report_commit_git_sha, p2_report_sha256,
+p3_implementation_evidence_git_sha, p3_report_commit_git_sha, p3_report_sha256,
+p3_operation_manifest_sha256, p3_compatibility_sha256, licenses_sha256,
+source_map_sha256, p3_results_sha256, p3_interface_findings_sha256,
+p3_mujoco_smoke_relative_path, p3_mujoco_smoke_sha256, p3_local_lane_open,
 physical_deployment_allowed, remote_execution_allowed, runtime_network_allowed`.
 States must be `complete`, the lane boolean true, and all three authority booleans
 false. File hashes are lowercase 64-hex and Git SHAs lowercase 40-hex. The P9 factory
-rehashes every named file rather than trusting this summary.
+rehashes every named file rather than trusting this summary. The smoke path must be the
+single MuJoCo-smoke fragment identity selected from the hash-matched P3 operation
+manifest, be relative beneath P3's fragment root, and hash to the recorded value. Every
+P9 subcommand, including authoring, validation, fetch, inventory, discovery, issue,
+freeze, report, check, and the umbrella command, reruns this complete gate before it
+reads a checkout or creates output.
+The gate resolves P2's historical report-only commit from the completed P2 phase record
+in `docs/RUN_MANIFEST.yaml`, reads `RUN_REPORT.md` at that commit as a Git blob, and
+checks its bound preceding evidence-base SHA; it separately treats the current P3
+`RUN_REPORT.md` report-only commit and its bound implementation/evidence SHA. Thus the
+two report hashes cannot accidentally alias merely because the pathname was reused.
 
 P9 reuses only P3's reviewed low-level `CheckoutSpec`, `checkout_sparse`, and
 create-only checkout-evidence writer through a P9-owned static-audit launcher. It
@@ -105,7 +121,8 @@ checkpoints, and generated caches are not materialized. Individual files above 4
 may exist inside a selected sparse directory but are inventoried and rejected from
 parsing; the inherited checkout-wide byte cap still applies.
 
-The pre-fetch operation manifest binds registry bytes/hash, P2/P3 gate hashes, each
+The pre-fetch operation manifest binds registry bytes/hash, the complete closed P2/P3
+gate object/hash, each
 exact commit and license status, selected patterns, exact expected Git command vectors,
 timeouts/byte caps, and the fixed disposition `STATIC_SOURCE_INSPECTION_ONLY`. The
 post-fetch fragments bind actual command results, file inventories, checkout bytes,
@@ -136,8 +153,15 @@ files, changed inode/size/hash, NUL-containing text, DTD/entity XML, unsafe YAML
 duplicate mapping keys, nonfinite numbers, and path escape.
 
 Allowed inert formats are bounded UTF-8 Python/C/C++/Markdown text, JSON, YAML through
-`yaml.safe_load`, and XML/MJCF/URDF through a no-DTD standard-library parser after an
-explicit `<!DOCTYPE`/`<!ENTITY` rejection. Python is parsed with `ast.parse`; C/C++
+`yaml.safe_load`, and XML/MJCF/URDF through a no-DTD standard-library streaming pull
+parser after an explicit byte-level `<!DOCTYPE`/`<!ENTITY` rejection. Python first runs
+a bounded `tokenize` pre-pass that aborts on more than 250,000 tokens, bracket/indent
+nesting above 64, invalid tokenization, or a scalar-token payload above 1 MiB; only then
+may it call `ast.parse`, followed by the node/depth checks. XML counts live open depth,
+nodes, attributes, and accumulated text while feeding at most 64-KiB chunks and clears
+closed elements immediately. Its exact live ceilings are depth 64, 100,000 elements,
+10,000 attributes on one element, 100,000 attributes total, and 1 MiB text for one
+scalar; it aborts at a ceiling before a full tree can grow. C/C++
 constants use a closed token grammar, not compilation or a general preprocessor.
 Every parser additionally enforces the Section 5 node/depth/alias/scalar ceilings
 before materializing a value. No upstream module is imported.
@@ -149,9 +173,13 @@ sole exception is `fetch_sources.py`, which invokes only P3's low-level
 credential-free, prompt-free, proxy-free, redirect-disabled Git environment, local
 hook/fsmonitor neutralization, detached locked-SHA verification, dirty/mismatched
 checkout refusal, descriptor-anchored no-follow publication, and finite timeouts.
-It may contact only the five exact registry-derived GitHub origins, downloads less
-than 2 GiB per repository and less than 5 GiB cumulatively for the whole P9 pass, and
-stops before starting a checkout that could exceed the remaining cumulative allowance.
+It may contact only the five exact registry-derived GitHub origins. Actual bytes must be
+`<= 2147483648` per repository and `<= 5368709120` cumulatively; equality is valid and
+only `>` is refusal. Before each checkout the supervisor obtains an immutable reservation
+bounded by both the per-source cap and remaining cumulative allowance, records it before
+launch, and refuses to launch unless the requested reservation is positive and covers
+the checkout's declared maximum. Completion atomically converts reserved to actual bytes;
+failure releases only that checkout's reservation while retaining its attempt evidence.
 Fetch evidence records attempted and actual download/disk bytes. Exceeding either cap
 is `BLOCKED_RESOURCE`, never compatibility or mapping evidence. No issue URL or other
 endpoint is fetched by this exception, and it never enables runtime/deployment
@@ -195,10 +223,13 @@ neutral inventory. Missing, extra, ambiguous, or changed resolution emits
 `MISSING | CONFLICT | UNSUPPORTED_EXPRESSION`; it never searches nearby text.
 
 Inventory completes at a clean implementation SHA. Extraction rules are then reviewed,
-committed create-only, and bind the inventory hash plus that SHA before `discover` may
-run; modifying a rule requires a new inventory/rules revision. After discovery,
-`reviewed-mapping.yaml` may select only existing fact IDs and closed rationale enums.
-It binds discovery/rules hashes and its own reviewer commit. No stage may rewrite an
+validated, committed alone create-only, and bind the inventory hash plus that clean base
+SHA before `discover` may run; modifying a rule requires a new inventory/rules revision.
+After discovery, `reviewed-mapping.yaml` may select only existing fact IDs and closed
+rationale enums. It binds discovery/rules hashes and the clean review-base SHA. Because
+a file cannot contain the SHA of the commit containing itself, downstream stages bind
+each operation manifest, extraction rules file, and reviewed mapping by all three of its
+sealing commit SHA, Git blob ID, and SHA-256 content hash. No stage may rewrite an
 earlier artifact or reuse a later-stage file as an earlier input.
 
 The expression grammar is closed. Python permits `Constant` values limited to null,
@@ -215,8 +246,10 @@ Parser ceilings are per file: 250,000 lexical tokens, 100,000 syntax/data nodes,
 maximum depth 64, maximum scalar UTF-8 payload 1 MiB, maximum collection width
 10,000, and maximum 32 YAML anchors plus 32 alias uses. JSON nesting is counted by a
 string-aware pre-scan before `json.loads`; YAML tokens/aliases and the acyclic composed
-node graph are bounded before `safe_load`; AST/XML/data graphs are traversed with an
-explicit stack and the same node/depth ceilings. Cycles, duplicate keys, or an alias
+node graph are bounded before `safe_load`; Python uses the bounded tokenize pre-pass
+before AST allocation and an explicit-stack AST check afterward; XML uses the live
+streaming ceilings in Section 4 without retaining a complete tree. Remaining data graphs
+use an explicit stack and the same node/depth ceilings. Cycles, duplicate keys, or an alias
 expanded-node visit count above 250,000 are rejected. Discovery emits at most 20,000
 facts per repository and 50,000 total; Section 8's tracked-evidence byte cap remains
 the stricter bound.
@@ -250,13 +283,23 @@ must cite the sorted facts produced by its frozen `model_rule_ids`. A missing,
 ambiguous, non-R1, or cross-repository model link is non-authoritative
 and classified `NON_R1` rather than inferred from repository identity.
 
-Closed fact kinds are `MODEL_ID`, `JOINT_NAME`, `ACTUATOR_NAME`, `SIM_INDEX`,
+Closed fact kinds are `MODEL_ID`, `SIM_ACTUATOR_SEQUENCE`, `SDK_SLOT_DOMAIN`,
+`SIM_OBSERVATION_SCHEMA`, `TRAINING_OBSERVATION_SCHEMA`,
+`TRAINING_ACTION_SEQUENCE`, `DEPLOYMENT_ACTION_SEQUENCE`, `JOINT_NAME`,
+`ACTUATOR_NAME`, `SIM_INDEX`,
 `OBSERVATION_COMPONENT_NAME`, `SIM_OBSERVATION_INDEX`,
 `TRAINING_OBSERVATION_INDEX`, `OBSERVATION_SCALE`, `OBSERVATION_OFFSET`,
 `TRAINING_ACTION_INDEX`, `TRAINING_ACTION_SCALE`, `TRAINING_ACTION_OFFSET`,
 `DEPLOYMENT_ACTION_INDEX`, `SDK_JOINT_NAME`,
 `SDK_MOTOR_SLOT`, `COMMAND_SIGN`, `STATE_SIGN`, `POSITION_OFFSET`, `LOWER_LIMIT`,
 `UPPER_LIMIT`, `EFFORT_LIMIT`, `KP`, `KD`, and `SKIPPED_SLOT`.
+The five sequence/schema collection facts have canonical value exactly
+`{"size": nonnegative_integer, "ordered_ids": [NFKC_ASCII_string, ...]}` with array
+length equal to `size` and unique IDs. `SDK_SLOT_DOMAIN` has canonical value exactly
+`{"size": nonnegative_integer, "ordered_slots": [nonnegative_integer, ...]}`, with
+unique strictly increasing slots and array length equal to `size`. These whole-collection
+facts must come from source-declared collection definitions; discovery may not synthesize
+them by grouping element facts.
 
 The discovery report groups facts by canonical source symbol and emits
 `CONSISTENT | MISSING | CONFLICT | NON_R1 | UNSUPPORTED_EXPRESSION`. It never chooses
@@ -298,28 +341,45 @@ schema_version
 model_id = R1
 registry_sha256
 p2_lock_sha256
-p2_report_git_sha
+p2_evidence_base_git_sha
+p2_report_commit_git_sha
 p3_gate_evidence_sha256
-p3_report_git_sha
+p3_implementation_evidence_git_sha
+p3_report_commit_git_sha
 operation_manifest_sha256
+operation_manifest_sealing_git_sha
+operation_manifest_git_blob_id
 checkout_fragment_manifest_sha256
 source_commits
 source_inventory_sha256
 extraction_rules_sha256
+extraction_rules_sealing_git_sha
+extraction_rules_git_blob_id
 discovery_manifest_sha256
 source_facts_sha256
 reviewed_decisions_sha256
+reviewed_decisions_sealing_git_sha
+reviewed_decisions_git_blob_id
 audit_implementation_git_sha
 issue_52_context_sha256
 simulator_actuator_count
+simulator_actuator_sequence_fact_id
+simulator_action_size
 sdk_slot_domain
+sdk_slot_domain_fact_id
 skipped_sdk_slots
 sdk_commanded_mask
 simulator_observation_size
+simulator_observation_schema_fact_id
 training_observation_size
+training_observation_schema_fact_id
 observation_components
+training_action_size
+training_action_sequence_fact_id
 training_observation_order
 training_action_order
+deployment_action_size
+deployment_action_sequence_fact_id
 deployment_action_order
 rows
 lifecycle_state
@@ -377,11 +437,17 @@ start independently partition `0..training_observation_size-1`. The global
 `OTHER_SOURCE_DECLARED` is legal only with exact R1-tagged facts and never guesses a
 semantic label.
 
-Rows similarly partition simulator, training-action, and deployment-action index
-domains without gap or overlap. `training_action_order` and
-`deployment_action_order` are derived from row names at their respective unique
-indices, not independently authored arrays. All order/permutation/component values
-must have nonempty SourceFact provenance.
+The six top-level collection fact IDs must resolve to exact R1-tagged facts whose
+canonical values declare the whole source collection, including its length and ordered
+member identifiers. Counts, sizes, domains, and orders are copied from those facts, not
+computed from accepted rows/components. Components exactly partition the two
+source-declared observation domains. Rows exactly partition the source-declared
+simulator, training-action, and deployment-action domains without gap or overlap, and
+the row name at each index equals the corresponding declared sequence member.
+`training_action_order` and `deployment_action_order` therefore reproduce, rather than
+invent, their source-declared sequences. All order/permutation/component values have
+nonempty SourceFact provenance. An omitted middle or trailing source member is a gap
+even when every retained row is internally consecutive.
 
 The audit result is `VERIFIED` only when every primary simulated actuator has exactly
 one row, every required row field is sourced, all order arrays have exact coverage,
@@ -480,6 +546,21 @@ transitive provenance tamper, extra/missing artifact rejection, and byte-identic
 report/check rerender. Checkout tests use a recording runner and local fixture trees;
 no test performs Git or HTTP network access.
 
+Coverage fixtures independently delete a middle and the trailing member from each
+source-declared actuator, SDK-slot, observation, training-action, and deployment-action
+collection while leaving retained rows consecutive; every case must fail exact partition
+validation. Parser fixtures include deeply nested and high-token Python below 4 MiB and
+deep/high-node XML below 4 MiB, and assert abort occurs in the tokenize pre-pass or live
+XML stream before `ast.parse` or full-tree retention. Gate tests mutate each closed gate
+input in turn—including both run-state documents, both P2/P3 report lifecycles, both P3
+result reports, and the manifest-selected smoke fragment—and assert every subcommand
+fails before checkout read/output creation. Resource tests accept exactly 2147483648 and
+5368709120 bytes, reject each cap plus one, prevent over-reservation before process
+launch, and prove failure releases only its immutable reservation.
+Authority-seal tests separately alter the sealing commit, Git blob ID, and SHA-256 for
+each of the operation manifest, extraction rules, and reviewed mapping; freeze, check,
+and byte-for-byte reproduction must reject every mutation.
+
 ## 8. Artifacts, commands, and publication
 
 Required tracked outputs are:
@@ -489,6 +570,8 @@ experiments/08_unitree_r1/configs/p3-gate.json
 experiments/08_unitree_r1/configs/operation-manifest.yaml
 experiments/08_unitree_r1/configs/extraction-rules.yaml
 experiments/08_unitree_r1/configs/reviewed-mapping.yaml
+experiments/08_unitree_r1/configs/base.yaml
+experiments/08_unitree_r1/run.py
 experiments/08_unitree_r1/results/checkout-fragments/unitree_rl_mjlab.json
 experiments/08_unitree_r1/results/checkout-fragments/unitree_mujoco.json
 experiments/08_unitree_r1/results/checkout-fragments/unitree_sdk2.json
@@ -511,7 +594,20 @@ Every downstream manifest binds all upstream hashes listed in Section 6. Small
 discovery facts, evidence digests, and reports are tracked; sparse checkouts and raw
 source remain ignored. Exact command shapes are:
 
+The three authority files use the same create-only sealing protocol. Each author command
+requires a clean tree before creation; each validator reruns the complete Section 3 gate,
+accepts no unknown fields, and checks every upstream hash. `git add` names exactly one
+authority file, `git diff --cached --name-only` must equal that one path, and the commit
+is therefore single-purpose. Downstream validation finds the sealing commit with
+`git log -1 --format=%H -- <path>`, requires that commit's changed-path set to equal the
+one authority path, obtains its blob with `git rev-parse <seal>:<path>`, hashes those blob
+bytes with SHA-256, and compares all three identities recorded downstream. Review input
+under `/private/tmp` is untrusted, never published, and may contain only the closed
+selector or fact-ID/rationale decision fields; the author command derives every other
+field and refuses values not already in inventory/discovery evidence.
+
 ```text
+test -z "$(git status --porcelain)"
 uv run python experiments/08_unitree_r1/audit.py gate \
   --registry references/repos.yaml --lock references/repos.lock.yaml \
   --run-manifest docs/RUN_MANIFEST.yaml --run-report RUN_REPORT.md \
@@ -519,8 +615,32 @@ uv run python experiments/08_unitree_r1/audit.py gate \
   experiments/00_source_audit/configs/operation-manifest.yaml \
   --compatibility experiments/00_source_audit/results/compatibility.csv \
   --licenses references/licenses.md --source-map docs/SOURCE_MAP.md \
+  --p3-results experiments/00_source_audit/RESULTS.md \
+  --p3-interface-findings experiments/00_source_audit/INTERFACE_FINDINGS.md \
   --p3-fragment-root experiments/00_source_audit/results/fragments \
   --output experiments/08_unitree_r1/configs/p3-gate.json --headless
+git add -- experiments/08_unitree_r1/configs/p3-gate.json
+test "$(git diff --cached --name-only)" = \
+  experiments/08_unitree_r1/configs/p3-gate.json
+git commit -m "exp08: bind P2 and P3 gate evidence"
+
+test -z "$(git status --porcelain)"
+uv run python experiments/08_unitree_r1/audit.py author-operation-manifest \
+  --p3-gate experiments/08_unitree_r1/configs/p3-gate.json \
+  --registry references/repos.yaml --lock references/repos.lock.yaml \
+  --output experiments/08_unitree_r1/configs/operation-manifest.yaml --headless
+uv run python experiments/08_unitree_r1/audit.py validate-authority \
+  --kind operation-manifest \
+  --p3-gate experiments/08_unitree_r1/configs/p3-gate.json \
+  --path experiments/08_unitree_r1/configs/operation-manifest.yaml --headless
+git add -- experiments/08_unitree_r1/configs/operation-manifest.yaml
+test "$(git diff --cached --name-only)" = \
+  experiments/08_unitree_r1/configs/operation-manifest.yaml
+git commit -m "exp08: seal R1 source operation manifest"
+uv run python experiments/08_unitree_r1/audit.py validate-authority-seal \
+  --kind operation-manifest \
+  --p3-gate experiments/08_unitree_r1/configs/p3-gate.json \
+  --path experiments/08_unitree_r1/configs/operation-manifest.yaml --headless
 
 uv run python experiments/08_unitree_r1/fetch_sources.py --operation-manifest \
   experiments/08_unitree_r1/configs/operation-manifest.yaml \
@@ -528,6 +648,13 @@ uv run python experiments/08_unitree_r1/fetch_sources.py --operation-manifest \
   --fragment-dir experiments/08_unitree_r1/results/checkout-fragments \
   --output-root external/checkouts --max-source-bytes 2147483648 \
   --max-total-bytes 5368709120 --headless
+git add -- experiments/08_unitree_r1/results/checkout-fragments/unitree_rl_mjlab.json \
+  experiments/08_unitree_r1/results/checkout-fragments/unitree_mujoco.json \
+  experiments/08_unitree_r1/results/checkout-fragments/unitree_sdk2.json \
+  experiments/08_unitree_r1/results/checkout-fragments/unifolm_vla.json \
+  experiments/08_unitree_r1/results/checkout-fragments/unifolm_wma.json \
+  experiments/08_unitree_r1/results/checkout-fragments/manifest.json
+git commit -m "exp08: record bounded R1 source checkouts"
 
 uv run python experiments/08_unitree_r1/audit.py inventory \
   --operation-manifest experiments/08_unitree_r1/configs/operation-manifest.yaml \
@@ -536,6 +663,29 @@ uv run python experiments/08_unitree_r1/audit.py inventory \
   experiments/08_unitree_r1/results/checkout-fragments/manifest.json \
   --checkout-root external/checkouts \
   --output experiments/08_unitree_r1/results/source-inventory.json --headless
+git add -- experiments/08_unitree_r1/results/source-inventory.json
+test "$(git diff --cached --name-only)" = \
+  experiments/08_unitree_r1/results/source-inventory.json
+git commit -m "exp08: freeze neutral R1 source inventory"
+
+test -z "$(git status --porcelain)"
+uv run python experiments/08_unitree_r1/audit.py author-extraction-rules \
+  --p3-gate experiments/08_unitree_r1/configs/p3-gate.json \
+  --source-inventory experiments/08_unitree_r1/results/source-inventory.json \
+  --review-input /private/tmp/exp08-extraction-rule-decisions.yaml \
+  --output experiments/08_unitree_r1/configs/extraction-rules.yaml --headless
+uv run python experiments/08_unitree_r1/audit.py validate-authority \
+  --kind extraction-rules \
+  --p3-gate experiments/08_unitree_r1/configs/p3-gate.json \
+  --path experiments/08_unitree_r1/configs/extraction-rules.yaml --headless
+git add -- experiments/08_unitree_r1/configs/extraction-rules.yaml
+test "$(git diff --cached --name-only)" = \
+  experiments/08_unitree_r1/configs/extraction-rules.yaml
+git commit -m "exp08: seal R1 extraction rules"
+uv run python experiments/08_unitree_r1/audit.py validate-authority-seal \
+  --kind extraction-rules \
+  --p3-gate experiments/08_unitree_r1/configs/p3-gate.json \
+  --path experiments/08_unitree_r1/configs/extraction-rules.yaml --headless
 
 uv run python experiments/08_unitree_r1/audit.py discover \
   --operation-manifest experiments/08_unitree_r1/configs/operation-manifest.yaml \
@@ -546,12 +696,39 @@ uv run python experiments/08_unitree_r1/audit.py discover \
   --facts-output experiments/08_unitree_r1/results/discovery/source-facts.jsonl \
   --manifest-output experiments/08_unitree_r1/results/discovery/manifest.json \
   --headless
+git add -- experiments/08_unitree_r1/results/discovery/source-facts.jsonl \
+  experiments/08_unitree_r1/results/discovery/manifest.json
+git commit -m "exp08: record static R1 source facts"
 
 uv run python experiments/08_unitree_r1/audit.py issue-context \
   --p3-gate experiments/08_unitree_r1/configs/p3-gate.json \
   --program "Reflect Lite Research Program.md" \
   --source-facts experiments/08_unitree_r1/results/discovery/source-facts.jsonl \
   --output experiments/08_unitree_r1/results/issue-52-context.json --headless
+git add -- experiments/08_unitree_r1/results/issue-52-context.json
+test "$(git diff --cached --name-only)" = \
+  experiments/08_unitree_r1/results/issue-52-context.json
+git commit -m "exp08: record pinned issue 52 context"
+
+test -z "$(git status --porcelain)"
+uv run python experiments/08_unitree_r1/audit.py author-reviewed-mapping \
+  --p3-gate experiments/08_unitree_r1/configs/p3-gate.json \
+  --discovery-manifest experiments/08_unitree_r1/results/discovery/manifest.json \
+  --source-facts experiments/08_unitree_r1/results/discovery/source-facts.jsonl \
+  --review-input /private/tmp/exp08-reviewed-mapping-decisions.yaml \
+  --output experiments/08_unitree_r1/configs/reviewed-mapping.yaml --headless
+uv run python experiments/08_unitree_r1/audit.py validate-authority \
+  --kind reviewed-mapping \
+  --p3-gate experiments/08_unitree_r1/configs/p3-gate.json \
+  --path experiments/08_unitree_r1/configs/reviewed-mapping.yaml --headless
+git add -- experiments/08_unitree_r1/configs/reviewed-mapping.yaml
+test "$(git diff --cached --name-only)" = \
+  experiments/08_unitree_r1/configs/reviewed-mapping.yaml
+git commit -m "exp08: seal reviewed R1 mapping decisions"
+uv run python experiments/08_unitree_r1/audit.py validate-authority-seal \
+  --kind reviewed-mapping \
+  --p3-gate experiments/08_unitree_r1/configs/p3-gate.json \
+  --path experiments/08_unitree_r1/configs/reviewed-mapping.yaml --headless
 
 uv run python experiments/08_unitree_r1/audit.py freeze \
   --p3-gate experiments/08_unitree_r1/configs/p3-gate.json \
@@ -586,6 +763,26 @@ uv run python experiments/08_unitree_r1/audit.py check \
 
 UV_CACHE_DIR=.cache/uv uv run pytest \
   experiments/08_unitree_r1/tests/test_r1_joint_mapping.py -q
+
+uv run python experiments/08_unitree_r1/run.py \
+  --config experiments/08_unitree_r1/configs/base.yaml --seed 0 \
+  --output-dir experiments/08_unitree_r1/results --max-episodes 0 --headless
+
+make exp08-audit
+```
+
+`run.py` is the thin Experiment 08 Phase 0 umbrella. It accepts exactly the standard
+`--config`, `--seed`, `--output-dir`, `--dry-run`, `--max-episodes`, and `--headless`
+flags, requires `--max-episodes 0`, rejects unknown flags, and delegates only to the
+commands above. `--dry-run` reruns the complete gate, prints the exact offline command
+plan in order, and creates no file, checkout, subprocess, or socket. The literal root
+target is:
+
+```make
+.PHONY: exp08-audit
+exp08-audit:
+	UV_CACHE_DIR=.cache/uv uv run python experiments/08_unitree_r1/run.py --config experiments/08_unitree_r1/configs/base.yaml --seed 0 --output-dir experiments/08_unitree_r1/results --max-episodes 0 --headless
+	UV_CACHE_DIR=.cache/uv uv run pytest experiments/08_unitree_r1/tests/test_r1_joint_mapping.py -q
 ```
 
 Every writer anchors an approved parent descriptor, rejects symlink components, creates
