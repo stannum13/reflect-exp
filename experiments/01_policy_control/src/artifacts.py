@@ -494,8 +494,9 @@ def _publication_payloads(
         "bundle_sha256", "disposition", "reason", "analysis_included",
     })
     index_keys = frozenset({
-        "schema_version", "revision", "condition_id", "label", "source_ranges",
-        "command_output_sha256", "raw_links", "denominator",
+        "schema_version", "revision", "stack_id", "variant_id", "condition_id",
+        "target_class", "label", "source_ranges", "command_output_sha256",
+        "raw_links", "denominator",
     })
     range_keys = frozenset({"start", "end"})
     recipe_keys = frozenset({
@@ -512,7 +513,8 @@ def _publication_payloads(
         _exact_int(row["revision"], "revision")
         if row["stack_id"] not in _STACK_ORDER or row["validity"] not in {"VALID", "DECLARED_INVALID"}:
             raise ArtifactError("raw evidence row has invalid closed enum")
-        if row["disposition"] not in {"SUCCESS", "FAILED", "TIMED_OUT", "CRASHED", "EXCLUDED", "DECLARED_MISSING"}:
+        disposition = row["disposition"]
+        if disposition not in {"SUCCESS", "FAILED", "TIMED_OUT", "CRASHED", "EXCLUDED", "DECLARED_MISSING"}:
             raise ArtifactError("episode disposition has an invalid closed enum")
         _exact_int(row["seed"], "seed")
         start, end = _exact_int(row["tick_start"], "tick_start"), _exact_int(row["tick_end"], "tick_end")
@@ -526,10 +528,27 @@ def _publication_payloads(
             raise ArtifactError("analysis_included must be boolean")
         if row["missingness"] is not None:
             _text(row["missingness"], "missingness")
-        for key in ("config_sha256", "code_sha256", "dependency_sha256", "input_sha256", "output_sha256", "replay_sha256"):
+        for key in ("config_sha256", "code_sha256", "dependency_sha256", "input_sha256"):
             _hash(row[key], key)
-        if row["bundle_sha256"] is not None:
-            _hash(row["bundle_sha256"], "bundle_sha256")
+        for key in ("output_sha256", "replay_sha256", "bundle_sha256"):
+            if row[key] is not None:
+                _hash(row[key], key)
+        complete = disposition in {"SUCCESS", "FAILED"}
+        if complete and (
+            row["validity"] != "VALID" or row["missingness"] is not None
+            or row["terminal_state"] != "COMPLETE" or not row["analysis_included"]
+            or any(row[key] is None for key in ("output_sha256", "replay_sha256", "bundle_sha256"))
+        ):
+            raise ArtifactError("complete episode disposition contradicts validity or retained evidence")
+        if disposition in {"TIMED_OUT", "CRASHED", "DECLARED_MISSING"} and (
+            row["validity"] != "DECLARED_INVALID" or row["missingness"] is None
+            or row["analysis_included"] or row["bundle_sha256"] is not None
+        ):
+            raise ArtifactError("invalid episode disposition contradicts missingness or analysis inclusion")
+        if disposition == "EXCLUDED" and (row["analysis_included"] or row["missingness"] is None):
+            raise ArtifactError("excluded episode disposition requires a reason and analysis exclusion")
+        if (disposition == "SUCCESS") != (row["reason"] == "NONE"):
+            raise ArtifactError("episode disposition and reason are inconsistent")
         normalized_raw.append(row)
     normalized_index: list[dict[str, object]] = []
     for source in annotated_index:
@@ -537,8 +556,11 @@ def _publication_payloads(
         if _exact_int(row["schema_version"], "schema_version") != 1:
             raise ArtifactError("annotated index schema_version must be 1")
         _exact_int(row["revision"], "revision")
-        if row["label"] not in {"WORKING", "NONWORKING", "CLASS_NOT_OBSERVED"}:
+        if row["target_class"] not in {"WORKING", "NONWORKING"} or row["label"] not in {"WORKING", "NONWORKING", "CLASS_NOT_OBSERVED"}:
             raise ArtifactError("annotated index row has invalid closed enum")
+        if row["stack_id"] not in _STACK_ORDER:
+            raise ArtifactError("annotated index stack_id is invalid")
+        _text(row["variant_id"], "variant_id")
         _text(row["condition_id"], "condition_id")
         denominator = _exact_int(row["denominator"], "denominator")
         if denominator == 0:
@@ -561,6 +583,8 @@ def _publication_payloads(
             raise ArtifactError("CLASS_NOT_OBSERVED cannot cite raw examples")
         if row["label"] != "CLASS_NOT_OBSERVED" and (not row["source_ranges"] or not row["raw_links"]):
             raise ArtifactError("observed labels require source ranges and raw links")
+        if row["label"] != "CLASS_NOT_OBSERVED" and row["label"] != row["target_class"]:
+            raise ArtifactError("observed annotation label must equal its target class")
         normalized_index.append(row)
     normalized_recipes: list[dict[str, object]] = []
     for source in plot_recipes:
@@ -586,7 +610,35 @@ def _publication_payloads(
     def jsonl(rows: Sequence[dict[str, object]]) -> bytes:
         return b"".join(canonical_json_bytes(row) for row in rows)
     sorted_raw = sorted(normalized_raw, key=lambda row: (str(row["stack_id"]), int(row["seed"]), str(row["condition_id"]), str(row["episode_id"])))
-    sorted_index = sorted(normalized_index, key=lambda row: (str(row["condition_id"]), str(row["label"])))
+    raw_groups: dict[tuple[str, str, str], list[dict[str, object]]] = {}
+    for row in normalized_raw:
+        raw_groups.setdefault((str(row["stack_id"]), str(row["variant_id"]), str(row["condition_id"])), []).append(row)
+    index_groups: dict[tuple[str, str, str], dict[str, dict[str, object]]] = {}
+    for row in normalized_index:
+        group = (str(row["stack_id"]), str(row["variant_id"]), str(row["condition_id"]))
+        target = str(row["target_class"])
+        if target in index_groups.setdefault(group, {}):
+            raise ArtifactError("annotated working/nonworking class is duplicated")
+        index_groups[group][target] = row
+    if set(index_groups) != set(raw_groups) or any(set(rows) != {"WORKING", "NONWORKING"} for rows in index_groups.values()):
+        raise ArtifactError("annotated working/nonworking coverage is incomplete")
+    for group, rows in raw_groups.items():
+        ordered = sorted(rows, key=lambda row: (int(row["seed"]), str(row["episode_id"])))
+        classes = {
+            "WORKING": [row for row in ordered if row["disposition"] == "SUCCESS"],
+            "NONWORKING": [row for row in ordered if row["disposition"] in {"FAILED", "TIMED_OUT", "CRASHED", "DECLARED_MISSING"}],
+        }
+        for target, eligible in classes.items():
+            annotation = index_groups[group][target]
+            if annotation["denominator"] != len(ordered):
+                raise ArtifactError("annotated sample denominator differs from eligible raw rows")
+            if eligible:
+                expected_link = [eligible[0]["episode_id"]]
+                if annotation["label"] != target or annotation["raw_links"] != expected_link:
+                    raise ArtifactError("annotated sample does not use the deterministic first eligible raw case")
+            elif annotation["label"] != "CLASS_NOT_OBSERVED" or annotation["raw_links"] or annotation["source_ranges"]:
+                raise ArtifactError("absent working/nonworking class must be CLASS_NOT_OBSERVED")
+    sorted_index = sorted(normalized_index, key=lambda row: (str(row["stack_id"]), str(row["variant_id"]), str(row["condition_id"]), str(row["target_class"])))
     sorted_recipes = sorted(normalized_recipes, key=lambda row: str(row["plot"]))
     raw_payload = jsonl(sorted_raw)
     payloads = {

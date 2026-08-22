@@ -146,7 +146,8 @@ def test_reconstruct_evidence_is_deterministic_and_manifest_last(tmp_path: Path)
             "validity": validity, "missingness": None if validity == "VALID" else "ACCIDENTAL",
             "terminal_state": "COMPLETE", "config_sha256": H64, "code_sha256": H64,
             "dependency_sha256": H64, "input_sha256": H64, "output_sha256": H64,
-            "replay_sha256": H64, "bundle_sha256": H64 if validity == "VALID" else None,
+            "replay_sha256": H64 if validity == "VALID" else None,
+            "bundle_sha256": H64 if validity == "VALID" else None,
             "disposition": disposition, "reason": "NONE" if validity == "VALID" else "MISSING_OUTPUT",
             "analysis_included": validity == "VALID",
         }
@@ -155,11 +156,20 @@ def test_reconstruct_evidence_is_deterministic_and_manifest_last(tmp_path: Path)
         make_raw("P2", 2, "VALID"), make_raw("P1", 1, "DECLARED_INVALID"),
     )
     index = (
-        {"schema_version": 1, "revision": 1, "condition_id": "c", "label": "CLASS_NOT_OBSERVED",
+        {"schema_version": 1, "revision": 1, "stack_id": "P1", "variant_id": "base",
+         "condition_id": "c", "target_class": "WORKING", "label": "CLASS_NOT_OBSERVED",
          "source_ranges": [], "command_output_sha256": H64, "raw_links": [], "denominator": 1},
-        {"schema_version": 1, "revision": 1, "condition_id": "c", "label": "WORKING",
+        {"schema_version": 1, "revision": 1, "stack_id": "P1", "variant_id": "base",
+         "condition_id": "c", "target_class": "NONWORKING", "label": "NONWORKING",
+         "source_ranges": [{"start": 0, "end": 20}], "command_output_sha256": H64,
+         "raw_links": ["episode-1"], "denominator": 1},
+        {"schema_version": 1, "revision": 1, "stack_id": "P2", "variant_id": "base",
+         "condition_id": "c", "target_class": "WORKING", "label": "WORKING",
          "source_ranges": [{"start": 0, "end": 20}], "command_output_sha256": H64,
          "raw_links": ["episode-2"], "denominator": 1},
+        {"schema_version": 1, "revision": 1, "stack_id": "P2", "variant_id": "base",
+         "condition_id": "c", "target_class": "NONWORKING", "label": "CLASS_NOT_OBSERVED",
+         "source_ranges": [], "command_output_sha256": H64, "raw_links": [], "denominator": 1},
     )
     raw_source = b"".join(_canonical(row) for row in sorted(raw, key=lambda row: (row["stack_id"], row["seed"], row["condition_id"], row["episode_id"])))
     recipes = ({
@@ -186,3 +196,10 @@ def test_reconstruct_evidence_is_deterministic_and_manifest_last(tmp_path: Path)
     (tmp_path / "first" / "extra.json").unlink()
     with pytest.raises((FileExistsError, artifacts.ArtifactError)):
         artifacts.reconstruct_evidence(tmp_path / "first", raw + (make_raw("P3", 3, "VALID"),), index, recipes, protocol_sha256=H64)
+
+    contradictory = dict(raw[0]) | {"disposition": "TIMED_OUT", "analysis_included": True}
+    with pytest.raises(artifacts.ArtifactError, match="disposition"):
+        artifacts.reconstruct_evidence(tmp_path / "contradictory", (contradictory, raw[1]), index, recipes, protocol_sha256=H64)
+    incomplete_index = tuple(row for row in index if not (row["stack_id"] == "P2" and row["target_class"] == "NONWORKING"))
+    with pytest.raises(artifacts.ArtifactError, match="working/nonworking"):
+        artifacts.reconstruct_evidence(tmp_path / "incomplete-index", raw, incomplete_index, recipes, protocol_sha256=H64)
