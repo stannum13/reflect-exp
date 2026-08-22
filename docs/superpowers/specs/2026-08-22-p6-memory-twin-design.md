@@ -200,6 +200,248 @@ or private truth trace as declared by the observation policy.
 forbidden from runner rollouts and sidecars. Any other subtype/location combination,
 missing required shared event, or extra shared event is invalid.
 
+### 3.4 Frozen benchmark and observation appendix
+
+This appendix is authority-bearing. `base.yaml` must encode these literal tables and
+constants, and a canonical JSON rendering of this appendix's data is a golden fixture.
+An implementation may not fill in omitted generator or planner behavior. The virtual
+event interval is exactly `event_interval_ns=1_000_000_000`; tick `k` is time
+`k * event_interval_ns`.
+
+The five room vertices and six bidirectional door edges are:
+
+| Room ID | Label | Origin `(x,y,z)` m | Initially restricted |
+|---|---|---|---|
+| `room/0001` | Lobby | `(0,0,0)` | no |
+| `room/0002` | CorridorA | `(4,0,0)` | no |
+| `room/0003` | PumpRoom | `(10,0,0)` | no |
+| `room/0004` | ElectricalRoom | `(4,12,0)` | no |
+| `room/0005` | RestrictedLab | `(11,12,0)` | yes, by `restriction/0001` |
+
+| Door ID | Endpoints in canonical order | Cost m | Initial state |
+|---|---|---:|---|
+| `door/0001` | `room/0001, room/0002` | 4 | `OPEN` |
+| `door/0002` | `room/0002, room/0003` | 6 | `OPEN` |
+| `door/0003` | `room/0002, room/0004` | 8 | `OPEN` |
+| `door/0004` | `room/0004, room/0005` | 7 | `CLOSED` |
+| `door/0005` | `room/0003, room/0004` | 8 | `OPEN` |
+| `door/0006` | `room/0001, room/0004` | 14 | `OPEN` |
+
+Each door is both a door and the stable topology-edge subject for its `CONNECTS`
+facts. A closed, blocked, or restricted edge is unavailable, not merely expensive.
+The physical entities are fixed as follows; the listed room is their initial `IN`
+relation and their pose is that room origin plus the offset shown:
+
+| ID | Label / class | Room | Offset m | Affordance/state |
+|---|---|---|---|---|
+| `asset/0001` | Pump 1 / ASSET | `room/0003` | `(0.5,0.4,0)` | OPERABLE/OPERATIONAL |
+| `asset/0002` | Pump 2 / ASSET | `room/0003` | `(1.2,0.4,0)` | OPERABLE/OPERATIONAL |
+| `asset/0003` | Panel A / ASSET | `room/0004` | `(0.5,0.5,0)` | OPERABLE/OPERATIONAL |
+| `asset/0004` | Panel B / ASSET | `room/0004` | `(1.2,0.5,0)` | OPERABLE/OPERATIONAL |
+| `asset/0005` | Rack A / ASSET | `room/0005` | `(0.6,0.6,0)` | PLACEABLE/OPERATIONAL |
+| `asset/0006` | Rack B / ASSET | `room/0005` | `(1.3,0.6,0)` | PLACEABLE/OPERATIONAL |
+| `asset/0007` | Crate A / ASSET | `room/0002` | `(0.5,0.3,0)` | PICKABLE/OPERATIONAL |
+| `asset/0008` | Crate B / ASSET | `room/0002` | `(1.0,0.3,0)` | PICKABLE/OPERATIONAL |
+| `asset/0009` | Cabinet / ASSET | `room/0001` | `(0.8,0.7,0)` | PLACEABLE/OPERATIONAL |
+| `asset/0010` | Mobile blocker / OBSTACLE | `room/0004` | `(0.0,0.0,0)` | BLOCKS `door/0003` only when scheduled |
+| `valve/0001` | Valve 3 / VALVE | `room/0003` | `(0.8,-0.5,0)` | OPERABLE/OPERATIONAL |
+| `valve/0002` | Valve 7 / VALVE | `room/0004` | `(0.8,-0.5,0)` | OPERABLE/OPERATIONAL |
+| `tool/0001` | Wrench / TOOL | `room/0001` | `(0.4,-0.4,0)` | PICKABLE,PLACEABLE |
+| `tool/0002` | Probe / TOOL | `room/0004` | `(0.4,-0.4,0)` | PICKABLE,PLACEABLE |
+| `charger/0001` | Charger / CHARGER | `room/0004` | `(1.7,-0.4,0)` | CHARGEABLE |
+| `robot/0001` | Robot / ROBOT | `room/0001` | `(0,0,0)` | battery `0.55` |
+
+Every entity receives immutable `LABEL`, case-folded label `ALIAS`, and
+`ENTITY_CLASS`; only rows with listed affordances receive `AFFORDANCE` facts. Doors
+receive `OPENABLE` and `CLOSEABLE`, and rooms receive `NAVIGABLE`. The only additional aliases are
+`pump two -> asset/0002`, `coolant valve -> valve/0001`, and deliberately ambiguous
+`service valve -> valve/0001,valve/0002`. No other vertex, edge, relation, alias,
+cost, or initial state exists. The sole policy entity is `restriction/0001`, label
+`Authorized Personnel Only`, class `RESTRICTION_POLICY`; it initially supplies only
+`RESTRICTED_BY(room/0005,restriction/0001)`.
+
+RNG use is closed and reproducible. The generator is NumPy `PCG64`. For stream name
+`s`, its seed is the first 128 bits interpreted big-endian of SHA-256 over canonical
+JSON `[root_seed_hex, experiment_id, protocol_revision, seed_slot, s,
+"generator-v1"]`. The only stream names and domains are:
+
+- `pose_jitter`: one independent `Uniform[-0.05,0.05)` metre draw for x and y of
+  each of the 22 door/asset/valve/tool/charger/robot entities in sorted ID order; z
+  and quaternion never vary;
+- `delivery_delay`: one integer draw from `{0,1}` ticks with probabilities
+  `(0.75,0.25)` for each scheduled non-baseline delivery in schedule order;
+- `confidence_jitter`: one draw from `{-0.05,0,+0.05}` with probabilities
+  `(0.2,0.6,0.2)` added to the mode confidence below and clamped to `[0,1]`; and
+- `instruction_form`: one integer uniformly from `{0,1}` choosing between the two
+  frozen synonymous mission strings in the golden fixture.
+
+There are no rejection draws, shuffled cases, random event types, random topology, or
+variant-specific streams. Stream consumption counts are fixed by the schedule even
+when a value is not outcome-relevant. Pilot and confirmation differ only in private
+root, opaque seed ID, and these bounded nuisance draws.
+
+An Exp04 seed is ten independent four-tick cases in the query order in Section 6.1.
+Each case instantiates fresh truth, compiler, and architecture state from the canonical
+initial world; cases share nuisance-seed streams and the seed-level metric row but no
+facts or hidden state. This is encoded by a required `case_id`; there is no unrecorded
+reset mutation.
+For cell index `i=0..9`, tick `4i` delivers the complete baseline; tick `4i+1`
+performs the listed truth mutation; tick `4i+2+d` delivers the listed observation,
+where `d` is its pre-drawn delivery delay, and that same realized tick issues the
+query after the rank-2 delivery. Stable source/event IDs include `case_id` and
+distinguish repeated facts. The exact cases are:
+
+| Query | Truth subtype | Delivery mode / target |
+|---|---|---|
+| `LOCATION` | `OBJECT_MOVED_UNOBSERVED` moves `tool/0001` to `room/0002` | `NOT_OBSERVED`; target omitted |
+| `LAST_OBSERVED` | `OBJECT_OCCLUDED` for `valve/0001` | `OCCLUDED`; visibility only |
+| `POSE_USABLE` | `POSE_BECAME_STALE` for `asset/0002` | `NOT_OBSERVED`; target omitted |
+| `PRIOR_ATTEMPT` | `TASK_ATTEMPT_FAILED` on `door/0003` | `VISIBLE`; failed `OPEN_DOOR/BLOCKED` outcome |
+| `LAST_FAILURE_REASON` | `EARLIER_ENCOUNTER_REFERENCED` emits `OPEN_DOOR/door/0003/FAILED/BLOCKED` | `VISIBLE`; the outcome and reference share that case's stable attempt event ID |
+| `REACHABLE_VALVE` | `ROOM_RESTRICTION_CHANGED` makes `room/0003` restricted | `VISIBLE`; restriction and reachability changes |
+| `CHANGES_SINCE` | `OBJECT_PICKED_OR_PLACED` puts `tool/0002 ON asset/0003` | `VISIBLE`; relation and pose |
+| `ROUTE_BLOCKER` | `DOOR_STATE_CHANGED` makes `door/0002 BLOCKED` | `VISIBLE`; door and blocker facts |
+| `DUPLICATE_IDENTITY` | `DUPLICATE_LABEL_OBSERVED` exposes both service valves | `VISIBLE`; both labeled entities |
+| `CONFLICTS_UNKNOWN` | `CONTRADICTORY_OBSERVATION` claims `asset/0001` both OPERATIONAL and FAILED | `CONTRADICTORY`; two claims |
+
+An Exp05 seed is five independent twelve-tick mission cases in the Section 7 order,
+each with fresh truth/compiler/planner state and a required `case_id` under the same
+no-cross-case rule.
+At ticks `12i` and `12i+1`, baseline and mission request are delivered; at ticks
+`12i+2`, `12i+5`, and `12i+8`, the ordered mutations below occur; their observations
+are delivered at `+3+d`, `+6+d`, and `+9+d` respectively, and plan/replan requests
+occur at those same realized delivery ticks after rank 2. Thus one-interval facts are
+fresh at the callback and no request races its own observation.
+The target/value tuples are also exact:
+
+| Mission ID | Tick `+2` | Tick `+5` | Tick `+8` |
+|---|---|---|---|
+| `INSPECT_NEAREST_COOLANT_VALVE` | `ROOM_RESTRICTION_CHANGED(room/0003, restricted)` | `DUPLICATE_LABEL_OBSERVED(service valve -> valve/0001,valve/0002)` | `INSTRUCTION_CHANGED("inspect Valve 3" -> "inspect nearest coolant valve without restricted entry")` |
+| `REACH_PUMP2_WITH_RECHARGE` | `BATTERY_ESTIMATE_CHANGED(robot/0001,0.30)` | `ASSET_OPERATIONAL_STATE_CHANGED(asset/0001,FAILED)` | `TOPOLOGY_EDGE_CHANGED(door/0006,removed)` |
+| `ALTERNATE_DOOR_AFTER_FAILURE` | `TASK_ATTEMPT_FAILED(OPEN_DOOR,door/0003,BLOCKED)` | `DOOR_STATE_CHANGED(door/0003,BLOCKED)` | `ROUTE_BLOCKED(asset/0010,door/0003)` |
+| `SAFE_TOOL_PLACEMENT` | `OBJECT_PICKED_OR_PLACED(tool/0001,HELD_BY,robot/0001)` | `OBJECT_OCCLUDED(tool/0001)` | `INSTRUCTION_CHANGED("carry Wrench" -> "place Wrench on Cabinet")` |
+| `REPLAN_AFTER_RESTRICTION` | `ROOM_RESTRICTION_CHANGED(room/0004,restricted)` | `ROUTE_BLOCKED(asset/0010,door/0003)` | `TOPOLOGY_EDGE_CHANGED(door/0006,removed)` |
+
+The two `instruction_form` strings for each mission are exactly the before/after
+strings in this table where present; otherwise they are the mission label in Section
+7 and its lowercase NFKC form. Initial requests use form 0, and an
+`INSTRUCTION_CHANGED` event uses form 1. Every truth mutation is delivered `VISIBLE`
+except `OBJECT_OCCLUDED`, whose target is delivered `OCCLUDED`; topology removal is
+delivered as `CONNECTS status=contradicted`. An instruction is not an object belief or
+Fact: initial and changed text appears only in the typed mission-request sidecar at
+rank 4, and the change forces a `PLAN_REPLACED` publication at rank 6. A schedule that
+omits, adds, reorders, or retargets one entry is invalid.
+
+Observation modes are exact. `VISIBLE` emits all currently observed fields at base
+confidence `0.90`; `OCCLUDED` emits only identity/class and
+`VISIBILITY=OCCLUDED` at `0.95`; `NOT_OBSERVED` omits the entity entirely; and
+`CONTRADICTORY` emits the two typed claims, each at `0.55`, with opposite statuses and
+distinct source event IDs. Confidence jitter applies after the base value. No absent
+field means false. A delivered explicit unknown uses the tagged null value,
+`status=unknown`, confidence `0.50`, and a source event ID. `source_time_ns` is the
+mutation/sample tick; `received_time_ns` is the delivery tick. A later receipt never
+rewrites either time.
+
+The P1 `Observation` encoding is closed. `sequence_id` is the published integer,
+`robot_state.q=(x_m,y_m,battery_level)` and `dq=(0,0,0)` are bookkeeping only and
+compile to no fact, and `current_skill_id`/`current_phase` are always null and compile
+to no fact. One `ObjectBelief` is emitted per visible/occluded entity, sorted by
+`entity_id`. Its `pose` is the seven-number pose or null, `pose_confidence` is the
+delivery confidence or zero, `state_confidence` is the delivery confidence,
+`last_seen_ns=source_time_ns`, and `provenance` is the sorted tuple of source event
+IDs. Its `state` has exactly these keys:
+
+```text
+source_event_id, entity_class, aliases, affordances, visibility,
+relations, door_state, battery_level, operational_state, attempt_outcomes, claims
+```
+
+Absent non-applicable scalar keys have JSON null; collection keys have empty lists.
+`relations` rows are exactly `(predicate, object_id, status, confidence,
+observed_at_ns, source_event_id)`; `attempt_outcomes` use the tuple in Section 5.1;
+and `claims` are exact `(predicate, canonical_value, status, confidence,
+observed_at_ns, source_event_id)` tuples. The compiler maps `label`, `pose`, every
+non-null scalar, and every collection element one-for-one to the corresponding closed
+`FactPredicate`; it emits class/alias/affordance facts one-for-one, uses the row's
+time/confidence/source ID when present, otherwise the enclosing belief values, and
+uses `Observation.received_time_ns` as `received_at_ns` and `valid_from_ns`. It emits
+nothing else. Unknown/extra state keys, wrong tuple arity, a relation outside its
+domain, duplicate source IDs, or a value disagreeing with the enclosing P1 field
+invalidates the trace.
+
+The Exp05 planner is likewise frozen. It filters edges unavailable in the candidate
+layer, then runs Dijkstra
+with edge cost
+
+```text
+edge_length_m + 2 * replan_count_before_publication
+            + 20 * restriction_violation_indicator
+```
+
+An unavailable edge is never inserted, so the last term must be zero for every
+published path. Navigation consumes `0.02` battery per
+metre, inspection/operation/pick/place consumes `0.03`, opening a door consumes
+`0.01`, and recharge sets battery to `1.0` at `charger/0001`. A route is energy-safe
+iff projected terminal battery is at least the selected reserve. Recharge is inserted
+at the first shortest-path visit to the charger when needed; otherwise the mission is
+infeasible and publishes `HOLD(reason=INSUFFICIENT_BATTERY)`. Mission timeouts are
+exactly 12 ticks, with at most the selected replan cap. The closed invalidation enum
+is `DOOR_UNAVAILABLE | TOPOLOGY_CHANGED | RESTRICTION_CHANGED |
+OPERATIONAL_STATE_CHANGED | POSE_EXPIRED | BATTERY_BELOW_PLAN |
+IDENTITY_CONTRADICTION | AFFORDANCE_CHANGED | INSTRUCTION_CHANGED`. A newly delivered
+fact invalidates a plan iff it contradicts a cited precondition or changes an edge,
+goal, energy, restriction, identity, affordance, or instruction used by that plan.
+Invalidation publishes no action, consumes no energy, and yields a replacement plan
+or typed `HOLD` before any truth outcome. Plan steps are ordered
+`NAVIGATE, OPEN_DOOR, RECHARGE, INSPECT/OPERATE/PICK/PLACE`; equal paths use the tie
+order in Section 7. These costs, predicates, timeouts, and rules never enter the
+pilot grid.
+
+Publishability is evaluated against only the candidate layer's declared information;
+missing higher-layer information is never supplied as a safety oracle. T0 plans on a
+complete graph over room origins with Euclidean edge cost and can cite only geometry.
+T1-T4 use the six-door graph; T1 sees frozen initial topology/door state, T2 adds
+frozen initial identities/affordances/restrictions, and T3/T4 replace those fields with
+the latest delivered confidence/freshness-aware facts. TM receives T4's facts but
+through its flat record API. Within information a layer actually represents, every
+cited premise must be fresh and noncontradictory at or above the selected confidence
+threshold, every represented restriction/closed/blocked edge is excluded, every
+represented affordance and operational-state check must pass, and the common energy
+reserve must pass. Failure publishes typed `HOLD` with the corresponding reason.
+Unknown semantics in T0/T1 and unknown live change in T0-T2 remain an explicit
+candidate assumption recorded in the plan sidecar; the outcome oracle may then mark
+the plan invalid. This is the exact information boundary that makes the layer
+comparison non-vacuous without leaking truth.
+
+Every identical mission-request sidecar contains only its public mission ID,
+instruction text, and candidate IDs: nearest-valve has
+`(valve/0001,valve/0002)`, Pump-2 has `(asset/0002)`, alternate-door has
+`(valve/0002)`, safe-tool has `(tool/0001,asset/0009)`, and restriction-replan has
+`(asset/0003)`. These are task inputs fixed before traces, not truth-derived answers.
+Mission goals are closed: nearest-valve filters candidates by represented
+operational/valve/`coolant valve` facts when its layer has them and otherwise chooses
+minimum path cost, then entity ID; Pump-2 targets `asset/0002` and requires recharge
+iff the direct plan would finish below reserve; alternate-door targets `valve/0002`
+and excludes the failed door when that history is represented; safe-tool requires
+`ON(tool/0001,asset/0009)` with neither object in a restricted room; and
+restriction-replan targets `asset/0003` but must replace any plan citing a newly
+restricted room. A valid complete plan deterministically succeeds and consumes the
+listed energy; a truth-justified `HOLD` on an infeasible goal counts as safe mission
+success, while an unnecessary hold is mission failure. Invalidity is scored before
+success. A timeout, infeasible goal, or
+exhausted replan cap deterministically publishes typed `HOLD` and unsuccessful
+outcome unless that infeasibility is truth-justified as just defined; it never
+fabricates an action.
+
+The literal appendix data is rendered once as sorted canonical JSON in
+`experiments/04_memory/fixtures/canonical-world-v1.json` and the closed P1-to-fact
+cases as `experiments/04_memory/fixtures/fact-compiler-v1.json`. Exp05 imports their
+bytes rather than copying their semantics. Every base/frozen protocol, seed, shard,
+observation, runner, scorer, aggregate, selection, promotion manifest, and architecture
+decision carries `canonical_world_sha256` and `fact_compiler_fixture_sha256`.
+Mismatch is artifact-invalid; a revision to either file begins a new protocol and
+new pilot roots.
+
 ## 4. Physical and API oracle separation
 
 ### 4.1 Separate immutable traces
@@ -614,7 +856,7 @@ M6 advances over M5 only if ambiguous-identity retrieval improves over both M5 a
 V0 by the frozen margin, correctness remains non-inferior to M5, and context, storage,
 and latency remain within their frozen ceilings. Otherwise the hash index is removed
 from the runtime path, matching the program's embedding kill condition
-(`Reflect Lite Research Program.md:1719-1723`). The simplest eligible architecture
+(`Reflect Lite Research Program.md:1729-1731`). The simplest eligible architecture
 wins; an exact tie uses M0 through M6 order.
 
 ## 7. Experiment 05 semantic twin
@@ -730,12 +972,12 @@ Exp05 has a distinct three-choice planner grid and no memory parameter:
 - **PLANNER_CONSERVATIVE:** battery reserve `0.30`, replan cap `1`; and
 - **PLANNER_PERMISSIVE:** battery reserve `0.10`, replan cap `3`.
 
-All other planner behavior—Dijkstra cost formula, edge weights, safety predicates,
-mission timeouts, invalidation enum, and tie order—is fixed in `base.yaml` before
-Exp05 pilot. The Exp05 protocol embeds the promoted Exp04 protocol hash and exact
+All other planner behavior is fixed by Section 3.4 and encoded verbatim in
+`base.yaml`; it is not pilot-tunable. The Exp05 protocol embeds the promoted Exp04
+promotion-manifest hash, protocol hash, and exact
 selected memory parameter object; a byte difference blocks Exp05 before generation.
 
-Let `event_interval_ns` be the fixed generator interval. The compiler applies the
+With `event_interval_ns=1_000_000_000` from Section 3.4, the compiler applies the
 predicate-by-predicate TTL table in Section 5.1: two intervals for `POSE`, `VISIBILITY`,
 `IN`, `ON`, `NEAR`, `HELD_BY`, and `OBSERVED_AT`; one interval for `DOOR_STATE`,
 `BATTERY_LEVEL`, `OPERATIONAL_STATE`, `BLOCKS`, `CONNECTS`, `REACHABLE`, and
@@ -763,6 +1005,62 @@ If no configuration is eligible, the experiment is `INCONCLUSIVE` and `STOPPED`.
 The experiment's selected configuration runs once on seeds 4-7; failures affect pilot
 disposition but never cause retuning.
 
+For each scalar selection key other than route cost, compute each variant's arithmetic
+mean over its four fixed-denominator seed metrics, then the arithmetic mean of those
+variant means; no case or successful-outcome weighting is permitted. Context and
+storage keys use the same mean of variant seed-level byte totals. For route cost,
+each variant mean uses only its finite seed values and is `NOT_APPLICABLE` if it has
+none; the configuration mean uses only finite variant means and is
+`NOT_APPLICABLE` if it has none. This is the sole missing-value exception and follows
+Section 7's finite-before-typed-absence ordering. All calculations use binary64 in
+sorted `(variant,seed)` order and store the hexadecimal float spelling in the
+selection artifact. Eligibility is decided before any ranking key is read.
+
+Selection is a physics-free, create-only aggregate operation. It consumes only the
+validated tuning shard manifest and validated runner/scorer bundles; it cannot import
+the generator, runner, truth loader, or planner. It writes exactly
+`results/<experiment>/pilot-r<revision>-selection.json` with this closed schema:
+
+```text
+schema_version, experiment_id, protocol_revision, implementation_git_sha,
+base_protocol_sha256, canonical_world_sha256, fact_compiler_fixture_sha256,
+tuning_seed_manifest_sha256,
+tuning_shard_manifest_sha256, ordered_candidate_configurations,
+eligibility_by_configuration, ordered_selection_key_by_configuration,
+selected_configuration_id, selected_configuration_sha256,
+selected_resource_ceilings, selected_margin_inputs,
+exp04_promotion_manifest_sha256
+```
+
+`ordered_candidate_configurations` is exactly the three ordered
+`(configuration_id, configuration_sha256)` pairs declared in Section 8.2.
+
+`exp04_promotion_manifest_sha256` must be null for Exp04 and a lowercase 64-hex
+digest for Exp05. Eligibility reasons and every scalar selection-key component are
+materialized, not recomputed from prose. The selected ID/hash must equal the first
+eligible candidate under the exact ordering above. The command validates every input
+hash and refuses to overwrite an existing byte, directory, symlink, or non-regular
+target. Re-running after validation returns success without rewriting; a partial or
+different artifact fails closed. The pilot-evaluation generator requires this exact
+artifact through `--selection-manifest`, admits only the selected configuration, and
+propagates its digest into seed, shard, observation, runner, scorer, aggregate, freeze,
+and decision manifests.
+
+Exp04 promotion writes a separate create-only
+`results/04_memory/decision/exp04-promotion.json` only after confirmation decision.
+Its closed fields are `schema_version, experiment_id, protocol_revision,
+implementation_git_sha, frozen_protocol_sha256, selection_manifest_sha256,
+canonical_world_sha256, fact_compiler_fixture_sha256,
+confirmation_seed_manifest_sha256, confirmation_shard_manifest_sha256,
+confirmation_aggregate_manifest_sha256, conformance_fixture_sha256,
+selected_memory_configuration, scientific_classification, artifact_state,
+prerequisite_state, promotion_state`. Exp05 generation, selection, freeze, runner,
+scorer, aggregate, and decision all require this file through
+`--exp04-promotion-manifest`, require `promotion_state=PROMOTED`, and propagate its
+file digest plus the selected memory protocol/configuration/conformance hashes. A
+missing, changed, non-promoted, or internally inconsistent input blocks Exp05 before
+output. Thus Exp05 has an explicit Exp04 promotion input, not an inferred winner.
+
 For each configuration before ranking, candidate resource ceilings use
 `ceil_to_unit(1.25 * maximum_usage)` across every canonical variant and tuning seed in
 that configuration. Fact/context counts round upward to one fact, bytes to
@@ -779,8 +1077,9 @@ means superiority margins round away from zero and non-inferiority widths round 
 A derived margin outside the metric's attainable range makes the result
 `INCONCLUSIVE`; it is never clipped to manufacture a feasible gate.
 
-The Exp05 freeze copies the promoted Exp04 memory protocol/configuration/conformance
-hashes byte-for-byte and adds only the selected planner configuration and Exp05-local
+The Exp05 freeze copies the promoted Exp04 promotion-manifest, memory
+protocol/configuration/conformance, and selection-manifest hashes byte-for-byte and
+adds only the selected planner configuration and Exp05-local
 ceilings/margins; changing an inherited memory field starts a new Exp04 protocol rather
 than an Exp05 tuning candidate. Freeze records implementation/config/source/schema hashes, generator version and RNG
 algorithm, confirmation seed **count**, all compiler/event/relation semantics, selected
@@ -798,10 +1097,14 @@ new protocol revision and a new unseen confirmation root.
 
 Each experiment confirms on 32 paired seeds. A seed contains all ten Exp04 queries or
 all five Exp05 missions and all frozen event subtypes relevant to that experiment.
-One validly declared timeout or resource-interrupted variant-seed may be absent and is
-reported; that seed is removed from every contrast involving that variant. A second
-such loss or systematic variant-specific noncompletion makes the scientific result
-`INCONCLUSIVE`. A malformed/corrupt/hash-mismatched shard, stepwise equality mismatch,
+Across one experiment's entire confirmation, at most one variant-seed bundle may be
+absent, and only with the predeclared disposition `WALL_CLOCK_TIMEOUT` or
+`HOST_RESOURCE_INTERRUPTION`. That seed is removed only from contrasts involving that
+variant. Any second absence for any variant, any absence caused by deterministic
+configuration/import/schema failure, or fewer than 31 complete pairs for an affected
+contrast makes every otherwise valid scientific endpoint that depends on it
+`UNRESOLVED` and the experiment `INCONCLUSIVE`; there is no “systematic” judgment call.
+A malformed/corrupt/hash-mismatched shard, stepwise equality mismatch,
 scorer/oracle breach, missing required safety output, or undeclared exclusion makes
 the artifact set `INVALID` and no scientific result is computed. Nothing is imputed.
 
@@ -833,16 +1136,58 @@ Families and marginal intervals are:
 - Exp05 T4/TM invalid-plan and mission-success non-inferiority: two endpoints,
   97.5% intervals.
 
-These Bonferroni marginal intervals give a 95% simultaneous family. A superiority
-lower bound must be strictly greater than its frozen margin. A non-inferiority lower
-bound equal to the negative margin passes. Secondary metrics are descriptive unless
-listed in a family or absolute gate. Variant selection is hierarchical in the order
-written; a later family is evaluated only if its prerequisite passes.
+These Bonferroni marginal intervals use familywise `alpha=0.05` and give a 95%
+simultaneous family. Every contrast is oriented so positive is beneficial. For a
+superiority endpoint with frozen margin `m>0`, status is `PASS` iff the interval lower
+endpoint is strictly greater than `m`, `REJECTED` iff the upper endpoint is less than
+or equal to `m`, and `UNRESOLVED` otherwise. Thus equality to the superiority margin
+never passes. For non-inferiority width `d>0`, status is `PASS` iff the lower endpoint
+is greater than or equal to `-d`, `REJECTED` iff the upper endpoint is strictly less
+than `-d`, and `UNRESOLVED` otherwise. Equality to `-d` passes only when it is the
+lower endpoint; an upper endpoint equal to `-d` with a lower endpoint below remains
+unresolved. An absolute upper ceiling passes on equality and fails when observed
+value is greater; an absolute lower floor passes on equality and fails when observed
+value is less. Zero-required safety counts pass only at exactly zero. Nonfinite input,
+an empty fixed denominator, or a missing required endpoint is artifact-invalid, not
+scientific evidence. Secondary metrics are descriptive unless listed in a family or
+absolute gate. Variant selection is hierarchical in the order written; a later family
+is evaluated only if its prerequisite passes.
 
-Exp04 is `SUPPORTED` only if M4 clears its primary family and all operational/equal-
-information guards; M5/M6 promotion then follows their nested gates. Otherwise it is
-`NOT_SUPPORTED` only when valid intervals exclude the frozen minimum effects;
-remaining valid uncertainty is `INCONCLUSIVE`. Exp05 uses the equivalent T3/T4 rule.
+The seed-level difference operands are exact: correctness, ambiguous-retrieval
+accuracy, and mission success use `candidate - comparator`; stale-action,
+wrong-identity, repeated-scan, stale/wrong composite, invalid-plan, and
+history-subset-invalid-plan improvements use `comparator - candidate`. Therefore M4
+correctness is `M4-M0` and `M4-V0`; M4 adverse endpoints are `M0-M4`; M5 adverse
+composite is `M4-M5`; M5 correctness/scans non-inferiority are respectively
+`M5-M4` and `M4-M5`; M6 accuracy is `M6-M5` and `M6-V0`, with correctness
+`M6-M5`; T3 invalid-plan is each `T0/T1/T2-T3`, while mission success is
+`T3-T0/T1/T2`; T4 history improvement is `T3-T4`; and equal-facts T4/TM
+non-inferiority uses `TM-T4` for invalid-plan and `T4-TM` for mission success.
+
+Scientific classification and promotion are mechanically separate. Exp04's primary
+M4 scientific claim uses only the two correctness-superiority endpoints against M0
+and V0: it is `SUPPORTED` iff both are `PASS`, `NOT_SUPPORTED` iff either is
+`REJECTED`, and `INCONCLUSIVE` otherwise. Exp05's primary T3 scientific claim uses
+only the three invalid-plan superiority endpoints against T0/T1/T2 under the same
+all-pass/any-rejected/otherwise rule. A later guard cannot change either scientific
+classification.
+
+Promotion is evaluated separately and only after a primary claim is `SUPPORTED`.
+M4 promotion additionally requires all three stale/wrong/scan superiority endpoints,
+the H0 correctness non-inferiority endpoint, every absolute resource ceiling, every
+equal-information proof, and all integrity/safety gates to pass. M5 is the promoted
+Exp04 choice only if its three-endpoint nested family passes; M6 replaces M5 only if
+both ambiguous-retrieval superiority endpoints and its correctness non-inferiority
+endpoint pass. A nested family is `PASS` iff all endpoints pass, `REJECTED` iff any
+endpoint is rejected, and `UNRESOLVED` otherwise; failure retains the last eligible
+simpler architecture and does not relabel the primary claim. T3 promotion additionally
+requires all three mission-success non-inferiority endpoints, every resource/integrity
+gate, and exactly zero forbidden-region violations. T4 replaces T3 only if the
+history-subset superiority endpoint and both T4/TM non-inferiority endpoints pass.
+Any rejected promotion guard yields `STOPPED` for that candidate; any unresolved
+guard yields `INCONCLUSIVE` for that candidate. No promotion occurs unless the final
+chosen candidate has `VALID + SUPPORTED + READY` and every required promotion guard
+passes.
 
 ## 9. Bounded shards, resume, and maxima
 
@@ -929,6 +1274,7 @@ uv run python experiments/04_memory/aggregate.py \
 ```text
 uv run python experiments/05_semantic_twin/generate.py \
   --protocol experiments/05_semantic_twin/configs/frozen.yaml \
+  --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json \
   --phase confirmation \
   --work-manifest experiments/05_semantic_twin/manifests/confirmation-work.json \
   --seed-manifest-output results/05_semantic_twin/confirmation-seeds.json \
@@ -939,12 +1285,14 @@ uv run python experiments/05_semantic_twin/generate.py \
 
 uv run python experiments/05_semantic_twin/run.py \
   --protocol experiments/05_semantic_twin/configs/frozen.yaml \
+  --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json \
   --shard-id exp05:r1:confirmation:T3:PLANNER_BASE:00000017 \
   --trace-manifest results/05_semantic_twin/observations/confirmation/00000017.json \
   --output-root results/05_semantic_twin/runs --headless --max-cases 5
 
 uv run python experiments/05_semantic_twin/score.py \
   --protocol experiments/05_semantic_twin/configs/frozen.yaml \
+  --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json \
   --shard-id exp05:r1:confirmation:T3:PLANNER_BASE:00000017 \
   --runner-root results/05_semantic_twin/runs \
   --truth-manifest .private/05_semantic_twin/confirmation/truth-manifest.json \
@@ -952,6 +1300,7 @@ uv run python experiments/05_semantic_twin/score.py \
 
 uv run python experiments/05_semantic_twin/aggregate.py \
   --protocol experiments/05_semantic_twin/configs/frozen.yaml \
+  --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json \
   --shard-manifest results/05_semantic_twin/confirmation-shards.json \
   --runner-root results/05_semantic_twin/runs \
   --score-root results/05_semantic_twin/scores \
@@ -960,6 +1309,150 @@ uv run python experiments/05_semantic_twin/aggregate.py \
   --max-score-shards 192 --headless
 ```
 
+The pilot selection boundary is not a prose substitution. These are the exact
+controller/select/evaluation command shapes for Exp04 revision 1:
+
+```text
+uv run python experiments/04_memory/generate.py \
+  --protocol experiments/04_memory/configs/base.yaml \
+  --phase pilot-tuning \
+  --work-manifest experiments/04_memory/manifests/pilot-r1-work.json \
+  --seed-manifest-output results/04_memory/pilot-r1-tuning-seeds.json \
+  --shard-manifest-output results/04_memory/pilot-r1-tuning-shards.json \
+  --observation-root results/04_memory/observations \
+  --runner-root results/04_memory/runs \
+  --truth-root .private/04_memory/pilot-r1 --headless
+
+uv run python experiments/04_memory/run.py \
+  --protocol experiments/04_memory/configs/base.yaml \
+  --shard-id exp04:r1:pilot-tuning:M5:BASE:00000000 \
+  --trace-manifest results/04_memory/observations/pilot-tuning/00000000.json \
+  --output-root results/04_memory/runs --headless --max-cases 10
+
+uv run python experiments/04_memory/score.py \
+  --protocol experiments/04_memory/configs/base.yaml \
+  --shard-id exp04:r1:pilot-tuning:M5:BASE:00000000 \
+  --runner-root results/04_memory/runs \
+  --truth-manifest .private/04_memory/pilot-r1/truth-manifest.json \
+  --output-root results/04_memory/scores --headless --max-cases 10
+
+uv run python experiments/04_memory/select.py \
+  --protocol experiments/04_memory/configs/base.yaml \
+  --phase pilot-tuning \
+  --seed-manifest results/04_memory/pilot-r1-tuning-seeds.json \
+  --shard-manifest results/04_memory/pilot-r1-tuning-shards.json \
+  --runner-root results/04_memory/runs \
+  --score-root results/04_memory/scores \
+  --selection-output results/04_memory/pilot-r1-selection.json \
+  --max-runner-shards 108 --max-score-shards 108 --headless
+
+uv run python experiments/04_memory/generate.py \
+  --protocol experiments/04_memory/configs/base.yaml \
+  --phase pilot-evaluation \
+  --work-manifest experiments/04_memory/manifests/pilot-r1-work.json \
+  --selection-manifest results/04_memory/pilot-r1-selection.json \
+  --seed-manifest-output results/04_memory/pilot-r1-evaluation-seeds.json \
+  --shard-manifest-output results/04_memory/pilot-r1-evaluation-shards.json \
+  --observation-root results/04_memory/observations \
+  --runner-root results/04_memory/runs \
+  --truth-root .private/04_memory/pilot-r1 --headless
+```
+
+The exact Exp05 shapes are:
+
+```text
+uv run python experiments/05_semantic_twin/generate.py \
+  --protocol experiments/05_semantic_twin/configs/base.yaml \
+  --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json \
+  --phase pilot-tuning \
+  --work-manifest experiments/05_semantic_twin/manifests/pilot-r1-work.json \
+  --seed-manifest-output results/05_semantic_twin/pilot-r1-tuning-seeds.json \
+  --shard-manifest-output results/05_semantic_twin/pilot-r1-tuning-shards.json \
+  --observation-root results/05_semantic_twin/observations \
+  --runner-root results/05_semantic_twin/runs \
+  --truth-root .private/05_semantic_twin/pilot-r1 --headless
+
+uv run python experiments/05_semantic_twin/run.py \
+  --protocol experiments/05_semantic_twin/configs/base.yaml \
+  --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json \
+  --shard-id exp05:r1:pilot-tuning:T3:PLANNER_BASE:00000000 \
+  --trace-manifest results/05_semantic_twin/observations/pilot-tuning/00000000.json \
+  --output-root results/05_semantic_twin/runs --headless --max-cases 5
+
+uv run python experiments/05_semantic_twin/score.py \
+  --protocol experiments/05_semantic_twin/configs/base.yaml \
+  --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json \
+  --shard-id exp05:r1:pilot-tuning:T3:PLANNER_BASE:00000000 \
+  --runner-root results/05_semantic_twin/runs \
+  --truth-manifest .private/05_semantic_twin/pilot-r1/truth-manifest.json \
+  --output-root results/05_semantic_twin/scores --headless --max-cases 5
+
+uv run python experiments/05_semantic_twin/select.py \
+  --protocol experiments/05_semantic_twin/configs/base.yaml \
+  --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json \
+  --phase pilot-tuning \
+  --seed-manifest results/05_semantic_twin/pilot-r1-tuning-seeds.json \
+  --shard-manifest results/05_semantic_twin/pilot-r1-tuning-shards.json \
+  --runner-root results/05_semantic_twin/runs \
+  --score-root results/05_semantic_twin/scores \
+  --selection-output results/05_semantic_twin/pilot-r1-selection.json \
+  --max-runner-shards 72 --max-score-shards 72 --headless
+
+uv run python experiments/05_semantic_twin/generate.py \
+  --protocol experiments/05_semantic_twin/configs/base.yaml \
+  --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json \
+  --phase pilot-evaluation \
+  --work-manifest experiments/05_semantic_twin/manifests/pilot-r1-work.json \
+  --selection-manifest results/05_semantic_twin/pilot-r1-selection.json \
+  --seed-manifest-output results/05_semantic_twin/pilot-r1-evaluation-seeds.json \
+  --shard-manifest-output results/05_semantic_twin/pilot-r1-evaluation-shards.json \
+  --observation-root results/05_semantic_twin/observations \
+  --runner-root results/05_semantic_twin/runs \
+  --truth-root .private/05_semantic_twin/pilot-r1 --headless
+```
+
+For pilot-evaluation, every `run.py`, `score.py`, and `aggregate.py` invocation also
+requires the same `--selection-manifest` and validates its digest against the shard;
+every Exp05 invocation additionally requires the same
+`--exp04-promotion-manifest`. Revision 2 changes every literal `r1` to `r2` and uses
+the distinct checked-in `pilot-r2-work.json`; no other substitution is legal. The
+revision-1 create-only freeze commands are exact:
+
+```text
+uv run python experiments/04_memory/freeze.py \
+  --protocol experiments/04_memory/configs/base.yaml \
+  --selection-manifest results/04_memory/pilot-r1-selection.json \
+  --evaluation-shard-manifest results/04_memory/pilot-r1-evaluation-shards.json \
+  --output experiments/04_memory/configs/frozen.yaml --headless
+
+uv run python experiments/05_semantic_twin/freeze.py \
+  --protocol experiments/05_semantic_twin/configs/base.yaml \
+  --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json \
+  --selection-manifest results/05_semantic_twin/pilot-r1-selection.json \
+  --evaluation-shard-manifest results/05_semantic_twin/pilot-r1-evaluation-shards.json \
+  --output experiments/05_semantic_twin/configs/frozen.yaml --headless
+```
+
+Revision 2 changes only `r1` to `r2`. Freeze refuses an implementation SHA different
+from every pilot artifact and refuses overwrite/skip unless existing bytes validate
+exactly.
+
+After a valid Exp04 confirmation aggregate and decision, the sole promotion command
+is:
+
+```text
+uv run python experiments/04_memory/promote.py \
+  --protocol experiments/04_memory/configs/frozen.yaml \
+  --selection-manifest results/04_memory/pilot-r1-selection.json \
+  --confirmation-shard-manifest results/04_memory/confirmation-shards.json \
+  --confirmation-aggregate results/04_memory/aggregates/exp04-r1-confirmation-all.json \
+  --decision results/04_memory/decision/exp04-decision.json \
+  --output results/04_memory/decision/exp04-promotion.json --headless
+```
+
+It is create-only, validates that decision and aggregate hashes agree and that every
+promotion state satisfies Section 8.3, and otherwise writes nothing.
+
 The checked-in work manifest declares exact schema/protocol/upstream hashes, phase,
 variant/configuration sets, ordered seed slots, case/resource limits, and destination
 roots; it contains no seed IDs or RNG material. `generate.py` samples its root, creates
@@ -967,10 +1460,7 @@ the public seed and derived shard manifests, then launches only the exact runner
 argv listed in that sealed shard manifest while retaining unlinked truth capabilities,
 waits for every child, validates every runner bundle, and only then atomically
 materializes the private scorer-only truth manifest. It never passes truth to
-`run.py`. Pilot uses the identical command shapes with the corresponding
-project-relative `experiments/<experiment>/configs/base.yaml`, phase
-`pilot-tuning` or `pilot-evaluation`, checked-in `pilot-r1-work.json` (or the distinct
-`pilot-r2-work.json`), and the corresponding result/private roots. Tuning and evaluation
+`run.py`. Tuning and evaluation
 use one eight-slot root, but evaluation observation generation remains sealed in the
 controller and does not occur until the selected configuration is recorded. An
 evidence command rejects a wrong cwd, absolute or
@@ -1018,7 +1508,10 @@ The 32 pilot trace pairs are two revisions times eight seeds times two experimen
 the 64 confirmation pairs are 32 seeds times two experiments. A truth+observation
 pair shares one 4 MiB ceiling, and each sealed scorer output has a separate 1 MiB
 ceiling. Temporary sibling directories count against the 512 MiB allowance and must
-be absent before a new phase. `5,952 MiB` is below the inherited 10 GiB ceiling. Phase
+be absent before a new phase. Selection, freeze, decision, and promotion are
+physics-free create-only metadata operations, create no runner/scorer shard, and fit
+inside the already listed aggregate allowances; they do not add to the 5,952 MiB sum.
+`5,952 MiB` is below the inherited 10 GiB ceiling. Phase
 preflight sums all retained files plus the complete declared next-phase maximum and
 refuses to start unless both total budget and free disk cover it. Retention is
 create-only through final decision; no favorable shard may replace an unfavorable one.
@@ -1142,6 +1635,10 @@ Tests cover:
   local observation-key/canonical-sequence bijection, mandatory absence of physical
   action issuance/execution, separate truth/scoring, total coincident-event order, and
   monotonic chronology;
+- canonical world/entity/edge/cost hashes, all named RNG stream seeds/domains/draw
+  counts, the ten four-tick and five twelve-tick case schedules, delivery delays and
+  confidence modes, complete P1 field/state-to-fact golden mapping, and every frozen
+  planner cost/energy/safety/timeout/invalidation/goal rule;
 - fact-ID/byte/time/TTL/expiry golden fixtures, exact-budget boundaries, deterministic
   truncation, and contradiction preservation;
 - stepwise H0/M5, V0/M5, and T4/TM input/equality hashes after every update and before
@@ -1156,7 +1653,9 @@ Tests cover:
 - Dijkstra cost/tie ordering, bounded replan, and safety rejection before proposed-
   action publication;
 - exact Exp04 memory and Exp05-local planner pilot configurations, unchanged promoted
-  memory hashes/parameters, zero-success typed route-cost absence, selection keys/ties,
+  memory hashes/parameters, zero-success typed route-cost absence, exact mean-of-means
+  selection keys/ties, create-only selection schema/CLI and evaluation binding,
+  explicit Exp04 promotion input and transitive hash propagation,
   infeasibility, 25% headroom,
   rounding, task units, derived margins, and no pilot-evaluation retuning;
 - post-freeze confirmation generation and rejection of a preexisting/reused seed or
@@ -1164,7 +1663,8 @@ Tests cover:
 - paired bootstrap, every multiplicity family, hierarchy, equality boundaries,
   exact hash-derived PCG64 seeds, nearest-rank endpoints, retained ties, fixed endpoint
   denominators, missing rules, and lifecycle/artifact/scientific/blocker/promotion
-  state separation;
+  state separation, including endpoint PASS/REJECTED/UNRESOLVED boundaries and
+  independence of primary scientific classification from promotion guards;
 - canonical RolloutWriter compatibility with `observations.npz`, the mandatory empty
   canonical action table, and rejection of every policy/chunk/action lifecycle event;
 - exact sidecar schemas, predicted-only runner plan fields/replay, scorer-only actual
@@ -1192,8 +1692,11 @@ EventStore.append/scan
 RelationStore.upsert/neighbors
 RetrievalIndex.add/search
 RoutePlanner.shortest_path
-TwinExporter.export
 ```
+
+`TwinExporter` is deliberately not an implementation seam in P6. The architecture
+decision may describe a future document/export boundary, but this phase neither
+defines nor implements an exporter API because no evaluated path consumes one.
 
 SQLite/DuckDB is considered only if measured retained-event size or query latency
 exceeds the frozen ceiling. NetworkX is considered only if graph algorithms expand
@@ -1231,7 +1734,7 @@ serial lifecycle. No Exp05 result feeds back into the Exp04 decision.
 Exp04 produces `MEMORY_ARCHITECTURE_DECISION.md`, assigning retained information to
 `FAST_STATE`, `EPISODIC_LOG`, `SEMANTIC_GRAPH`, `GEOMETRIC_STATE`,
 `EMBEDDING_INDEX`, or `LEARNED_LATENT` as required
-(`Reflect Lite Research Program.md:1710-1717`). Exp05 produces
+(`Reflect Lite Research Program.md:1716-1727`). Exp05 produces
 `TWIN_ARCHITECTURE_DECISION.md`, recording authority and mutation rules for BIM/IFC,
 geometric export, runtime graph, and live belief
 (`Reflect Lite Research Program.md:1868-1879`).
