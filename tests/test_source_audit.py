@@ -216,7 +216,8 @@ def test_require_complete_rejects_unknown_direct_or_adapter_license(
         ("third_party/repo/source.py", "tracked source checkout path"),
         ("models/policy.onnx", "tracked model/checkpoint artifact"),
         ("results/policy.PT", "tracked model/checkpoint artifact"),
-        ("checkpoints/manifest.json", "tracked model/checkpoint directory"),
+        ("results/pytorch_model.bin", "tracked model/checkpoint artifact"),
+        ("results/checkpoint", "tracked model/checkpoint artifact"),
     ],
 )
 def test_audit_rejects_tracked_checkout_and_model_paths(
@@ -244,6 +245,16 @@ def test_audit_allows_ordinary_experiment_artifacts(tmp_path: Path) -> None:
     assert audit_repository(root, require_complete=True).errors == ()
 
 
+def test_audit_allows_source_files_in_model_named_directories(tmp_path: Path) -> None:
+    root = complete_fixture(tmp_path)
+    path = root / "reflect" / "models" / "policy.py"
+    path.parent.mkdir()
+    path.write_text("VALUE = 1\n", encoding="utf-8")
+    _git(root, "add", "reflect/models/policy.py")
+
+    assert audit_repository(root, require_complete=True).errors == ()
+
+
 def test_project_local_reflect_source_needs_no_upstream_marker(tmp_path: Path) -> None:
     root = complete_fixture(tmp_path)
     assert audit_repository(root, require_complete=True).ok is True
@@ -265,6 +276,97 @@ def test_complete_adjacent_attribution_accepts_registry_name_or_url(
     _git(root, "add", "reflect/adapted.py")
 
     assert audit_repository(root, require_complete=True).errors == ()
+
+
+@pytest.mark.parametrize(
+    ("license_status", "locked_spdx", "marker_spdx", "message"),
+    [
+        ("UNKNOWN", None, "MIT", "locked attribution license is not discovered"),
+        ("UNAVAILABLE", None, "MIT", "locked attribution license is not discovered"),
+        ("DISCOVERED", "MIT", "Apache-2.0", "attribution SPDX does not match lock"),
+        ("DISCOVERED", "MIT OR Apache-2.0", "MIT", "invalid locked attribution SPDX"),
+        ("DISCOVERED", "MIT", "MIT OR Apache-2.0", "invalid or missing adjacent SPDX"),
+    ],
+)
+def test_attribution_requires_exact_discovered_single_spdx_license(
+    tmp_path: Path,
+    license_status: str,
+    locked_spdx: str | None,
+    marker_spdx: str,
+    message: str,
+) -> None:
+    root = complete_fixture(tmp_path, license_status=license_status)
+    lock_path = root / "references" / "repos.lock.yaml"
+    lock = _load_yaml(lock_path)
+    lock["entries"][0]["license_spdx"] = locked_spdx
+    _write_yaml(lock_path, lock)
+    path = root / "reflect" / "adapted.py"
+    path.write_text(
+        f"# Upstream-Source: example\n"
+        f"# Upstream-Revision: {SHA}\n"
+        f"# SPDX-License-Identifier: {marker_spdx}\n",
+        encoding="utf-8",
+    )
+    _git(root, "add", "reflect/adapted.py")
+
+    assert any(
+        message in error
+        for error in audit_repository(root, require_complete=True).errors
+    )
+
+
+def test_attribution_rejects_duplicate_spdx_marker(tmp_path: Path) -> None:
+    root = complete_fixture(tmp_path)
+    path = root / "reflect" / "adapted.py"
+    path.write_text(
+        f"# Upstream-Source: example\n"
+        f"# Upstream-Revision: {SHA}\n"
+        "# SPDX-License-Identifier: MIT\n"
+        "# SPDX-License-Identifier: MIT\n",
+        encoding="utf-8",
+    )
+    _git(root, "add", "reflect/adapted.py")
+
+    assert any(
+        "exactly one SPDX-License-Identifier marker" in error
+        for error in audit_repository(root, require_complete=True).errors
+    )
+
+
+def test_empty_and_valid_spdx_markers_count_as_duplicates(tmp_path: Path) -> None:
+    root = complete_fixture(tmp_path)
+    path = root / "reflect" / "adapted.py"
+    path.write_text(
+        f"# Upstream-Source: example\n"
+        f"# Upstream-Revision: {SHA}\n"
+        "# SPDX-License-Identifier:\n"
+        "# SPDX-License-Identifier: MIT\n",
+        encoding="utf-8",
+    )
+    _git(root, "add", "reflect/adapted.py")
+
+    assert any(
+        "exactly one SPDX-License-Identifier marker" in error
+        for error in audit_repository(root, require_complete=True).errors
+    )
+
+
+def test_empty_and_valid_upstream_markers_count_as_duplicates(tmp_path: Path) -> None:
+    root = complete_fixture(tmp_path)
+    path = root / "reflect" / "adapted.py"
+    path.write_text(
+        "# Upstream-Source:\n"
+        "# Upstream-Source: example\n"
+        f"# Upstream-Revision: {SHA}\n"
+        "# SPDX-License-Identifier: MIT\n",
+        encoding="utf-8",
+    )
+    _git(root, "add", "reflect/adapted.py")
+
+    assert any(
+        "exactly one Upstream-Source marker" in error
+        for error in audit_repository(root, require_complete=True).errors
+    )
 
 
 @pytest.mark.parametrize(
@@ -299,6 +401,99 @@ def test_attribution_rejects_incomplete_unknown_or_unlocked_markers(
     assert any(
         message in error
         for error in audit_repository(root, require_complete=True).errors
+    )
+
+
+def test_audit_fails_closed_when_tracked_reflect_file_is_deleted(
+    tmp_path: Path,
+) -> None:
+    root = complete_fixture(tmp_path)
+    (root / "reflect" / "local.py").unlink()
+
+    assert any(
+        "cannot safely inspect tracked source reflect/local.py" in error
+        for error in audit_repository(root, require_complete=True).errors
+    )
+
+
+def test_audit_fails_closed_when_tracked_reflect_file_becomes_symlink(
+    tmp_path: Path,
+) -> None:
+    root = complete_fixture(tmp_path)
+    path = root / "reflect" / "local.py"
+    path.unlink()
+    path.symlink_to("../outside.py")
+
+    assert any(
+        "tracked source is not a regular file: reflect/local.py" in error
+        for error in audit_repository(root, require_complete=True).errors
+    )
+
+
+def test_audit_fails_closed_when_tracked_reflect_file_becomes_directory(
+    tmp_path: Path,
+) -> None:
+    root = complete_fixture(tmp_path)
+    path = root / "reflect" / "local.py"
+    path.unlink()
+    path.mkdir()
+
+    assert any(
+        "tracked source is not a regular file: reflect/local.py" in error
+        for error in audit_repository(root, require_complete=True).errors
+    )
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFO requires POSIX")
+def test_audit_fails_closed_when_tracked_reflect_file_becomes_fifo(
+    tmp_path: Path,
+) -> None:
+    root = complete_fixture(tmp_path)
+    path = root / "reflect" / "local.py"
+    path.unlink()
+    os.mkfifo(path)
+
+    assert any(
+        "tracked source is not a regular file: reflect/local.py" in error
+        for error in audit_repository(root, require_complete=True).errors
+    )
+
+
+def test_audit_fails_closed_when_tracked_reflect_file_is_unreadable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = complete_fixture(tmp_path)
+
+    def unreadable(*args: object, **kwargs: object) -> int:
+        raise PermissionError("fixture")
+
+    monkeypatch.setattr("scripts.audit_references.os.open", unreadable)
+
+    assert any(
+        "cannot safely inspect tracked source reflect/local.py: PermissionError"
+        in error
+        for error in audit_repository(root, require_complete=True).errors
+    )
+
+
+def test_audit_fails_closed_on_invalid_utf8_or_oversized_reflect_source(
+    tmp_path: Path,
+) -> None:
+    root = complete_fixture(tmp_path)
+    invalid = root / "reflect" / "invalid.py"
+    invalid.write_bytes(b"\xff\xfe")
+    oversized = root / "reflect" / "oversized.py"
+    oversized.write_bytes(b"x" * (1024 * 1024 + 1))
+    _git(root, "add", "reflect/invalid.py", "reflect/oversized.py")
+
+    errors = audit_repository(root, require_complete=True).errors
+    assert any(
+        "tracked source is not valid UTF-8: reflect/invalid.py" in error
+        for error in errors
+    )
+    assert any(
+        "tracked source exceeds inspection limit: reflect/oversized.py" in error
+        for error in errors
     )
 
 
@@ -375,10 +570,24 @@ def test_offline_command_prints_stable_json_and_exit_status(
 
 def test_makefile_exposes_live_then_offline_source_metadata_gate() -> None:
     makefile = (Path(__file__).parents[1] / "Makefile").read_text(encoding="utf-8")
-    target = makefile.split("source-metadata-audit:", 1)[1]
-    assert target.index(
-        "scripts/fetch_reference.py --all-metadata-only"
-    ) < target.index("scripts/audit_references.py --require-complete")
+    lines = makefile.splitlines()
+    phony_members = [
+        member
+        for line in lines
+        if line.startswith(".PHONY:")
+        for member in line.split()[1:]
+    ]
+    assert phony_members.count("source-metadata-audit") == 1
+    target_index = lines.index("source-metadata-audit:")
+    recipe: list[str] = []
+    for line in lines[target_index + 1 :]:
+        if not line.startswith("\t"):
+            break
+        recipe.append(line)
+    assert recipe == [
+        "\t$(UV) run python scripts/fetch_reference.py --all-metadata-only",
+        "\t$(UV) run python scripts/audit_references.py --require-complete",
+    ]
 
 
 def test_cli_help_does_not_access_network() -> None:
