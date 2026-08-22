@@ -1,0 +1,311 @@
+verified_at: "2026-08-22"
+large_model_downloads_default: false
+physical_deployment_default: false
+repositories:
+  - name: mujoco
+    url: https://github.com/google-deepmind/mujoco
+    mode: DIRECT_DEPENDENCY
+    experiments: [01_policy_control, 02_action_chunks, 03_recovery, 06_world_model]
+    selected_paths: [python, model, sample, test]
+    use: Native macOS physics and exact rollout ground truth.
+    caveat: Prefer the published Python package; source clone is mainly for examples and model semantics.
+  - name: mujoco_mpc
+    url: https://github.com/google-deepmind/mujoco_mpc
+    mode: SPARSE_REFERENCE
+    experiments: [01_policy_control, 06_world_model]
+    selected_paths: [python/mujoco_mpc, python/mujoco_mpc/demos/predictive_sampling, mjpc/planners, mjpc/tasks]
+    use: Predictive Sampling, iLQG, CEM/gradient planner structure, spline controls, cost/task interfaces.
+    caveat: Research prototype; do not present as a production safety layer.
+  - name: mujoco_menagerie
+    url: https://github.com/google-deepmind/mujoco_menagerie
+    mode: SPARSE_REFERENCE
+    experiments: [01_policy_control, 06_world_model]
+    selected_paths: [panda, franka_emika_panda, universal_robots_ur5e, README.md]
+    use: Reusable MuJoCo robot assets where per-model licenses permit.
+    caveat: Verify exact directory names and each model's license before use.
+  - name: mink
+    url: https://github.com/kevinzakka/mink
+    mode: ADAPTER_DEPENDENCY
+    experiments: [01_policy_control]
+    selected_paths: [mink, examples, tests]
+    use: Differential IK, task stacks, velocity limits, and collision-aware control on MuJoCo.
+    caveat: Use behind a thin adapter; do not make every experiment depend on it.
+  - name: mjctrl
+    url: https://github.com/kevinzakka/mjctrl
+    mode: SPARSE_REFERENCE
+    experiments: [01_policy_control]
+    selected_paths: ["*.py", README.md]
+    use: Compact pedagogical implementations of differential IK, null-space, and operational-space control.
+    caveat: Adapt small algorithms with attribution; retain project-local tests.
+  - name: hydrax
+    url: https://github.com/vincekurtz/hydrax
+    mode: REMOTE_ONLY
+    experiments: [06_world_model]
+    selected_paths: [hydrax, examples, tests]
+    use: JAX/MJX Predictive Sampling, MPPI, CEM, MTP, risk-sensitive and randomized sampling MPC.
+    caveat: CUDA/JAX-heavy; optional direct-physics-planning comparison only after the ranking gate.
+  - name: curobo
+    url: https://github.com/NVlabs/curobo
+    mode: REMOTE_ONLY
+    experiments: [01_policy_control, 08_unitree_r1]
+    selected_paths: [src/curobo, examples, docs]
+    use: CUDA motion generation, IK, collision checking, and trajectory optimization reference.
+    caveat: Do not confuse high-rate reactive reaching with full contact-dynamics manipulation planning.
+  - name: moveit2
+    url: https://github.com/moveit/moveit2
+    mode: PAPER_AND_CODE_REFERENCE
+    experiments: [01_policy_control, 08_unitree_r1]
+    selected_paths: [moveit_ros/moveit_servo, moveit_core, moveit_planners]
+    use: Production-shaped motion planning and streaming servo boundaries.
+    caveat: Do not add ROS 2 to the toy experiments solely to reproduce this architecture.
+  - name: ros2_control
+    url: https://github.com/ros-controls/ros2_control
+    mode: PAPER_AND_CODE_REFERENCE
+    experiments: [01_policy_control, 08_unitree_r1]
+    selected_paths: [controller_interface, hardware_interface, controller_manager]
+    use: Multi-rate controller lifecycle and chained-controller architecture reference.
+  - name: ros2_controllers
+    url: https://github.com/ros-controls/ros2_controllers
+    mode: PAPER_AND_CODE_REFERENCE
+    experiments: [01_policy_control, 08_unitree_r1]
+    selected_paths: [pid_controller, joint_trajectory_controller, admittance_controller]
+    use: Reference semantics for PID, trajectories, and compliant control.
+  - name: mujoco_ros2_control
+    url: https://github.com/moveit/mujoco_ros2_control
+    mode: DEFERRED
+    experiments: [08_unitree_r1]
+    selected_paths: [mujoco_ros2_control, README.md]
+    use: Later ROS 2/MuJoCo bridge reference if production integration requires it.
+  - name: act
+    url: https://github.com/tonyzhaozh/act
+    mode: SPARSE_REFERENCE
+    experiments: [02_action_chunks, 07_specialist_skill]
+    selected_paths: [policy.py, imitate_episodes.py, sim_env.py, detr]
+    use: Action-chunk representation, temporal ensembling, and compact imitation baseline.
+    caveat: Do not import the full ALOHA stack into the toy executor.
+  - name: lerobot
+    url: https://github.com/huggingface/lerobot
+    mode: SPARSE_REFERENCE
+    experiments: [02_action_chunks, 07_specialist_skill, 08_unitree_r1]
+    selected_paths: [src/lerobot/async_inference, src/lerobot/policies/rtc, docs/source/async.mdx, docs/source/rtc.mdx, docs/source/inference.mdx, src/lerobot/policies/act, src/lerobot/policies/smolvla]
+    use: Async policy server/client, action queue, latency tracking, RTC, ACT, and SmolVLA adapters.
+    caveat: Pin a reviewed commit; do not expose the upstream server to untrusted networks or inherit serialization blindly.
+  - name: openpi
+    url: https://github.com/Physical-Intelligence/openpi
+    mode: SPARSE_REFERENCE
+    experiments: [02_action_chunks, 08_unitree_r1]
+    selected_paths: [packages/openpi-client/src/openpi_client/action_chunk_broker.py, packages/openpi-client, scripts/serve_policy.py, src/openpi/policies, examples]
+    use: Small action-chunk broker, policy client/server boundary, and model-serving interface reference.
+    caveat: Full models are remote-GPU heavy; initially reuse only the client-side contracts.
+  - name: diffusion_policy
+    url: https://github.com/real-stanford/diffusion_policy
+    mode: SPARSE_REFERENCE
+    experiments: [06_world_model, 07_specialist_skill]
+    selected_paths: [diffusion_policy/env/pusht, diffusion_policy/dataset/pusht_image_dataset.py, diffusion_policy/env_runner/pusht_image_runner.py, diffusion_policy/config/task/pusht_image.yaml]
+    use: Push-T environment/data organization and a strong receding-horizon policy comparison.
+    caveat: Reuse task/evaluation ideas before attempting the full training stack.
+  - name: behaviortree_cpp
+    url: https://github.com/BehaviorTree/BehaviorTree.CPP
+    mode: SPARSE_REFERENCE
+    experiments: [03_recovery, 09_mini_reflect]
+    selected_paths: [include/behaviortree_cpp, examples, tests]
+    use: Interruptible asynchronous actions, reactive fallback, typed ports, and logging semantics.
+    caveat: Use as a semantic reference first; a Python state machine is sufficient for the atomic experiment.
+  - name: navigation2
+    url: https://github.com/ros-navigation/navigation2
+    mode: SPARSE_REFERENCE
+    experiments: [03_recovery, 09_mini_reflect]
+    selected_paths: [nav2_bt_navigator, nav2_behavior_tree, nav2_behaviors]
+    use: Context-specific recovery, retry, replanning, and behavior-tree orchestration patterns.
+    caveat: Navigation recovery patterns are analogies, not proof for manipulation.
+  - name: spark_dsg
+    url: https://github.com/MIT-SPARK/Spark-DSG
+    mode: DEFERRED
+    experiments: [04_memory, 05_semantic_twin]
+    selected_paths: [spark_dsg, python, tests]
+    use: Dynamic scene-graph data structure and Python bindings after the minimal schema is validated.
+    caveat: Do not make the pure-Python memory benchmark depend on this initially.
+  - name: hydra_scene_graph
+    url: https://github.com/MIT-SPARK/Hydra
+    mode: PAPER_AND_CODE_REFERENCE
+    experiments: [04_memory, 05_semantic_twin, 10_r2s2r]
+    selected_paths: [src, include, config, python]
+    use: Incremental hierarchical 3D scene graphs spanning geometry, places, rooms, and objects.
+    caveat: Heavy ROS/Ubuntu integration; reference architecture before installation.
+  - name: kimera
+    url: https://github.com/MIT-SPARK/Kimera
+    mode: PAPER_AND_CODE_REFERENCE
+    experiments: [05_semantic_twin, 10_r2s2r]
+    selected_paths: [README.md]
+    use: Index into the metric-semantic mapping lineage underlying scene-graph systems.
+  - name: conceptgraphs
+    url: https://github.com/concept-graphs/concept-graphs
+    mode: DEFERRED
+    experiments: [04_memory, 05_semantic_twin, 10_r2s2r]
+    selected_paths: [conceptgraph/slam, conceptgraph/scenegraph, scripts, README.md]
+    use: Open-vocabulary object-centric 3D graphs and language descriptors.
+    caveat: CUDA and perception dependencies are substantial; use only after the hand-authored graph contract works.
+  - name: rerun
+    url: https://github.com/rerun-io/rerun
+    mode: ADAPTER_DEPENDENCY
+    experiments: [01_policy_control, 02_action_chunks, 03_recovery, 04_memory, 05_semantic_twin]
+    selected_paths: [rerun_py, examples/python]
+    use: Optional time-synchronized multimodal logging and visual replay.
+    caveat: Rerun is a visualization/logging adapter, not the semantic-memory authority.
+  - name: openusd
+    url: https://github.com/PixarAnimationStudios/OpenUSD
+    mode: DEFERRED
+    experiments: [05_semantic_twin, 10_r2s2r]
+    selected_paths: [pxr/usd, extras, docs]
+    use: Durable scene hierarchy, typed geometry/state, and relationships for the geometric twin.
+    caveat: USD is not the live robot belief state; optional export/import must not block the benchmark.
+  - name: ifcopenshell
+    url: https://github.com/IfcOpenShell/IfcOpenShell
+    mode: DEFERRED
+    experiments: [05_semantic_twin, 10_r2s2r]
+    selected_paths: [src/ifcopenshell-python, examples, docs]
+    use: Optional IFC/BIM import into the durable building layer.
+    caveat: Review LGPL and component licenses; keep it behind an adapter or separate process when appropriate.
+  - name: ifcopenshell_test_files
+    url: https://github.com/IfcOpenShell/files
+    mode: SPARSE_REFERENCE
+    experiments: [05_semantic_twin]
+    selected_paths: [ifc]
+    use: Public miniature IFC fixtures when licensing and size permit.
+  - name: tdmpc2
+    url: https://github.com/nicklashansen/tdmpc2
+    mode: PAPER_AND_CODE_REFERENCE
+    experiments: [06_world_model]
+    selected_paths: [tdmpc2, cfgs, datasets]
+    use: Control-centric latent dynamics, value/reward models, and online trajectory optimization reference.
+    caveat: Benchmark-oriented and GPU-heavy; do not make it the first implementation.
+  - name: dino_wm
+    url: https://github.com/gaoyuezhou/dino_wm
+    mode: SPARSE_REFERENCE
+    experiments: [06_world_model]
+    selected_paths: [models, planning, env, conf, plan.py]
+    use: Closest public structure for frozen visual features plus action-conditioned latent prediction and CEM planning.
+    caveat: Legacy environment dependencies; adapt planning/evaluation ideas rather than reproducing everything first.
+  - name: vjepa2
+    url: https://github.com/facebookresearch/vjepa2
+    mode: REMOTE_ONLY
+    experiments: [06_world_model]
+    selected_paths: [app/vjepa_droid, configs, src, notebooks]
+    use: Foundation-pretrained visual latent and action-conditioned planning reference.
+    caveat: GPU-oriented and not the minimal baseline; macOS dependency friction is expected.
+  - name: lawam
+    url: https://github.com/RLinf/LaWAM
+    mode: REMOTE_ONLY
+    experiments: [06_world_model, 09_mini_reflect]
+    selected_paths: [latent_action_model, starVLA, deployment, examples/LIBERO, examples/Robotwin]
+    use: Latent subgoal conditioning and amortized action generation rather than brute-force online search.
+    caveat: Large training stack; architectural comparison, not overnight dependency.
+  - name: libero
+    url: https://github.com/Lifelong-Robot-Learning/LIBERO
+    mode: DEFERRED
+    experiments: [07_specialist_skill, 09_mini_reflect]
+    selected_paths: [libero, benchmark_scripts]
+    use: Later manipulation generalization benchmark adapter.
+    caveat: Older dependencies and broad scope; do not use before toy claims are resolved.
+  - name: unitree_rl_mjlab
+    url: https://github.com/unitreerobotics/unitree_rl_mjlab
+    mode: REMOTE_ONLY
+    experiments: [07_specialist_skill, 08_unitree_r1]
+    selected_paths: [src, scripts, simulate, deploy, doc, README.md]
+    use: Primary official R1 MuJoCo/RL/Train-Play-Sim2Real substrate.
+    caveat: Pin SHA, reproduce official baseline unchanged, and audit issue #52 mapping before any deployment path.
+  - name: unitree_mujoco
+    url: https://github.com/unitreerobotics/unitree_mujoco
+    mode: PAPER_AND_CODE_REFERENCE
+    experiments: [08_unitree_r1]
+    selected_paths: [simulate, simulate_python, unitree_robots, example]
+    use: Unitree simulator messaging and sim2sim deployment reference.
+    caveat: Discover current R1 support from source; do not infer it from support for other Unitree models.
+  - name: unitree_sdk2
+    url: https://github.com/unitreerobotics/unitree_sdk2
+    mode: PAPER_AND_CODE_REFERENCE
+    experiments: [08_unitree_r1]
+    selected_paths: [include, example, thirdparty]
+    use: Static inspection of physical message contracts and motor indexing.
+    caveat: Never execute physical communication in autonomous runs.
+  - name: unifolm_vla
+    url: https://github.com/unitreerobotics/unifolm-vla
+    mode: REMOTE_ONLY
+    experiments: [07_specialist_skill, 08_unitree_r1, 09_mini_reflect]
+    selected_paths: [deployment/model_server, experiments, prepare_data, src/unifolm_vla]
+    use: Unitree-specific VLA training, data conversion, inference, and deployment architecture reference.
+    caveat: Existing demonstrations/data may target G1 rather than R1; do not claim direct R1 compatibility.
+  - name: unifolm_wma
+    url: https://github.com/unitreerobotics/unifolm-world-model-action
+    mode: REMOTE_ONLY
+    experiments: [06_world_model, 08_unitree_r1, 09_mini_reflect]
+    selected_paths: [configs, examples, external, prepare_data, scripts, src/unifolm_wma, unitree_deploy]
+    use: Unitree-specific world-model/action architecture and deployment reference.
+    caveat: Inspect embodiment assumptions; use as a comparison, not a required base.
+  - name: isaac_sim
+    url: https://github.com/isaac-sim/IsaacSim
+    mode: REMOTE_ONLY
+    experiments: [10_r2s2r]
+    selected_paths: [source, apps, tools, README.md]
+    use: Remote RTX simulation, rendering, sensors, and reconstructed-scene evaluation.
+    caveat: Never install on the M2 Max; verify current supported host requirements.
+  - name: isaac_lab
+    url: https://github.com/isaac-sim/IsaacLab
+    mode: REMOTE_ONLY
+    experiments: [10_r2s2r]
+    selected_paths: [source, scripts, apps, docs]
+    use: Remote RL/domain-randomization and deployment-scene experiments.
+  - name: isaac_launchable
+    url: https://github.com/isaac-sim/isaac-launchable
+    mode: DEFERRED
+    experiments: [10_r2s2r]
+    selected_paths: [README.md, docker, scripts]
+    use: Optional preconfigured remote/browser launch path to reduce Isaac setup work.
+  - name: isaac_lab_arena
+    url: https://github.com/isaac-sim/IsaacLab-Arena
+    mode: DEFERRED
+    experiments: [10_r2s2r]
+    selected_paths: [source, scripts, docs]
+    use: Optional standardized evaluation-environment structure.
+  - name: uv
+    url: https://github.com/astral-sh/uv
+    mode: DIRECT_DEPENDENCY
+    experiments: [bootstrap]
+    selected_paths: []
+    use: Locked interpreter, dependency, and command execution for the repository.
+    justification: The host already provides uv; no source clone is required.
+  - name: hatchling
+    url: https://github.com/pypa/hatch
+    mode: DIRECT_DEPENDENCY
+    experiments: [bootstrap]
+    selected_paths: []
+    use: Minimal PEP 517 build backend for the local package.
+    justification: Required to build the declared package without custom build code.
+  - name: pyyaml
+    url: https://github.com/yaml/pyyaml
+    mode: DIRECT_DEPENDENCY
+    experiments: [bootstrap, 00_source_audit]
+    selected_paths: []
+    use: Parse the canonical YAML registry and durable run manifest.
+    justification: The program mandates YAML registries and manifests.
+  - name: numpy
+    url: https://github.com/numpy/numpy
+    mode: DIRECT_DEPENDENCY
+    experiments: [bootstrap]
+    selected_paths: []
+    use: Typed arrays and NPZ artifact I/O.
+    justification: Required for typed arrays and NPZ artifact I/O.
+  - name: pyarrow
+    url: https://github.com/apache/arrow
+    mode: DIRECT_DEPENDENCY
+    experiments: [bootstrap]
+    selected_paths: []
+    use: Genuine Parquet artifact I/O.
+    justification: Required for genuine Parquet artifact I/O.
+  - name: pytest
+    url: https://github.com/pytest-dev/pytest
+    mode: DIRECT_DEPENDENCY
+    experiments: [bootstrap]
+    selected_paths: []
+    use: Deterministic local test harness required by P1 and every experiment.
+    justification: The program requires automated tests before empirical work.

@@ -1,0 +1,11 @@
+verified_at: "2026-08-22"
+large_model_downloads_default: false
+physical_deployment_default: false
+repositories:
+  - name: example
+    url: https://github.com/example/repo
+    mode: SPARSE_REFERENCE
+    experiments: [00_source_audit]
+    selected_paths: [README.md]
+    use: A minimal reference.
+    caveat: Keep it isolated.
