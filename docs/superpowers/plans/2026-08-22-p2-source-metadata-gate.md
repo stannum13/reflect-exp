@@ -333,7 +333,8 @@ discovered, the report cites a clean implementation SHA and exact command outcom
 the resumable attempt log uses canonical UTC timestamps and proves every failed
 window preserved lock bytes, and the manifest may advance only when the complete
 audit passes. Add publisher tests for compact sorted canonical JSON with no trailing
-newline; the exact P2/P3 member lists; Git blob/content reconstruction; equality of
+newline; the exact P2/P3 member lists, including P3's historical
+`docs/MATURITY_LEDGER.md`; Git blob/content reconstruction; equality of
 implementation and bound-evidence SHAs; report-parent adjacency; create-only record
 publication; canonical preservation of earlier records and unrelated manifest state;
 and rejection of a state-index self-hash, extra ledger member, caller-supplied digest,

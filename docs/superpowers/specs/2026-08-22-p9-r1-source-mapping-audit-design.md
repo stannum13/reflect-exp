@@ -14,7 +14,9 @@ declared by the pinned official sources be mapped to the expected SDK motor-slot
 with explicit sign, offset, limits, gains, provenance, and isolation tests, while the
 same pinned static evidence closes the mandatory Stage-0 contracts for units, named
 coordinate frames, simulator/control rates, timestamp clock semantics, and versioned
-observation/action schemas?
+observation/action schemas? Schema carriage by an exported model is recorded separately
+as `NO_EXPORTS_IN_SCOPE`; it is not claimed as verified until a later phase actually
+creates or admits an export.
 
 It does not install or import Unitree packages, register tasks, load a checkpoint, run
 Isaac/MJLab, open DDS, enumerate a network interface, use remote compute, or
@@ -42,7 +44,7 @@ protocol binds the exact file hashes for `references/repos.yaml`,
 phases' clean evidence-base Git SHAs and report-only commit/blob/hash identities, P3's
 `experiments/00_source_audit/configs/operation-manifest.yaml`,
 `experiments/00_source_audit/results/compatibility.csv`, `references/licenses.md`,
-`docs/SOURCE_MAP.md`, `experiments/00_source_audit/RESULTS.md`,
+`docs/SOURCE_MAP.md`, `docs/MATURITY_LEDGER.md`, `experiments/00_source_audit/RESULTS.md`,
 `experiments/00_source_audit/INTERFACE_FINDINGS.md`, and the exact MuJoCo-smoke
 fragment path/hash named by P3's operation manifest. Missing, dirty, incomplete, or
 hash-mismatched evidence blocks P9 before checkout or output creation.
@@ -100,6 +102,7 @@ experiments/00_source_audit/configs/operation-manifest.yaml
 experiments/00_source_audit/results/compatibility.csv
 references/licenses.md
 docs/SOURCE_MAP.md
+docs/MATURITY_LEDGER.md
 experiments/00_source_audit/RESULTS.md
 experiments/00_source_audit/INTERFACE_FINDINGS.md
 <the single MuJoCo-smoke fragment path selected by the operation manifest>
@@ -145,7 +148,8 @@ p2_state_index_run_manifest_git_blob_id, p3_implementation_evidence_git_sha,
 p3_report_commit_git_sha, p3_report_git_blob_id, p3_report_sha256,
 p3_state_index_commit_git_sha, p3_state_index_run_manifest_git_blob_id,
 p3_operation_manifest_sha256, p3_compatibility_sha256, licenses_sha256,
-source_map_sha256, p3_results_sha256, p3_interface_findings_sha256,
+source_map_sha256, p3_maturity_ledger_sha256, p3_results_sha256,
+p3_interface_findings_sha256,
 p3_mujoco_smoke_relative_path, p3_mujoco_smoke_sha256, p3_local_lane_open,
 physical_deployment_allowed, remote_execution_allowed, runtime_network_allowed`.
 `p2_evidence_base_git_sha`, `p2_report_commit_git_sha`,
@@ -155,6 +159,17 @@ values (`implementation_evidence_git_sha`, `report_commit_git_sha`,
 corresponding P3 record values. The gate independently requires each record's
 `bound_evidence_git_sha` to equal its implementation field and reconstructs its
 `artifact_ledger_sha256` rather than copying either value without validation.
+The remaining state and authority values are also derived, never caller supplied. From
+the manifest blob at `run_manifest_capture_git_sha`, `p2_state` is exactly
+`stages.p2`, `p3_state` is exactly `stages.p3`, and `p3_local_lane_open` is true only
+when `lanes.platform == "in_progress"`; any other capture value is rejection.
+`physical_deployment_allowed` is exactly
+`safety.physical_deployment_allowed`, while `remote_execution_allowed` is the renamed
+gate projection of `safety.remote_enabled`. Both must be the JSON boolean false.
+`runtime_network_allowed` is not read from an absent run-manifest field: it is a
+schema-fixed false literal describing every P9 runtime/audit command. The distinct
+`source_checkout_network_allowed=true` capability exists only in the later sealed P9
+operation manifest and can authorize only `fetch_sources.py`.
 The four state-index fields are derived rather than caller supplied. Starting at
 `run_manifest_capture_git_sha`, the gate walks at most 4,096 commits along the sole
 first-parent chain using the fixed local Git read surface. For each phase it must find
@@ -179,7 +194,11 @@ false. File hashes are lowercase 64-hex, Git SHAs lowercase 40-hex, and Git blob
 the repository's validated object format. The P9 factory
 rehashes every immutable named artifact rather than trusting this summary. The smoke path must be the
 single MuJoCo-smoke fragment identity selected from the hash-matched P3 operation
-manifest, be relative beneath P3's fragment root, and hash to the recorded value. Every
+manifest, be relative beneath P3's fragment root, and hash to the recorded value.
+The `p3_maturity_ledger_sha256` is computed from the `docs/MATURITY_LEDGER.md` blob at
+`p3_implementation_evidence_git_sha`, not from the later current worktree ledger. The
+`--p3-maturity-ledger` argument supplies only that normalized historical path identity;
+the gate obtains its blob and bytes through the sealed P3 evidence commit. Every
 P9 subcommand, including authoring, validation, fetch, inventory, discovery, issue,
 freeze, report, check, state publication, and the umbrella command, reruns this complete
 historical gate before it reads a checkout or creates output.
@@ -191,10 +210,13 @@ every named Git commit/blob/content identity. Later commands validate the commit
 `p3-gate.json` seal, rederive both state-index pairs from the sealed capture ancestry,
 and revalidate those historical objects. They also perform a separate
 current-state non-regression check: the current run manifest must still contain
-canonical-record-equivalent P2/P3 phase records with both phases complete and safety booleans false,
-but later `current_pass`, stage, lane, P9, and report fields may advance. Current
+canonical-record-equivalent P2/P3 phase records, `stages.p2 == stages.p3 == complete`,
+`safety.physical_deployment_allowed == false`, and `safety.remote_enabled == false`.
+The platform lane may be only `in_progress | complete`; later `current_pass`, other
+stage/lane, P9, maturity, and report fields may advance. The sealed
+`runtime_network_allowed=false` literal is revalidated independently. Current
 `RUN_REPORT.md` is deliberately outside this non-regression identity. Therefore a P4-P8
-pass or P9's own state/report commit cannot invalidate or be misidentified as P3
+pass or P9's own maturity/state/report commit cannot invalidate or be misidentified as P3
 evidence, and the two historical reports cannot alias merely because they reused one
 pathname.
 
@@ -426,7 +448,8 @@ Closed fact kinds are `MODEL_ID`, `SIM_ACTUATOR_SEQUENCE`, `SDK_SLOT_DOMAIN`,
 `UPPER_LIMIT`, `EFFORT_LIMIT`, `KP`, `KD`, `SKIPPED_SLOT`, `UNIT_SCHEMA`,
 `QUANTITY_UNIT`, `COORDINATE_FRAME_SCHEMA`, `COORDINATE_FRAME`, `FRAME_PARENT`,
 `FRAME_HANDEDNESS`, `FRAME_TRANSLATION_UNIT`, `FRAME_ROTATION_REPRESENTATION`,
-`FRAME_TRANSFORM_DIRECTION`, `SIMULATION_RATE`, `CONTROL_RATE`,
+`FRAME_TRANSFORM_DIRECTION`, `SIGNAL_QUANTITY`, `SIGNAL_FRAME`,
+`SIMULATION_RATE`, `CONTROL_RATE`,
 `CONTROL_DECIMATION`, `TIMESTAMP_CLOCK`, `TIMESTAMP_UNIT`,
 `OBSERVATION_SCHEMA_VERSION`, and `ACTION_SCHEMA_VERSION`.
 The seven sequence/schema collection facts have canonical value exactly
@@ -447,10 +470,32 @@ positive integer and must prove `simulation_rate / control_rate` exactly; a noni
 ratio is `CONFLICT`. Unit facts contain exactly `quantity_id, unit, scale_to_si,
 offset_to_si`, with finite binary64 scale/offset, nonzero scale, and unit from
 `RADIAN | RADIAN_PER_SECOND | METER | METER_PER_SECOND | NEWTON_METER | SECOND |
-NANOSECOND | DIMENSIONLESS | NEWTON_METER_PER_RADIAN |
+NANOSECOND | HERTZ | DIMENSIONLESS | NEWTON_METER_PER_RADIAN |
 NEWTON_METER_SECOND_PER_RADIAN`. No dimensional conversion is inferred from a variable
 name. Frame facts contain only the closed literals defined in Section 6 and an exact
 parent identity; they do not compute kinematics.
+
+`SIGNAL_QUANTITY` has canonical value exactly `{"signal_id": string,
+"quantity_id": string}`. `SIGNAL_FRAME` has canonical value exactly
+`{"disposition": "NAMED_FRAME" | "NOT_FRAME_BEARING", "frame_id": string | null,
+"signal_id": string}`; `frame_id` is nonnull exactly for `NAMED_FRAME`. Both facts
+must resolve from an exact primary R1 source span, and a crossing-boundary signal also
+requires consistent exact R1-tagged simulator/SDK/deployment evidence. A reviewed
+decision cannot manufacture either association from a variable name, common robotics
+practice, or another signal's dimensions.
+
+The complete deterministic `signal_id` domain is generated from the accepted whole-
+collection facts, never from the association rows themselves. It contains every element
+of the simulator and training observation schemas; every element of the simulator,
+training, and deployment action sequences; each row's simulator command/state and SDK
+command/state value; and the row fields `training_action_scale,
+training_action_offset, command_sign, state_sign, position_offset, lower_limit,
+upper_limit, effort_limit, kp, kd`. It additionally contains simulation rate, control
+rate, control decimation, timestamp, and every
+source-declared normalization scale/offset. IDs are canonical ASCII namespaced as
+`<domain>:<source-declared-member-id>` or
+`row:<canonical-joint-name>:<closed-field-name>`. An association may use
+`NOT_FRAME_BEARING`, but that disposition itself requires exact source provenance.
 
 `TIMESTAMP_CLOCK` is exactly `MONOTONIC | WALL | UNDECLARED`; only exact static evidence
 for `MONOTONIC` passes. Observation/action schema versions may be exact upstream
@@ -458,7 +503,8 @@ NFKC-ASCII identifiers or deterministic P9 identifiers
 `r1obs-sha256:<64-lower-hex>` and `r1act-sha256:<64-lower-hex>`. A P9 identifier is the
 SHA-256 of canonical JSON over the complete ordered collection facts and every accepted
 fact ID referenced by the corresponding observation components or action/mapping rows,
-including names, indices/slots, signs, scales, offsets, units, and ordering. It assigns no new semantics;
+including names, indices/slots, signs, scales, offsets, units, quantity/frame
+associations, and ordering. It assigns no new semantics;
 it gives later exports a reproducible identifier for the exact pinned source schema.
 
 The discovery report groups facts by canonical source symbol and emits
@@ -466,8 +512,13 @@ The discovery report groups facts by canonical source symbol and emits
 between conflicting facts. A reviewed freeze may approve a row only when the primary
 R1 source and SDK evidence are each exact and every applicable R1-tagged supporting
 order fact is consistent.
-Every resolution records all candidate fact IDs, the selected fact IDs, a bounded
-rationale enum, and the reviewer commit SHA. Free-text rationale cannot create a value.
+Every resolution records all candidate fact IDs, the selected fact IDs, one rationale
+from `PRIMARY_AND_SDK_AGREE | PRIMARY_AND_SUPPORTING_AGREE |
+PRIMARY_ONLY_NONCROSSBOUNDARY | NON_R1_CONTEXT_EXCLUDED | MISSING_PRIMARY |
+CONFLICTING_R1_FACTS | UNSUPPORTED_EXPRESSION`, and `review_base_git_sha`. The review
+base is the clean commit that precedes creation of `reviewed-mapping.yaml`; it is not the
+later sealing commit and therefore creates no self-reference. Free-text rationale cannot
+create a value.
 Stage-0 resolutions require an exact primary R1 fact for every source-declared contract;
 SDK or simulator supporting facts are required when that contract crosses the
 simulation/deployment boundary, and any applicable exact R1-tagged disagreement is
@@ -550,6 +601,8 @@ unit_schema_fact_id
 units
 coordinate_frame_schema_fact_id
 coordinate_frames
+signal_quantity_bindings
+signal_frame_bindings
 simulation_rate
 simulation_rate_fact_ids
 control_rate
@@ -566,6 +619,8 @@ observation_schema_version_fact_ids
 action_schema_version
 action_schema_version_origin
 action_schema_version_fact_ids
+export_inventory
+export_schema_carriage_status
 collection_field_status
 stage0_field_status
 rows
@@ -641,16 +696,42 @@ translation unit is a unit-schema ID whose resolved unit is `METER`, rotation is
 and direction is `PARENT_FROM_CHILD | CHILD_FROM_PARENT`. A convention missing from
 source remains null/`MISSING`; P9 never supplies a robotics default.
 
+`signal_quantity_bindings` and `signal_frame_bindings` each contain exactly one row for
+every ID in the deterministic signal domain and no other row. A quantity binding has
+exactly `signal_id, quantity_id, source_fact_ids, field_status`; its quantity names a
+consistent unit row. A frame binding has exactly `signal_id, disposition, frame_id,
+source_fact_ids, field_status`; `frame_id` names a consistent frame row exactly for
+`NAMED_FRAME`, and is null exactly for source-proven `NOT_FRAME_BEARING`. Both arrays
+sort by unsigned UTF-8 `signal_id`, require nonempty fact provenance, and reject a
+missing, duplicate, conflicting, or invented association. Consequently every action,
+observation, normalization, state, limit, effort, and gain value has an explicit unit
+and an explicit named-frame or not-frame-bearing disposition.
+
+`export_inventory` is the closed object `schema_version=1, scope_roots,
+ordered_export_paths, disposition, inventory_sha256`. `scope_roots` is exactly
+`["experiments/08_unitree_r1"]`; `ordered_export_paths` must be empty; and
+`disposition` is exactly `NO_EXPORTS_IN_SCOPE`. Its digest covers a descriptor-safe
+inventory of every tracked and untracked regular file beneath that root and rejects
+model/checkpoint/ONNX/TorchScript/safetensors or equivalent export extensions there;
+the five ignored sparse-source checkouts live outside the scope root and are never
+traversed. `export_schema_carriage_status` is exactly
+`NO_EXPORTS_IN_SCOPE`, not `CONSISTENT` or `VERIFIED`. Any later exported model makes
+this P9 disposition stale and must pass a separate schema-carriage gate against the
+frozen observation/action identifiers before policy evaluation.
+
 `collection_field_status` maps exactly `simulator_actuator_sequence,
 sdk_slot_domain, simulator_observation_schema, training_observation_schema,
 training_action_sequence, deployment_action_sequence, unit_schema,
 coordinate_frame_schema` to `CONSISTENT | MISSING | CONFLICT`. A non-consistent
 collection fact ID is null and its candidate fact IDs remain in the reviewed decision
 ledger, allowing a valid nonpassing audit without fabricating a collection.
-`stage0_field_status` maps exactly `simulation_rate, control_rate, control_decimation,
-timestamp_clock, timestamp_unit, observation_schema_version, action_schema_version` to
+`stage0_field_status` maps exactly `signal_quantity_bindings, signal_frame_bindings,
+simulation_rate, control_rate, control_decimation, timestamp_clock, timestamp_unit,
+observation_schema_version, action_schema_version` to
 `CONSISTENT | MISSING | CONFLICT`. A non-consistent field is null, retains every
-available candidate fact ID, and cannot pass. Consistent `simulation_rate` and
+available candidate fact ID, and cannot pass; for either binding-table field the
+corresponding approved array is empty and all candidate associations remain only in the
+reviewed decision ledger. Consistent `simulation_rate` and
 `control_rate` are the reduced rational objects from Section 5 and their fact-ID tuples
 are nonempty. `control_decimation` is a positive integer with
 nonempty provenance and exactly relates the two rates. `timestamp_clock` must be
@@ -678,8 +759,10 @@ The audit result is `VERIFIED` only when every primary simulated actuator has ex
 one row, every required row field is sourced, all order arrays have exact coverage,
 all observation components partition both domains, the SDK partition/mask is exact,
 all source-declared quantities and named frames have exact nondefaulted contracts, both
+signal-association tables exactly cover the deterministic signal domain,
 rates and their decimation agree exactly, timestamp semantics are explicitly monotonic,
-both schema versions reproduce, every Stage-0 and row field status is `CONSISTENT`, only
+both schema versions reproduce, export disposition is exactly `NO_EXPORTS_IN_SCOPE`,
+every Stage-0 and row field status is `CONSISTENT`, only
 R1-tagged supporting evidence participates, and every pure manifest-validator
 predicate invoked by `freeze` passes. The independent pytest command reruns those
 predicates and adversarial fixtures as a final advancement gate; it does not mutate or
@@ -775,7 +858,10 @@ inventory/rules/fact IDs, every parser grammar boundary and node/depth/alias/fil
 ceiling, non-R1 zero authority, lifecycle-state cross-products, create-only resume,
 transitive provenance tamper, extra/missing artifact rejection, and byte-identical
 report/check rerender; canonical test-receipt command/count/test-ID validation and
-tamper rejection; exact four-path evidence plus two-path state/report publication commits.
+tamper rejection; exact four-path evidence plus three-path maturity/state/report
+publication commits; maturity-ledger extra/missing row, invalid/multiple label, local-
+reproduction mismatch, and hash tampering; failure after each of the three publication
+renames plus crash-journal recovery with exact preimage restoration.
 Checkout tests use a recording runner and local fixture trees;
 no test performs Git or HTTP network access.
 
@@ -787,15 +873,18 @@ validation. Parser fixtures include deeply nested and high-token Python below 4 
 deep/high-node XML below 4 MiB, and assert abort occurs in the tokenize pre-pass or live
 XML stream before `ast.parse` or full-tree retention. Gate tests mutate each closed
 historical-gate input in turn—including both immutable phase records, both historical
-P2/P3 report lifecycles, both P3 result reports, and the manifest-selected smoke fragment—and assert every subcommand
+P2/P3 report lifecycles, both P3 result reports, the historical P3 maturity ledger, and
+the manifest-selected smoke fragment—and assert every subcommand
 fails before checkout read/output creation. Resource tests accept exactly 2147483648 and
 5368709120 bytes, reject each cap plus one, prevent over-reservation before process
 launch, and prove failure releases only its immutable reservation.
 Authority-seal tests separately alter the sealing commit, Git blob ID, and SHA-256 for
 each of the operation manifest, extraction rules, and reviewed mapping; freeze, check,
 and byte-for-byte reproduction must reject every mutation.
-Historical-gate fixtures advance current pass/stage/lane/P9 fields and replace the root
-report after preserving the immutable P2/P3 phase records; every P9 command must still
+Historical-gate fixtures advance current pass, permitted later stage/lane/P9 fields,
+and replace the root report after preserving the immutable P2/P3 phase records, their
+complete stage values, both false safety values, and a platform lane of `in_progress |
+complete`; every P9 command must still
 validate. They then mutate each phase record, historical report commit/blob/hash, bound
 evidence SHA, state-index commit SHA, or state-index manifest blob ID and require
 rejection before checkout read/output creation. Separate histories add an extra changed
@@ -808,14 +897,25 @@ introductions, and preservation of all prior manifest values. Stage-0
 negative fixtures cover a missing unit/frame at every collection position, disconnected
 or cyclic frames, convention mismatch, nonintegral decimation, wall/undeclared clocks,
 timestamp-unit mismatch, and one-bit schema-version drift.
+For every deterministic signal ID, tests independently delete and corrupt its quantity
+association and frame/disposition association, and assert that unrelated complete unit
+and frame collections cannot make the audit pass. Export fixtures prove an empty P9
+export inventory yields only `NO_EXPORTS_IN_SCOPE`, while one model-like artifact,
+untracked or tracked, invalidates the disposition rather than being silently ignored.
+Gate fixtures independently mutate `stages.p2`, `stages.p3`, `lanes.platform`,
+`safety.physical_deployment_allowed`, `safety.remote_enabled`, and the fixed runtime-
+network literal in the sealed capture/current-state pair. They prove each gate field is
+derived from its named source and cannot be accepted from caller JSON.
 
 ## 8. Artifacts, commands, and publication
 
 `R1_SOURCE_MAP.md` renders every accepted and conflicting source fact grouped by pinned
 repository/path/symbol, including the complete mapping/order and Stage-0 unit/frame/rate/
-clock/schema contracts. `R1_JOINT_MAPPING_AUDIT.md` renders the closed lifecycle states,
+clock/schema contracts and every signal-to-quantity/frame association.
+`R1_JOINT_MAPPING_AUDIT.md` renders the closed lifecycle states,
 all mapping and Stage-0 predicates, exact gaps/conflicts, test disposition, and the Phase-1
-decision. Both state explicitly that static source inspection proves declarations and
+decision, including `NO_EXPORTS_IN_SCOPE` rather than an export-schema verification.
+Both state explicitly that static source inspection proves declarations and
 pure transforms only, not runtime timing, simulator compatibility, or hardware safety.
 They are pure renderings of the frozen manifest and fact ledger, never independent
 decision surfaces.
@@ -831,6 +931,7 @@ experiments/08_unitree_r1/configs/base.yaml
 experiments/08_unitree_r1/audit.py
 experiments/08_unitree_r1/fetch_sources.py
 experiments/08_unitree_r1/run.py
+experiments/08_unitree_r1/tests/conftest.py
 experiments/08_unitree_r1/results/checkout-fragments/unitree_rl_mjlab.json
 experiments/08_unitree_r1/results/checkout-fragments/unitree_mujoco.json
 experiments/08_unitree_r1/results/checkout-fragments/unitree_sdk2.json
@@ -848,9 +949,10 @@ experiments/08_unitree_r1/results/r1_joint_mapping_manifest.yaml
 experiments/08_unitree_r1/tests/test_r1_joint_mapping.py
 ```
 
-Final publication also updates the existing tracked orchestrator-owned
-`docs/RUN_MANIFEST.yaml` and `RUN_REPORT.md` in the dedicated two-path state/report
-commit below; they are not experiment-owned implementation files.
+Final publication also creates or updates the tracked orchestrator-owned
+`docs/MATURITY_LEDGER.md`, `docs/RUN_MANIFEST.yaml`, and `RUN_REPORT.md` in the
+dedicated three-path maturity/state/report commit below; they are not experiment-owned
+implementation files.
 
 The checkout-fragment manifest lists exactly the five repository fragment paths above,
 sizes, and hashes and excludes itself. No glob is used by a writer or validator.
@@ -886,6 +988,7 @@ uv run python experiments/08_unitree_r1/audit.py gate \
   experiments/00_source_audit/configs/operation-manifest.yaml \
   --compatibility experiments/00_source_audit/results/compatibility.csv \
   --licenses references/licenses.md --source-map docs/SOURCE_MAP.md \
+  --p3-maturity-ledger docs/MATURITY_LEDGER.md \
   --p3-results experiments/00_source_audit/RESULTS.md \
   --p3-interface-findings experiments/00_source_audit/INTERFACE_FINDINGS.md \
   --p3-fragment-root experiments/00_source_audit/results/fragments \
@@ -1009,8 +1112,9 @@ uv run python experiments/08_unitree_r1/audit.py freeze \
   --reviewed-decisions experiments/08_unitree_r1/configs/reviewed-mapping.yaml \
   --output experiments/08_unitree_r1/results/r1_joint_mapping_manifest.yaml --headless
 
-UV_CACHE_DIR=.cache/uv uv run pytest \
-  experiments/08_unitree_r1/tests/test_r1_joint_mapping.py -q \
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 UV_CACHE_DIR=.cache/uv uv run --offline pytest \
+  -c /dev/null --rootdir=. --confcutdir=experiments/08_unitree_r1/tests \
+  -p no:cacheprovider experiments/08_unitree_r1/tests/test_r1_joint_mapping.py -q \
   --junitxml=/private/tmp/exp08-junit.xml
 uv run python experiments/08_unitree_r1/audit.py record-tests \
   --p3-gate experiments/08_unitree_r1/configs/p3-gate.json \
@@ -1054,8 +1158,9 @@ uv run python experiments/08_unitree_r1/audit.py check \
   --audit-report experiments/08_unitree_r1/docs/R1_JOINT_MAPPING_AUDIT.md \
   --publication-state staged --headless
 
-UV_CACHE_DIR=.cache/uv uv run pytest \
-  experiments/08_unitree_r1/tests/test_r1_joint_mapping.py -q
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 UV_CACHE_DIR=.cache/uv uv run --offline pytest \
+  -c /dev/null --rootdir=. --confcutdir=experiments/08_unitree_r1/tests \
+  -p no:cacheprovider experiments/08_unitree_r1/tests/test_r1_joint_mapping.py -q
 
 git commit -m "exp08: publish R1 static audit evidence"
 
@@ -1066,10 +1171,12 @@ uv run python experiments/08_unitree_r1/audit.py publish-state \
   --audit-report experiments/08_unitree_r1/docs/R1_JOINT_MAPPING_AUDIT.md \
   --test-summary experiments/08_unitree_r1/results/test-summary.json \
   --p9-evidence-commit "$(git rev-parse HEAD)" \
+  --maturity-ledger docs/MATURITY_LEDGER.md \
   --run-manifest docs/RUN_MANIFEST.yaml --run-report RUN_REPORT.md --headless
-git add -- docs/RUN_MANIFEST.yaml RUN_REPORT.md
+git add -- docs/MATURITY_LEDGER.md docs/RUN_MANIFEST.yaml RUN_REPORT.md
 test "$(git diff --cached --name-only)" = \
 "RUN_REPORT.md
+docs/MATURITY_LEDGER.md
 docs/RUN_MANIFEST.yaml"
 git commit -m "docs: record P9 source audit result"
 
@@ -1087,12 +1194,14 @@ uv run python experiments/08_unitree_r1/audit.py check \
   --test-summary experiments/08_unitree_r1/results/test-summary.json \
   --source-map experiments/08_unitree_r1/docs/R1_SOURCE_MAP.md \
   --audit-report experiments/08_unitree_r1/docs/R1_JOINT_MAPPING_AUDIT.md \
+  --maturity-ledger docs/MATURITY_LEDGER.md \
   --run-manifest docs/RUN_MANIFEST.yaml --run-report RUN_REPORT.md \
   --p9-evidence-commit "$(git rev-parse HEAD^)" \
   --state-report-commit "$(git rev-parse HEAD)" \
   --publication-state published --headless
-UV_CACHE_DIR=.cache/uv uv run pytest \
-  experiments/08_unitree_r1/tests/test_r1_joint_mapping.py -q
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 UV_CACHE_DIR=.cache/uv uv run --offline pytest \
+  -c /dev/null --rootdir=. --confcutdir=experiments/08_unitree_r1/tests \
+  -p no:cacheprovider experiments/08_unitree_r1/tests/test_r1_joint_mapping.py -q
 
 UV_CACHE_DIR=.cache/uv uv run --offline python experiments/08_unitree_r1/run.py \
   --config experiments/08_unitree_r1/configs/base.yaml --seed 0 \
@@ -1105,27 +1214,49 @@ The lifecycle through both publication commits is driven by the external orchest
 not by the experiment umbrella. `check --publication-state staged` requires the exact
 four final files to be the only staged paths and validates them before the evidence
 commit. `publish-state` is the sole controlled replacement writer: starting from a clean
-evidence commit, it atomically replaces exactly `docs/RUN_MANIFEST.yaml` and
-`RUN_REPORT.md`. The P9 phase record binds the evidence commit, result/manifests/reports,
+evidence commit, it prepares and validates one bounded three-file transaction and then
+atomically replaces each of `docs/MATURITY_LEDGER.md`, `docs/RUN_MANIFEST.yaml`, and
+`RUN_REPORT.md`. It retains descriptor-verified preimages until every rename and parent
+fsync succeeds; failure restores every already-renamed path, while crash recovery blocks
+publication and restores the complete preimage triplet from the ignored bounded
+mode-`0700`, 4-MiB-max `.cache/p9-publication-transaction` journal before retry. The
+journal contains only exact path/hash/preimage tuples for those three paths, is opened
+no-follow, and is removed only after inode/hash verification. No partial worktree state
+is a published result. The maturity ledger has the exact columns
+`project_or_component, evidence_label, evidence_source, supported_embodiment_or_task,
+license, compute_requirements, local_reproduction_status, known_failure_modes,
+role_in_program, hardware_validation_status`. P3 must already have published one row
+for every locked public source plus its Experiment-00 result. P9 preserves every
+non-Unitree/P3-result row byte-semantically, updates only the five pinned Unitree rows
+with P9's stronger static evidence, and adds exactly one P9 audit-result row. Each row
+has exactly one Section-34 `evidence_label`; source rows use
+`PRODUCTION_SHAPED_REFERENCE | UNVERIFIED` only as their evidence permits. The P9 audit-result row uses `PHYSICAL_R1_NOT_VALIDATED`,
+records `local_reproduction_status=LOCALLY_REPRODUCED_M2` only when its artifacts are
+valid and tests pass, and records `hardware_validation_status=NOT_VALIDATED`. The P9 phase
+record binds the evidence commit, result/manifests/reports,
 `prerequisite_state`, `artifact_state`, `audit_result`, and `advancement_state`.
 `phase_records.p9` is closed with exact keys `phase_id=p9, lifecycle_state=complete,
 implementation_evidence_git_sha, evidence_publication_git_sha,
 state_report_parent_git_sha, p3_gate_sha256, operation_manifest_sha256,
 mapping_manifest_sha256, test_summary_sha256, source_map_sha256, audit_report_sha256,
-prerequisite_state, artifact_state, audit_result, advancement_state,
+maturity_ledger_sha256, prerequisite_state, artifact_state, audit_result,
+advancement_state, maturity_label=PHYSICAL_R1_NOT_VALIDATED,
+local_reproduction_status=LOCALLY_REPRODUCED_M2,
+hardware_validation_status=NOT_VALIDATED,
 physical_deployment_allowed=false, remote_execution_allowed=false,
 runtime_network_allowed=false`; the parent equals the evidence publication commit, and
-the postcommit validator derives and checks the containing two-path commit rather than
+the postcommit validator derives and checks the containing three-path commit rather than
 attempting an impossible self-hash. No scientific result is inferred from the lifecycle
 state.
 `RUN_REPORT.md` renders the canonical environment, commands, tests, results,
-public-source use, interface findings, blockers, next action, and safety sections. The
-two files are committed together and no source/evidence path may be staged. A
+public-source use, interface findings, blockers, next action, maturity/hardware-
+validation disposition, and safety sections. The
+three files are committed together and no source/evidence path may be staged. A
 `READY+VALID+VERIFIED+READY` result records P9 complete and opens the separately gated
 Phase-1 lane; a valid `CONFLICT | MISSING_R1_SOURCE | INCOMPLETE` result also records P9
 complete but advancement `STOPPED` and publishes its exact gap. Invalid evidence creates
 neither state update nor report conclusion. The postcommit check requires the exact
-adjacent evidence and state/report commits, their changed-path sets, and byte-identical
+adjacent evidence and maturity/state/report commits, their changed-path sets, and byte-identical
 rerenders.
 
 `run.py` is the strictly offline, read-only Experiment 08 Phase-0 final-validation
@@ -1141,7 +1272,11 @@ canonical record introductions, and prior-value preservation. Historical Git ide
 `git rev-parse`, `git cat-file`, `git diff-tree`, and `git status` read commands with no
 remote argument; no other subprocess is permitted. It never calls `fetch_sources.py`,
 any author/discover/freeze/report/publication command, pytest, or a Git network/write
-operation, and never creates a file, checkout, socket, review decision, or commit.
+operation, and installs an experiment-local `OfflineGuard` before reading artifacts.
+The guard rejects socket construction, DNS helpers, and every subprocess except the
+four exact local Git read command families above; it strips ambient Git configuration
+and remote/credential variables and forces `GIT_OPTIONAL_LOCKS=0`. It never creates a file, checkout, socket, review
+decision, or commit.
 `--dry-run` performs the same gate and local-Git identity validation, prints the exact
 offline read-only validation plan, and stops before artifact parsing. The literal root
 target is:
@@ -1150,30 +1285,38 @@ target is:
 .PHONY: exp08-audit
 exp08-audit:
 	UV_CACHE_DIR=.cache/uv uv run --offline python experiments/08_unitree_r1/run.py --config experiments/08_unitree_r1/configs/base.yaml --seed 0 --output-dir experiments/08_unitree_r1/results --max-episodes 0 --headless
-	PYTHONDONTWRITEBYTECODE=1 UV_CACHE_DIR=.cache/uv uv run --offline pytest -p no:cacheprovider experiments/08_unitree_r1/tests/test_r1_joint_mapping.py -q
+	PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 UV_CACHE_DIR=.cache/uv uv run --offline pytest -c /dev/null --rootdir=. --confcutdir=experiments/08_unitree_r1/tests -p no:cacheprovider experiments/08_unitree_r1/tests/test_r1_joint_mapping.py -q
 ```
 
-Both target commands are offline and evidence-read-only; pytest disables its cache and
-bytecode writers, and only the preexisting ignored uv cache is read. A missing or
+Both target commands are offline and evidence-read-only. The P9 `conftest.py` installs
+the same socket/DNS/subprocess-denial policy before importing the test module; plugin
+autoload, parent conftest discovery, project pytest configuration, cache, and bytecode
+writing are disabled. A mandatory negative fixture attempts a socket, DNS lookup, and
+unlisted subprocess and proves each is refused, while a positive fixture permits only
+the fixed local Git reads. Only the preexisting ignored uv cache is read. A missing or
 unpublished artifact fails; the target never falls back to lifecycle execution or
 source fetching.
 
 Every writer anchors an approved parent descriptor, rejects symlink components, creates
 one private sibling temporary directory, writes exact-schema files, fsyncs, writes the
 self-excluding manifest last, renames to an absent destination, then fsyncs the parent.
+The sole three-file replacement exception uses the bounded preimage journal and
+rollback/recovery protocol above; each individual replacement remains descriptor-
+relative and atomic, but the design does not mislabel three cross-directory renames as
+one filesystem-atomic operation.
 Same-process cleanup removes only a continuously held inode. Restart recovery moves one
 verified orphan descriptor-relatively to a create-only quarantine; it never deletes,
 publishes, or repairs an unverifiable orphan. Resume validates and skips only an exact
 complete artifact.
 
 Every evidence operation is create-only and carries a clean implementation Git SHA. The
-only replacement exception is the exact two-file orchestrator state/report transaction
+only replacement exception is the exact three-file orchestrator maturity/state/report transaction
 described above. `inventory`,
 `discover`, `freeze`, and `report` refuse an existing target unless all bytes and
 transitive hashes validate exactly, in which case they skip without rewriting.
 `check` is read-only. In `staged` mode it requires exactly the final four paths staged
 and no other dirty path; in `published` mode it requires a clean tree plus the adjacent
-exact-path evidence and state/report commits. Both modes reject an extra/missing tracked
+exact-path evidence and maturity/state/report commits. Both modes reject an extra/missing tracked
 evidence file, hash mismatch, wrong source commit, stale implementation SHA, or report
 not byte-identical to a pure rerender. The entire tracked P9 evidence set above is capped at 64 MiB; writers include
 their temporary sibling in the preflight budget and stop before overflow. Each command

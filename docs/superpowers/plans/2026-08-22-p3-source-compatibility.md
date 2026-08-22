@@ -165,7 +165,10 @@ git commit -m "feat: add pinned sparse source checkout"
 Test exact enums, strict fragment keys/types, SHA/path/license binding to the P2 lock,
 canonical JSON/hash behavior, duplicate/conflicting fragment rejection, complete
 row coverage, classification precedence, deterministic CSV/Markdown, and standard
-experiment CLI flags. Test bounded AST parsing, manifest/header layout checks,
+experiment CLI flags. Test exact one-label maturity rows for all 45 sources plus the
+Experiment-00 result, required Section-34 columns, evidence/hash provenance, separate
+hardware-validation status, and deterministic rerender/tamper rejection. Test bounded
+AST parsing, manifest/header layout checks,
 asset-license inventory, path containment, byte limits, captured normalized results,
 and create-only atomic fragment publication that refuses overwrite. Test that the
 operation manifest binds the registry/lock digest, covers all 45 entries, accepts
@@ -232,9 +235,11 @@ precedence:
 8. otherwise → `NOT_EVALUATED`.
 
 Without required patch/platform evidence, use `NOT_EVALUATED`; do not infer from a
-mode name alone. No fragment may promote a `REMOTE_ONLY` or `DEFERRED` source to local. Generate the
-CSV, licenses table, source map, and experiment result/interface documents from
-sorted records with LF newlines and atomic writes.
+mode name alone. No fragment may promote a `REMOTE_ONLY` or `DEFERRED` source to local.
+Generate the CSV, licenses table, source map, global maturity ledger, and experiment
+result/interface documents from sorted records with LF newlines and atomic writes. The
+maturity renderer assigns exactly one Section-34 label per source/result and keeps
+hardware-validation status in its separate column.
 
 - [ ] **Step 6: Implement commands and canonical experiment skeleton**
 
@@ -303,17 +308,74 @@ check, and safety check. Commit as `feat: add MuJoCo compatibility smoke`.
 - Create: `experiments/00_source_audit/results/compatibility.csv`
 - Create: `references/licenses.md`
 - Create: `docs/SOURCE_MAP.md`
+- Create: `docs/MATURITY_LEDGER.md`
 - Modify: `experiments/00_source_audit/RESULTS.md`
 - Modify: `experiments/00_source_audit/INTERFACE_FINDINGS.md`
 - Modify: `docs/ASSUMPTIONS.md`
 - Modify: `docs/RUN_MANIFEST.yaml`
 - Modify: `RUN_REPORT.md`
 - Create: `scripts/write_p3_report.py`
+- Create: `tests/test_p3_commands.py`
 - Verify/reuse: `scripts/publish_phase_record.py`
 
 **Interfaces:**
 - Consumes: reviewed Tasks 1–3, complete P2 lock, live sparse checkouts, static/runtime smoke results.
 - Produces: complete Experiment 00 outputs, P3 decision, and opened local lanes.
+
+- [ ] **Step 0: Implement, test, review, and commit the P3 reporter before live evidence**
+
+Write `tests/test_p3_commands.py` first. Its fixture repository must cover the complete
+P2/P3 artifact inventory, duplicate-key-rejecting YAML, the exact manifest-selected
+MuJoCo fragment, all four Experiment 00 outputs, the complete maturity ledger, safety
+false, clean-HEAD enforcement, and a report-only candidate. Assert that
+`scripts/write_p3_report.py`:
+
+- accepts only `--evidence-base-sha <40-lower-hex>` from repository root;
+- requires that SHA to equal clean current `HEAD` immediately before publication;
+- reads only descriptor-anchored regular files and fixed local Git identity commands;
+- validates all P2/P3 artifacts and exact hashes before rendering;
+- renders the canonical Section-35 headings and one closed
+  `Implementation/evidence-base Git SHA` provenance field consumed by
+  `scripts/publish_phase_record.py`;
+- is byte-deterministic across two fresh fixture repositories with identical Git
+  objects and semantic evidence;
+- rejects dirty state, report/path/hash tampering, duplicate YAML keys, a nonselected
+  smoke fragment, tracked checkout/model/secret paths, physical or remote enablement,
+  socket/DNS access, and any subprocess outside the fixed local Git read allowlist; and
+- publishes `RUN_REPORT.md` mode `0600` with descriptor-relative no-follow temporary
+  creation, fsync, atomic replacement, and same-inode cleanup.
+
+Run the exact focused test before implementation and require failure because the writer
+does not exist:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+  UV_CACHE_DIR=.cache/uv uv run --offline pytest -p no:cacheprovider \
+  tests/test_p3_commands.py -q
+```
+
+Implement the reporter as a thin CLI over immutable P3 report/evidence models and the
+existing hardened P2 descriptor/Git primitives; it performs no source operation,
+network request, dependency installation, or phase-state mutation. Before reading
+evidence it installs the audited socket/DNS denial and fixed local-Git-read subprocess
+allowlist, including `GIT_OPTIONAL_LOCKS=0`; caller data cannot expand that allowlist.
+The P3 report parser must reject unknown or repeated provenance fields, and the shared
+phase-record publisher tests must prove the validated P3 report binds exactly the
+supplied evidence SHA. Then run the focused test, `tests/test_p2_commands.py`, the full
+suite, lock check, safety check, and `git diff --check`. Review the exact changed paths
+and commit only:
+
+```bash
+git add -- scripts/write_p3_report.py tests/test_p3_commands.py
+test "$(git diff --cached --name-only)" = \
+"scripts/write_p3_report.py
+tests/test_p3_commands.py"
+git commit -m "feat: add deterministic P3 report publisher"
+```
+
+Require clean status after that commit. The reporter and its tests are reviewed tracked
+inputs to the later P3 evidence SHA; they are not restaged into the P3 evidence-path
+commit.
 
 - [ ] **Step 1: Freeze the operation manifest**
 
@@ -352,8 +414,11 @@ UV_CACHE_DIR=.cache/uv uv run python -m experiments.00_source_audit.run --config
 make source-audit
 ```
 
-Expected: all exit zero; compatibility rows cover the complete registry and the
-four required outputs bind to the P2 lock and fragment hashes.
+Expected: all exit zero; compatibility and maturity rows cover the complete registry,
+the four Experiment-00 outputs bind to the P2 lock and fragment hashes, and the
+maturity ledger has exactly one evidence label plus the required evidence source,
+embodiment/task, license, compute, local-reproduction, failure-mode, and program-role
+fields for every one of the 45 locked sources and the Experiment-00 result.
 
 - [ ] **Step 5: Apply the Experiment 00 claim and advance gate**
 
@@ -366,14 +431,22 @@ only if the complete P2 audit passes, the MuJoCo package smoke passes, every
 installed dependency has matching license/smoke evidence, every eligible checkout
 is clean or explicitly dispositioned after its bounded attempts, all outputs
 validate, no checkout/model is tracked, and remote/physical execution remains off.
+Generate `docs/MATURITY_LEDGER.md` from the same validated compatibility records rather
+than hand editing it. Use exactly the Section-34 evidence-label enum; record
+`hardware_validation_status=NOT_VALIDATED` for every Unitree row and never infer a
+production or R1-runtime label from static source evidence.
 
 - [ ] **Step 6: Verify repository boundaries and state**
 
 Run the full suite, lock check, safety check, offline P2/P3 audits, diff check,
 secret scan, tracked checkout/model scan, and generated-size audit. Verify all
 `external/` repositories are ignored, pinned, clean, and within budget. Set
-`p3: complete`, `p4: in_progress`, and open control/world-state/prediction/platform
-lanes without marking any empirical claim beyond Experiment 00.
+`stages.p3: complete`, `stages.p4: in_progress`, and exactly
+`lanes.control: in_progress`, `lanes.world_state: in_progress`,
+`lanes.prediction_contact: in_progress`, and `lanes.platform: in_progress`, without
+marking any empirical claim beyond Experiment 00. These exact paths are the historical
+capture values consumed by P9's derived `P3GateEvidence`; do not introduce a separate
+caller-authored lane boolean.
 
 - [ ] **Step 7: Commit evidence and the report as two distinct commits**
 
@@ -425,7 +498,8 @@ env UV_CACHE_DIR=.cache/uv uv run python scripts/publish_phase_record.py validat
 
 The publisher derives every `phase_records.p3` field and its canonical artifact-ledger
 hash. The exact ledger members are the operation manifest, compatibility CSV,
-`references/licenses.md`, `docs/SOURCE_MAP.md`, both Experiment 00 reports, the one
+`references/licenses.md`, `docs/SOURCE_MAP.md`, `docs/MATURITY_LEDGER.md`, both
+Experiment 00 reports, the one
 MuJoCo-smoke fragment selected by the operation manifest, all at `P3_EVIDENCE_SHA`, and
 `RUN_REPORT.md` at `P3_REPORT_COMMIT`. It rejects any additional member or caller-
 supplied digest, requires
