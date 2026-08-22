@@ -146,8 +146,6 @@ class CheckoutEvidence:
             raise ValueError("patterns must be nonempty and unique")
         if len(self.commands) != len(self.statuses):
             raise ValueError("commands and statuses must have equal length")
-        if not self.commands:
-            raise ValueError("commands must contain at least one receipt")
         if any(type(status) is not int or status < 0 for status in self.statuses):
             raise ValueError("statuses must be nonnegative integers")
         if type(self.download_bytes) is not int or self.download_bytes < 0:
@@ -157,6 +155,8 @@ class CheckoutEvidence:
         if self.outcome not in {"PASS", "FAIL"}:
             raise ValueError("outcome must be PASS or FAIL")
         if self.outcome == "PASS":
+            if not self.commands:
+                raise ValueError("PASS outcome requires command receipts")
             if self.download_bytes > 512 * 1024 * 1024 or self.disk_bytes > 512 * 1024 * 1024:
                 raise ValueError("PASS checkout evidence exceeds the program ceiling")
             if self.blocker is not None or any(self.statuses) or not self.content_hashes:

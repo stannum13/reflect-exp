@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import sys
 from typing import Any
 
 import pytest
@@ -94,6 +95,7 @@ class RecordingRunner:
         wrong_head: bool = False,
         dirty: bool = False,
         fetch_download_bytes: int = 17,
+        invalid_head: bool = False,
     ) -> None:
         self.calls: list[dict[str, Any]] = []
         self.replacement_root = replacement_root
@@ -104,6 +106,7 @@ class RecordingRunner:
         self.wrong_head = wrong_head
         self.dirty = dirty
         self.fetch_download_bytes = fetch_download_bytes
+        self.invalid_head = invalid_head
 
     def run(
         self,
@@ -113,6 +116,7 @@ class RecordingRunner:
         env: dict[str, str],
         timeout: float,
         input_bytes: bytes | None = None,
+        max_download_bytes: int = 512 * 1024 * 1024,
     ) -> CheckoutCommandResult:
         self.calls.append(
             {
@@ -165,6 +169,8 @@ class RecordingRunner:
                 cwd.rename(moved)
                 self.replacement_root.mkdir()
         if argv[-2:] == ("rev-parse", "HEAD"):
+            if self.invalid_head:
+                return CheckoutCommandResult(0, b"\xff", b"", 0)
             head = "b" * 40 if self.wrong_head else self.sha
             return CheckoutCommandResult(0, (head + "\n").encode(), b"", 0)
         if "status" in argv:
@@ -308,6 +314,9 @@ def test_checkout_detects_root_inode_replacement_and_does_not_publish_outside(tm
     with pytest.raises(SparseCheckoutError, match="changed"):
         checkout_sparse(spec, root, RecordingRunner(replacement_root=outside))
     assert not (outside / "example").exists()
+    assert tuple(outside.iterdir()) == ()
+    moved = root.with_name(root.name + "-moved")
+    assert tuple(moved.iterdir()) == ()
 
 
 def test_checkout_refuses_symlink_dirty_or_mismatched_existing_destination(tmp_path: Path) -> None:
@@ -333,6 +342,9 @@ def test_checkout_reuses_only_clean_matching_existing_destination(tmp_path: Path
         checkout_sparse(spec, root, RecordingRunner(dirty=True))
     with pytest.raises(SparseCheckoutError, match="HEAD"):
         checkout_sparse(spec, root, RecordingRunner(wrong_head=True))
+    (root / "example").chmod(0o755)
+    with pytest.raises(SparseCheckoutError, match="0700|mode"):
+        checkout_sparse(spec, root, RecordingRunner())
 
 
 def test_checkout_evidence_is_canonical_create_only_and_mode_0600(tmp_path: Path) -> None:
@@ -422,32 +434,65 @@ def test_download_cap_plus_one_and_failed_publication_cleanup(
 def test_partial_cleanup_covers_unexpected_runner_exception(tmp_path: Path) -> None:
     spec = CheckoutSpec("9" * 64, "example", "https://github.com/example/project", SHA, ("README.md",), ("README.md",))
     root = tmp_path / "external"
-    with pytest.raises(RuntimeError, match="unexpected"):
+    with pytest.raises(SparseCheckoutError, match="runner failed"):
         checkout_sparse(spec, root, RecordingRunner(raise_on="remote"))
     assert tuple(root.iterdir()) == ()
 
 
 def test_subprocess_runner_accounts_conservative_fetch_growth(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     checkout = tmp_path / "partial"
     (checkout / ".git").mkdir(parents=True)
 
-    class Completed:
-        returncode = 0
-        stdout = b""
-        stderr = b""
-
-    def fake_run(*args: object, **kwargs: object) -> Completed:
-        (checkout / ".git" / "pack").write_bytes(b"x" * 37)
-        return Completed()
-
-    monkeypatch.setattr(checkout_module.subprocess, "run", fake_run)
     result = SubprocessCheckoutRunner().run(
-        ("git", "-C", "partial", "fetch", "origin", SHA),
-        cwd=tmp_path, env={}, timeout=1,
+        (
+            sys.executable, "-c",
+            "from pathlib import Path;Path('partial/.git/pack').write_bytes(b'x'*37)",
+            "-C", "partial", "fetch",
+        ),
+        cwd=tmp_path, env={}, timeout=1, max_download_bytes=1024 * 1024,
     )
     assert result.download_bytes >= 37
+
+
+def test_subprocess_runner_streams_success_and_stops_failed_no_pack_at_cap() -> None:
+    runner = SubprocessCheckoutRunner()
+    success = runner.run(
+        (sys.executable, "-c", "import sys;sys.stdout.buffer.write(b'ok')"),
+        cwd=Path.cwd(), env=dict(os.environ), timeout=5, max_download_bytes=64,
+    )
+    assert success.returncode == 0
+    assert success.stdout == b"ok"
+    assert success.download_bytes == 2
+    capped = runner.run(
+        (sys.executable, "-c", "import sys;sys.stdout.buffer.write(b'x'*65);sys.stdout.flush()"),
+        cwd=Path.cwd(), env=dict(os.environ), timeout=5, max_download_bytes=64,
+    )
+    assert capped.returncode != 0
+    assert capped.download_bytes == 65
+    assert len(capped.stdout) == 65
+
+
+def test_post_publish_root_drift_cleans_exact_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "external"
+    replacement = tmp_path / "replacement"
+    real_publish = checkout_module._publish_no_replace
+
+    def drifting_publish(descriptor: int, source: str, destination: str) -> None:
+        real_publish(descriptor, source, destination)
+        root.rename(root.with_name(root.name + "-moved"))
+        replacement.mkdir()
+        replacement.rename(root)
+
+    monkeypatch.setattr(checkout_module, "_publish_no_replace", drifting_publish)
+    spec = CheckoutSpec("9" * 64, "example", "https://github.com/example/project", SHA, ("README.md",), ("README.md",))
+    with pytest.raises(SparseCheckoutError, match="changed"):
+        checkout_sparse(spec, root, RecordingRunner())
+    assert tuple(root.iterdir()) == ()
+    assert tuple(root.with_name(root.name + "-moved").iterdir()) == ()
 
 
 def test_sparse_cli_requires_explicit_fragment_directory() -> None:
@@ -518,3 +563,41 @@ def test_sparse_cli_writes_immutable_failure_fragment(tmp_path: Path) -> None:
             root=tmp_path, registry_path=Path("references/repos.yaml"), lock_path=lock_path,
             checkout_runner=RecordingRunner(fail_on="fetch"),
         )
+
+
+@pytest.mark.parametrize(
+    "runner,setup",
+    [
+        (RecordingRunner(invalid_head=True), None),
+        (RecordingRunner(raise_on="remote"), None),
+        (RecordingRunner(), "symlink-root"),
+        (RecordingRunner(), "destination-collision"),
+    ],
+)
+def test_sparse_cli_normalizes_preflight_decode_unexpected_and_collision_failures(
+    tmp_path: Path, runner: RecordingRunner, setup: str | None
+) -> None:
+    _, lock = complete_lock()
+    lock_path = tmp_path / "repos.lock.yaml"
+    lock_path.write_bytes(lock_yaml_bytes(lock))
+    outside = tmp_path / "outside"
+    if setup == "symlink-root":
+        outside.mkdir()
+        (tmp_path / "external").symlink_to(outside, target_is_directory=True)
+    elif setup == "destination-collision":
+        (tmp_path / "external").mkdir()
+        (tmp_path / "external" / "mujoco_mpc").write_text("collision")
+    fragments = tmp_path / "fragments"
+    with pytest.raises(SparseCheckoutError):
+        fetch_main(
+            ["--name", "mujoco_mpc", "--sparse-checkout", "--fragment-dir", os.fspath(fragments)],
+            root=tmp_path, registry_path=Path("references/repos.yaml"), lock_path=lock_path,
+            checkout_runner=runner,
+        )
+    payload = json.loads((fragments / "mujoco_mpc-checkout.json").read_text())
+    assert payload["outcome"] == "FAIL"
+    assert len(payload["commands"]) == len(payload["statuses"])
+    if setup in {"symlink-root", "destination-collision"}:
+        assert payload["commands"] == payload["statuses"] == []
+    assert payload["blocker"]
+    assert tuple(outside.iterdir()) == () if outside.exists() else True
