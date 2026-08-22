@@ -11,6 +11,8 @@ build/
 dist/
 .worktrees/
 external/
+# Raw metadata payloads and checksums are resumable local evidence only.
+external/.metadata/
 results/
 *.onnx
 *.pt

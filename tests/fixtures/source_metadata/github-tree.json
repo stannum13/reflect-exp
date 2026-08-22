@@ -1,0 +1,42 @@
+{
+  "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "truncated": false,
+  "tree": [
+    {
+      "path": "LICENSE",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "cccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "path": "README.md",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "dddddddddddddddddddddddddddddddddddddddd"
+    },
+    {
+      "path": "example.py",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    {
+      "path": "src",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "ffffffffffffffffffffffffffffffffffffffff"
+    },
+    {
+      "path": "src/example",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "1111111111111111111111111111111111111111"
+    },
+    {
+      "path": "src/example/core.py",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "2222222222222222222222222222222222222222"
+    }
+  ]
+}
