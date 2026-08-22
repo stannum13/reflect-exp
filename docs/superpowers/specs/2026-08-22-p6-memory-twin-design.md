@@ -58,7 +58,8 @@ serial promotion checkpoint follows the autonomous lane order
 
 ### 3.1 Canonical world
 
-The world contains five rooms, six doors, ten assets, two valves, two tools, one
+The world contains five rooms, six doors, ten assets, two valves, two inspection
+anchors, two tools, one
 charger, one restricted room, and one robot, matching Exp04
 (`Reflect Lite Research Program.md:1636-1645`). The Exp05 projection uses Lobby,
 CorridorA, PumpRoom, ElectricalRoom, and RestrictedLab
@@ -101,7 +102,7 @@ untyped graph.
 ### 3.3 Virtual time and total order
 
 A virtual monotonic nanosecond clock is the only decision time. Each record has
-`monotonic_time_ns`, `source_sequence`, and stable `event_id`. Coincident records
+`monotonic_time_ns`, `source_sequence`, and stable `p6_event_id`. Coincident records
 use this total order:
 
 1. truth mutation;
@@ -118,7 +119,7 @@ use this total order:
 Ranks 7 and 8 are reserved solely to keep cross-experiment ordering stable; P6 emits
 no record at either rank.
 
-Within one rank, `source_sequence` then `event_id` orders records. Time may remain
+Within one rank, `source_sequence` then `p6_event_id` orders records. Time may remain
 equal but never regress. Architecture-visible events use the existing shared
 `ExecutionEventType` when applicable; P6's `event_subtype` is a validated payload
 field and never expands the shared enum implicitly.
@@ -150,6 +151,22 @@ scorer publication remain separate. `SEMANTIC_REPLAN.mission_state` is the
 canonical structured mission-state object required by the shared validator, not an ID,
 string summary, or P6-local substitute. Every P6-emitted shared event includes
 `event_subtype` in addition to the canonical fields required by its shared type.
+
+The P1 wire mapping leaves no field to an implementation choice. For every shared
+`ExecutionEvent`, `rollout_id` is the canonical six-component shard ID; `sequence_id`
+is the gap-free zero-based ordinal after sorting all shared events by
+`(monotonic_time_ns, rank, source_sequence, p6_event_id)`; `wall_time_ns=0`, with
+rollout metadata `wall_start_ns=wall_end_ns=0`; `component` is exactly
+`EXP04_MEMORY_RUNNER` or `EXP05_TWIN_RUNNER`; `config_hash` is the lowercase SHA-256 of
+the phase protocol; `object_ids` is the sorted unique tuple of physical entity IDs
+named by the record; and `skill_id=null`. The payload always contains exact keys
+`event_subtype,p6_event_id,source_sequence` in addition to the event-specific keys in
+the table. `p6_event_id` is the stable P6 ID formerly called `event_id`; it is stored
+only in payload because P1 has no top-level event-ID field. `source_sequence` is a
+nonnegative integer local to the record producer. Unknown payload keys fail the
+P6-to-P1 adapter even though the generic P1 JSON payload can represent them. The
+adapter round-trips through `event_to_dict`, `event_from_dict`, `validate_rollout`, and
+`replay_rollout`; byte-identical input must produce byte-identical `events.jsonl`.
 
 The frozen local subtype vocabulary is:
 
@@ -246,6 +263,8 @@ relation and their pose is that room origin plus the offset shown:
 | `asset/0010` | Mobile blocker / OBSTACLE | `room/0004` | `(0.0,0.0,0)` | BLOCKS `door/0003` only when scheduled |
 | `valve/0001` | Valve 3 / VALVE | `room/0003` | `(0.8,-0.5,0)` | OPERABLE/OPERATIONAL |
 | `valve/0002` | Valve 7 / VALVE | `room/0004` | `(0.8,-0.5,0)` | OPERABLE/OPERATIONAL |
+| `anchor/0001` | Valve 3 inspection point / ANCHOR | `room/0003` | `(0.8,-0.9,0)` | inspection target for `valve/0001` |
+| `anchor/0002` | Valve 7 inspection point / ANCHOR | `room/0004` | `(0.8,-0.9,0)` | inspection target for `valve/0002` |
 | `tool/0001` | Wrench / TOOL | `room/0001` | `(0.4,-0.4,0)` | PICKABLE,PLACEABLE |
 | `tool/0002` | Probe / TOOL | `room/0004` | `(0.4,-0.4,0)` | PICKABLE,PLACEABLE |
 | `charger/0001` | Charger / CHARGER | `room/0004` | `(1.7,-0.4,0)` | CHARGEABLE |
@@ -259,6 +278,11 @@ receive `OPENABLE` and `CLOSEABLE`, and rooms receive `NAVIGABLE`. The only addi
 cost, or initial state exists. The sole policy entity is `restriction/0001`, label
 `Authorized Personnel Only`, class `RESTRICTION_POLICY`; it initially supplies only
 `RESTRICTED_BY(room/0005,restriction/0001)`.
+The inspection-anchor mapping is the immutable bijection
+`valve/0001 -> anchor/0001`, `valve/0002 -> anchor/0002`. An `INSPECT` step targets the
+anchor while retaining the valve as its mission entity; path cost uses the anchor's
+room and metric offset. Anchors are public geometry/observations, never hidden scorer
+answers, and no variant may synthesize another inspection point.
 
 RNG use is closed and reproducible. The generator is NumPy `PCG64`. For stream name
 `s`, its seed is the first 128 bits interpreted big-endian of SHA-256 over canonical
@@ -266,7 +290,7 @@ JSON `[root_seed_hex, experiment_id, protocol_revision, seed_slot, s,
 "generator-v1"]`. The only stream names and domains are:
 
 - `pose_jitter`: one independent `Uniform[-0.05,0.05)` metre draw for x and y of
-  each of the 22 door/asset/valve/tool/charger/robot entities in sorted ID order; z
+  each of the 24 door/asset/valve/anchor/tool/charger/robot entities in sorted ID order; z
   and quaternion never vary;
 - `delivery_delay`: one integer draw from `{0,1}` ticks with probabilities
   `(0.75,0.25)` for each scheduled non-baseline delivery in schedule order;
@@ -317,7 +341,7 @@ The target/value tuples are also exact:
 | Mission ID | Tick `+2` | Tick `+5` | Tick `+8` |
 |---|---|---|---|
 | `INSPECT_NEAREST_COOLANT_VALVE` | `ROOM_RESTRICTION_CHANGED(room/0003, restricted)` | `DUPLICATE_LABEL_OBSERVED(service valve -> valve/0001,valve/0002)` | `INSTRUCTION_CHANGED("inspect Valve 3" -> "inspect nearest coolant valve without restricted entry")` |
-| `REACH_PUMP2_WITH_RECHARGE` | `BATTERY_ESTIMATE_CHANGED(robot/0001,0.30)` | `ASSET_OPERATIONAL_STATE_CHANGED(asset/0001,FAILED)` | `TOPOLOGY_EDGE_CHANGED(door/0006,removed)` |
+| `REACH_PUMP2_WITH_RECHARGE` | `BATTERY_ESTIMATE_CHANGED(robot/0001,0.30)` | ordered pair `ASSET_OPERATIONAL_STATE_CHANGED(asset/0001,FAILED)`, then `POSE_BECAME_STALE(asset/0002)` | `TOPOLOGY_EDGE_CHANGED(door/0006,removed)` |
 | `ALTERNATE_DOOR_AFTER_FAILURE` | `TASK_ATTEMPT_FAILED(OPEN_DOOR,door/0003,BLOCKED)` | `DOOR_STATE_CHANGED(door/0003,BLOCKED)` | `ROUTE_BLOCKED(asset/0010,door/0003)` |
 | `SAFE_TOOL_PLACEMENT` | `OBJECT_PICKED_OR_PLACED(tool/0001,HELD_BY,robot/0001)` | `OBJECT_OCCLUDED(tool/0001)` | `INSTRUCTION_CHANGED("carry Wrench" -> "place Wrench on Cabinet")` |
 | `REPLAN_AFTER_RESTRICTION` | `ROOM_RESTRICTION_CHANGED(room/0004,restricted)` | `ROUTE_BLOCKED(asset/0010,door/0003)` | `TOPOLOGY_EDGE_CHANGED(door/0006,removed)` |
@@ -326,7 +350,10 @@ The two `instruction_form` strings for each mission are exactly the before/after
 strings in this table where present; otherwise they are the mission label in Section
 7 and its lowercase NFKC form. Initial requests use form 0, and an
 `INSTRUCTION_CHANGED` event uses form 1. Every truth mutation is delivered `VISIBLE`
-except `OBJECT_OCCLUDED`, whose target is delivered `OCCLUDED`; topology removal is
+except `OBJECT_OCCLUDED`, whose target is delivered `OCCLUDED`, and
+`POSE_BECAME_STALE`, whose target is omitted as `NOT_OBSERVED`; the companion
+operational-state mutation in that scheduled delivery remains visible. The ordered
+pair consumes one delivery-delay draw and distinct source-event IDs. Topology removal is
 delivered as `CONNECTS status=contradicted`. An instruction is not an object belief or
 Fact: initial and changed text appears only in the typed mission-request sidecar at
 rank 4, and the change forces a `PLAN_REPLACED` publication at rank 6. A schedule that
@@ -460,23 +487,57 @@ contains no truth path, truth hash, hidden entity pose, injection identity, futu
 outcome, or oracle cause label. The public scenario identity is a random run ID that
 cannot be joined to truth by a runner.
 
-Before the first runner is spawned, the controller writes truth through an
-`O_CLOEXEC | O_NOFOLLOW` regular-file descriptor in a mode-`0700` parent-private
+One privileged controller process owns the complete experiment stage. For pilot it
+samples one eight-slot root once, keeps the root bytes in locked parent memory, derives
+all tuning and evaluation streams, and remains alive across tuning runners, tuning
+scorers, selection, evaluation runners, evaluation scorers, and freeze-input sealing.
+No second `generate.py` process samples or reloads that root. Confirmation uses a new
+controller and a new root only after freeze. A controller crash destroys the root and
+quarantines the incomplete stage; pilot restarts only as a new permitted revision,
+while confirmation quarantine is terminal under Section 9.2.
+
+Before a runner is spawned, the controller writes that seed's truth through an
+`O_CLOEXEC | O_NOFOLLOW` regular-file descriptor in a mode-`0700` broker-private
 directory, fsyncs it, opens the validated read-only descriptor, and unlinks its sole
 directory entry. The controller retains this unlinked capability; it is not named in
 an argument, environment variable, manifest, `/proc`-style descriptor path, working
-directory, or importable object, and it is never placed in a child `pass_fds` set.
-Runner children are spawned with `close_fds=true`, an explicit descriptor allowlist
-containing only their observation/input and output capabilities, and no inherited
-parent controller object. A restart cannot reconstruct runner evidence from a named
-truth file: it quarantines every incomplete phase and regenerates the entire phase
-under a new protocol revision and RNG root. Only after every runner child has exited
-and all runner bundles have sealed may the controller copy the retained bytes through
-the descriptor-relative create-only writer into the private truth bundle, seal its
-manifest, and close the unlinked capability. The private root becomes path-addressable
-only after no runner process exists and is never mounted or passed to a later runner.
-Hostile-runner tests enumerate descriptors, arguments, environment, imports, and
-working-directory entries and prove truth is unreachable.
+directory, or importable object, and it is never placed in a runner `pass_fds` set.
+After all runners for one phase seal, the controller may publish truth to the distinct
+create-only broker paths `<private-root>/pilot-tuning/truth-manifest.json`,
+`<private-root>/pilot-evaluation/truth-manifest.json`, or
+`<private-root>/confirmation/truth-manifest.json`. A phase manifest can never be
+extended, replaced, or reused for another phase.
+
+`close_fds` alone is not the security boundary. Before architecture callbacks, every
+runner enters the checked-in `p6-runner-fs-v1` OS sandbox. On Linux it is the frozen
+Landlock filesystem ruleset plus seccomp syscall filter; on macOS it is the frozen
+Seatbelt profile. Both deny network,
+process creation, `/proc`/descriptor discovery, and every path open beneath `.private`
+or `results/` except the one prevalidated observation/input descriptor and the one
+absent output temporary descriptor inherited by the child. Repository source,
+interpreter, and dependency paths are read-only; no generic repository-result root is
+visible. The child then drops the sandbox setup capability and runs with
+`close_fds=true`. An unavailable/unsupported sandbox, policy-hash mismatch, or ability
+to open any current or prior pilot/confirmation truth, scorer, aggregate, selection,
+or decision path makes preflight `BLOCKED` before a callback. Scorers run in a separate
+profile that can read only their sealed runner/observation/truth descriptors and cannot
+import evaluated architecture modules.
+
+The exact policy paths are `experiments/04_memory/sandbox/p6-runner-fs-v1.linux.json`,
+`p6-runner-fs-v1.sb`, `p6-scorer-fs-v1.linux.json`, and `p6-scorer-fs-v1.sb` under that
+same directory; each Linux JSON binds both Landlock and seccomp rules. Exp05 imports
+these bytes rather than copying them. The frozen
+`sandbox_profile_sha256` object has exact keys `runner_linux,runner_macos,
+scorer_linux,scorer_macos`. Policy source, compiled policy bytes, selected OS key, and
+kernel enforcement probe are hash-bound before the first child. A policy that merely
+monkeypatches Python file APIs is invalid.
+
+Hostile tests execute during pilot evaluation and confirmation after earlier truth is
+already retained. They enumerate descriptors, arguments, environment, imports, cwd and
+parent entries; attempt absolute, relative, symlink, hard-link, `/proc`, inherited-FD,
+socket, and subprocess access to every current/prior truth and result root; and must
+observe OS denial. The controller also proves one root commitment spans pilot tuning
+and evaluation and that the three phase truth paths are distinct.
 
 ### 4.2 Fresh immutable execution
 
@@ -1023,6 +1084,7 @@ the generator, runner, truth loader, or planner. It writes exactly
 
 ```text
 schema_version, experiment_id, protocol_revision, implementation_git_sha,
+implementation_paths_sha256, publication_parent_git_sha,
 base_protocol_sha256, canonical_world_sha256, fact_compiler_fixture_sha256,
 tuning_seed_manifest_sha256,
 tuning_shard_manifest_sha256, ordered_candidate_configurations,
@@ -1049,7 +1111,8 @@ and decision manifests.
 Exp04 promotion writes a separate create-only
 `results/04_memory/decision/exp04-promotion.json` only after confirmation decision.
 Its closed fields are `schema_version, experiment_id, protocol_revision,
-implementation_git_sha, frozen_protocol_sha256, selection_manifest_sha256,
+implementation_git_sha, implementation_paths_sha256, publication_parent_git_sha,
+frozen_protocol_sha256, selection_manifest_sha256,
 canonical_world_sha256, fact_compiler_fixture_sha256,
 confirmation_seed_manifest_sha256, confirmation_shard_manifest_sha256,
 confirmation_aggregate_manifest_sha256, conformance_fixture_sha256,
@@ -1087,9 +1150,21 @@ configurations, exact formulas and resulting margins, multiplicity families, mis
 rules, budgets, and pilot manifests. It does **not** contain confirmation seeds,
 scenarios, trace hashes, or outcomes.
 
+Each `frozen.yaml` has exact top-level keys `schema_version,experiment_id,
+protocol_revision,implementation_git_sha,implementation_paths,
+implementation_paths_sha256,publication_parent_git_sha,evidence_publication_paths,
+p2_registry_sha256,p2_lock_sha256,p3_gate_sha256,canonical_world_sha256,
+fact_compiler_fixture_sha256,sandbox_profile_sha256,selection_manifest_sha256,
+pilot_tuning_receipt_sha256,pilot_evaluation_receipt_sha256,
+selected_configuration,selected_resource_ceilings,selected_margins,
+statistical_families,confirmation_seed_count,missingness_rule,artifact_schemas,
+hard_budgets,exp04_promotion_manifest_sha256`. The last field is null for Exp04 and a
+64-hex digest for Exp05. Unknown, missing, duplicate YAML keys or aliases/tags fail.
+
 After the protocol and implementation hashes freeze, the controller creates a new
 unlinked confirmation RNG root, records only its SHA-256 commitment, generates the
-complete public scenario/seed manifest, hashes it, and only then permits a variant to run. Confirmation data did not exist during
+complete public scenario/seed and shard manifests, publishes and evidence-only commits
+them while retaining the root, and only then permits a variant to run. Confirmation data did not exist during
 implementation, pilot, or protocol freeze. Any change returns to Draft and requires a
 new protocol revision and a new unseen confirmation root.
 
@@ -1209,6 +1284,59 @@ also requires P2 and P3 lifecycle states `complete`, a clean implementation comm
 and the P3 local-lane gate. Missing, incomplete, dirty, stale, or mismatched evidence
 sets P6 `BLOCKED` without creating an artifact.
 
+Git provenance has two noninterchangeable fields. `implementation_git_sha` is the
+clean commit that freezes code; `implementation_paths` is the sorted duplicate-free
+list containing `pyproject.toml`, `uv.lock`, the shared P1 interfaces consumed by P6,
+and every Experiment 04/05 source, test, fixture, sandbox-profile, base-config, and work-
+manifest path. `implementation_paths_sha256` hashes its canonical JSON. Every command
+runs hardened Git with hooks/config/pager/replacement objects disabled and requires:
+
+```text
+git rev-parse --verify HEAD                         == expected_publication_head
+git status --porcelain=v1 --untracked-files=all    == empty
+git diff --exit-code <implementation_git_sha> -- <implementation_paths...>
+```
+
+`publication_head_sha` is the clean evidence-only commit immediately preceding a
+publisher. It may differ from `implementation_git_sha`, but only paths in the closed
+`evidence_publication_paths` set may differ between them. That set is exactly the
+revision-keyed frozen configs (at most four), pilot selection manifests, confirmation seed/shard manifests,
+the phase-completion receipts in the two permitted revision namespaces (at most ten,
+with confirmation only in the final revision), two decisions, the Exp04 promotion manifest, and the two
+required Markdown reports; ignored raw results are not Git evidence. Every lifecycle
+JSON/YAML carries `implementation_git_sha,implementation_paths_sha256,
+publication_parent_git_sha`; the next artifact records the predecessor's unique
+publication commit SHA and validates that its diff contains exactly the one expected
+file. Unknown, combined, amended,
+dirty, or non-descendant publication commits fail.
+
+The evidence-only sequence is exact for each named output: run its create-only
+publisher with `--expected-head "$(git rev-parse HEAD)"`; validate the sole dirty path;
+`git add -f -- <exact-output>` (force is permitted only for a declared ignored evidence
+path); require `git diff --cached --name-only` to equal that one
+path; `git commit -m "evidence(p6): publish <artifact-id>"`; then require full status
+empty and bind the new 40-hex HEAD as the child's publication parent. No evidence
+publisher may modify an implementation path, and no runner starts between publication
+and its evidence-only commit. This makes the tracked `frozen.yaml` outputs compatible
+with the clean-tree gate without relabelling evidence commits as implementation SHAs.
+
+For revision 1, every publication performed outside a live controller is committed by
+exactly one of these commands immediately after its publisher; revision 2 substitutes
+`r2` in path and artifact ID:
+
+```text
+uv run python experiments/04_memory/publication.py commit-evidence --path experiments/04_memory/configs/r1/frozen.yaml --artifact-id exp04-r1-frozen --expected-parent "$(git rev-parse HEAD)"
+uv run python experiments/04_memory/publication.py commit-evidence --path results/04_memory/decision/exp04-decision.json --artifact-id exp04-r1-decision --expected-parent "$(git rev-parse HEAD)"
+uv run python experiments/04_memory/publication.py commit-evidence --path results/04_memory/decision/exp04-promotion.json --artifact-id exp04-r1-promotion --expected-parent "$(git rev-parse HEAD)"
+uv run python experiments/04_memory/publication.py commit-evidence --path experiments/04_memory/MEMORY_ARCHITECTURE_DECISION.md --artifact-id exp04-r1-report --expected-parent "$(git rev-parse HEAD)"
+uv run python experiments/05_semantic_twin/publication.py commit-evidence --path experiments/05_semantic_twin/configs/r1/frozen.yaml --artifact-id exp05-r1-frozen --expected-parent "$(git rev-parse HEAD)"
+uv run python experiments/05_semantic_twin/publication.py commit-evidence --path results/05_semantic_twin/decision/exp05-decision.json --artifact-id exp05-r1-decision --expected-parent "$(git rev-parse HEAD)"
+uv run python experiments/05_semantic_twin/publication.py commit-evidence --path experiments/05_semantic_twin/TWIN_ARCHITECTURE_DECISION.md --artifact-id exp05-r1-report --expected-parent "$(git rev-parse HEAD)"
+```
+
+`commit-evidence` implements only the hardened add/diff/commit/status sequence above;
+it cannot invoke a generator, runner, scorer, aggregate, decision, or report module.
+
 The same first preflight parses exact booleans and requires
 `physical_deployment_allowed=false`, `remote_enabled=false`,
 `network_enabled=false`, and `external_llm_enabled=false`. It rejects a true or
@@ -1233,13 +1361,49 @@ ceiling and 4 MiB runner-artifact ceiling. `--max-cases` is smoke-only unless it
 The launcher requires `cwd` to equal the physical project root returned by
 `git rev-parse --show-toplevel` after resolving symlinks; it refuses any other working
 directory. Every path below is therefore executable and project-root-relative, and the
-runner rejects an absolute path or any `..` component. The phase controller is the
-generator and sole truth-capability parent. These are the exact confirmation command
-shapes for Exp04; Exp05 uses the second exact block:
+runner rejects an absolute path or any `..` component. The manifest-wide controller is
+the generator and sole truth-capability parent. The sole operator entry points are the
+exact commands below. They iterate the sealed shard manifest in canonical order,
+launch every runner/scorer with fixed sandbox/session descriptor 3, require every exit
+zero or the one declared confirmation absence, aggregate once, and publish one
+create-only phase receipt. Direct invocation of `generate.py`, `run.py`, `score.py`,
+`select.py`, or `aggregate.py` fails preflight without that inherited descriptor.
+
+```text
+uv run python experiments/04_memory/controller.py pilot --protocol experiments/04_memory/configs/base.yaml --revision r1 --work-manifest experiments/04_memory/manifests/pilot-r1-work.json --observation-root results/04_memory/observations --runner-root results/04_memory/runs --score-root results/04_memory/scores --aggregate-root results/04_memory/aggregates --private-root .private/04_memory/pilot-r1 --selection-output results/04_memory/pilot-r1-selection.json --receipt-root results/04_memory/receipts/r1 --max-tuning-runner-shards 108 --max-tuning-score-shards 108 --max-evaluation-runner-shards 36 --max-evaluation-score-shards 36 --max-aggregates 2 --expected-head "$(git rev-parse HEAD)" --headless
+uv run python experiments/05_semantic_twin/controller.py pilot --protocol experiments/05_semantic_twin/configs/base.yaml --revision r1 --work-manifest experiments/05_semantic_twin/manifests/pilot-r1-work.json --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json --observation-root results/05_semantic_twin/observations --runner-root results/05_semantic_twin/runs --score-root results/05_semantic_twin/scores --aggregate-root results/05_semantic_twin/aggregates --private-root .private/05_semantic_twin/pilot-r1 --selection-output results/05_semantic_twin/pilot-r1-selection.json --receipt-root results/05_semantic_twin/receipts/r1 --max-tuning-runner-shards 72 --max-tuning-score-shards 72 --max-evaluation-runner-shards 24 --max-evaluation-score-shards 24 --max-aggregates 2 --expected-head "$(git rev-parse HEAD)" --headless
+uv run python experiments/04_memory/controller.py confirm --protocol experiments/04_memory/configs/r1/frozen.yaml --work-manifest experiments/04_memory/manifests/confirmation-work.json --observation-root results/04_memory/observations --runner-root results/04_memory/runs --score-root results/04_memory/scores --aggregate-root results/04_memory/aggregates --private-root .private/04_memory/confirmation --seed-manifest-output results/04_memory/confirmation-seeds.json --shard-manifest-output results/04_memory/confirmation-shards.json --receipt-root results/04_memory/receipts/r1 --max-runner-shards 288 --max-score-shards 288 --max-aggregates 1 --expected-head "$(git rev-parse HEAD)" --headless
+uv run python experiments/05_semantic_twin/controller.py confirm --protocol experiments/05_semantic_twin/configs/r1/frozen.yaml --work-manifest experiments/05_semantic_twin/manifests/confirmation-work.json --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json --observation-root results/05_semantic_twin/observations --runner-root results/05_semantic_twin/runs --score-root results/05_semantic_twin/scores --aggregate-root results/05_semantic_twin/aggregates --private-root .private/05_semantic_twin/confirmation --seed-manifest-output results/05_semantic_twin/confirmation-seeds.json --shard-manifest-output results/05_semantic_twin/confirmation-shards.json --receipt-root results/05_semantic_twin/receipts/r1 --max-runner-shards 192 --max-score-shards 192 --max-aggregates 1 --expected-head "$(git rev-parse HEAD)" --headless
+```
+
+Revision 2 changes every `r1` path/argument to `r2` and nothing else. Each receipt has
+exact keys `schema_version,experiment_id,protocol_revision,phase,
+implementation_git_sha,implementation_paths_sha256,publication_parent_git_sha,
+seed_manifest_sha256,shard_manifest_sha256,selection_manifest_sha256,
+runner_shard_count,score_shard_count,aggregate_count,ordered_runner_manifest_sha256s,
+ordered_score_manifest_sha256s,aggregate_manifest_sha256,truth_manifest_sha256,
+sandbox_profile_sha256,status`. For one active revision, the six exact receipt paths are
+`results/<experiment>/receipts/r1/{pilot-tuning-complete,
+pilot-evaluation-complete,confirmation-complete}.json`. Exp04 counts are respectively
+`(108,108,1)`, `(36,36,1)`, `(288,288,1)`; Exp05 counts are `(72,72,1)`,
+`(24,24,1)`, `(192,192,1)`. Tuning and confirmation receipts have a null selection
+digest; evaluation binds the unique selection digest. Unknown/missing/duplicate rows, count drift,
+or a component argv differing from the frozen template fails before receipt creation.
+
+While retaining its root capability, the privileged controller runs the Section 9.1
+evidence-only commit sequence internally at the only necessary barriers: pilot tuning
+receipt, selection manifest, and pilot-evaluation receipt; or confirmation seed
+manifest, confirmation shard manifest, and confirmation receipt. It rechecks the new
+clean publication HEAD after each commit and records it in the next artifact before
+launching another runner. Commit failure destroys the capability and fails the stage;
+it never continues with uncommitted preregistration evidence.
+
+The following confirmation component argv are emitted by the controller for audit;
+they are not alternative operator entry points:
 
 ```text
 uv run python experiments/04_memory/generate.py \
-  --protocol experiments/04_memory/configs/frozen.yaml \
+  --protocol experiments/04_memory/configs/r1/frozen.yaml \
   --phase confirmation \
   --work-manifest experiments/04_memory/manifests/confirmation-work.json \
   --seed-manifest-output results/04_memory/confirmation-seeds.json \
@@ -1249,20 +1413,20 @@ uv run python experiments/04_memory/generate.py \
   --truth-root .private/04_memory/confirmation --headless
 
 uv run python experiments/04_memory/run.py \
-  --protocol experiments/04_memory/configs/frozen.yaml \
+  --protocol experiments/04_memory/configs/r1/frozen.yaml \
   --shard-id exp04:r1:confirmation:M5:BASE:00000017 \
   --trace-manifest results/04_memory/observations/confirmation/00000017.json \
   --output-root results/04_memory/runs --headless --max-cases 10
 
 uv run python experiments/04_memory/score.py \
-  --protocol experiments/04_memory/configs/frozen.yaml \
+  --protocol experiments/04_memory/configs/r1/frozen.yaml \
   --shard-id exp04:r1:confirmation:M5:BASE:00000017 \
   --runner-root results/04_memory/runs \
   --truth-manifest .private/04_memory/confirmation/truth-manifest.json \
   --output-root results/04_memory/scores --headless --max-cases 10
 
 uv run python experiments/04_memory/aggregate.py \
-  --protocol experiments/04_memory/configs/frozen.yaml \
+  --protocol experiments/04_memory/configs/r1/frozen.yaml \
   --shard-manifest results/04_memory/confirmation-shards.json \
   --runner-root results/04_memory/runs \
   --score-root results/04_memory/scores \
@@ -1273,7 +1437,7 @@ uv run python experiments/04_memory/aggregate.py \
 
 ```text
 uv run python experiments/05_semantic_twin/generate.py \
-  --protocol experiments/05_semantic_twin/configs/frozen.yaml \
+  --protocol experiments/05_semantic_twin/configs/r1/frozen.yaml \
   --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json \
   --phase confirmation \
   --work-manifest experiments/05_semantic_twin/manifests/confirmation-work.json \
@@ -1284,14 +1448,14 @@ uv run python experiments/05_semantic_twin/generate.py \
   --truth-root .private/05_semantic_twin/confirmation --headless
 
 uv run python experiments/05_semantic_twin/run.py \
-  --protocol experiments/05_semantic_twin/configs/frozen.yaml \
+  --protocol experiments/05_semantic_twin/configs/r1/frozen.yaml \
   --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json \
   --shard-id exp05:r1:confirmation:T3:PLANNER_BASE:00000017 \
   --trace-manifest results/05_semantic_twin/observations/confirmation/00000017.json \
   --output-root results/05_semantic_twin/runs --headless --max-cases 5
 
 uv run python experiments/05_semantic_twin/score.py \
-  --protocol experiments/05_semantic_twin/configs/frozen.yaml \
+  --protocol experiments/05_semantic_twin/configs/r1/frozen.yaml \
   --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json \
   --shard-id exp05:r1:confirmation:T3:PLANNER_BASE:00000017 \
   --runner-root results/05_semantic_twin/runs \
@@ -1299,7 +1463,7 @@ uv run python experiments/05_semantic_twin/score.py \
   --output-root results/05_semantic_twin/scores --headless --max-cases 5
 
 uv run python experiments/05_semantic_twin/aggregate.py \
-  --protocol experiments/05_semantic_twin/configs/frozen.yaml \
+  --protocol experiments/05_semantic_twin/configs/r1/frozen.yaml \
   --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json \
   --shard-manifest results/05_semantic_twin/confirmation-shards.json \
   --runner-root results/05_semantic_twin/runs \
@@ -1309,8 +1473,8 @@ uv run python experiments/05_semantic_twin/aggregate.py \
   --max-score-shards 192 --headless
 ```
 
-The pilot selection boundary is not a prose substitution. These are the exact
-controller/select/evaluation command shapes for Exp04 revision 1:
+The pilot selection boundary is not a prose substitution. These are the exact child
+argv records emitted within the one live Exp04 revision-1 controller session:
 
 ```text
 uv run python experiments/04_memory/generate.py \
@@ -1333,7 +1497,7 @@ uv run python experiments/04_memory/score.py \
   --protocol experiments/04_memory/configs/base.yaml \
   --shard-id exp04:r1:pilot-tuning:M5:BASE:00000000 \
   --runner-root results/04_memory/runs \
-  --truth-manifest .private/04_memory/pilot-r1/truth-manifest.json \
+  --truth-manifest .private/04_memory/pilot-r1/pilot-tuning/truth-manifest.json \
   --output-root results/04_memory/scores --headless --max-cases 10
 
 uv run python experiments/04_memory/select.py \
@@ -1358,7 +1522,7 @@ uv run python experiments/04_memory/generate.py \
   --truth-root .private/04_memory/pilot-r1 --headless
 ```
 
-The exact Exp05 shapes are:
+The exact Exp05 child argv records are:
 
 ```text
 uv run python experiments/05_semantic_twin/generate.py \
@@ -1384,7 +1548,7 @@ uv run python experiments/05_semantic_twin/score.py \
   --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json \
   --shard-id exp05:r1:pilot-tuning:T3:PLANNER_BASE:00000000 \
   --runner-root results/05_semantic_twin/runs \
-  --truth-manifest .private/05_semantic_twin/pilot-r1/truth-manifest.json \
+  --truth-manifest .private/05_semantic_twin/pilot-r1/pilot-tuning/truth-manifest.json \
   --output-root results/05_semantic_twin/scores --headless --max-cases 5
 
 uv run python experiments/05_semantic_twin/select.py \
@@ -1423,14 +1587,16 @@ uv run python experiments/04_memory/freeze.py \
   --protocol experiments/04_memory/configs/base.yaml \
   --selection-manifest results/04_memory/pilot-r1-selection.json \
   --evaluation-shard-manifest results/04_memory/pilot-r1-evaluation-shards.json \
-  --output experiments/04_memory/configs/frozen.yaml --headless
+  --output experiments/04_memory/configs/r1/frozen.yaml \
+  --expected-head "$(git rev-parse HEAD)" --headless
 
 uv run python experiments/05_semantic_twin/freeze.py \
   --protocol experiments/05_semantic_twin/configs/base.yaml \
   --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json \
   --selection-manifest results/05_semantic_twin/pilot-r1-selection.json \
   --evaluation-shard-manifest results/05_semantic_twin/pilot-r1-evaluation-shards.json \
-  --output experiments/05_semantic_twin/configs/frozen.yaml --headless
+  --output experiments/05_semantic_twin/configs/r1/frozen.yaml \
+  --expected-head "$(git rev-parse HEAD)" --headless
 ```
 
 Revision 2 changes only `r1` to `r2`. Freeze refuses an implementation SHA different
@@ -1442,39 +1608,75 @@ is:
 
 ```text
 uv run python experiments/04_memory/promote.py \
-  --protocol experiments/04_memory/configs/frozen.yaml \
+  --protocol experiments/04_memory/configs/r1/frozen.yaml \
   --selection-manifest results/04_memory/pilot-r1-selection.json \
   --confirmation-shard-manifest results/04_memory/confirmation-shards.json \
   --confirmation-aggregate results/04_memory/aggregates/exp04-r1-confirmation-all.json \
   --decision results/04_memory/decision/exp04-decision.json \
-  --output results/04_memory/decision/exp04-promotion.json --headless
+  --output results/04_memory/decision/exp04-promotion.json \
+  --expected-head "$(git rev-parse HEAD)" --headless
 ```
 
 It is create-only, validates that decision and aggregate hashes agree and that every
 promotion state satisfies Section 8.3, and otherwise writes nothing.
 
+Decision and report publication are also exact manifest-wide operations, never prose
+steps. They run after the corresponding confirmation receipt validates:
+
+```text
+uv run python experiments/04_memory/decide.py --protocol experiments/04_memory/configs/r1/frozen.yaml --selection-manifest results/04_memory/pilot-r1-selection.json --confirmation-receipt results/04_memory/receipts/r1/confirmation-complete.json --confirmation-aggregate results/04_memory/aggregates/exp04-r1-confirmation-all.json --output results/04_memory/decision/exp04-decision.json --expected-runner-shards 288 --expected-score-shards 288 --expected-head "$(git rev-parse HEAD)" --headless
+uv run python experiments/04_memory/report.py --protocol experiments/04_memory/configs/r1/frozen.yaml --decision results/04_memory/decision/exp04-decision.json --promotion results/04_memory/decision/exp04-promotion.json --output experiments/04_memory/MEMORY_ARCHITECTURE_DECISION.md --expected-head "$(git rev-parse HEAD)" --headless
+uv run python experiments/05_semantic_twin/decide.py --protocol experiments/05_semantic_twin/configs/r1/frozen.yaml --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json --selection-manifest results/05_semantic_twin/pilot-r1-selection.json --confirmation-receipt results/05_semantic_twin/receipts/r1/confirmation-complete.json --confirmation-aggregate results/05_semantic_twin/aggregates/exp05-r1-confirmation-all.json --output results/05_semantic_twin/decision/exp05-decision.json --expected-runner-shards 192 --expected-score-shards 192 --expected-head "$(git rev-parse HEAD)" --headless
+uv run python experiments/05_semantic_twin/report.py --protocol experiments/05_semantic_twin/configs/r1/frozen.yaml --exp04-promotion-manifest results/04_memory/decision/exp04-promotion.json --decision results/05_semantic_twin/decision/exp05-decision.json --output experiments/05_semantic_twin/TWIN_ARCHITECTURE_DECISION.md --expected-head "$(git rev-parse HEAD)" --headless
+```
+
+Each `*-decision.json` has exact keys `schema_version,experiment_id,
+protocol_revision,implementation_git_sha,implementation_paths_sha256,
+publication_parent_git_sha,frozen_protocol_sha256,selection_manifest_sha256,
+confirmation_seed_manifest_sha256,confirmation_shard_manifest_sha256,
+confirmation_receipt_sha256,confirmation_aggregate_manifest_sha256,artifact_state,
+prerequisite_state,scientific_classification,endpoint_results,promotion_guard_results,
+selected_architecture,promotion_state,resource_totals,input_hashes`. Endpoint and guard
+rows are sorted in the Section 8.3 order and have exact keys
+`family_id,contrast_id,estimate,interval_lower,interval_upper,margin,status,
+paired_seed_count`; unknown/missing/duplicate rows fail. Reports are create-only
+canonical UTF-8 Markdown with headings `Provenance`, `Artifact validity`, `Scientific
+decision`, `Promotion decision`, `Endpoints and guards`, `Resources`, `Rejected
+alternatives`, and `Artifacts`, in that order, and end with all decision/protocol/
+promotion hashes. Exact reissue validates and skips without rewriting.
+
+The publication order is Exp04 frozen config, confirmation seed and shard manifests,
+confirmation receipt, decision, promotion, and report; only then may Exp05 pilot start.
+Exp05 uses frozen config, confirmation seed and shard manifests, confirmation receipt,
+decision, and report. Each evidence file is committed alone by the Section 9.1 sequence
+before the next command. Raw runner/scorer/aggregate bundles stay ignored and enter
+committed evidence only by digest.
+
 The checked-in work manifest declares exact schema/protocol/upstream hashes, phase,
 variant/configuration sets, ordered seed slots, case/resource limits, and destination
-roots; it contains no seed IDs or RNG material. `generate.py` samples its root, creates
-the public seed and derived shard manifests, then launches only the exact runner
-argv listed in that sealed shard manifest while retaining unlinked truth capabilities,
-waits for every child, validates every runner bundle, and only then atomically
-materializes the private scorer-only truth manifest. It never passes truth to
-`run.py`. Tuning and evaluation
-use one eight-slot root, but evaluation observation generation remains sealed in the
-controller and does not occur until the selected configuration is recorded. An
+roots; it contains no seed IDs or RNG material. `controller.py pilot` samples its root
+once; its in-process generator creates the public seed and derived shard manifests and
+launches only the exact runner argv listed there while retaining unlinked truth
+capabilities. The controller waits for every child, validates every runner bundle, and
+only then atomically materializes that phase's private scorer-only truth manifest. It
+never passes truth to `run.py`. Tuning and evaluation use one eight-slot root, but
+evaluation observation generation remains sealed in the same live controller and does
+not occur until the selected configuration is recorded. An
 evidence command rejects a wrong cwd, absolute or
 parent-traversing path, duplicate phase/configuration flag, missing `--headless`,
 mismatched case count, unknown shard, truth argument/environment variable, or output
 path not derived from the shard key.
 
-The public seed manifest has exactly schema/protocol revision, phase, experiment,
-ordered opaque seed IDs, generator algorithm/version, and the SHA-256 commitment to
-the parent-held RNG root; it has no RNG root or cause. Its digest is stored in the
-derived shard manifest, not recursively inside the seed manifest. The shard manifest
-has exactly schema/protocol and inherited P2/P3 hashes, phase, seed-manifest SHA-256,
-ordered six-component shard IDs, configuration hashes, seed IDs,
-expected observation-manifest paths, output paths, and limits; its digest is likewise
+The public seed manifest has exact keys `schema_version,protocol_revision,
+publication_parent_git_sha,phase,experiment_id,ordered_seed_ids,generator_algorithm,
+generator_version,rng_root_commitment_sha256`; it has no RNG root or cause. Its digest
+is stored in the derived shard manifest, not recursively inside the seed manifest. The
+shard manifest has exact keys `schema_version,protocol_revision,
+publication_parent_git_sha,p2_registry_sha256,p2_lock_sha256,p3_gate_sha256,phase,
+seed_manifest_sha256,ordered_shards`. Each `ordered_shards` row has exact keys
+`shard_id,configuration_sha256,seed_id,observation_manifest_path,runner_output_path,
+score_output_path,max_cases,runner_max_bytes,score_max_bytes,wall_seconds`; rows sort by
+the parsed six-component shard identity. Its digest is likewise
 excluded from its own bytes and bound by every runner/scorer/aggregate manifest. The
 post-run private truth manifest binds the same public IDs plus truth descriptor hashes
 and is generated only after runner termination. Runner/scorer/aggregate manifests bind
@@ -1515,6 +1717,11 @@ inside the already listed aggregate allowances; they do not add to the 5,952 MiB
 preflight sums all retained files plus the complete declared next-phase maximum and
 refuses to start unless both total budget and free disk cover it. Retention is
 create-only through final decision; no favorable shard may replace an unfavorable one.
+The table deliberately contains one confirmation only. Section 9.2 makes a quarantined
+confirmation terminal, so a retained partial confirmation and a replacement can never
+coexist. Quarantined pilot bytes occupy one of the two already budgeted pilot revisions;
+a third pilot revision is forbidden. Therefore quarantine/resume cannot raise the
+5,952 MiB retained maximum.
 
 Destinations derive from experiment/protocol-revision/phase/variant/configuration/seed
 plus protocol and observation-trace hashes.
@@ -1535,7 +1742,11 @@ creation token it retained after its own failed pre-rename publication. On proce
 restart, an interrupted temporary or controller state is never adopted or deleted:
 the whole incomplete phase moves by descriptor-relative create-only rename beneath
 `results/<experiment>/quarantine/<protocol-revision>/<phase>/<incident-id>/`, receives
-a failure manifest, and restart requires a new protocol revision/RNG root. A symlink,
+a failure manifest. Pilot tuning/evaluation may restart only as the second and final
+permitted pilot revision with a new RNG root. **Confirmation quarantine is terminal:**
+the experiment becomes `INCONCLUSIVE` and `STOPPED`, no replacement confirmation root,
+manifest, shard, or protocol revision may be created, and the other experiment cannot
+treat partial evidence as promotion. A symlink,
 unknown temporary, missing/extra file, oversize, hash mismatch, or invalid replay fails
 closed; nothing is overwritten or repaired in place. A create-only shard completion
 manifest is written only after every case validates.
@@ -1576,23 +1787,28 @@ P6-local sidecars have exact versioned schemas:
 
 - `queries.parquet`: query ID/time/type, canonical arguments, epistemic answer,
   confidence, cited fact IDs, omitted count, latency,
+  `request_p6_event_id,request_source_sequence,response_p6_event_id,
+  response_source_sequence`,
   `request_event_subtype=QUERY_REQUESTED`, and
   `response_event_subtype=QUERY_RESPONDED`.
 - `decisions.parquet`: decision ID/query ID/time, closed decision enum, entity/route
   IDs, cited facts, uncertainty, and
+  `publication_p6_event_id,publication_source_sequence`, and
   `publication_event_subtype=DECISION_PUBLISHED`. It contains no outcome or
   truth-derived column; the scorer writes outcome metrics elsewhere and never mutates
   this file.
 - `plans.parquet`: plan ID/mission ID, ordered step index, action enum, entity/edge,
   precondition fact IDs, predicted cost, and runner-authored
-  `predicted_invalidation_reason`, plus `publication_event_subtype=PLAN_PUBLISHED |
+  `predicted_invalidation_reason`, `publication_p6_event_id,
+  publication_source_sequence`, plus `publication_event_subtype=PLAN_PUBLISHED |
   PLAN_REPLACED`. The reason uses a closed prediction enum and may be `NONE`; there is
   no actual-validity or truth-derived reason column. Every `PLAN_REPLACED` row
   cross-links one `SEMANTIC_REPLAN` whose payload carries the canonical structured
   `mission_state` object.
 - `memory_snapshots.jsonl`: variant-visible canonical state after each update, actual
   serialized byte count, input/context budget, hash, and
-  `event_subtype=MEMORY_STATE_UPDATED`; each row cross-links one `MEMORY_UPDATED`.
+  `p6_event_id,source_sequence,event_subtype=MEMORY_STATE_UPDATED`; each row cross-links
+  one `MEMORY_UPDATED`.
 - `fact_sets.jsonl`: compiler step, ordered fact IDs, canonical input-byte count,
   expiry decisions, and equality-group hash.
 - `replay.json`: sidecar schema hashes, counts, terminal query/decision/plan IDs,
@@ -1620,7 +1836,9 @@ never copied under or used to replay a runner shard.
 Tests cover:
 
 - byte-identical truth/observation generation and named-RNG independence;
-- physical descriptor/path/import/environment isolation of truth from hostile runners;
+- one live eight-slot pilot controller, distinct phase truth manifests, fixed Linux/
+  macOS runner sandbox profiles, and physical descriptor/path/import/environment
+  isolation of current and prior truth/results from hostile runners;
 - fresh observation decode, immutable records, per-variant rehash, and zero shared
   caches/state;
 - hostile callbacks that attempt array writes, `setflags(write=True)`, mapping/list
@@ -1631,14 +1849,16 @@ Tests cover:
 - epistemic-oracle unknown/stale/conflict answers versus outcome-oracle hidden-truth
   safety decisions;
 - stable IDs, the closed fact-kind/predicate/value/TTL domain, exact relation/subtype
-  vocabularies and sidecar waivers, structured `SEMANTIC_REPLAN.mission_state`,
+  vocabularies and sidecar waivers, every P1 event wire field, stable `p6_event_id`
+  payload placement, structured `SEMANTIC_REPLAN.mission_state`,
   local observation-key/canonical-sequence bijection, mandatory absence of physical
   action issuance/execution, separate truth/scoring, total coincident-event order, and
   monotonic chronology;
-- canonical world/entity/edge/cost hashes, all named RNG stream seeds/domains/draw
+- canonical world/entity/inspection-anchor/edge/cost hashes, all named RNG stream seeds/domains/draw
   counts, the ten four-tick and five twelve-tick case schedules, delivery delays and
   confidence modes, complete P1 field/state-to-fact golden mapping, and every frozen
-  planner cost/energy/safety/timeout/invalidation/goal rule;
+  planner cost/energy/safety/timeout/invalidation/goal rule, including the ordered
+  Exp05 asset-pose-staleness mutation and inspection-anchor scoring;
 - fact-ID/byte/time/TTL/expiry golden fixtures, exact-budget boundaries, deterministic
   truncation, and contradiction preservation;
 - stepwise H0/M5, V0/M5, and T4/TM input/equality hashes after every update and before
@@ -1670,11 +1890,13 @@ Tests cover:
 - exact sidecar schemas, predicted-only runner plan fields/replay, scorer-only actual
   validity/reasons, manifest self-exclusion, extra-file rejection, corruption
   rejection, and truth absence;
-- exact generator/runner/scorer/aggregate manifests and commands, six-component shard
-  identity, case limits, wall/byte ceilings,
+- exact manifest-wide controller/component/aggregate/decision/report manifests,
+  commands and counts, six phase receipts, six-component shard identity, case limits,
+  wall/byte ceilings, implementation-path equality and evidence-only publication heads,
   two-revision 5,952 MiB arithmetic, full-next-phase preflight, create-only atomic
   publication, descriptor-relative no-follow traversal, same-process cleanup,
-  restart quarantine, validate-and-skip resume, and mismatch refusal; and
+  terminal confirmation quarantine, bounded pilot restart, validate-and-skip resume,
+  and mismatch refusal; and
 - exact P2/P3 hash binding plus offline/network/LLM/physical/remote guards before every
   operation, clean implementation state, full tests,
   secret scan, artifact sizes, and diff checks.
@@ -1684,6 +1906,9 @@ Tests cover:
 The first implementation remains pure Python plus current repository dependencies:
 NumPy for numeric records, PyArrow for canonical Parquet, and PyYAML for configuration
 (`pyproject.toml:5-14`). Typed adjacency plus `heapq` is sufficient for topology.
+The two checked-in OS sandbox profiles and privileged controller are Experiment 04/05
+launch boundaries only; P6 does not add a general sandbox service, daemon, capability
+framework, or public `reflect/` API.
 
 Experiment-local seams isolate future adapters:
 
