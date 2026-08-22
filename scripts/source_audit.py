@@ -104,6 +104,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         root, registry, lock, rows, check=arguments.check,
         manifest=manifest, seen_operation_ids=seen,
         checkouts=checkouts,
+        passed_operation_ids=frozenset(
+            [item.operation_id for item in fragments if item.exit_status == 0]
+            + [operation.operation_id for operation in manifest.operations
+               if operation.operation == "CHECKOUT" and any(
+                   item.repository == operation.repository and item.outcome == "PASS"
+                   for item in checkouts
+               )]
+        ),
     )
     sys.stdout.buffer.write(canonical_json_bytes({"mode": "check" if arguments.check else "write", "outputs": hashes, "rows": len(rows)}))
     return 0

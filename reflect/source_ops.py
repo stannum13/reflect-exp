@@ -269,9 +269,13 @@ def run_source_operation(spec: OperationSpec, checkout_root: Path) -> Compatibil
                 else:
                     finding = {"path": relative, "sha256": digest, "bytes": len(data), "disposition": "FAIL", "license_candidates": [], "failure_line": line}
             file_findings.append(finding)
+            if time.monotonic() - started > spec.timeout_seconds:
+                raise TimeoutError("source operation exceeded timeout")
         current_root = os.stat(checkout_root, follow_symlinks=False)
         if (current_root.st_dev, current_root.st_ino) != (root_value.st_dev, root_value.st_ino):
             raise ValueError("checkout root changed during source operation")
+        if time.monotonic() - started > spec.timeout_seconds:
+            raise TimeoutError("source operation exceeded timeout")
     finally:
         os.close(root_descriptor)
     return CompatibilityEvidence.create(

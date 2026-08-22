@@ -81,7 +81,7 @@ def evidence(**changes: object) -> CompatibilityEvidence:
         "compiler_or_runtime": "python-3.11",
         "command": ("ast_parse", "src/example.py"),
         "exit_status": 0,
-        "disk_bytes": 12,
+        "disk_bytes": 6,
         "download_bytes": 0,
         "license_status": "DISCOVERED",
         "license_spdx": "MIT",
@@ -217,6 +217,7 @@ def test_evidence_is_canonical_strict_and_package_truthful() -> None:
         runtime_subject="package", package_name="mujoco",
         package_version="3.12.0", package_artifact_sha256="b" * 64,
         package_lock_artifact_sha256="c" * 64,
+        disk_bytes=1,
         command=("mujoco", "headless-one-step"),
         findings={
             "duration_ns": 1,
@@ -240,6 +241,17 @@ def test_evidence_is_canonical_strict_and_package_truthful() -> None:
     )
     assert package.commit_sha == "a" * 40
     assert package.runtime_subject == "package"
+    with pytest.raises(ValueError, match="status/blocker"):
+        evidence(exit_status=1, blocker="contradictory")
+    with pytest.raises(ValueError, match="summary"):
+        evidence(findings={
+            "files": [{"path": "src/example.py", "sha256": hashlib.sha256(b"x = 1\n").hexdigest(),
+                       "bytes": 6, "disposition": "PASS", "node_count": 5,
+                       "failure_line": None, "failure_column": None}],
+            "summary": {"files_total": 1, "files_pass": 0, "files_fail": 1},
+        })
+    with pytest.raises(ValueError, match="disk_bytes"):
+        evidence(disk_bytes=7)
 
 
 def test_manifest_covers_lock_and_has_one_closed_mujoco_selector(tmp_path: Path) -> None:
@@ -308,7 +320,7 @@ def test_manifest_fragment_loader_rejects_unknown_paths_and_duplicate_json(
         registry_sha256=registry.registry_sha256, repository="mjctrl",
         commit_sha=pin.commit_sha, experiment="01_policy_control",
         selected_path=source.selected_paths[0], operation_id="MJCTRL_AST_PARSE",
-        command=("ast_parse", source.selected_paths[0]),
+        command=("ast_parse", source.selected_paths[0]), disk_bytes=1,
         findings={
             "files": [{"path": "example.py", "sha256": "8" * 64, "bytes": 1,
                        "disposition": "PASS", "node_count": 1,
@@ -371,6 +383,28 @@ def test_manifest_fragment_loader_rejects_unknown_paths_and_duplicate_json(
         load_manifest_fragments(tmp_path, operation_manifest, registry, lock)
 
 
+def test_checkout_fragment_obeys_manifest_transport_and_inventory_caps(tmp_path: Path) -> None:
+    registry, lock = complete_lock()
+    source = next(item for item in registry.repositories if item.name == "mjctrl")
+    pin = next(item for item in lock.entries if item.name == "mjctrl")
+    payload = manifest_payload(registry, lock)
+    payload["operations"][2]["download_ceiling_bytes"] = 0
+    manifest_path = tmp_path / "manifest.yaml"
+    manifest_path.write_text(yaml.safe_dump(payload, sort_keys=False))
+    operation_manifest = load_operation_manifest(manifest_path, registry, lock, tmp_path)
+    fragment_root = tmp_path / "experiments/00_source_audit/results/fragments"
+    fragment_root.mkdir(parents=True)
+    checkout = CheckoutEvidence.create(
+        registry_sha256=registry.registry_sha256, repository="mjctrl", url=source.url,
+        locked_sha=pin.commit_sha, patterns=source.selected_paths,
+        commands=(("git", "fetch"),), statuses=(0,), download_bytes=1, disk_bytes=1,
+        outcome="PASS", blocker=None, content_hashes={"example.py": "8" * 64},
+    )
+    (fragment_root / "mjctrl-checkout.json").write_bytes(checkout.canonical_bytes())
+    with pytest.raises(ValueError, match="ceilings"):
+        load_manifest_fragments(tmp_path, operation_manifest, registry, lock)
+
+
 def test_operate_uses_exact_manifest_id_checkout_and_output(tmp_path: Path) -> None:
     registry, lock = complete_lock()
     source = next(item for item in registry.repositories if item.name == "mjctrl")
@@ -416,7 +450,7 @@ def test_fragment_lock_binding_and_classification_precedence(tmp_path: Path) -> 
         experiment=source.experiments[0],
         selected_path=source.selected_paths[0],
         operation_id="MJCTRL_AST_PARSE",
-        command=("ast_parse", source.selected_paths[0]),
+        command=("ast_parse", source.selected_paths[0]), disk_bytes=1,
         findings={
             "files": [{
                 "path": "example.py", "sha256": "8" * 64, "bytes": 1,
@@ -521,6 +555,28 @@ def test_source_operation_enforces_count_depth_and_intermediate_nofollow(tmp_pat
         run_source_operation(replace(spec, selected_path="link/unsafe.py", file_count_ceiling=2), checkout)
 
 
+def test_source_operation_checks_timeout_after_final_parse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (checkout / "safe.py").write_text("value = 1\n")
+    spec = OperationSpec(
+        registry_sha256="9" * 64, repository="example", commit_sha="a" * 40,
+        experiment="01_policy_control", selected_path="safe.py",
+        operation_id="EXAMPLE_AST_PARSE", operation=SourceOperation.AST_PARSE,
+        license_status="DISCOVERED", license_spdx="MIT", platform="test-platform",
+        python_requirement=">=3.11", compiler_or_runtime="python-3.11",
+        timeout_seconds=60, download_ceiling_bytes=0, disk_ceiling_bytes=1024,
+        file_ceiling_bytes=512, file_count_ceiling=1, depth_ceiling=1,
+        no_copy=True, no_models=True,
+    )
+    ticks = iter((0.0, 0.0, 61.0))
+    monkeypatch.setattr("reflect.source_ops.time.monotonic", lambda: next(ticks))
+    with pytest.raises(TimeoutError, match="timeout"):
+        run_source_operation(spec, checkout)
+
+
 def test_static_evidence_cannot_claim_arbitrary_patch_promotion() -> None:
     with pytest.raises(ValueError, match="patched-runtime"):
         evidence(patch_artifact_sha256="1" * 64)
@@ -540,7 +596,7 @@ def test_consolidation_rejects_stale_checkout_hash_join(tmp_path: Path) -> None:
         registry_sha256=registry.registry_sha256, repository="mjctrl",
         commit_sha=pin.commit_sha, experiment="01_policy_control",
         selected_path=source.selected_paths[0], operation_id="MJCTRL_AST_PARSE",
-        command=("ast_parse", source.selected_paths[0]),
+        command=("ast_parse", source.selected_paths[0]), disk_bytes=1,
         findings={"files": [{"path": "example.py", "sha256": "8" * 64,
                               "bytes": 1, "disposition": "PASS", "node_count": 1,
                               "failure_line": None, "failure_column": None}],
@@ -626,6 +682,24 @@ def test_outputs_have_exact_csv_header_and_are_deterministic(tmp_path: Path) -> 
     source_map = (tmp_path / "docs/SOURCE_MAP.md").read_text()
     assert "local fallback | attribution record" in source_map
     assert "| Experiment 00 source compatibility | UNVERIFIED | NONE | source audit | project | local CPU | NOT_REPRODUCED |" in maturity
+
+
+def test_output_gate_rejects_seen_but_nonpass_declared_operations(tmp_path: Path) -> None:
+    registry, lock = complete_lock()
+    payload = manifest_payload(registry, lock)
+    manifest_path = tmp_path / "manifest.yaml"
+    manifest_path.write_text(yaml.safe_dump(payload, sort_keys=False))
+    operation_manifest = load_operation_manifest(manifest_path, registry, lock, tmp_path)
+    rows = consolidate_compatibility(registry, lock, (), (), operation_manifest)
+    expected = frozenset(item.operation_id for item in operation_manifest.operations)
+    write_compatibility_outputs(
+        tmp_path, registry, lock, rows, manifest=operation_manifest,
+        seen_operation_ids=expected, passed_operation_ids=frozenset(),
+    )
+    results = (tmp_path / "experiments/00_source_audit/RESULTS.md").read_text()
+    assert "operational_gate: BLOCKED" in results
+    assert "nonpass:MJCTRL_CHECKOUT" in results
+    assert "missing_operation_ids: NONE" in results
 
 
 def test_experiment_entrypoint_has_standard_dry_run_flags(

@@ -207,6 +207,9 @@ def _validate_raw_findings(
             raise ValueError("asset-license finding failure location is invalid")
     if seen != set(expected_hashes):
         raise ValueError("every selected content hash requires one file disposition")
+    dispositions = [item["disposition"] for item in raw["files"]]
+    if raw["summary"]["files_pass"] != dispositions.count("PASS") or raw["summary"]["files_fail"] != dispositions.count("FAIL"):
+        raise ValueError("static operation summary does not equal file dispositions")
 
 
 def _lock_object(lock: SourceLock) -> dict[str, Any]:
@@ -339,9 +342,13 @@ class CompatibilityEvidence:
                 raise ValueError("package runtime requires package identity and artifact hash")
             _sha(self.package_artifact_sha256, "package_artifact_sha256", 64)
             _sha(self.package_lock_artifact_sha256, "package_lock_artifact_sha256", 64)
+            if self.exit_status != 0 or self.blocker is not None:
+                raise ValueError("package PASS requires exact zero status and no blocker")
             raw_artifact = dict(self.findings).get("artifact")
             if not isinstance(raw_artifact, Mapping) or raw_artifact.get("installed_tree_sha256") != self.package_artifact_sha256 or raw_artifact.get("lock_artifact_sha256") != self.package_lock_artifact_sha256:
                 raise ValueError("package hashes are not bound to raw artifact findings")
+            if raw_artifact.get("installed_bytes") != self.disk_bytes:
+                raise ValueError("package installed bytes do not equal evidence disk_bytes")
         else:
             if self.operation not in _STATIC_FILE_KEYS:
                 raise ValueError("source checkout operation is not in the closed matrix")
@@ -349,6 +356,12 @@ class CompatibilityEvidence:
                 raise ValueError("source checkout command does not match operation matrix")
             if any(value is not None for value in (self.package_name, self.package_version, self.package_artifact_sha256, self.package_lock_artifact_sha256)):
                 raise ValueError("source checkout cannot claim package identity")
+            raw_files = dict(self.findings).get("files", [])
+            failed = any(item.get("disposition") == "FAIL" for item in raw_files)
+            if (failed and (self.exit_status != 1 or self.blocker is None)) or (not failed and (self.exit_status != 0 or self.blocker is not None)):
+                raise ValueError("static status/blocker must exactly equal file dispositions")
+            if sum(item.get("bytes", -1) for item in raw_files) != self.disk_bytes:
+                raise ValueError("static finding bytes must exactly equal evidence disk_bytes")
         if self.patch_artifact_sha256 is not None:
             raise ValueError("closed compatibility matrix has no patched-runtime operation")
         for path, digest in self.content_hashes:
@@ -700,6 +713,8 @@ def load_manifest_fragments(
             existing = tuple(path for path in source.selected_paths if pin.path_statuses[path] is PathStatus.EXISTS)
             if item.repository != source.name or item.url != source.url or item.locked_sha != pin.commit_sha or item.registry_sha256 != registry.registry_sha256 or item.patterns != existing:
                 raise ValueError("checkout receipt does not bind the manifest/lock")
+            if item.download_bytes > operation.download_ceiling_bytes or item.disk_bytes > operation.disk_ceiling_bytes or len(item.content_hashes) > operation.file_count_ceiling:
+                raise ValueError("checkout receipt exceeds manifest byte/inventory ceilings")
             checkouts.append(item)
         else:
             compatibility.append(validate_fragment(raw, registry, lock, manifest, relative))
@@ -876,6 +891,7 @@ def write_compatibility_outputs(
     manifest: OperationManifest | None = None,
     seen_operation_ids: frozenset[str] = frozenset(),
     checkouts: Sequence[CheckoutEvidence] = (),
+    passed_operation_ids: frozenset[str] = frozenset(),
 ) -> dict[str, str]:
     csv_buffer = io.StringIO(newline="")
     writer = csv.writer(csv_buffer, lineterminator="\n")
@@ -924,15 +940,16 @@ def write_compatibility_outputs(
         maturity.append(f"| {source.name} | {label} | {evidence_source} | {','.join(source.experiments)} | {pin.license_spdx or pin.license_status.value} | bounded by {source.mode.value} | {local_status} | {known_failures} | {source.use} | {hardware} |")
     expected_ids = frozenset(item.operation_id for item in manifest.operations) if manifest else frozenset()
     missing_ids = sorted(expected_ids - seen_operation_ids)
+    nonpass_ids = sorted((expected_ids & seen_operation_ids) - passed_operation_ids)
     package_rows = [row for row in rows if row.repository == "mujoco" and row.operation == "PACKAGE_RUNTIME"]
     package_pass = len(package_rows) == 1 and package_rows[0].smoke_status is SmokeStatus.PASS and package_rows[0].classification is CompatibilityClass.WORKS_LOCAL_M2
     evidence_failures = sorted({row.blocker for row in rows if row.smoke_status in {SmokeStatus.FAIL, SmokeStatus.BLOCKED} and row.blocker})
     checkout_failures = sorted(item.blocker or "checkout failed" for item in checkouts if item.outcome != "PASS")
-    gate_complete = bool(manifest) and not missing_ids and package_pass and not evidence_failures and not checkout_failures
+    gate_complete = bool(manifest) and not missing_ids and not nonpass_ids and package_pass and not evidence_failures and not checkout_failures
     result_label = "LOCALLY_REPRODUCED_M2" if gate_complete else "UNVERIFIED"
     result_local = "LOCALLY_REPRODUCED_M2" if gate_complete else "NOT_REPRODUCED"
     result_sources = ",".join(f"operation:{item}" for item in sorted(seen_operation_ids)) or "NONE"
-    result_failure = "NONE" if gate_complete else "; ".join([*(f"missing:{item}" for item in missing_ids), *evidence_failures, *checkout_failures]) or "INCOMPLETE_EVIDENCE"
+    result_failure = "NONE" if gate_complete else "; ".join([*(f"missing:{item}" for item in missing_ids), *(f"nonpass:{item}" for item in nonpass_ids), *evidence_failures, *checkout_failures]) or "INCOMPLETE_EVIDENCE"
     maturity.append(f"| Experiment 00 source compatibility | {result_label} | {result_sources} | source audit | project | local CPU | {result_local} | {result_failure} | source gate | NOT_APPLICABLE |")
     results = (
         "# Experiment 00 results\n\n"
@@ -943,6 +960,7 @@ def write_compatibility_outputs(
         f"expected_operation_ids: {','.join(sorted(expected_ids)) or 'NONE'}\n\n"
         f"seen_operation_ids: {','.join(sorted(seen_operation_ids)) or 'NONE'}\n\n"
         f"missing_operation_ids: {','.join(missing_ids) or 'NONE'}\n\n"
+        f"nonpass_operation_ids: {','.join(nonpass_ids) or 'NONE'}\n\n"
         f"mujoco_package_smoke: {'PASS' if package_pass else 'NOT_PROVEN'}\n\n"
         f"blockers: {result_failure}\n"
     )
