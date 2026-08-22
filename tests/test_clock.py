@@ -18,6 +18,13 @@ def test_virtual_clock_advances_only_explicitly() -> None:
         clock.advance_ns(-1)
 
 
+def test_virtual_clock_rejects_boolean_advance_duration() -> None:
+    clock = VirtualClock()
+
+    with pytest.raises(ValueError, match="non-negative"):
+        clock.advance_ns(True)  # type: ignore[arg-type]
+
+
 @pytest.mark.parametrize("value", [True, -1])
 def test_virtual_clock_rejects_invalid_start_times(value: object) -> None:
     with pytest.raises(ValueError, match="non-negative"):

@@ -142,6 +142,20 @@ def test_event_dictionary_round_trip_preserves_optional_ids_and_json_payload() -
     assert event_from_dict(raw) == event
 
 
+def test_execution_event_payload_is_recursively_immutable() -> None:
+    event = valid_event(payload={"nested": {"count": 1}, "scores": [0.2, None]})
+
+    with pytest.raises(TypeError):
+        event.payload["nested"]["count"] = 2  # type: ignore[index]
+    with pytest.raises(TypeError):
+        event.payload["scores"][0] = 0.9  # type: ignore[index]
+
+    assert event_to_dict(event)["payload"] == {
+        "nested": {"count": 1},
+        "scores": [0.2, None],
+    }
+
+
 def test_event_from_dict_rejects_missing_or_extra_wire_keys() -> None:
     raw = event_to_dict(valid_event())
     missing = dict(raw)

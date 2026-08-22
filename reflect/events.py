@@ -70,6 +70,24 @@ def _normalize_json_value(value: object, field: str = "payload") -> JSONValue:
     raise EventValidationError(f"{field} must contain only JSON-safe values")
 
 
+def _freeze_json_value(value: JSONValue) -> JSONValue:
+    if isinstance(value, list):
+        return tuple(_freeze_json_value(item) for item in value)  # type: ignore[return-value]
+    if isinstance(value, Mapping):
+        return MappingProxyType(
+            {key: _freeze_json_value(item) for key, item in value.items()}
+        )  # type: ignore[return-value]
+    return value
+
+
+def _thaw_json_value(value: JSONValue) -> JSONValue:
+    if isinstance(value, tuple):
+        return [_thaw_json_value(item) for item in value]  # type: ignore[arg-type, return-value]
+    if isinstance(value, Mapping):
+        return {key: _thaw_json_value(item) for key, item in value.items()}
+    return value
+
+
 def _normalize_object_ids(value: object) -> tuple[str, ...]:
     if isinstance(value, (str, bytes)):
         raise EventValidationError("object_ids must be an iterable of identifiers")
@@ -119,7 +137,7 @@ class ExecutionEvent:
         normalized_payload = _normalize_json_value(self.payload)
         if not isinstance(normalized_payload, dict):
             raise EventValidationError("payload must be a mapping")
-        object.__setattr__(self, "payload", MappingProxyType(normalized_payload))
+        object.__setattr__(self, "payload", _freeze_json_value(normalized_payload))
 
 
 class EventStream:
@@ -179,7 +197,7 @@ def event_to_dict(event: ExecutionEvent) -> dict[str, JSONValue]:
         "config_hash": event.config_hash,
         "object_ids": list(event.object_ids),
         "skill_id": event.skill_id,
-        "payload": _normalize_json_value(event.payload),
+        "payload": _thaw_json_value(event.payload),
     }
 
 
