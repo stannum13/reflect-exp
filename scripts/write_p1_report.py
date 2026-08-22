@@ -67,18 +67,58 @@ def _last_nonempty_line(value: str) -> str:
     return lines[-1] if lines else "(no output)"
 
 
-def _normalized_fixture_output(value: str, root_label: str) -> str:
+def _labeled_output(completed: subprocess.CompletedProcess[str]) -> str:
+    stdout = completed.stdout.strip() or "(empty)"
+    stderr = completed.stderr.strip() or "(empty)"
+    return f"stdout:\n{stdout}\nstderr:\n{stderr}\nexit: {completed.returncode}"
+
+
+def _normalized_fixture_output(
+    value: str,
+    expected_artifact: Path,
+    root_label: str,
+) -> str:
     lines = [line for line in value.splitlines() if line.strip()]
-    if len(lines) != 1 or Path(lines[0]).name != ROLLOUT_ID:
+    if len(lines) != 1:
         raise RuntimeError("fixture command did not print exactly one rollout path")
+    emitted = Path(lines[0]).resolve(strict=False)
+    expected = expected_artifact.resolve(strict=False)
+    if emitted != expected:
+        raise RuntimeError(
+            f"fixture command emitted {emitted}, expected artifact path {expected}"
+        )
     return f"<{root_label}>/{ROLLOUT_ID}"
 
 
-def _validate_evidence_base(value: str) -> str:
+def _validate_evidence_base(value: str, root: Path = ROOT) -> str:
     if GIT_SHA_PATTERN.fullmatch(value) is None:
         raise ValueError("--evidence-base-sha must be a 40- or 64-digit Git SHA")
-    resolved = _run(["git", "rev-parse", "--verify", f"{value}^{{commit}}"])
-    return resolved.stdout.strip()
+    root = root.resolve()
+
+    def git(*arguments: str) -> str:
+        completed = subprocess.run(
+            ["git", *arguments],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(
+                f"evidence Git command failed: {' '.join(arguments)}\n{completed.stderr}"
+            )
+        return completed.stdout.strip()
+
+    resolved = git("rev-parse", "--verify", f"{value}^{{commit}}")
+    head = git("rev-parse", "HEAD")
+    if resolved != head:
+        raise RuntimeError(
+            f"evidence base must equal current HEAD {head}, got {resolved}"
+        )
+    status = git("status", "--porcelain=v1", "--untracked-files=all")
+    if status:
+        raise RuntimeError(f"evidence worktree must be clean before verification:\n{status}")
+    return resolved
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -155,10 +195,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise RuntimeError("physical negative control created a rollout artifact")
 
         fixture_output = _normalized_fixture_output(
-            first_fixture.stdout, "TEMP_ROOT_A"
+            first_fixture.stdout,
+            first_root / ROLLOUT_ID,
+            "TEMP_ROOT_A",
         )
         second_fixture_output = _normalized_fixture_output(
-            second_fixture.stdout, "TEMP_ROOT_B"
+            second_fixture.stdout,
+            second_root / ROLLOUT_ID,
+            "TEMP_ROOT_B",
+        )
+        fixture_metadata = json.loads(
+            (first_root / ROLLOUT_ID / "metadata.json").read_text(encoding="utf-8")
+        )
+        fixture_config = json.loads(
+            (first_root / ROLLOUT_ID / "config.json").read_text(encoding="utf-8")
         )
 
     diff_check = _run(["git", "diff", "--check"])
@@ -213,7 +263,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     artifact_hash_lines = "\n".join(
         f"- `{name}`: `{digest}`" for name, digest in sorted(first_hashes.items())
     )
-    lock_output = lock.stdout.strip() or "(no output; exit 0)"
+    lock_output = _labeled_output(lock)
     safety_output = _last_nonempty_line(safety.stdout)
     physical_safety_output = _last_nonempty_line(
         physical_safety.stdout + physical_safety.stderr
@@ -237,6 +287,12 @@ The deterministic simulation-only shared rollout harness passed the bounded P1 g
   contain the hash of a commit that includes itself.
 - Durable state: `p1: complete`, `p2: in_progress`, `current_pass: 2`.
 - Working tree observed during report generation: `{repository_status}`
+- Fixture provenance mode: `{fixture_config["provenance_mode"]}`.
+- Fixture Git SHA: `{fixture_metadata["git_sha"]}`.
+- Fixture source registry artifact: `{fixture_config["source_registry_artifact"]}`
+  with SHA-256 `{fixture_metadata["source_lock_hash"]}`.
+- Fixture model hashes: `{json.dumps(fixture_metadata["model_hashes"], sort_keys=True)}`
+  because no model or checkpoint was used.
 
 ## Lock and tests
 
