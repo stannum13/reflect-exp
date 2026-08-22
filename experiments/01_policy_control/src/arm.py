@@ -8,11 +8,12 @@ from .contracts import ClampReport, ExperimentConfig, frozen_vector
 
 
 MJCF_BYTES = b'''<mujoco model="reflect_exp01">
+  <compiler angle="radian"/>
   <option timestep="0.002" gravity="0 0 0" integrator="Euler"/>
   <worldbody><body name="base"><joint name="j1" type="hinge" axis="0 0 1" range="-2.7 2.7" damping="0.1"/>
     <geom type="capsule" fromto="0 0 0 .30 0 0" size=".015"/><body pos=".30 0 0"><joint name="j2" type="hinge" axis="0 0 1" range="-2.7 2.7" damping="0.1"/>
     <geom type="capsule" fromto="0 0 0 .25 0 0" size=".015"/><body pos=".25 0 0"><joint name="j3" type="hinge" axis="0 0 1" range="-2.7 2.7" damping="0.1"/>
-    <geom type="capsule" fromto="0 0 0 .20 0 0" size=".015"/><site name="eef" pos=".20 0 0" size=".01"/></body></body></body></body></worldbody>
+    <geom type="capsule" fromto="0 0 0 .20 0 0" size=".015"/><site name="eef" pos=".20 0 0" size=".01"/></body></body></body></worldbody>
   <actuator><motor joint="j1" ctrlrange="-12 12"/><motor joint="j2" ctrlrange="-12 12"/><motor joint="j3" ctrlrange="-12 12"/></actuator>
 </mujoco>'''
 
