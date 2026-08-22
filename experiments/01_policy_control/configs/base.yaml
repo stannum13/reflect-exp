@@ -92,13 +92,13 @@ confirmation:
   candidate_count: 64
   bootstrap_resamples: 10000
 resources:
-  rollout_bytes: 1048576
+  rollout_bytes: 2097152
   shard_wall_seconds: 3600
   pilot_wall_seconds: 28800
   confirmation_wall_seconds: 86400
   pilot_cpu_seconds: 288000
   confirmation_cpu_seconds: 864000
-  phase_bytes: 7910457344
+  phase_bytes: 15284043776
 thresholds:
   success_radius_m: 0.025
   success_dwell_s: 0.10

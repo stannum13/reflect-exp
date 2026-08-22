@@ -23,8 +23,8 @@ def test_exact_base_configuration() -> None:
     assert cfg.controller.pd_candidates == ((80.0, 8.0), (60.0, 6.0), (100.0, 10.0))
     assert cfg.controller.ik_damping_candidates == (0.01, 0.001, 0.05)
     assert cfg.controller.mpc_smoothness_candidates == (0.02, 0.01, 0.04)
-    assert cfg.resources.rollout_bytes == 1024 * 1024
-    assert cfg.resources.phase_bytes == 7544 * 1024 * 1024
+    assert cfg.resources.rollout_bytes == 2 * 1024 * 1024
+    assert cfg.resources.phase_bytes == 14576 * 1024 * 1024
 
 
 def test_arrays_are_copied_finite_and_read_only() -> None:
