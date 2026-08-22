@@ -489,7 +489,7 @@ def load_config(path: Path) -> ExperimentConfig:
         arm=arm_cfg,
         controller=controller_cfg,
         timing=timing_cfg,
-        kinematics=KinematicsConfig(np.asarray(kinematics["posture_q"]), _string(kinematics["absolute_solver_revision"], "absolute_solver_revision", allowed={"ABSOLUTE_IK_12_DLS"}), _string(kinematics["differential_solver_revision"], "differential_solver_revision", allowed={"DIFFERENTIAL_IK_DLS"})),
+        kinematics=KinematicsConfig(np.asarray(_tuple_floats(kinematics["posture_q"], "posture_q", 3)), _string(kinematics["absolute_solver_revision"], "absolute_solver_revision", allowed={"ABSOLUTE_IK_12_DLS"}), _string(kinematics["differential_solver_revision"], "differential_solver_revision", allowed={"DIFFERENTIAL_IK_DLS"})),
         mpc=MPCConfig(
             int(_number(mpc, "candidate_count", integer=True)),
             _integer_tuple(mpc["raw_direction_values"], "raw_direction_values", length=3),

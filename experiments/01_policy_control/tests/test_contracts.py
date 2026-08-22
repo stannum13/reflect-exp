@@ -104,6 +104,8 @@ def test_complete_typed_protocol_and_array_copying() -> None:
         ("representation: MPC_GOAL", "representation: UNKNOWN", "stack"),
         ("cardinality: HORIZON", "cardinality: UNKNOWN", "stack"),
         ("transition_revision: PREVIOUS_SELECTED_QDOT_V1", "transition_revision: ''", "transition_revision"),
+        ("posture_q: [0.35, -0.70, 0.35]", "posture_q: ['0.35', -0.70, 0.35]", "posture_q"),
+        ("posture_q: [0.35, -0.70, 0.35]", "posture_q: [true, -0.70, 0.35]", "posture_q"),
     ],
 )
 def test_closed_protocol_rejects_wrong_types_and_enums(tmp_path: Path, old: str, new: str, match: str) -> None:
