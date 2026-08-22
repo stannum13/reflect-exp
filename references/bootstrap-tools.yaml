@@ -21,6 +21,20 @@ repositories:
     selected_paths: []
     use: Parse the canonical YAML registry and durable run manifest.
     justification: The program mandates YAML registries and manifests.
+  - name: numpy
+    url: https://github.com/numpy/numpy
+    mode: DIRECT_DEPENDENCY
+    experiments: [bootstrap]
+    selected_paths: []
+    use: Typed arrays and NPZ artifact I/O.
+    justification: Required for typed arrays and NPZ artifact I/O.
+  - name: pyarrow
+    url: https://github.com/apache/arrow
+    mode: DIRECT_DEPENDENCY
+    experiments: [bootstrap]
+    selected_paths: []
+    use: Genuine Parquet artifact I/O.
+    justification: Required for genuine Parquet artifact I/O.
   - name: pytest
     url: https://github.com/pytest-dev/pytest
     mode: DIRECT_DEPENDENCY

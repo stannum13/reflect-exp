@@ -41,5 +41,5 @@ def test_bootstrap_tools_are_registered_before_install() -> None:
 
     registry = yaml.safe_load((ROOT / "references" / "bootstrap-tools.yaml").read_text())
     names = {item["name"] for item in registry["repositories"]}
-    assert names == {"uv", "hatchling", "pyyaml", "pytest"}
+    assert names == {"uv", "hatchling", "pyyaml", "numpy", "pyarrow", "pytest"}
     assert all(item["mode"] == "DIRECT_DEPENDENCY" for item in registry["repositories"])
