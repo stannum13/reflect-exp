@@ -19,7 +19,14 @@ class RunManifest:
     scope: str
     current_pass: int
     max_passes: int
+    wall_hours_per_pass_max: int
     cpu_hours_max: int
+    downloads_gb_max: int
+    generated_artifacts_gb_max: int
+    pilot_protocol_revisions_per_experiment_max: int
+    tuning_configs_per_variant_revision_max: int
+    pilot_episodes_per_variant_max: int
+    confirmation_episodes_max: int
     physical_deployment_allowed: bool
     remote_enabled: bool
     stages: Mapping[str, str]
@@ -28,7 +35,7 @@ class RunManifest:
 def load_run_manifest(path: Path) -> RunManifest:
     try:
         raw = yaml.safe_load(path.read_text())
-    except (OSError, yaml.YAMLError) as exc:
+    except (OSError, UnicodeError, yaml.YAMLError) as exc:
         raise ManifestError(f"could not read manifest: {exc}") from exc
     if not isinstance(raw, Mapping):
         raise ManifestError("manifest must be a YAML mapping")
@@ -36,8 +43,13 @@ def load_run_manifest(path: Path) -> RunManifest:
     _require_type(raw, "scope", str)
     _require_type(raw, "current_pass", int)
     _require_type(raw, "max_passes", int)
+    if not 0 <= raw["current_pass"] <= raw["max_passes"]:
+        raise ManifestError("current_pass exceeds the approved pass ceiling")
     budgets = _require_mapping(raw, "budgets")
-    _require_type(budgets, "cpu_hours_max", int)
+    for field, expected in APPROVED_BUDGETS.items():
+        _require_type(budgets, field, int)
+        if budgets[field] != expected:
+            raise ManifestError(f"{field} differs from the approved ceiling")
     safety = _require_mapping(raw, "safety")
     _require_type(safety, "physical_deployment_allowed", bool)
     _require_type(safety, "remote_enabled", bool)
@@ -52,16 +64,14 @@ def load_run_manifest(path: Path) -> RunManifest:
         scope=raw["scope"],
         current_pass=raw["current_pass"],
         max_passes=raw["max_passes"],
-        cpu_hours_max=budgets["cpu_hours_max"],
+        **{field: budgets[field] for field in APPROVED_BUDGETS},
         physical_deployment_allowed=safety["physical_deployment_allowed"],
         remote_enabled=safety["remote_enabled"],
         stages=dict(stages),
     )
     if manifest.scope not in {"recommended", "p0-p10-only"}:
         raise ManifestError("scope is not recognized")
-    if not 0 <= manifest.current_pass <= manifest.max_passes:
-        raise ManifestError("current_pass exceeds the approved pass ceiling")
-    if manifest.max_passes != 16 or manifest.cpu_hours_max != 240:
+    if manifest.max_passes != 16:
         raise ManifestError("global autonomy ceilings differ from the approved design")
     expected_stage_keys = {f"p{i}" for i in range(11)}
     if set(stages) != expected_stage_keys:
@@ -86,3 +96,15 @@ def _require_type(raw: Mapping[str, Any], field: str, expected: type) -> None:
     value = raw.get(field)
     if type(value) is not expected:
         raise ManifestError(f"{field} has wrong YAML type")
+
+
+APPROVED_BUDGETS = {
+    "wall_hours_per_pass_max": 24,
+    "cpu_hours_max": 240,
+    "downloads_gb_max": 20,
+    "generated_artifacts_gb_max": 50,
+    "pilot_protocol_revisions_per_experiment_max": 2,
+    "tuning_configs_per_variant_revision_max": 3,
+    "pilot_episodes_per_variant_max": 256,
+    "confirmation_episodes_max": 1024,
+}

@@ -5,6 +5,18 @@ import pytest
 from reflect.run_state import ManifestError, load_run_manifest
 
 
+EXPECTED_BUDGETS = {
+    "wall_hours_per_pass_max": 24,
+    "cpu_hours_max": 240,
+    "downloads_gb_max": 20,
+    "generated_artifacts_gb_max": 50,
+    "pilot_protocol_revisions_per_experiment_max": 2,
+    "tuning_configs_per_variant_revision_max": 3,
+    "pilot_episodes_per_variant_max": 256,
+    "confirmation_episodes_max": 1024,
+}
+
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -35,8 +47,9 @@ def test_manifest_rejects_pass_overrun(tmp_path: Path) -> None:
 def _valid_manifest() -> str:
     return (
         "scope: recommended\ncurrent_pass: 0\nmax_passes: 16\n"
-        "budgets:\n  cpu_hours_max: 240\n"
-        "safety:\n  physical_deployment_allowed: false\n  remote_enabled: false\n"
+        "budgets:\n"
+        + "".join(f"  {name}: {value}\n" for name, value in EXPECTED_BUDGETS.items())
+        + "safety:\n  physical_deployment_allowed: false\n  remote_enabled: false\n"
         "stages:\n"
         + "".join(f"  p{i}: pending\n" for i in range(11))
     )
@@ -46,6 +59,37 @@ def test_manifest_rejects_remote_enablement(tmp_path: Path) -> None:
     path = tmp_path / "manifest.yaml"
     path.write_text(_valid_manifest().replace("remote_enabled: false", "remote_enabled: true"))
     with pytest.raises(ManifestError, match="remote_enabled"):
+        load_run_manifest(path)
+
+
+def test_manifest_exposes_all_approved_budget_ceilings() -> None:
+    manifest = load_run_manifest(ROOT / "docs" / "RUN_MANIFEST.yaml")
+    assert {name: getattr(manifest, name) for name in EXPECTED_BUDGETS} == EXPECTED_BUDGETS
+
+
+@pytest.mark.parametrize("field, expected", EXPECTED_BUDGETS.items())
+@pytest.mark.parametrize("mutation", ["missing", "changed", "wrong_type"])
+def test_manifest_rejects_invalid_budget_ceiling(
+    tmp_path: Path, field: str, expected: int, mutation: str
+) -> None:
+    text = _valid_manifest()
+    line = f"  {field}: {expected}\n"
+    if mutation == "missing":
+        text = text.replace(line, "")
+    elif mutation == "changed":
+        text = text.replace(line, f"  {field}: {expected + 1}\n")
+    else:
+        text = text.replace(line, f"  {field}: '{expected}'\n")
+    path = tmp_path / "manifest.yaml"
+    path.write_text(text)
+    with pytest.raises(ManifestError, match=field):
+        load_run_manifest(path)
+
+
+def test_manifest_normalizes_non_utf8_input(tmp_path: Path) -> None:
+    path = tmp_path / "manifest.yaml"
+    path.write_bytes(b"scope: recommended\n\xff\n")
+    with pytest.raises(ManifestError, match="could not read manifest"):
         load_run_manifest(path)
 
 
