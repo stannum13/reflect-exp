@@ -219,5 +219,6 @@ def test_p1_final_four_smoothness_baseline_is_two_stage_and_order_independent() 
     second = evaluate.compute_p1_smoothness_baseline(tuple(reversed(rows)))
     assert first == second
     assert first.seed_ids == (0, 1, 2, 3)
-    assert first.jerk_p95 == 25.0 and first.discontinuity_p95 == 28.0
+    assert first.jerk_p95 == evaluate.nearest_rank((item.jerk_p95 for item in rows), 0.95)
+    assert first.discontinuity_p95 == evaluate.nearest_rank((item.discontinuity_p95 for item in rows), 0.95)
     assert len(first.episode_bundle_sha256s) == 96

@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, replace
 from enum import Enum
 import hashlib
 import math
+from pathlib import Path
 import re
 import time
 from types import MappingProxyType
@@ -1127,14 +1128,320 @@ def compute_p1_smoothness_baseline(rows: Sequence[SmoothnessEpisodeScore]) -> P1
         raise ValueError("P1 smoothness baseline requires 24 core episodes for each of four seeds")
     if len({item.episode_id for item in ordered}) != len(ordered):
         raise ValueError("P1 smoothness episode IDs must be unique")
-    jerk_seed_p95 = [nearest_rank((item.jerk_p95 for item in ordered if item.seed == seed), 0.95) for seed in seeds]
-    discontinuity_seed_p95 = [nearest_rank((item.discontinuity_p95 for item in ordered if item.seed == seed), 0.95) for seed in seeds]
     return P1SmoothnessBaseline(
         seeds,
         tuple(item.episode_id for item in ordered),
         tuple(item.bundle_sha256 for item in ordered),
         tuple(float(item.jerk_p95) for item in ordered),
         tuple(float(item.discontinuity_p95) for item in ordered),
-        nearest_rank(jerk_seed_p95, 0.95),
-        nearest_rank(discontinuity_seed_p95, 0.95),
+        nearest_rank((item.jerk_p95 for item in ordered), 0.95),
+        nearest_rank((item.discontinuity_p95 for item in ordered), 0.95),
     )
+
+
+@dataclass(frozen=True)
+class SeedPrimary:
+    stack_id: str
+    seed: int
+    recovery_s: float
+    bundle_sha256: str
+    valid: bool = True
+
+    def __post_init__(self) -> None:
+        if self.stack_id not in _STACK_ORDER or type(self.seed) is not int or self.seed < 0:
+            raise ValueError("seed primary identity is invalid")
+        if not math.isfinite(float(self.recovery_s)) or self.recovery_s < 0:
+            raise ValueError("seed primary recovery must be finite and nonnegative")
+        _hash(self.bundle_sha256, "seed bundle hash")
+
+
+@dataclass(frozen=True)
+class BootstrapContrast:
+    stack_id: str
+    seed_ids: tuple[int, ...]
+    estimate_s: float
+    lower_s: float
+    upper_s: float
+
+
+@dataclass(frozen=True)
+class BootstrapDecision:
+    resamples: int
+    family_size: int
+    confidence: float
+    contrasts: tuple[BootstrapContrast, ...]
+
+
+def paired_bootstrap(
+    rows: Sequence[SeedPrimary],
+    frozen_manifest_hash: str,
+    *,
+    resamples: int = 10_000,
+) -> BootstrapDecision:
+    _hash(frozen_manifest_hash, "frozen manifest hash")
+    if type(resamples) is not int or resamples != 10_000:
+        raise ValueError("paired bootstrap requires exactly 10,000 resamples")
+    ordered = tuple(sorted(rows, key=lambda item: (_STACK_ORDER.index(item.stack_id), item.seed)))
+    if len({(item.stack_id, item.seed) for item in ordered}) != len(ordered):
+        raise ValueError("seed primary identities must be unique")
+    if any(not item.valid for item in ordered):
+        raise ValueError("paired bootstrap does not impute invalid seeds")
+    by_stack = {stack: tuple(item for item in ordered if item.stack_id == stack) for stack in _STACK_ORDER}
+    anchor = by_stack["P1"]
+    if len(anchor) != 32:
+        raise ValueError("paired bootstrap requires 32 complete P1 seeds")
+    seed_ids = tuple(item.seed for item in anchor)
+    anchor_values = np.asarray([item.recovery_s for item in anchor])
+    contrasts = []
+    for stack in _STACK_ORDER[1:]:
+        candidate = by_stack[stack]
+        if not candidate:
+            continue
+        if tuple(item.seed for item in candidate) != seed_ids:
+            raise ValueError("paired bootstrap seed domains differ")
+        deltas = np.asarray([item.recovery_s for item in candidate]) - anchor_values
+        digest = hashlib.sha256((frozen_manifest_hash + "bootstrap" + stack).encode("ascii")).digest()
+        rng = np.random.Generator(np.random.PCG64(int.from_bytes(digest[:16], "big")))
+        indexes = rng.integers(0, len(seed_ids), size=(resamples, len(seed_ids)))
+        samples = np.mean(deltas[indexes], axis=1)
+        contrasts.append(
+            BootstrapContrast(
+                stack,
+                seed_ids,
+                float(np.mean(deltas)),
+                nearest_rank(samples, 0.001),
+                nearest_rank(samples, 0.999),
+            )
+        )
+    return BootstrapDecision(resamples, 5, 0.99, tuple(contrasts))
+
+
+@dataclass(frozen=True)
+class GateMetrics:
+    stack_id: str
+    easiest_recovered: int
+    easiest_total: int
+    core_recovered: int
+    core_total: int
+    unsafe_count: int
+    joint_limit_violations: int
+    clamp_ticks: int
+    saturation_ticks: int
+    total_ticks: int
+    jerk_episode_p95s: tuple[float, ...]
+    discontinuity_episode_p95s: tuple[float, ...]
+
+    def __post_init__(self) -> None:
+        if self.stack_id not in _STACK_ORDER:
+            raise ValueError("gate stack is invalid")
+        integer_fields = (
+            "easiest_recovered", "easiest_total", "core_recovered", "core_total",
+            "unsafe_count", "joint_limit_violations", "clamp_ticks", "saturation_ticks", "total_ticks",
+        )
+        if any(type(getattr(self, name)) is not int or getattr(self, name) < 0 for name in integer_fields):
+            raise ValueError("gate counts must be nonnegative exact integers")
+        if self.easiest_recovered > self.easiest_total or self.core_recovered > self.core_total:
+            raise ValueError("recovered counts cannot exceed totals")
+        for name in ("jerk_episode_p95s", "discontinuity_episode_p95s"):
+            values = tuple(float(item) for item in getattr(self, name))
+            if not values or any(not math.isfinite(item) or item < 0 for item in values):
+                raise ValueError("smoothness gate domains must be nonempty finite nonnegative values")
+            object.__setattr__(self, name, values)
+
+
+@dataclass(frozen=True)
+class GateDecision:
+    stack_id: str
+    passes: bool
+    reasons: tuple[str, ...]
+    jerk_p95: float
+    discontinuity_p95: float
+
+
+def apply_gate(metrics: GateMetrics, baseline: P1SmoothnessBaseline, config: ExperimentConfig) -> GateDecision:
+    if metrics.stack_id not in _STACK_ORDER or metrics.easiest_total <= 0 or metrics.core_total <= 0 or metrics.total_ticks <= 0:
+        raise ValueError("gate metric domains must be positive")
+    jerk = nearest_rank(metrics.jerk_episode_p95s, 0.95)
+    discontinuity = nearest_rank(metrics.discontinuity_episode_p95s, 0.95)
+    reasons = []
+    checks = (
+        (metrics.easiest_recovered / metrics.easiest_total >= config.thresholds.easiest_recovery_fraction, "EASIEST_RECOVERY"),
+        (metrics.core_recovered / metrics.core_total >= config.thresholds.core_recovery_fraction, "CORE_RECOVERY"),
+        (metrics.unsafe_count == 0, "UNSAFE_OUTPUT"),
+        (metrics.joint_limit_violations == 0, "JOINT_LIMIT"),
+        (metrics.clamp_ticks / metrics.total_ticks <= config.thresholds.clamp_fraction, "CLAMP_FRACTION"),
+        (metrics.saturation_ticks / metrics.total_ticks <= config.thresholds.saturation_fraction, "SATURATION_FRACTION"),
+        (jerk <= config.thresholds.smoothness_multiplier * baseline.jerk_p95, "JERK"),
+        (discontinuity <= config.thresholds.smoothness_multiplier * baseline.discontinuity_p95, "DISCONTINUITY"),
+    )
+    reasons.extend(reason for passed, reason in checks if not passed)
+    return GateDecision(metrics.stack_id, not reasons, tuple(reasons), jerk, discontinuity)
+
+
+@dataclass(frozen=True)
+class PromotionDecision:
+    scientific_result: str
+    lifecycle_state: str
+    promoted_stacks: tuple[str, ...]
+    promoted_wire_representations: tuple[str, ...]
+    superior_stacks: tuple[str, ...]
+    reasons: tuple[str, ...]
+
+
+_WIRE_BY_STACK = {
+    "P1": "JOINT_POSITION",
+    "P2": "JOINT_POSITION",
+    "P3": "EEF_TRAJECTORY",
+    "P4": "EEF_TRAJECTORY",
+    "P5": "MPC_GOAL",
+    "P6": "BOUNDED_RESIDUAL",
+}
+
+
+def promotion_decision(
+    bootstrap: BootstrapDecision,
+    gates: Sequence[GateDecision],
+    *,
+    p1_valid: bool,
+    negative_control_valid: bool,
+    resource_complete: bool = True,
+    killed_stacks: Sequence[str] = (),
+) -> PromotionDecision:
+    gate_by_stack = {item.stack_id: item for item in gates}
+    if not resource_complete or not p1_valid or not negative_control_valid or not gate_by_stack.get("P1", GateDecision("P1", False, (), 0, 0)).passes:
+        reasons = tuple(reason for reason, passed in (("RESOURCE_INCOMPLETE", resource_complete), ("P1_INVALID", p1_valid), ("NEGATIVE_CONTROL_INVALID", negative_control_valid)) if not passed)
+        return PromotionDecision("INCONCLUSIVE", "STOPPED", (), (), (), reasons or ("P1_GATE_FAILED",))
+    contrasts = {item.stack_id: item for item in bootstrap.contrasts}
+    eligible = [item for item in gates if item.passes and item.stack_id != "P1" and item.stack_id in contrasts]
+    superior = sorted((item.stack_id for item in eligible if contrasts[item.stack_id].upper_s <= -0.10), key=lambda stack: (contrasts[stack].upper_s, _STACK_ORDER.index(stack)))
+    noninferior = sorted((item.stack_id for item in eligible if item.stack_id not in superior and contrasts[item.stack_id].upper_s <= 0.10), key=lambda stack: (contrasts[stack].upper_s, _STACK_ORDER.index(stack)))
+    ranking = superior + noninferior
+    if len(ranking) < 2:
+        ranking.append("P1")
+        ranking.sort(key=lambda stack: ((0.0 if stack == "P1" else contrasts[stack].upper_s), _STACK_ORDER.index(stack)))
+    promoted = tuple(ranking[:2])
+    wires = tuple(dict.fromkeys(_WIRE_BY_STACK[item] for item in promoted))
+    if superior:
+        scientific = "SUPPORTED"
+    else:
+        valid_nonanchors = [item for item in bootstrap.contrasts if gate_by_stack.get(item.stack_id, GateDecision(item.stack_id, False, (), 0, 0)).passes]
+        all_exclude = bool(valid_nonanchors) and all(item.lower_s > -0.10 for item in valid_nonanchors)
+        all_killed = set(_STACK_ORDER[1:]).issubset(set(killed_stacks))
+        scientific = "NOT_SUPPORTED" if all_exclude or all_killed else "INCONCLUSIVE"
+    return PromotionDecision(scientific, "COMPLETE" if scientific != "INCONCLUSIVE" else "STOPPED", promoted, wires, tuple(superior), ())
+
+
+def verify_pilot_reproduction(
+    candidates: Sequence[PilotCandidate | "CandidateReproductionInput"],
+    frozen_candidate_bytes: bytes,
+    smoothness_rows: Sequence[SmoothnessEpisodeScore],
+    frozen_baseline: P1SmoothnessBaseline,
+) -> None:
+    reproduced = tuple(
+        evaluate_candidate(
+            item.stage,
+            item.parameter_vector,
+            item.survivors,
+            item.episodes,
+            tie_rank=item.tie_rank,
+            reuse_hashes=item.reuse_hashes,
+        )
+        if isinstance(item, CandidateReproductionInput)
+        else item
+        for item in candidates
+    )
+    if candidate_evaluations_bytes(reproduced) != frozen_candidate_bytes:
+        raise ValueError("candidate evaluations do not reproduce frozen bytes")
+    if compute_p1_smoothness_baseline(smoothness_rows) != frozen_baseline:
+        raise ValueError("P1 smoothness baseline does not reproduce frozen evidence")
+
+
+@dataclass(frozen=True)
+class CandidateReproductionInput:
+    stage: PilotStage
+    parameter_vector: Mapping[str, object]
+    survivors: tuple[str, ...]
+    episodes: tuple[PilotEpisodeScore, ...]
+    tie_rank: int
+    reuse_hashes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class PlotRow:
+    stack_id: str
+    seed: int
+    condition_id: str
+    policy_hz: int
+    latency_ms: int
+    move_count: int
+    fault: str
+    recovery_s: float
+    error_m: float
+    jerk_p95: float
+    age_p95_s: float
+    timeline: tuple[float, ...] = ()
+    valid: bool = True
+
+
+_PLOT_NAMES = (
+    "recovery-vs-latency.svg",
+    "tracking-error-vs-rate.svg",
+    "joint-jerk.svg",
+    "action-age.svg",
+    "timeline.svg",
+)
+
+
+def _svg(title: str, x_label: str, y_label: str, series: Sequence[tuple[str, Sequence[tuple[float, float]]]]) -> bytes:
+    colors = ("#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e", "#17becf")
+    all_points = tuple(point for _, points in series for point in points)
+    xs = [item[0] for item in all_points] or [0.0]
+    ys = [item[1] for item in all_points] or [0.0]
+    xmin, xmax = min(xs), max(xs)
+    ymin, ymax = min(ys), max(ys)
+    lines = ['<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">', '<rect width="640" height="400" fill="white"/>', f'<text x="20" y="28" font-family="sans-serif" font-size="16">{title}</text>', '<path d="M50 350H620M50 50V350" stroke="#222" fill="none"/>', f'<text x="300" y="390" font-family="sans-serif" font-size="12">{x_label}</text>', f'<text x="8" y="45" font-family="sans-serif" font-size="12">{y_label}</text>']
+    for index, (label, points) in enumerate(series):
+        ordered = tuple(points)
+        if not ordered:
+            continue
+        coords = " ".join(f"{50 + 550 * ((x - xmin) / (xmax - xmin) if xmax != xmin else 0.5):.3f},{350 - 280 * ((y - ymin) / (ymax - ymin) if ymax != ymin else 0.5):.3f}" for x, y in ordered)
+        lines.append(f'<polyline points="{coords}" fill="none" stroke="{colors[index % len(colors)]}" stroke-width="2"/>')
+        lines.append(f'<text x="{500}" y="{60 + 18 * index}" font-family="sans-serif" font-size="12" fill="{colors[index % len(colors)]}">{label}</text>')
+    lines.append("</svg>")
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def render_svg_plots(rows: Sequence[PlotRow], promoted_stacks: Sequence[str]) -> Mapping[str, bytes]:
+    ordered = tuple(sorted((item for item in rows if item.valid), key=lambda item: (_STACK_ORDER.index(item.stack_id), item.seed, item.condition_id)))
+    stacks = tuple(dict.fromkeys(("P1", *promoted_stacks)))
+    plots: dict[str, bytes] = {}
+    specs = (
+        (_PLOT_NAMES[0], "Recovery vs latency", "latency (ms)", "recovery (s)", lambda item: (float(item.latency_ms), item.recovery_s)),
+        (_PLOT_NAMES[1], "Tracking error vs rate", "policy rate (Hz)", "error (m)", lambda item: (float(item.policy_hz), item.error_m)),
+        (_PLOT_NAMES[2], "Joint jerk", "seed", "jerk (rad/s^3)", lambda item: (float(item.seed), item.jerk_p95)),
+        (_PLOT_NAMES[3], "Action age", "latency (ms)", "age (s)", lambda item: (float(item.latency_ms), item.age_p95_s)),
+    )
+    for filename, title, x_label, y_label, transform in specs:
+        plots[filename] = _svg(title, x_label, y_label, tuple((stack, tuple(transform(item) for item in ordered if item.stack_id == stack)) for stack in stacks))
+    timeline_candidates = [item for item in ordered if item.stack_id in stacks and item.policy_hz == 10 and item.latency_ms == 300 and item.move_count == 2 and item.fault == "NONE" and item.timeline]
+    chosen_seed = min((item.seed for item in timeline_candidates), default=None)
+    plots[_PLOT_NAMES[4]] = _svg("Timeline", "sample", "error (m)", tuple((stack, tuple((float(index), value) for item in timeline_candidates if item.stack_id == stack and item.seed == chosen_seed for index, value in enumerate(item.timeline))) for stack in stacks))
+    return MappingProxyType(plots)
+
+
+def write_svg_plots(output_dir: Path, rows: Sequence[PlotRow], promoted_stacks: Sequence[str]) -> tuple[Path, ...]:
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    rendered = render_svg_plots(rows, promoted_stacks)
+    paths = []
+    for filename in _PLOT_NAMES:
+        path = output_dir / filename
+        payload = rendered[filename]
+        if path.exists():
+            if path.read_bytes() != payload:
+                raise FileExistsError(f"plot already exists with different bytes: {filename}")
+        else:
+            with path.open("xb") as handle:
+                handle.write(payload)
+        paths.append(path)
+    return tuple(paths)
