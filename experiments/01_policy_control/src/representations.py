@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import math
 
 import numpy as np
@@ -53,6 +54,9 @@ def emit_chunk(stack: CommandStack, policy_input: PolicyInput, config: Experimen
         start = forward_kinematics(q_observed, links)
         actions = np.vstack([(1.0 - i / (horizon - 1)) * start + i / (horizon - 1) * target for i in range(horizon)])
         representation = "EEF_TRAJECTORY"
+    elif stack is CommandStack.P5:
+        actions = target[None, :]
+        representation = "MPC_GOAL"
     else:
         raise NotImplementedError(stack.value)
     expiry = policy_input.response_time_ns + math.ceil(config.timing.expiry_periods * policy_input.policy_period_ns)
@@ -68,7 +72,13 @@ def emit_chunk(stack: CommandStack, policy_input: PolicyInput, config: Experimen
         actions=actions,
         representation=representation,
         expected_phase="track_target",
-        metadata={"stack_id": stack.value},
+        metadata=(
+            {"stack_id": stack.value, "cost_revision": 1, "joint_limit_rad": config.arm.joint_max_rad,
+             "velocity_limit_rad_s": config.controller.qdot_limit_rad_s,
+             "torque_limit_nm": config.arm.torque_max_nm,
+             "success_radius_m": config.thresholds["success_radius_m"]}
+            if stack is CommandStack.P5 else {"stack_id": stack.value}
+        ),
     )
 
 
@@ -96,10 +106,68 @@ def reference_for_tick(
     elif stack in {CommandStack.P3, CommandStack.P4}:
         xy = chunk.actions[0] if stack is CommandStack.P3 else linear_knot_reference(chunk.actions, relative_ns, int(round(chunk.dt_s * 1e9)))
         candidate = differential_ik_reference(xy, np.asarray(q), config.arm.link_lengths_m, config.controller.ik_damping_candidates[0], config.arm.timestep_s)
+    elif stack is CommandStack.P5:
+        target = chunk.actions[0]
+        planner_period_ns = int(round(config.controller.mpc_period_s * 1e9))
+        planner_tick = relative_ns % planner_period_ns == 0
+        if planner_tick or not state.p5_planner_enabled:
+            selected = min(
+                mpc_candidates(),
+                key=lambda qdot: mpc_cost(np.asarray(q), target, qdot, state.p5_qdot_previous, config, config.controller.mpc_smoothness_candidates[0]),
+            )
+            candidate = np.asarray(q) + config.controller.mpc_period_s * selected
+            p5_previous = selected
+            planner_reference = candidate
+        else:
+            candidate = state.p5_planner_q_ref
+            p5_previous = state.p5_qdot_previous
+            planner_reference = state.p5_planner_q_ref
     else:
         raise NotImplementedError(stack.value)
     bounded, did_slew = _slew(candidate, state.latched_q_ref, config)
     bounded = np.clip(bounded, config.arm.joint_min_rad, config.arm.joint_max_rad)
     reference = ControlReference(chunk.chunk_id, time_ns, bounded, np.zeros(3), None, None, "JOINT_PD")
-    next_state = ExecutorState(chunk.chunk_id, bounded, state.p5_qdot_previous, state.p5_planner_q_ref, state.p5_planner_enabled)
+    next_state = ExecutorState(
+        chunk.chunk_id,
+        bounded,
+        p5_previous if stack is CommandStack.P5 else state.p5_qdot_previous,
+        planner_reference if stack is CommandStack.P5 else state.p5_planner_q_ref,
+        True if stack is CommandStack.P5 else state.p5_planner_enabled,
+    )
     return reference, next_state, ClampReport(reference_clamped=did_slew)
+
+
+def mpc_candidates() -> tuple[np.ndarray, ...]:
+    result = [frozen_vector(np.zeros(3), "candidate", shape=(3,))]
+    directions = sorted(itertools.product((-1.0, 0.0, 1.0), repeat=3))
+    for magnitude in (0.25, 0.75, 1.50):
+        for raw in directions:
+            vector = np.asarray(raw, dtype=np.float64)
+            norm = float(np.linalg.norm(vector))
+            if norm:
+                result.append(frozen_vector(magnitude * vector / norm, "candidate", shape=(3,)))
+    return tuple(result)
+
+
+def mpc_cost(
+    q: np.ndarray,
+    target: np.ndarray,
+    qdot: np.ndarray,
+    qdot_previous: np.ndarray,
+    config: ExperimentConfig,
+    smoothness_weight: float,
+) -> float:
+    current = np.array(q, dtype=np.float64, copy=True)
+    velocity = np.asarray(qdot, dtype=np.float64)
+    stage = 0.0
+    effort = np.linalg.norm(velocity) / (math.sqrt(3.0) * 1.5)
+    smoothness = np.linalg.norm(velocity - np.asarray(qdot_previous)) / (math.sqrt(3.0) * 1.5)
+    for _ in range(10):
+        current = current + 0.02 * velocity
+        if np.any(np.abs(current) > config.arm.joint_max_rad):
+            return math.inf
+        error = np.linalg.norm(np.asarray(target) - forward_kinematics(current, config.arm.link_lengths_m)) / 0.06
+        barrier = np.linalg.norm(np.maximum(0.0, np.abs(current) - 2.55)) / (math.sqrt(3.0) * 0.15)
+        stage += 0.1 * (error * error + 0.01 * effort * effort + 100.0 * barrier * barrier + smoothness_weight * smoothness * smoothness)
+    terminal = np.linalg.norm(np.asarray(target) - forward_kinematics(current, config.arm.link_lengths_m)) / 0.06
+    return float(terminal * terminal + stage)
