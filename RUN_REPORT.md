@@ -1,67 +1,90 @@
-# P0 Run Report
+# P1 Run Report
 
 ## Executive result
 
-The simulation-only repository foundation is operational.
+The deterministic simulation-only shared rollout harness passed the bounded P1 gate.
 
-## Environment
+## Evidence base
 
-- Generated UTC: 2026-08-22T11:27:41.972381+00:00
-- Git SHA before report commit: `cda66bc0219afc64e8e4d23f2e88c4c0ade81fda`
-- Git status before report commit: `clean`
-- Platform: `macOS-15.6.1-arm64-arm-64bit`
-- Python: `3.11.13`
-- Required Python: `3.11.13` (verified)
-- Lockfile: `uv lock --check` passed
-- Scope: `recommended`
+- Implementation/evidence-base Git SHA: `d24ab0d7c0c1ae8779f5430c50f98eb0d41c76b7`
+- Report provenance: commands below were rerun against the current checkout; the SHA
+  intentionally names the pre-report implementation commit because a report cannot
+  contain the hash of a commit that includes itself.
+- Durable state: `p1: complete`, `p2: in_progress`, `current_pass: 2`.
+- Working tree observed during report generation: `clean`
 
-## Commands
+## Lock and tests
 
 ```text
-UV_CACHE_DIR=.cache/uv uv sync --locked --python 3.11.13
+UV_CACHE_DIR=.cache/uv uv lock --check
+(no output; exit 0)
+
 UV_CACHE_DIR=.cache/uv uv run pytest -q
-PHYSICAL_DEPLOYMENT_ALLOWED=false REFLECT_REMOTE_ENABLED=0 UV_CACHE_DIR=.cache/uv uv run python -m reflect.safety check
+........................................................................ [ 33%]
+........................................................................ [ 67%]
+......................................................................   [100%]
+214 passed in 2.33s
 ```
 
-## Tests
+## Fixture and replay
 
 ```text
-......................................................................   [100%]
-70 passed in 0.40s
+python scripts/write_p1_fixture.py --output-dir <TEMP_ROOT_A>
+<TEMP_ROOT_A>/p1-fixture
+
+python -m reflect.rollout replay <TEMP_ROOT_A>/p1-fixture
+{"event_count":6,"final_skill_state":"succeeded","frame_count":6,"rollout_id":"p1-fixture"}
+
+python scripts/write_p1_fixture.py --output-dir <TEMP_ROOT_B>
+<TEMP_ROOT_B>/p1-fixture
 ```
 
-## Results
+The two independently generated fixture directories had identical SHA-256 hashes
+for every file:
 
-- Locked interpreter and package import: PASS
-- Simulation-only safety guard: PASS
-- Remote execution default: DISABLED
-- Physical deployment: DISABLED
+- `actions.parquet`: `0b475b6ea0781ecb1dbd3fb98acc1228bd0c13aad0da880dae60b4989f75332b`
+- `config.json`: `0978bd7772089464e74be70a78c93e434216650e1737193d688485634df3224c`
+- `events.jsonl`: `a76192575c3dcadf8f84da30459b9647ee69bad5bf0d13a382019aedbe7a60fe`
+- `metadata.json`: `ebd639fd66627cc03404aee790f43adcb16950d0c6bded4fb32cec01c527a790`
+- `metrics.json`: `14dc951baf7efec7c9c14b7e759a5c9b0535c249d23e3738855f5873ed88a6fc`
+- `observations.npz`: `8cc1610201cf96b200be98c0a98c54b16bcec47c3510c1f3eea6ac8a7d4842b6`
+- `summary.md`: `d7cf34d2bad567048f3e0562457bd8c7058bc4446a3697426203c9fbf274bc12`
 
-## Public-source use
+## Safety checks
 
-This generator performs no explicit source fetches; subprocess network activity was not measured.
+```text
+make safety-check
+{"simulation_only": true, "remote_enabled": false}
 
-## Interface findings
+PHYSICAL_DEPLOYMENT_ALLOWED=true REFLECT_REMOTE_ENABLED=0 make safety-check
+exit 2: make: *** [safety-check] Error 1
 
-P0 promotes only safety configuration and durable run-state validation.
+PHYSICAL_DEPLOYMENT_ALLOWED=true python scripts/write_p1_fixture.py --output-dir <TEMP_ROOT_PHYSICAL>
+exit 1: reflect.safety.SafetyViolation: physical deployment is disabled for this program
+```
 
-## Blockers
+The physical fixture negative control failed before `<TEMP_ROOT_PHYSICAL>/p1-fixture`
+was created. Remote execution remained disabled.
 
-None for P0. Live network access remains conditional for P2.
+## Repository boundary
 
-## Highest-value next action
+- `git diff --check`: exit 0, no whitespace errors.
+- Forbidden tracked-path query: empty.
+- Unapproved files larger than 100 MiB: none.
 
-Implement P1 shared contracts, virtual clock, event schema, rollout writer, and replay.
+## Scope and limitations
 
-## Safety
+- This is deterministic synthetic artifact/replay evidence; no physics was run.
+- Replay reduces saved events and does not rerun physics.
+- No network or external source was used by the fixture or replay commands.
+- P2 source auditing and empirical experiments have not run.
+- The added `scripts/write_p1_report.py` is a documented plan-file-list omission,
+  authorized as the narrow mechanism needed to regenerate this report.
+- `tests/test_run_state.py` was narrowly updated after the mandated manifest
+  transition exposed its stale P1-in-progress assertion; no other run-state test
+  was changed.
 
-- Physical deployment is rejected by the simulation-only safety policy.
-- Remote execution is disabled for this P0 report.
-- Tracked paths inspected: 21.
-- Repository files inspected: 34 (excluding `.git`, `.venv`,
-  `.cache`, and `.superpowers`).
-- No `.env` file is tracked: confirmed.
-- No model artifact is tracked or present in the inspected repository:
-  confirmed.
-- No inspected repository file exceeds 100 MiB:
-  confirmed.
+## Highest-value next bounded action
+
+Run the P2 public-source audit and freeze the approved source registry before any
+experiment code or empirical claims.
