@@ -65,3 +65,52 @@ attempts:
       entries; Hydra was the nineteenth repository reached, its branch/commit/tree
       validate, and only its license endpoint is absent. No cached recursive tree
       is truncated.
+
+  - id: all_metadata_window_2
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --all-metadata-only
+    started_at_utc: 2026-08-22T17:48:52Z
+    finished_at_utc: 2026-08-22T17:49:58Z
+    exit_code: 1
+    published_lock: false
+    completed_entries:
+      - mujoco
+      - mujoco_mpc
+      - mujoco_menagerie
+      - mink
+      - mjctrl
+      - hydrax
+      - curobo
+      - moveit2
+      - ros2_control
+      - ros2_controllers
+      - mujoco_ros2_control
+      - act
+      - lerobot
+      - openpi
+      - diffusion_policy
+      - behaviortree_cpp
+      - navigation2
+      - spark_dsg
+      - hydra_scene_graph
+    incomplete_entry: kimera
+    error: >-
+      GitHub rate limit exhausted for
+      https://api.github.com/repos/MIT-SPARK/Kimera/license?ref=fc33760636068ea0b2dca5e9d7958ee9a03888b1;
+      reset 1787424543
+    rate_limit_reset_utc: 2026-08-22T18:49:03Z
+    lock_absence_verified: true
+    cache_validation: >-
+      Production CacheStore plus offline CachingTransport/resolver replay validated
+      19 complete entries in canonical registry order; Kimera's cached
+      default-branch, commit, and pinned recursive tree records validate, but its
+      pinned GitHub license endpoint is absent. All 20 cached recursive trees are
+      non-truncated, and the cache contains 79 SHA-256-validated payload/metadata
+      record pairs plus the active rate-limit marker; no lock exists or was
+      published.
