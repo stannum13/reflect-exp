@@ -11,6 +11,8 @@ import subprocess
 import pytest
 import yaml
 
+from reflect.source_evidence import canonical_sha256
+
 
 def _canonical(value: object) -> bytes:
     return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode()
@@ -48,13 +50,18 @@ def _commit(repository: Path, message: str) -> str:
 def _write_repository(root: Path) -> str:
     subprocess.run(["git", "init", "-b", "integration/autonomous-run"], cwd=root, check=True, capture_output=True)
     names = ["mujoco", *(f"repo-{index:02d}" for index in range(44))]
+    selected_paths = {
+        name: (["src", *(f"src/path-{index:03d}" for index in range(234))]
+               if name == "mujoco" else ["src"])
+        for name in names
+    }
     registry = {
         "verified_at": "2026-08-22", "large_model_downloads_default": False,
         "physical_deployment_default": False,
         "repositories": [{
             "name": name, "url": f"https://github.com/example/{name}",
             "mode": "DIRECT_DEPENDENCY" if name == "mujoco" else "SPARSE_REFERENCE",
-            "experiments": ["01_policy_control"], "selected_paths": ["src"],
+            "experiments": ["01_policy_control"], "selected_paths": selected_paths[name],
             "use": "bounded fixture", "caveat": "fixture only",
         } for name in names],
     }
@@ -71,8 +78,11 @@ def _write_repository(root: Path) -> str:
             "metadata_evidence": {"tree": "https://api.github.com/example"},
             "license_spdx": "MIT", "license_status": "DISCOVERED",
             "license_evidence_url": "https://api.github.com/license",
-            "path_statuses": {"src": "EXISTS"},
-            "path_evidence_urls": {"src": "https://api.github.com/tree/src"},
+            "path_statuses": {path: "EXISTS" for path in selected_paths[name]},
+            "path_evidence_urls": {
+                path: f"https://api.github.com/tree/{path}"
+                for path in selected_paths[name]
+            },
             "metadata_status": "RESOLVED",
         } for index, name in enumerate(names)],
     }
@@ -97,34 +107,83 @@ def _write_repository(root: Path) -> str:
     manifest = {
         "schema_version": 1, "registry_sha256": registry_sha, "lock_sha256": _lock_digest(lock),
         "repositories": [{"repository": item["name"], "commit_sha": item["commit_sha"],
-                          "paths": [{"path": "src", "status": "EXISTS"}]} for item in lock["entries"]],
+                          "paths": [{"path": path, "status": status}
+                                    for path, status in sorted(item["path_statuses"].items())]}
+                         for item in lock["entries"]],
         "operations": [operation], "requirement_observations": [],
         "mujoco_smoke_output": {"operation_id": "MUJOCO_PACKAGE_SMOKE", "relative_path": output},
     }
     config = root / "experiments/00_source_audit/configs"
     config.mkdir(parents=True)
     (config / "operation-manifest.yaml").write_text(yaml.safe_dump(manifest, sort_keys=False))
-    smoke = {
-        "schema_version": 1, "evidence_type": "COMPATIBILITY", "operation_id": "MUJOCO_PACKAGE_SMOKE",
-        "repository": "mujoco", "runtime_subject": "package", "package_name": "mujoco",
-        "package_version": "3.12.0", "registry_sha256": registry_sha,
-    }
-    smoke["evidence_sha256"] = hashlib.sha256(_canonical(smoke)).hexdigest()
+    source_compat = importlib.import_module("reflect.source_compat")
+    sources = importlib.import_module("reflect.sources")
+    qpos = [float(0.01 + index).hex() for index in range(8)]
+    qvel = [float(0.02 + index).hex() for index in range(7)]
+    xml_sha = "a" * 64
+    installed_sha = "b" * 64
+    lock_artifact_sha = "c" * 64
+    smoke = source_compat.CompatibilityEvidence.create(
+        registry_sha256=registry_sha, repository="mujoco", commit_sha=f"{1:040x}",
+        experiment="01_policy_control", selected_path="src",
+        operation_id="MUJOCO_PACKAGE_SMOKE", operation="PACKAGE_RUNTIME",
+        platform="darwin-arm64", python_requirement=">=3.11,<3.12",
+        compiler_or_runtime="mujoco-3.12.0;python-3.11.13",
+        command=("mujoco", "headless-one-step"), exit_status=0,
+        disk_bytes=4096, download_bytes=0, license_status="DISCOVERED",
+        license_spdx="MIT", blocker=None, notes="bounded fixture smoke",
+        runtime_subject="package", package_name="mujoco", package_version="3.12.0",
+        package_artifact_sha256=installed_sha,
+        package_lock_artifact_sha256=lock_artifact_sha,
+        patch_artifact_sha256=None,
+        findings={
+            "duration_ns": 1,
+            "artifact": {
+                "wheel_filename": "mujoco-3.12.0.whl",
+                "lock_artifact_sha256": lock_artifact_sha,
+                "installed_tree_sha256": installed_sha,
+                "record_entries": 3, "installed_files": 3, "installed_bytes": 4096,
+                "executed_origins": [
+                    {"module": "mujoco", "record_path": "mujoco/__init__.py",
+                     "sha256": "d" * 64, "native_extension": False},
+                    {"module": "mujoco._functions", "record_path": "mujoco/_functions.py",
+                     "sha256": "e" * 64, "native_extension": False},
+                    {"module": "mujoco._structs", "record_path": "mujoco/_structs.so",
+                     "sha256": "f" * 64, "native_extension": True},
+                ],
+            },
+            "dynamics": {
+                "xml_sha256": xml_sha, "control": [float(0.125).hex()],
+                "timestep": float(0.002).hex(), "nq": 8, "nv": 7, "nu": 1,
+                "post_step": {
+                    "time": float(0.002).hex(), "qpos": qpos, "qvel": qvel,
+                    "qpos_sha256": canonical_sha256(qpos),
+                    "qvel_sha256": canonical_sha256(qvel),
+                },
+            },
+        },
+        content_hashes={"inline-model.xml": xml_sha},
+    )
     smoke_path = root / output
     smoke_path.parent.mkdir(parents=True)
-    smoke_path.write_bytes(_canonical(smoke))
-    results = root / "experiments/00_source_audit/results"
-    csv_rows = ["repository,commit_sha,experiment,reuse_mode,selected_path,path_status,operation,platform,python_requirement,compiler_or_runtime,smoke_command,smoke_status,classification,license_status,license_spdx,disk_bytes,download_bytes,blocker,notes"]
-    csv_rows.extend(f"repo-{index},{'1' * 40},01_policy_control,SPARSE_REFERENCE,src,EXISTS,,,,,,NOT_RUN,NOT_EVALUATED,DISCOVERED,MIT,0,0,," for index in range(279))
-    (results / "compatibility.csv").write_text("\n".join(csv_rows) + "\n")
+    smoke_path.write_bytes(smoke.canonical_bytes())
+    registry_model = sources.load_registry(registry_path)
+    lock_model = sources.load_lock(references / "repos.lock.yaml")
+    manifest_model = source_compat.load_operation_manifest(
+        config / "operation-manifest.yaml", registry_model, lock_model, root
+    )
+    rows = source_compat.consolidate_compatibility(
+        registry_model, lock_model, (smoke,), manifest_model.requirement_observations,
+        manifest_model,
+    )
+    assert len(rows) == 279
+    source_compat.write_compatibility_outputs(
+        root, registry_model, lock_model, rows, manifest=manifest_model,
+        seen_operation_ids=frozenset({"MUJOCO_PACKAGE_SMOKE"}),
+        passed_operation_ids=frozenset({"MUJOCO_PACKAGE_SMOKE"}),
+    )
     (root / "docs").mkdir(exist_ok=True)
-    (root / "docs/SOURCE_MAP.md").write_text("# Source map\n\n| experiment | source |\n|---|---|\n| 01 | pinned |\n")
-    maturity = ["# Maturity ledger", "", "| project_or_component | evidence_label | evidence_source | supported_embodiment_or_task | license | compute_requirements | local_reproduction_status | known_failure_modes | role_in_program | hardware_validation_status |", "|---|---|---|---|---|---|---|---|---|---|"]
-    maturity.extend(f"| component-{index:02d} | UNVERIFIED | NONE | fixture | MIT | local | NOT_REPRODUCED | none | fixture | NOT_APPLICABLE |" for index in range(46))
-    (root / "docs/MATURITY_LEDGER.md").write_text("\n".join(maturity) + "\n")
     (root / "docs/ASSUMPTIONS.md").write_text("# Assumptions\n\nP3 evidence is simulation-only.\n")
-    (root / "experiments/00_source_audit/RESULTS.md").write_text("# Experiment 00 results\n\noperational_gate: PASS\n\ncomparative_implementation_time_claim: INCONCLUSIVE\n")
-    (root / "experiments/00_source_audit/INTERFACE_FINDINGS.md").write_text("# Interface findings\n\ngate_status: PASS\n")
     (root / "docs/RUN_MANIFEST.yaml").write_text(yaml.safe_dump({
         "schema_version": 1, "safety": {"physical_deployment_allowed": False, "remote_enabled": False},
         "stages": {"p2": "complete", "p3": "complete"}, "phase_records": {},
@@ -215,12 +274,52 @@ def test_reporter_rejects_smoke_hash_tamper_and_forbidden_tracked_path(tmp_path:
     raw["package_version"] = "3.11.0"
     smoke.write_bytes(_canonical(raw))
     sha = _commit(repository, "tamper")
-    with pytest.raises(ValueError, match="smoke"):
+    with pytest.raises(ValueError, match="smoke|package runtime"):
         report.main(["--evidence-base-sha", sha], root=repository)
     (repository / "models").mkdir()
     (repository / "models/policy.safetensors").write_bytes(b"model")
     sha = _commit(repository, "model")
     with pytest.raises(ValueError, match="forbidden"):
+        report.main(["--evidence-base-sha", sha], root=repository)
+
+
+def test_reporter_rejects_minimal_hashed_smoke_scaffold(tmp_path: Path) -> None:
+    report = importlib.import_module("scripts.write_p3_report")
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _write_repository(repository)
+    smoke_path = repository / "experiments/00_source_audit/results/fragments/mujoco-package-smoke.json"
+    raw = {
+        "schema_version": 1, "evidence_type": "COMPATIBILITY",
+        "operation_id": "MUJOCO_PACKAGE_SMOKE", "repository": "mujoco",
+        "runtime_subject": "package", "package_name": "mujoco",
+        "package_version": "3.12.0",
+        "registry_sha256": hashlib.sha256((repository / "references/repos.yaml").read_bytes()).hexdigest(),
+    }
+    raw["evidence_sha256"] = hashlib.sha256(_canonical(raw)).hexdigest()
+    smoke_path.write_bytes(_canonical(raw))
+    sha = _commit(repository, "minimal smoke scaffold")
+    with pytest.raises(ValueError, match="compatibility fragment|missing|extra"):
+        report.main(["--evidence-base-sha", sha], root=repository)
+
+
+@pytest.mark.parametrize("mutation", ["no_models", "output_escape"])
+def test_reporter_rejects_operation_safety_and_output_escape(
+    tmp_path: Path, mutation: str
+) -> None:
+    report = importlib.import_module("scripts.write_p3_report")
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _write_repository(repository)
+    path = repository / "experiments/00_source_audit/configs/operation-manifest.yaml"
+    raw = yaml.safe_load(path.read_text())
+    if mutation == "no_models":
+        raw["operations"][0]["no_models"] = False
+    else:
+        raw["operations"][0]["relative_output"] = "../mujoco-package-smoke.json"
+    path.write_text(yaml.safe_dump(raw, sort_keys=False))
+    sha = _commit(repository, "unsafe operation")
+    with pytest.raises(ValueError, match="operation|unsafe|output|safety"):
         report.main(["--evidence-base-sha", sha], root=repository)
 
 
@@ -260,6 +359,18 @@ def test_reporter_subprocess_allowlist_cannot_be_expanded_by_caller() -> None:
         report._checked_git_shape(("fetch", "https://example.invalid/repository"))
 
 
+def test_reporter_git_reads_disable_promisor_lazy_fetch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    report = importlib.import_module("scripts.write_p3_report")
+
+    def refuse_without_offline_env(*args: object, **kwargs: object):
+        assert kwargs["env"]["GIT_NO_LAZY_FETCH"] == "1"
+        return subprocess.CompletedProcess(args[0], 1, b"", b"missing promised blob")
+
+    monkeypatch.setattr(report.subprocess, "run", refuse_without_offline_env)
+    with pytest.raises(RuntimeError, match="missing promised blob"):
+        report._git(tmp_path, "cat-file", "blob", "a" * 40)
+
+
 def test_reporter_atomic_failure_preserves_old_report_and_owned_cleanup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     report = importlib.import_module("scripts.write_p3_report")
     repository = tmp_path / "repository"
@@ -271,3 +382,18 @@ def test_reporter_atomic_failure_preserves_old_report_and_owned_cleanup(tmp_path
         report._atomic_write_report(repository, "new\n")
     assert (repository / "RUN_REPORT.md").read_bytes() == original
     assert not tuple(repository.glob(".RUN_REPORT.md.p3-*"))
+
+
+def test_reporter_rejects_temporary_inode_substitution(tmp_path: Path) -> None:
+    report = importlib.import_module("scripts.write_p3_report")
+    repository = tmp_path / "repository"
+    repository.mkdir()
+
+    def substitute(temporary: str) -> None:
+        target = repository / temporary
+        target.unlink()
+        target.write_text("attacker bytes\n")
+
+    with pytest.raises(ValueError, match="temporary|changed"):
+        report._atomic_write_report(repository, "validated\n", substitute)
+    assert not (repository / "RUN_REPORT.md").exists()

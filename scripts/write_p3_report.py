@@ -13,7 +13,9 @@ from pathlib import Path, PurePosixPath
 import re
 import secrets
 import socket
+import stat
 import subprocess
+import tempfile
 from typing import Callable, Mapping, Sequence
 
 import yaml
@@ -25,6 +27,13 @@ from reflect._p2_report_io import (
     hardened_environment,
 )
 from reflect.p2_report import StrictYamlLoader
+from reflect.source_compat import (
+    consolidate_compatibility,
+    load_manifest_fragments,
+    load_operation_manifest,
+    write_compatibility_outputs,
+)
+from reflect.sources import load_lock, load_registry
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,7 +43,6 @@ SECTION_HEADINGS = (
     "Highest-value next action", "Safety",
 )
 _SHA40 = re.compile(r"[0-9a-f]{40}\Z")
-_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _SMOKE_PATH = "experiments/00_source_audit/results/fragments/mujoco-package-smoke.json"
 _FIXED_ARTIFACTS = (
     "references/repos.yaml",
@@ -101,7 +109,11 @@ def _checked_git_shape(arguments: tuple[str, ...]) -> None:
 def _git(root: Path, *arguments: str) -> bytes:
     vector = tuple(arguments)
     _checked_git_shape(vector)
-    environment = hardened_environment({"GIT_NO_REPLACE_OBJECTS": "1", "GIT_OPTIONAL_LOCKS": "0"})
+    environment = hardened_environment({
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_NO_LAZY_FETCH": "1",
+    })
     completed = subprocess.run(
         [HARDENED_GIT_PREFIX[0], "--no-replace-objects", *HARDENED_GIT_PREFIX[1:], *vector],
         cwd=root, env=environment, capture_output=True, check=False,
@@ -132,23 +144,6 @@ def _strict_yaml(content: bytes, label: str) -> dict[str, object]:
         raise ValueError(f"{label} is not duplicate-free UTF-8 YAML") from exc
     if not isinstance(raw, dict):
         raise ValueError(f"{label} must be a mapping")
-    return raw
-
-
-def _strict_json(content: bytes, label: str) -> dict[str, object]:
-    def unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
-        result: dict[str, object] = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError(f"{label} has duplicate JSON key {key}")
-            result[key] = value
-        return result
-    try:
-        raw = json.loads(content.decode("utf-8", "strict"), object_pairs_hook=unique)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ValueError(f"{label} is not strict UTF-8 JSON") from exc
-    if not isinstance(raw, dict):
-        raise ValueError(f"{label} must be a JSON object")
     return raw
 
 
@@ -228,6 +223,71 @@ def _validate_manifest(manifest: dict[str, object]) -> tuple[str, dict[str, obje
     return _SMOKE_PATH, match
 
 
+def _validate_domain_snapshot(
+    artifacts: Mapping[str, GitArtifact], smoke_path: str
+) -> tuple[str, str, str]:
+    with tempfile.TemporaryDirectory(prefix="reflect-p3-report-") as temporary:
+        snapshot_root = Path(temporary)
+        for path, artifact in artifacts.items():
+            target = snapshot_root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(artifact.content)
+        registry = load_registry(snapshot_root / "references/repos.yaml")
+        lock = load_lock(snapshot_root / "references/repos.lock.yaml")
+        manifest = load_operation_manifest(
+            snapshot_root / "experiments/00_source_audit/configs/operation-manifest.yaml",
+            registry,
+            lock,
+            snapshot_root,
+        )
+        fragments, checkouts, seen = load_manifest_fragments(
+            snapshot_root, manifest, registry, lock
+        )
+        passed = frozenset(
+            [item.operation_id for item in fragments if item.exit_status == 0]
+            + [
+                operation.operation_id
+                for operation in manifest.operations
+                if operation.operation == "CHECKOUT"
+                and any(
+                    item.repository == operation.repository and item.outcome == "PASS"
+                    for item in checkouts
+                )
+            ]
+        )
+        expected = frozenset(item.operation_id for item in manifest.operations)
+        if seen != expected or passed != expected:
+            raise ValueError("P3 operation evidence is incomplete or non-PASS")
+        rows = consolidate_compatibility(
+            registry,
+            lock,
+            fragments,
+            manifest.requirement_observations,
+            manifest,
+            checkouts,
+        )
+        if len(registry.repositories) != 45 or len(rows) != 279:
+            raise ValueError("P2/P3 inventory must contain exactly 45 sources and 279 rows")
+        write_compatibility_outputs(
+            snapshot_root,
+            registry,
+            lock,
+            rows,
+            check=True,
+            manifest=manifest,
+            seen_operation_ids=seen,
+            checkouts=checkouts,
+            passed_operation_ids=passed,
+        )
+        selected = [item for item in fragments if item.operation_id == "MUJOCO_PACKAGE_SMOKE"]
+        if len(selected) != 1 or manifest.mujoco_smoke_output.relative_path != smoke_path:
+            raise ValueError("P3 selected MuJoCo smoke evidence is missing or ambiguous")
+        smoke = selected[0]
+        if smoke.package_version != "3.12.0":
+            raise ValueError("P3 smoke package identity is invalid")
+        return smoke.package_version, smoke.platform, smoke.compiler_or_runtime
+
+
 def _validate_snapshot(artifacts: dict[str, GitArtifact], smoke_path: str, operation: dict[str, object]) -> tuple[str, str, str]:
     registry = _strict_yaml(artifacts["references/repos.yaml"].content, "P2 registry")
     lock = _strict_yaml(artifacts["references/repos.lock.yaml"].content, "P2 lock")
@@ -249,23 +309,6 @@ def _validate_snapshot(artifacts: dict[str, GitArtifact], smoke_path: str, opera
         expected_paths = [{"path": key, "status": value} for key, value in sorted(pin["path_statuses"].items())]
         if source.get("name") != pin.get("name") or identity != {"repository": pin.get("name"), "commit_sha": pin.get("commit_sha"), "paths": expected_paths}:
             raise ValueError("P2/P3 repository identities are not aligned")
-    smoke = _strict_json(artifacts[smoke_path].content, "P3 MuJoCo smoke")
-    evidence_hash = smoke.get("evidence_sha256")
-    unhashed = {key: value for key, value in smoke.items() if key != "evidence_sha256"}
-    if not isinstance(evidence_hash, str) or evidence_hash != hashlib.sha256(_canonical_bytes(unhashed)).hexdigest():
-        raise ValueError("P3 smoke evidence hash is invalid")
-    if smoke.get("operation_id") != "MUJOCO_PACKAGE_SMOKE" or smoke.get("runtime_subject") != "package" or smoke.get("package_name") != "mujoco" or smoke.get("package_version") != "3.12.0":
-        raise ValueError("P3 smoke package identity is invalid")
-    compatibility = artifacts["experiments/00_source_audit/results/compatibility.csv"].content.decode("utf-8", "strict").splitlines()
-    if len(compatibility) != 280 or not compatibility[0].startswith("repository,commit_sha,experiment,"):
-        raise ValueError("P3 compatibility inventory must contain exact 279 rows")
-    maturity = artifacts["docs/MATURITY_LEDGER.md"].content.decode("utf-8", "strict")
-    if maturity.count("| project_or_component | evidence_label |") != 1 or sum(line.startswith("| ") for line in maturity.splitlines()) != 47:
-        raise ValueError("P3 maturity ledger is incomplete")
-    results = artifacts["experiments/00_source_audit/RESULTS.md"].content.decode("utf-8", "strict")
-    interfaces = artifacts["experiments/00_source_audit/INTERFACE_FINDINGS.md"].content.decode("utf-8", "strict")
-    if "operational_gate: PASS" not in results or "comparative_implementation_time_claim: INCONCLUSIVE" not in results or "gate_status: PASS" not in interfaces:
-        raise ValueError("P3 result/interface gate is not complete")
     run_manifest = _strict_yaml(artifacts["docs/RUN_MANIFEST.yaml"].content, "run manifest")
     safety = run_manifest.get("safety")
     stages = run_manifest.get("stages")
@@ -273,18 +316,23 @@ def _validate_snapshot(artifacts: dict[str, GitArtifact], smoke_path: str, opera
         raise ValueError("P3 run-manifest safety/stage gate is invalid")
     if not artifacts["references/licenses.md"].content.startswith(b"# Source licenses") or not artifacts["docs/SOURCE_MAP.md"].content.startswith(b"# Source map") or not artifacts["docs/ASSUMPTIONS.md"].content.startswith(b"# Assumptions"):
         raise ValueError("P3 provenance documents are incomplete")
-    return str(smoke["package_version"]), str(operation["platform"]), str(operation["compiler_or_runtime"])
+    package_version, platform_name, runtime = _validate_domain_snapshot(artifacts, smoke_path)
+    if platform_name != operation["platform"] or runtime != operation["compiler_or_runtime"]:
+        raise ValueError("P3 selected smoke runtime does not match its operation")
+    return package_version, platform_name, runtime
 
 
 def _read_snapshot(root: Path, evidence_sha: str) -> P3Snapshot:
     manifest_artifact = _git_artifact(root, evidence_sha, "experiments/00_source_audit/configs/operation-manifest.yaml")
     manifest = _strict_yaml(manifest_artifact.content, "P3 operation manifest")
     smoke_path, operation = _validate_manifest(manifest)
-    paths = (*_FIXED_ARTIFACTS, smoke_path)
+    tracked = tuple(item.decode("utf-8", "strict") for item in _git(root, "ls-tree", "-r", "-z", "--name-only", evidence_sha).split(b"\0") if item)
+    fragment_prefix = "experiments/00_source_audit/results/fragments/"
+    fragment_paths = tuple(path for path in tracked if path.startswith(fragment_prefix))
+    paths = (*_FIXED_ARTIFACTS, *fragment_paths)
     if len(paths) != len(set(paths)):
         raise ValueError("P3 artifact inventory contains a path collision")
     artifacts = {path: _git_artifact(root, evidence_sha, path) for path in paths}
-    tracked = tuple(item.decode("utf-8", "strict") for item in _git(root, "ls-tree", "-r", "-z", "--name-only", evidence_sha).split(b"\0") if item)
     forbidden = forbidden_tracked_paths(tuple(path for path in tracked if path not in artifacts))
     if forbidden:
         raise ValueError(f"P3 evidence commit contains forbidden tracked paths: {forbidden}")
@@ -386,7 +434,7 @@ def _atomic_write_report(root: Path, content: str, final_check: Callable[[str], 
     identity: tuple[int, int] | None = None
     replaced = False
     try:
-        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600, dir_fd=root_fd)
+        descriptor = os.open(temporary, os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600, dir_fd=root_fd)
         value = os.fstat(descriptor)
         identity = (value.st_dev, value.st_ino)
         os.fchmod(descriptor, 0o600)
@@ -398,10 +446,29 @@ def _atomic_write_report(root: Path, content: str, final_check: Callable[[str], 
                 raise OSError("short P3 report write")
             offset += count
         os.fsync(descriptor)
-        os.close(descriptor)
-        descriptor = -1
         if final_check is not None:
             final_check(temporary)
+        descriptor_state = os.fstat(descriptor)
+        try:
+            path_state = os.stat(temporary, dir_fd=root_fd, follow_symlinks=False)
+        except FileNotFoundError as exc:
+            raise ValueError("P3 report temporary changed before replacement") from exc
+        current = b""
+        while len(current) < descriptor_state.st_size:
+            chunk = os.pread(descriptor, descriptor_state.st_size - len(current), len(current))
+            if not chunk:
+                break
+            current += chunk
+        if (
+            not stat.S_ISREG(descriptor_state.st_mode)
+            or stat.S_IMODE(descriptor_state.st_mode) != 0o600
+            or (descriptor_state.st_dev, descriptor_state.st_ino) != identity
+            or (path_state.st_dev, path_state.st_ino) != identity
+            or not stat.S_ISREG(path_state.st_mode)
+            or path_state.st_size != len(payload)
+            or current != payload
+        ):
+            raise ValueError("P3 report temporary changed before replacement")
         os.replace(temporary, "RUN_REPORT.md", src_dir_fd=root_fd, dst_dir_fd=root_fd)
         replaced = True
         os.fsync(root_fd)
