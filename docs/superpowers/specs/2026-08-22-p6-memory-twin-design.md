@@ -6,502 +6,724 @@
 
 **Scope:** Reflect Lite Experiments 04 and 05
 
-## 1. Decision
+## 1. Decision and claim boundary
 
-P6 will use a frozen, pure-Python world-trace kernel shared by Experiments 04 and
-05. Experiment 04 establishes the memory interface and freezes the smallest
-useful composition. Experiment 05 consumes that frozen interface and evaluates
-semantic-twin layers. Evidence collection is therefore serial, Exp04 then Exp05,
-while implementation preparation that does not depend on Exp04's result may run
-in parallel.
+P6 uses a frozen pure-Python world-trace kernel shared by Experiments 04 and 05.
+Experiment 04 establishes a minimal memory interface; Experiment 05 consumes that
+frozen interface to test semantic-twin layers. Evidence is serial, Exp04 then
+Exp05. Contract and fixture preparation may proceed in parallel, but Exp05 may not
+select or inspect the winning Exp04 implementation before Exp04 promotion.
 
-The initial benchmark uses standard-library data structures, `dataclasses`,
-`heapq`, and the repository's existing NumPy and artifact support. It does not
-introduce a database, scene graph, vector database, USD, IFC, Hydra,
-ConceptGraphs, or an external LLM. Those are adapter candidates only after a
-measured limitation justifies them.
+The benchmark uses standard-library data structures, `dataclasses`, `heapq`, and
+the repository's current NumPy/PyArrow artifact stack. It does not introduce a
+database, scene-graph framework, vector database, USD, IFC, Hydra, ConceptGraphs,
+or an LLM. The program explicitly requires a local hand-authored benchmark before
+Hydra or ConceptGraphs (`Reflect Lite Research Program.md:1596-1612`).
 
-This follows the program's requirement to start locally and minimally and not
-install Hydra or ConceptGraphs before a hand-authored benchmark proves the
-interface useful (`Reflect Lite Research Program.md:1596-1612`). It also follows
-the autonomous-run dependency order: Experiment 04 precedes 05, and 05 starts
-only after the 04 interface freezes
-(`docs/superpowers/specs/2026-08-22-reflect-lite-autonomous-run-design.md:97-113`).
+Exp04 can establish task-relevant memory query and decision performance under
+stale, occluded, and changing state, not real perception, building-scale mapping,
+or a production database (`Reflect Lite Research Program.md:1580-1594`). Exp05 can
+establish the representational value of typed twin layers in one small building,
+not raw-sensor mapping, industrial BIM interoperability, photorealistic simulation,
+or general language grounding (`Reflect Lite Research Program.md:1743-1758`).
 
 ## 2. Alternatives and trade-offs
 
-### A. Independent experiments, strictly serial
+### A. Independent strictly serial experiments
 
-Exp04 and Exp05 would each define their own world, event model, scoring, and
-artifacts. This gives the cleanest experimental isolation, but duplicates the
-most error-prone fixture logic and makes cross-experiment disagreements hard to
-attribute. It also encourages the twin experiment to reinterpret memory facts.
+Each experiment could define its own world, event model, scorer, and artifacts.
+This maximizes isolation but duplicates the most error-prone fixture logic and
+makes cross-experiment disagreements hard to attribute.
 
-### B. One combined memory-and-twin framework
+### B. One combined memory/twin framework
 
-A single extensible framework would maximize reuse and allow both experiments to
-run together. It is rejected because it couples two claims before either is
-established, makes result-dependent interfaces difficult to freeze, and risks
-building the database or scene-graph platform that the program explicitly defers.
+A single extensible framework would maximize reuse. It is rejected because it
+couples two claims before either is established, permits Exp05 outcomes to reshape
+Exp04's interface, and encourages premature database/scene-graph scaffolding.
 
-### C. Frozen shared trace kernel, serial evidence — selected
+### C. Frozen trace kernel with isolated runners — selected
 
-Both experiments read identical immutable truth and observation traces through
-small experiment-local projections. Exp04 alone decides the promoted memory
-view. Exp05 is prepared against a narrow protocol but runs confirmation only
-after that view is frozen. This preserves common causes and deterministic
-comparisons without treating the experimental implementations as a platform.
-The cost is a deliberate checkpoint between the experiments; that cost is useful
-because it prevents Exp05 results from changing Exp04's interface after the fact.
+The generator creates physically separate truth and observation traces from one
+scenario definition. Every variant runs in a fresh process-like boundary over a
+freshly decoded observation trace. Exp04 freezes the smallest passing memory view;
+Exp05 then consumes only its promoted protocol. This preserves common causes and
+equal information while keeping hidden truth out of evaluated code. Its deliberate
+serial promotion checkpoint follows the autonomous lane order
+(`docs/superpowers/specs/2026-08-22-reflect-lite-autonomous-run-design.md:97-113`).
 
-## 3. Scientific boundaries
+## 3. World, IDs, relations, and time
 
-Experiment 04 tests task-relevant query and decision performance under stale,
-occluded, and changing state. It cannot establish real perception quality,
-building-scale mapping, or an optimal production database
-(`Reflect Lite Research Program.md:1580-1594`). Experiment 05 tests the
-representational value of geometry, topology, semantics, and live belief in a
-small hand-authored building. It cannot establish raw-sensor mapping, industrial
-BIM interoperability, photorealistic simulation value, or general language
-grounding (`Reflect Lite Research Program.md:1743-1758`).
+### 3.1 Canonical world
 
-The benchmark is deterministic and rule-based. An LLM is not used in evidence-
-bearing runs; this is stricter than the program's optional, environment-gated LLM
-extension (`Reflect Lite Research Program.md:1860-1866`).
+The world contains five rooms, six doors, ten assets, two valves, two tools, one
+charger, one restricted room, and one robot, matching Exp04
+(`Reflect Lite Research Program.md:1636-1645`). The Exp05 projection uses Lobby,
+CorridorA, PumpRoom, ElectricalRoom, and RestrictedLab
+(`Reflect Lite Research Program.md:1801-1812`).
 
-## 4. Shared frozen world-trace kernel
+Stable IDs are opaque canonical strings: `room/0001`, `door/0001`, `asset/0001`,
+`robot/0001`, `event/00000001`, and `observation/00000001`. Labels and aliases are
+facts, never identities. IDs are assigned by sorted generator role before any
+variant runs; a variant cannot mint a world-entity ID.
 
-### 4.1 World
+### 3.2 Frozen relation vocabulary
 
-The canonical world contains five rooms, six doors, ten assets, two valves, two
-tools, one charger, one restricted room, and one robot, matching the Exp04 fixture
-contract (`Reflect Lite Research Program.md:1636-1645`). The same entities are
-projected into the Exp05 building hierarchy: Lobby, CorridorA, PumpRoom,
-ElectricalRoom, and RestrictedLab (`Reflect Lite Research Program.md:1801-1812`).
-Every entity has one stable, opaque ID. Human-readable labels are not identities.
+The only world-relation predicates are:
 
-Relations use the closed vocabulary `IN`, `ON`, `NEAR`, `BLOCKS`, `CONNECTS`,
-`HELD_BY`, `REACHABLE`, `RESTRICTED_BY`, and `OBSERVED_AT`, as specified by the
-program (`Reflect Lite Research Program.md:1647-1659`). Geometry is bounded 2D
-pose and extent data; topology is room/door connectivity and route cost;
-semantics is identity, class, aliases, affordances, and restrictions; live belief
-is timestamped operational state, confidence, provenance, visibility, and
-uncertainty. These remain typed layers, never a single untyped mapping.
+```text
+IN
+ON
+NEAR
+BLOCKS
+CONNECTS
+HELD_BY
+REACHABLE
+RESTRICTED_BY
+OBSERVED_AT
+```
 
-### 4.2 Hidden truth and observations
+This is the program's complete vocabulary
+(`Reflect Lite Research Program.md:1647-1659`). Direction, inverse semantics,
+allowed subject/object kinds, symmetry, and cardinality are frozen per predicate.
+Unknown predicates fail trace validation rather than becoming strings in an
+untyped graph.
 
-The kernel has two disjoint timelines:
+### 3.3 Virtual time and total order
 
-- `TruthFrame` is authoritative simulator state. Only the generator and scorer
-  can read it.
-- `ObservationFrame` contains the facts delivered to an architecture at a given
-  virtual time, including stable IDs where the observation resolves identity,
-  confidence, provenance, and explicit unknowns.
+A virtual monotonic nanosecond clock is the only decision time. Each record has
+`monotonic_time_ns`, `source_sequence`, and stable `event_id`. Coincident records
+use this total order:
 
-Architectures, queries, and planners receive only observations and the records
-they derived from earlier observations. Scoring joins their answers or actions to
-hidden truth after execution. Test-only capability objects enforce this boundary;
-no architecture callback receives a truth store or truth-derived relation.
+1. truth mutation;
+2. observation delivery;
+3. memory update;
+4. query or mission request;
+5. query response;
+6. decision or plan publication;
+7. simulated outcome; and
+8. scoring record.
 
-The kernel uses a virtual monotonic nanosecond clock and named, independently
-seeded random streams for layout, event choice, observation noise, query order,
-and mission order. Adding draws to one stream cannot perturb another. A trace is
-identified by schema version, generator version, seed, configuration hash, and
-content hash. Pilot and confirmation seed sets are disjoint.
+Within one rank, `source_sequence` then `event_id` orders records. Time may remain
+equal but never regress. Architecture-visible events use the existing shared
+`ExecutionEventType` when applicable; P6's `event_subtype` is a validated payload
+field and never expands the shared enum implicitly.
 
-### 4.3 Deterministic event suite
+The frozen local subtype vocabulary is:
 
-Each trace includes all ten canonical event classes in a frozen balanced order:
+```text
+OBJECT_MOVED_UNOBSERVED
+OBJECT_OCCLUDED
+DOOR_STATE_CHANGED
+POSE_BECAME_STALE
+TASK_ATTEMPT_FAILED
+DUPLICATE_LABEL_OBSERVED
+CONTRADICTORY_OBSERVATION
+ROOM_RESTRICTION_CHANGED
+OBJECT_PICKED_OR_PLACED
+EARLIER_ENCOUNTER_REFERENCED
+ASSET_OPERATIONAL_STATE_CHANGED
+ROUTE_BLOCKED
+TOPOLOGY_EDGE_CHANGED
+BATTERY_ESTIMATE_CHANGED
+INSTRUCTION_CHANGED
+```
 
-1. an object moves while unobserved;
-2. an object is temporarily occluded;
-3. a door opens or closes;
-4. a remembered pose crosses its freshness boundary;
-5. a task attempt fails with a recorded reason;
-6. two assets expose the same label;
-7. a contradictory observation arrives;
-8. a room becomes restricted;
-9. an object is picked up or placed; and
-10. an instruction refers to an earlier encounter.
+The first ten cover Exp04's event suite
+(`Reflect Lite Research Program.md:1661-1672`); the remaining subtypes cover the
+additional Exp05 dynamics (`Reflect Lite Research Program.md:1819-1832`).
 
-The first nine come directly from the Exp04 event set and the tenth completes its
-history-dependent case (`Reflect Lite Research Program.md:1661-1672`). Exp05
-projects these into door, restriction, operational-state, blocker, topology,
-battery, and instruction changes (`Reflect Lite Research Program.md:1819-1832`).
-Every mutation has `event_id`, virtual time, affected IDs, precondition, truth
-delta, observation policy, and expected query/mission consequences.
+## 4. Physical and API oracle separation
 
-## 5. Experiment 04: memory decomposition
+### 4.1 Separate immutable traces
 
-### 5.1 Architectures and controls
+The generator writes two sibling artifacts through separate descriptors:
 
-All variants receive byte-identical observation sequences, have the same allowed
-fact budget, and answer through the same `MemoryView` protocol.
+- `truth/trace.jsonl` contains authoritative state transitions and outcome fields.
+- `observations/trace.jsonl` contains only delivered observations, confidence,
+  provenance, visibility, contradictions, and explicit unknowns.
 
-- **M0 — current observation only:** discards each prior frame when the next
-  arrives.
-- **M1 — recent-state buffer:** a bounded chronological deque of recent
+`TruthTrace` and `ObservationTrace` have distinct schemas, loader modules, and
+capability types. `TruthTrace` cannot be converted to `ObservationTrace` by a cast;
+the generator alone applies the frozen observation policy. The observation artifact
+contains no truth path, truth hash, hidden entity pose, injection identity, future
+outcome, or oracle cause label. The public scenario identity is a random run ID that
+cannot be joined to a truth filename by a runner.
+
+Truth files reside outside every variant working directory. A variant invocation
+receives only an already-open observation descriptor or copied observation bytes,
+the protocol, and its output directory. Its environment and arguments contain no
+truth location. Hostile-runner tests enumerate descriptors, arguments, environment,
+imports, and working-directory files and prove truth is unreachable.
+
+### 4.2 Fresh immutable execution
+
+Every `(experiment, variant, seed)` starts from the canonical observation bytes,
+verifies their manifest hash, freshly deserializes them into immutable records, and
+runs a fresh fact compiler and architecture instance. No decoded object, compiler
+cache, memory state, planner state, or output buffer is shared between variants.
+After execution, the runner canonicalizes, hashes, fsyncs, and atomically seals its
+output. The scorer refuses a writable, incomplete, or hash-mismatched output.
+
+Only after sealing does the orchestrator launch scorers with separate read-only
+descriptors for sealed output, observation trace, and—where allowed—truth trace.
+Evaluated architecture code is not imported into the scorer process.
+
+### 4.3 Two distinct oracles
+
+The **epistemic answer oracle** reads only the observation prefix available at the
+query time. It determines the answer a correct reasoner can justify: a known fact,
+last-known stale fact, contradiction, or explicit unknown. It scores location,
+identity, history, explanation, conflict, and confidence answers. An unseen move
+does not make the hidden new location a knowable query answer.
+
+The **outcome/safety oracle** reads `TruthTrace` only after outputs are sealed. It
+scores whether a proposed act, route, or plan would use the wrong identity, stale
+pose, forbidden room, unavailable edge, insufficient energy, invalid affordance,
+or changed precondition. It never supplies an answer or feature to a runner.
+
+This separation prevents epistemic correctness from being conflated with lucky
+hidden-truth guesses and prevents safety scoring from leaking authoritative state.
+
+## 5. Canonical observation-to-fact compiler
+
+### 5.1 Fact schema and identity
+
+One frozen pure compiler converts an ordered `ObservationTrace` prefix to ordered
+`FactRecord`s. Every variant uses the same compiler version. A fact contains:
+
+```text
+fact_id
+subject_id
+predicate
+object_id_or_canonical_value
+source_event_id
+observed_at_ns
+received_at_ns
+valid_from_ns
+expires_at_ns
+confidence
+provenance
+status = asserted | contradicted | unknown
+```
+
+`fact_id` is lowercase SHA-256 of canonical JSON over all fields except `fact_id`.
+Canonical values use sorted UTF-8 JSON with no NaN/Infinity and normalized strings.
+Fact byte size is the length of that canonical UTF-8 record including its terminating
+newline. Time validity is half-open `[valid_from_ns, expires_at_ns)`; immutable facts
+are never rewritten. A correction creates a new fact linked by provenance.
+
+`valid_from_ns` equals delivery time. `expires_at_ns` equals delivery time plus the
+frozen predicate-specific TTL, or the maximum signed 64-bit value for immutable
+identity/class facts. At exact expiry the fact is stale. Contradictory facts coexist;
+confidence/staleness policy may resolve or abstain but cannot delete history.
+
+### 5.2 Budgets, retention, and context
+
+The compiler produces a canonical candidate stream before architecture-specific
+organization. For equal-information controls, the frozen retention filter sorts
+eligible facts by `(received_at_ns descending, fact_id ascending)`, admits records
+until both the fact-count and canonical-input-byte budgets would be exceeded, and
+then restores admitted facts to chronological order. A fact that individually
+exceeds the byte budget is infeasible and makes the configuration invalid.
+
+Storage bytes measure each architecture's actual canonical snapshot and index files;
+they are not forced equal. Planner context is separately bounded by exact fact count
+and canonical result-byte length. A query result that would exceed either budget is
+deterministically truncated by `(relevance descending, received_at_ns descending,
+fact_id ascending)` and records the omitted count.
+
+### 5.3 Stepwise equality proofs
+
+After every observation event and before every query or mission:
+
+- H0 and M5 receive identical retained `FactRecord` IDs, bytes, arrival times,
+  expiry times, confidence, and provenance. Only organization differs.
+- V0 receives the identical retained fact inputs as M5. It may expose only retrieved
+  snippets and has no typed/graph authority.
+- T4 and TM receive identical retained facts, update times, expiry decisions, and
+  context budgets. Only typed layering versus one flat record differs.
+
+The runner emits a stepwise fact-set hash and canonical byte count. Equality means
+exact ordered ID and byte equality, not set cardinality or semantic approximation.
+A mismatch invalidates the paired seed before scientific aggregation.
+
+## 6. Experiment 04 memory architectures
+
+All variants receive freshly decoded byte-identical observation traces and answer
+through the same typed `MemoryView`:
+
+```text
+where(entity)
+last_observed(entity)
+pose_usable(entity, now)
+attempt_history(entity, action)
+changes_since(location, time)
+conflicts(entity)
+route_facts(destination)
+```
+
+Results are sorted typed records with fact/source IDs, observation/receipt time,
+confidence, provenance, staleness, omitted count, and explicit unknown reason.
+
+- **M0 — current observation only:** retains only facts from the latest delivered
+  frame.
+- **M1 — recent-state buffer:** retains the canonical bounded recent window of
   observations, robot state, actions, and controller events.
-- **M2 — episodic log only:** append-only normalized events with entity IDs,
-  outcomes, failures, interventions, and world changes.
-- **M3 — semantic graph only:** current entity beliefs and typed adjacency,
-  updated from observations, without event history.
-- **M4 — graph plus episodes:** M3 and M2 queried together.
-- **M5 — confidence-aware M4:** M4 plus explicit freshness, confidence,
-  provenance, contradiction, and unknown-state policy.
-- **M6 — retrieval-aided M5:** M5 plus deterministic hash-derived vectors attached
-  to stable entity/event IDs. Vector results are candidates only and never truth.
-- **H0 — flat equal-information history:** a chronological flat record containing
-  every fact available to M5, with identical retention and fact budget but no
-  typed graph or retrieval organization.
-- **V0 — vector-only equal-input control:** deterministic embeddings over the same
-  observed records available to M5, without an authoritative graph or episodic
-  index. Returned snippets must be interpreted directly.
+- **M2 — episodic log only:** append-only normalized attempt, outcome, failure,
+  intervention, and change facts.
+- **M3 — semantic graph only:** latest entity beliefs and typed relations without
+  event history.
+- **M4 — graph plus episodes:** M3 and M2 over the same compiler output.
+- **M5 — confidence-aware M4:** M4 plus frozen freshness, confidence,
+  contradiction, provenance, and explicit-unknown policy.
+- **M6 — retrieval-aided M5:** M5 plus the frozen hashed retrieval aid below.
+- **H0 — flat equal-information history:** every retained M5 input in one sorted
+  flat log with identical input/context budgets and no graph/index organization.
+- **V0 — vector-only equal-input control:** every retained M5 input in the hashed
+  index, with retrieval snippets as its only answer source and no authoritative
+  typed lookup.
 
-M0-M6 are the program's required ablations
-(`Reflect Lite Research Program.md:1674-1684`). H0 satisfies the autonomous-run
-equal-information control requirement
-(`docs/superpowers/specs/2026-08-22-reflect-lite-autonomous-run-design.md:183-198`);
-V0 makes the hypothesis's vector-only comparison explicit.
+M0-M6 are the required ablations (`Reflect Lite Research Program.md:1674-1684`).
+H0 is the autonomous equal-information baseline and V0 makes the program's
+vector-only comparison explicit.
 
-`MemoryView` exposes only `where(entity)`, `last_observed(entity)`,
-`pose_usable(entity, now)`, `attempt_history(entity, action)`,
-`changes_since(location, time)`, `conflicts(entity)`, and
-`route_facts(destination)`. Results are sorted typed records with source IDs,
-observation times, confidence, provenance, and explicit unknown reasons.
+### 6.1 Feasible M6 retrieval
 
-### 5.2 Query and decision suite
+M5's non-vector retrieval is the strong baseline: exact stable-ID lookup, exact
+predicate filter, normalized alias lookup, and a deterministic lexical inverted
+index. The lexical score is frozen BM25 over lowercase Unicode-NFKC alphanumeric
+tokens and adjacent token bigrams. With `k1=1.2`, `b=0.75`, retained-document count
+`N`, document frequency `df`, term frequency `tf`, document length `dl`, and retained
+average document length `avgdl`, each query-term contribution is
 
-Every trace asks the ten program queries in a seed-derived but frozen order:
-location, last observation, pose usability, prior attempt, last failure reason,
-reachable valve under restriction, changes since the last Room 2 visit, route
-blocker, duplicate-label identity, and conflicting observations/remaining
-unknowns (`Reflect Lite Research Program.md:1686-1697`). Each query has a
-machine-readable answer key against hidden truth and a decision form where
-applicable: act, rescan, re-identify, choose an alternative, or report unknown.
+```text
+ln(1 + (N - df + 0.5) / (df + 0.5))
+* tf * (k1 + 1) / (tf + k1 * (1 - b + b * dl / avgdl))
+```
 
-### 5.3 Metrics
+An empty corpus or query returns no lexical hit. Repeated query terms contribute once.
+Document statistics are recomputed from the current retained fact set. Ties use
+`fact_id`.
 
-The primary metric is seed-level correct task-relevant answer/decision rate under
-changed and stale state, exactly the program's primary outcome
-(`Reflect Lite Research Program.md:1699-1703`). Secondary metrics are
-stale-belief action rate, wrong-identity rate, repeated-observation requests,
-failure-explanation accuracy, Brier score for confidence calibration, query
-latency, stored bytes, and context facts supplied to the planner. Rates use fixed
-denominators from the frozen trace manifest; abstention is incorrect unless the
-answer key is explicitly unknown. Latency is descriptive and measured in a
-separate serial run; it is not mixed with deterministic functional evidence.
+M6 adds no library or model. Each token and bigram's UTF-8 bytes are SHA-256 hashed and
+the digest is interpreted as one unsigned big-endian integer. Because every allowed
+`D` is a power of two, the low `log2(D)` bits select the dimension and the immediately
+next bit selects sign. Signed term-frequency components use the BM25 IDF above and are
+L2-normalized. Query vectors use the same transform.
+Cosine similarity retrieves the first `R` facts sorted by `(score descending,
+received_at_ns descending, fact_id ascending)`. Exact typed/lexical matches are
+unioned first, deduplicated by fact ID, and remain authoritative; vector hits are
+candidate evidence only. An all-zero vector returns no vector hits. Index rebuilds
+after each retention change from canonical fact bytes, so deletion/expiry cannot
+leave hidden state.
 
-### 5.4 Preregistered joint advance rule
+V0 uses the same hash dimension, tokenization, IDF, and top-R rule but cannot use
+typed/lexical authoritative lookup. This makes M6 feasible, reproducible, and a
+true additive retrieval test rather than a disguised embedding service.
 
-The singular primary outcome and the program's multi-condition advance statement
-are resolved by a hierarchical joint rule. First, the primary scientific claim
-must pass: M4's paired correctness improvement over both M0 and V0 must exceed
-the frozen minimum effect, using a two-contrast Bonferroni family. Only then is
-promotion considered. Promotion requires all operational guardrails to pass:
+### 6.2 Queries, decisions, and metrics
 
-1. M4 improves stale-action rate and wrong-identity rate over M0 by their frozen
-   minimum effects;
-2. M4 reduces repeated scans over M0 by its frozen minimum effect;
-3. M4 remains within the frozen context-fact and stored-byte ceilings;
-4. M4 is non-inferior to equal-information H0 on correctness, proving that any
-   gain is not merely extra information;
-5. M5 improves the frozen stale/wrong composite over M4 without violating the
-   correctness, scan, context, or byte non-inferiority margins; and
-6. all integrity, oracle-separation, determinism, and artifact checks pass.
+Every trace asks the ten program queries: location, last observation, pose safety,
+prior attempt, failure reason, reachable valve under restriction, changes since a
+room visit, route blocker, duplicate-label identity, and conflicting observations/
+unknowns (`Reflect Lite Research Program.md:1686-1697`). Applicable queries also
+require a sealed decision: act, rescan, re-identify, choose an alternative, or
+report unknown.
 
-Thus correctness remains the sole primary metric for the scientific claim, while
-stale/wrong decisions, scans, and planner burden are mandatory promotion
-guardrails. Passing only one side cannot advance. M6 is promoted only if it also
-improves ambiguous-identity retrieval over both M5 and V0 within all budgets;
-otherwise embeddings are removed from the runtime path, matching the program's
-kill condition (`Reflect Lite Research Program.md:1719-1723`). The selected
-composition is the simplest passing member; ties choose the lower numbered
-architecture.
+The primary metric is seed-level epistemic answer/decision correctness under changed
+and stale state (`Reflect Lite Research Program.md:1699-1703`). Outcome-oracle safety
+metrics are stale-belief action rate and wrong-identity rate. Other secondary metrics
+are repeated scans, explanation accuracy, Brier calibration, query latency, actual
+storage bytes, input fact count/bytes, and emitted context count/bytes. Abstention is
+correct only when the epistemic oracle says unknown or unresolved contradiction.
 
-## 6. Experiment 05: semantic twin and building planner
+### 6.3 Nested scientific and promotion rule
 
-### 6.1 Frozen input and ablations
+M4 establishes the primary claim only if both correctness contrasts against M0 and
+V0 clear the frozen minimum effect. M4 is promotion-eligible only if it also clears
+the simultaneous stale-action, wrong-identity, and repeated-scan improvements versus
+M0; is non-inferior to equal-information H0 on correctness; remains inside input,
+context, storage, and latency ceilings; and passes every integrity/oracle guard.
 
-Exp05 receives the frozen Exp04 `MemoryView`; it may not inspect or special-case
-the winning implementation. Every twin receives the same truth-independent input
-facts allowed by its layer definition.
+The M5 stale/wrong composite is exactly
+`0.5 * stale_action_rate + 0.5 * wrong_identity_rate`. M5 advances over M4 only if
+the composite reduction clears its frozen margin and correctness and repeated scans
+are simultaneously non-inferior, while all M4 resource/integrity guards remain true.
+
+M6 advances over M5 only if ambiguous-identity retrieval improves over both M5 and
+V0 by the frozen margin, correctness remains non-inferior to M5, and context, storage,
+and latency remain within their frozen ceilings. Otherwise the hash index is removed
+from the runtime path, matching the program's embedding kill condition
+(`Reflect Lite Research Program.md:1719-1723`). The simplest eligible architecture
+wins; an exact tie uses M0 through M6 order.
+
+## 7. Experiment 05 semantic twin
+
+Exp05 consumes only the promoted Exp04 `MemoryView` protocol and conformance fixture.
+It receives no implementation type or winner-specific escape hatch.
 
 - **T0 — geometry only:** metric poses, extents, collision data, and frames.
 - **T1 — geometry plus topology:** T0 plus rooms, doors, connectivity,
   traversability, containment, and route costs.
-- **T2 — topology plus semantics:** T1 plus identity, aliases, affordances,
-  policies, restrictions, and task properties.
-- **T3 — semantic twin plus live belief:** T2 plus operational state, confidence,
-  timestamp, provenance, visibility, and uncertainty.
-- **T4 — belief twin plus episodes:** T3 plus the frozen Exp04 episodic-history
-  interface.
-- **TM — monolithic same-facts control:** one untyped flat record containing
-  exactly the facts visible to T4, with identical update times and context budget.
+- **T2 — T1 plus semantics:** identity, aliases, affordances, restrictions, and
+  task properties.
+- **T3 — T2 plus live belief:** operational state, confidence, timestamps,
+  provenance, visibility, and uncertainty.
+- **T4 — T3 plus episodes:** frozen Exp04 history queries.
+- **TM — monolithic same-facts control:** one flat untyped record containing exactly
+  T4's facts, times, expiry, and budgets.
 
-T0-T4 are the required program ablations
-(`Reflect Lite Research Program.md:1834-1842`). TM satisfies the autonomous-run
-same-facts control requirement. Fact-set manifests prove T4/TM equality before
-each mission; ordering and representation may differ, facts may not.
+T0-T4 are required by the program (`Reflect Lite Research Program.md:1834-1842`).
+The deterministic planner filters forbidden/inapplicable goals and uses `heapq`
+Dijkstra with ties ordered by `(total_cost, path_entity_ids)`. It receives compact
+query results, not the full twin. A plan contains typed steps, preconditions, fact
+provenance, expected cost, and invalidation reasons.
 
-### 6.2 Planner and mission suite
+The five missions are: inspect the nearest coolant valve without restricted entry;
+reach Pump 2 with a recharge if needed; reach Valve 7 around unavailable Door 3;
+place a carried tool safely; and replan when a room becomes restricted
+(`Reflect Lite Research Program.md:1813-1817`). A plan is invalid if it enters a
+forbidden region, traverses a closed edge, chooses an unsupported affordance, uses
+an expired pose, assumes insufficient energy, selects the wrong duplicate identity,
+or continues after a precondition change.
 
-A deterministic rule planner issues typed queries, filters forbidden or
-inapplicable goals, and uses `heapq` Dijkstra over currently available topology.
-It receives compact query results, never the entire twin. Plans are sequences of
-typed route and interaction steps with fact provenance and a precondition for
-each step. A dynamic event invalidates affected preconditions and causes a bounded
-replan.
+The primary metric is seed-level invalid-plan rate. Secondary/guard metrics are
+mission success, forbidden-region violations, invalid affordances, stale-belief
+failures, route cost, replans, semantic/geometry query counts, context size, and
+latency. Any forbidden-region violation is a safety failure.
 
-The suite contains the five canonical missions:
+### 7.1 Fixed comparator rule
 
-1. inspect the nearest coolant valve without entering a restricted room;
-2. reach Pump 2, recharging first if the battery estimate is insufficient;
-3. inspect Valve 7 via an alternate route when Door 3 is unavailable;
-4. place a carried tool at a safe location; and
-5. replan when a room becomes restricted during execution.
+T3's invalid-plan superiority contrasts against T0, T1, and T2 form one simultaneous
+three-contrast Bonferroni family. Mission-success non-inferiority is also required
+simultaneously against each of T0, T1, and T2 in a separate three-contrast family.
+There is no post-confirmation “best baseline” selection. T3 must clear every bound,
+all resource guards, and zero forbidden violations.
 
-These are fixed by the program (`Reflect Lite Research Program.md:1813-1817`). A
-plan is invalid if it enters a forbidden region, traverses a closed/unavailable
-edge, chooses an unsupported affordance, uses a stale pose beyond policy, assumes
-insufficient energy, targets the wrong duplicate identity, or continues after a
-precondition-changing event.
+T4's history-subset invalid-plan contrast against T3 is tested only after T3 passes.
+T4/TM equal-facts non-inferiority on invalid plans and mission success is a two-endpoint
+Bonferroni family. T4 advances only if it improves the frozen history-dependent
+subset over T3 and clears both TM bounds and all T3 guards. The simplest passing
+layer wins; ties use T0 through T4 order.
 
-### 6.3 Metrics and gate
+## 8. Lifecycle and exact statistical protocol
 
-Metrics are mission success, invalid-plan rate, forbidden-region violations,
-invalid-affordance choices, stale-belief failures, route cost, replan count and
-latency, semantic and geometry query counts, and planner context size. Invalid-
-plan rate is the primary metric because it directly resolves the stated advance
-condition (`Reflect Lite Research Program.md:1882-1884`). Mission success is a
-mandatory guardrail; forbidden-region violations are a hard safety failure.
+### 8.1 Separate state machines
 
-T3 advances only when its paired invalid-plan reduction exceeds the frozen
-minimum effect against each of T0, T1, and T2 in a three-contrast Bonferroni
-family; mission success is non-inferior to the best of T0-T2; route cost, query
-count, and context remain within frozen ceilings; and forbidden-region violations
-are zero. T4 advances over T3 only if the history-dependent mission subset gains
-the frozen minimum effect without violating those guards. T4 must also be
-non-inferior to same-facts TM on invalid plans and mission success. The simplest
-passing layer is selected. Any safety violation, oracle leak, unequal fact set,
-or invalid artifact makes the result `INVALID`, not a failure that can be averaged
-away.
-
-## 7. Pilot, freeze, confirmation, and numeric parameters
-
-The lifecycle has three strictly separated stages.
-
-1. **Pilot:** generator bugs, ceiling feasibility, and metric distributions are
-   measured on pilot-only seeds. Architecture semantics, query answers, and gate
-   direction may not be tuned to favor a variant.
-2. **Freeze:** one canonical configuration records every numeric value below,
-   seed lists, trace hashes, schemas, architecture versions, metric formulas,
-   bootstrap procedure, multiplicity families, missing-data rules, resource
-   ceilings, and implementation SHA. Its digest becomes part of every artifact.
-3. **Confirmation:** untouched seeds run once on the unchanged implementation.
-   Mechanical validation and gate evaluation produce `ADVANCE`, `DO_NOT_ADVANCE`,
-   or `INVALID`. Confirmation results never revise thresholds.
-
-Paired seed-level contrasts use a deterministic 10,000-resample percentile
-bootstrap. Each superiority or non-inferiority family uses Bonferroni-adjusted
-95% simultaneous intervals, as required by the autonomous protocol
-(`docs/superpowers/specs/2026-08-22-reflect-lite-autonomous-run-design.md:145-181`).
-A superiority lower bound must be strictly greater than its frozen margin; a
-non-inferiority lower bound must be at least the negative frozen margin. Exact
-boundary equality fails superiority and passes non-inferiority.
-
-The following evidence-dependent numeric values are mandatory freeze fields; none
-is silently defaulted:
-
-1. Exp04 correctness minimum improvement, in percentage points;
-2. Exp04 stale-action minimum reduction, in percentage points;
-3. Exp04 wrong-identity minimum reduction, in percentage points;
-4. Exp04 repeated-scan minimum reduction, in scans per episode;
-5. Exp04 M4-versus-H0 correctness non-inferiority margin;
-6. Exp04 M5-versus-M4 correctness and scan non-inferiority margins;
-7. Exp04 M5 stale/wrong composite minimum improvement and fixed component weights;
-8. Exp04 M6 ambiguous-retrieval minimum improvement;
-9. Exp04 per-query context-fact ceiling and per-episode byte ceiling;
-10. Exp04 recent-buffer duration, freshness time-to-live by fact class,
-    confidence acceptance threshold, contradiction threshold, and maximum retained
-    events;
-11. M6 hash-vector dimension and retrieval candidate count;
-12. Exp05 invalid-plan minimum reduction for T3 and for T4;
-13. Exp05 mission-success non-inferiority margin;
-14. Exp05 route-cost, semantic-query, geometry-query, context-fact, and replan
-    ceilings;
-15. Exp05 battery reserve, route-unavailable cost, and maximum replans;
-16. bootstrap random seed, confirmation seed count, per-seed episode count, and
-    timeout/resource ceilings.
-
-Pilot chooses these values through a recorded mechanical procedure: resource
-ceilings are the smallest engineering budgets that permit the reference control
-to complete all pilot cases plus a fixed recorded headroom ratio; meaningful-
-effect and non-inferiority margins are selected from task-unit resolution and
-pilot control variability, rounded outward to the next representable task unit;
-TTL, confidence, retrieval, energy, and replan parameters are chosen only from a
-finite candidate grid declared before pilot execution. The freeze artifact stores
-the candidate grids, observations, selection trace, selected numbers, and
-rationale. Because these quantities depend on empirical timing, memory size,
-noise, and control variability not yet measured in this repository, inventing
-numbers in this design would be false precision. The selection algorithm and the
-requirement to freeze exact values before confirmation are fully specified.
-
-## 8. Artifact and data contracts
-
-Each run directory is immutable after finalization and contains:
+The experimental lifecycle is:
 
 ```text
-metadata.json
-config.json
-metrics.json
-events.jsonl
-observations.parquet
-actions.parquet
-memory_snapshots.jsonl
-summary.md
-manifest.json
+DRAFT -> PILOT -> FROZEN -> CONFIRMATION -> DECISION -> PROMOTED | STOPPED
 ```
 
-Exp05 additionally writes `plans.parquet`, `route_candidates.parquet`, and
-`twin_snapshots.jsonl`. This extends the program's common artifact contract rather
-than replacing it (`Reflect Lite Research Program.md:2904-2969`).
+Artifact validity is independently `VALID` or `INVALID`. The scientific result is
+independently `SUPPORTED`, `NOT_SUPPORTED`, or `INCONCLUSIVE`. A prerequisite or
+resource state is independently `READY` or `BLOCKED` with a machine-readable reason.
+`INVALID` evidence cannot yield a scientific result. `BLOCKED` is not evidence.
+Only `VALID + SUPPORTED + READY` may promote; `VALID + NOT_SUPPORTED` stops cleanly;
+valid but underpowered/resource-exhausted evidence is `INCONCLUSIVE` and stops without
+promotion.
 
-- `metadata.json`: experiment, variant, run/trace IDs, implementation SHA,
-  platform, dependency versions, virtual-clock origin, generator/config/source
-  hashes, pilot-or-confirmation label, and clean-tree evidence.
-- `config.json`: exact frozen parameters, seeds, architecture version, allowed
-  fact budget, query/mission manifest hashes, and safety/resource ceilings.
-- `metrics.json`: exact numerator, denominator, unit, aggregation level, missing
-  count, per-seed values, contrasts, intervals, multiplicity family, and gate
-  result for every metric.
-- `events.jsonl`: ordered world-observation-memory-plan event envelopes using the
-  shared execution-event vocabulary where applicable. The existing event system
-  already defines memory updates and semantic replans and enforces monotonic event
-  order (`reflect/events.py:18-35`, `reflect/events.py:143-158`).
-- `observations.parquet`: one row per delivered entity observation, including
-  source/receive times, stable ID or unresolved token, pose/state confidence,
-  provenance, visibility, and contradiction group.
-- `actions.parquet`: query answers, decisions, scans, route steps, and outcomes,
-  with supporting fact/event IDs.
-- `memory_snapshots.jsonl`: canonical architecture-visible state after each
-  mutation, never hidden truth.
-- `plans.parquet`: mission plan steps, preconditions, fact provenance, cost, and
-  invalidation reason.
-- `route_candidates.parquet`: candidate paths, excluded edges/regions, costs, and
-  selection result.
-- `twin_snapshots.jsonl`: separately keyed geometry, topology, semantics, and live
-  belief views.
-- `manifest.json`: relative path, media type, byte count, and SHA-256 for every
-  artifact; it is written last by atomic rename after all validation.
+### 8.2 Draft, pilot, and freeze
 
-JSON is canonical UTF-8 with sorted keys and no NaN/Infinity. JSONL has one
-canonical object per newline. Parquet schemas, column order, nullability, and sort
-keys are versioned and frozen. `ObjectBelief` supplies stable entity identity,
-confidence, timestamps, and provenance (`reflect/types.py:231-249`), while
-`SceneRelation` supplies typed edges with confidence and observation time
-(`reflect/types.py:329-343`); experiment-local records adapt these contracts
-without weakening them.
+Draft completes when trace separation, compilers, variants, scorers, sidecar replay,
+commands, and validation tests exist. Draft carries no claim.
 
-## 9. Verification design
+Each experiment uses eight paired pilot seeds from a checked-in pilot root. Seeds
+0-3 are tuning; seeds 4-7 are one untouched pilot evaluation. No decision reads
+evaluation seeds before one common configuration for the experiment is selected.
+That configuration applies unchanged to every variant, including H0/M5, V0/M5, and
+T4/TM equality pairs. Evaluation cannot trigger retuning; a change begins a new
+protocol revision with eight new pilot seeds. At most two pilot revisions and the
+three configurations below per revision are allowed.
 
-Tests are deterministic, offline, and divided into contract, generator,
-architecture, planner, scoring, artifact, and command layers.
+The three complete configurations are fixed before pilot:
 
-- Golden trace tests assert byte-identical output for the same config and seed.
-- RNG-independence tests add draws to one named stream and prove other streams and
-  trace identities do not change.
-- Oracle-boundary tests use hostile architecture callbacks and prove hidden truth
-  is unreachable; all scores are computed after outputs are sealed.
-- World invariants cover stable unique IDs, valid relation endpoints, symmetric
-  door connectivity, legal containment, monotonic time, and mutation
-  preconditions.
-- Event tests cover every canonical event and non-overlapping chronology.
-- Query golden tests cover all ten queries, explicit unknowns, stale poses,
-  conflicting evidence, duplicate labels, prior failures, and restricted routes.
-- M0-M6/H0/V0 tests prove retention semantics, M5 freshness/confidence behavior,
-  equal delivered observations, H0/M5 fact-set equality, V0 non-authority, and M6
-  kill-gate behavior.
-- Mission golden tests cover all five missions and every invalid-plan reason.
-- T0-T4/TM tests prove layer visibility, T4/TM fact-set equality, zero implicit
-  semantics in lower layers, Dijkstra tie ordering, bounded replanning, and safety
-  rejection before motion.
-- Metric tests cover denominators, abstention, composites, Brier score, pairing,
-  bootstrap determinism, multiplicity, exact threshold boundaries, and all three
-  decision states.
-- Artifact tests validate exact schemas, canonical serialization, hashes,
-  cross-file IDs, finalization order, corruption rejection, and replay without the
-  simulator.
-- CLI tests cover deterministic pilot/freeze/confirmation modes, forbidden
-  network/LLM state, dirty implementation state, config mismatch, resource
-  exhaustion, and refusal to overwrite a finalized run.
-- Small property loops enumerate seeds, event permutations, stale boundaries,
-  confidence boundaries, route ties, and fact-budget limits without adding a new
-  property-testing dependency.
+- **BASE:** TTL multiplier `1.0`, confidence threshold `0.70`, contradiction delta
+  `0.20`, retained-event cap `128`, retained-input cap `256` facts/`65536` bytes,
+  context cap `16` facts/`4096` bytes, hash dimension `256`, retrieval R `8`, battery
+  reserve `0.20`, and replan cap `2`.
+- **CONSERVATIVE:** multiplier `0.5`, threshold `0.85`, delta `0.10`, event cap `64`,
+  retained input `128`/`32768`, context `8`/`2048`, dimension `128`, R `4`, reserve
+  `0.30`, replans `1`.
+- **PERMISSIVE:** multiplier `2.0`, threshold `0.55`, delta `0.30`, event cap `256`,
+  retained input `512`/`131072`, context `32`/`8192`, dimension `512`, R `16`, reserve
+  `0.10`, replans `3`.
 
-## 10. Dependency seams and promotion boundaries
+Let `event_interval_ns` be the fixed generator interval. Base TTL is two intervals for
+pose/visibility/location facts; one interval for door, restriction, operational,
+topology, and battery facts; and maximum signed 64-bit time for entity identity,
+class, affordance, and episodic-attempt facts. The selected TTL multiplier applies
+only to finite TTLs before upward rounding to one virtual-clock tick; immutable
+maximum-time facts remain unchanged. Physical energy units and task timeouts are fixed
+in `base.yaml`; the three complete configurations above are the only pilot choices.
+A configuration that exceeds an inherited resource cap, cannot encode one fact,
+produces nonfinite output, violates stepwise equality, or fails artifact validation
+is infeasible and cannot be selected.
+
+Every configuration runs every variant on the four tuning seeds. A configuration is
+eligible only if every canonical variant is artifact-valid, stepwise equality holds,
+and all inherited resource/safety caps pass. Exp04 selects eligible configurations
+lexicographically by highest equal-variant-weight mean correctness, lowest mean
+stale/wrong composite, lowest repeated scans, lowest context bytes, lowest storage
+bytes, then BASE before CONSERVATIVE before PERMISSIVE. Exp05 uses lowest equal-
+variant-weight mean invalid-plan rate, highest mission success, lowest route cost,
+lowest context bytes, lowest storage bytes, then the same fixed configuration order.
+Seeds and variants have equal weight. Exact numerical ties proceed to the next key.
+If no configuration is eligible, the experiment is `INCONCLUSIVE` and `STOPPED`.
+The selected common configuration runs once on seeds 4-7; failures affect pilot
+disposition but never cause retuning.
+
+For each configuration before ranking, candidate resource ceilings use
+`ceil_to_unit(1.25 * maximum_usage)` across every canonical variant and tuning seed in
+that configuration. Fact/context counts round upward to one fact, bytes to
+1024 bytes, and serial nearest-rank p95 latency to 0.1 ms. If a resulting ceiling
+exceeds an inherited cap, that configuration is infeasible. The selected
+configuration's candidate ceilings become the frozen ceilings. Minimum-effect margins are
+`ceil_to_task_unit(max(one_task_unit, 0.5 * sample_SD_of_paired_tuning_seed_contrast))`;
+sample SD uses denominator `n-1`, and
+`ceil_to_task_unit(x) = ceil(x / one_task_unit) * one_task_unit`. Non-inferiority
+margins use the same formula. Zero SD still yields one task unit.
+Rate task unit is one outcome divided by the fixed tuning denominator; count unit is
+one event; byte unit is one byte; time unit is one virtual-clock tick. Outward rounding
+means superiority margins round away from zero and non-inferiority widths round up.
+A derived margin outside the metric's attainable range makes the result
+`INCONCLUSIVE`; it is never clipped to manufacture a feasible gate.
+
+Freeze records implementation/config/source/schema hashes, generator version and RNG
+algorithm, confirmation seed **count**, all compiler/event/relation semantics, selected
+configurations, exact formulas and resulting margins, multiplicity families, missing
+rules, budgets, and pilot manifests. It does **not** contain confirmation seeds,
+scenarios, trace hashes, or outcomes.
+
+After the protocol and implementation hashes freeze, the orchestrator creates a new
+recorded confirmation RNG root, generates the complete scenario/seed manifest, hashes
+it, and only then permits a variant to run. Confirmation data did not exist during
+implementation, pilot, or protocol freeze. Any change returns to Draft and requires a
+new protocol revision and a new unseen confirmation root.
+
+### 8.3 Confirmation and multiplicity
+
+Each experiment confirms on 32 paired seeds. A seed contains all ten Exp04 queries or
+all five Exp05 missions and all frozen event subtypes relevant to that experiment.
+One validly declared timeout or resource-interrupted variant-seed may be absent and is
+reported; that seed is removed from every contrast involving that variant. A second
+such loss or systematic variant-specific noncompletion makes the scientific result
+`INCONCLUSIVE`. A malformed/corrupt/hash-mismatched shard, stepwise equality mismatch,
+scorer/oracle breach, missing required safety output, or undeclared exclusion makes
+the artifact set `INVALID` and no scientific result is computed. Nothing is imputed.
+
+All contrasts use seed-level paired differences and a deterministic 10,000-resample
+percentile bootstrap. Families and marginal intervals are:
+
+- Exp04 M4 correctness versus M0 and V0: two contrasts, 97.5% intervals.
+- Exp04 M4 stale action, wrong identity, and scans versus M0: three contrasts,
+  98.333333% intervals.
+- Exp04 M5 stale/wrong composite versus M4 plus correctness and scan non-inferiority:
+  three contrasts, 98.333333% intervals.
+- Exp04 M4 versus H0 correctness non-inferiority: one 95% interval.
+- Exp04 M6 ambiguous retrieval versus M5 and V0: two contrasts, 97.5% intervals.
+- Exp04 M6 correctness non-inferiority versus M5: one 95% interval.
+- Exp05 T3 invalid plans versus T0/T1/T2: three contrasts, 98.333333% intervals.
+- Exp05 T3 mission-success non-inferiority versus T0/T1/T2: three contrasts,
+  98.333333% intervals.
+- Exp05 T4 history subset versus T3: one 95% interval.
+- Exp05 T4/TM invalid-plan and mission-success non-inferiority: two endpoints,
+  97.5% intervals.
+
+These Bonferroni marginal intervals give a 95% simultaneous family. A superiority
+lower bound must be strictly greater than its frozen margin. A non-inferiority lower
+bound equal to the negative margin passes. Secondary metrics are descriptive unless
+listed in a family or absolute gate. Variant selection is hierarchical in the order
+written; a later family is evaluated only if its prerequisite passes.
+
+Exp04 is `SUPPORTED` only if M4 clears its primary family and all operational/equal-
+information guards; M5/M6 promotion then follows their nested gates. Otherwise it is
+`NOT_SUPPORTED` only when valid intervals exclude the frozen minimum effects;
+remaining valid uncertainty is `INCONCLUSIVE`. Exp05 uses the equivalent T3/T4 rule.
+
+## 9. Bounded shards, resume, and maxima
+
+One evidence-bearing command runs exactly one declared
+`(experiment, phase, variant, seed)` shard. A shard executes one complete trace: ten
+queries for Exp04 or five missions for Exp05. It has a 60-minute wall-clock ceiling
+and 16 MiB total serialized-artifact ceiling. `--max-cases` is smoke-only unless it
+equals the shard's frozen complete case count.
+
+Per revision, Exp04 has at most
+`9 variants * (3 configurations * 4 tuning seeds + 1 selected configuration * 4
+evaluation seeds) = 144` pilot shards; Exp05 has at most
+`6 * (3 * 4 + 1 * 4) = 96`. Confirmation has at most
+`9 * 32 = 288` Exp04 and `6 * 32 = 192` Exp05 variant-seed shards, 480 total before
+any killed-variant reduction. At 16 MiB each, pilot is at most 3,840 MiB plus a
+256 MiB aggregate allowance, and confirmation is at most 7,680 MiB plus a 512 MiB
+aggregate/manifest allowance. Both are below the inherited 10 GiB per-pass ceiling.
+The orchestrator refuses to start a phase without its declared remaining byte budget.
+
+Destinations derive from frozen experiment/phase/variant/config/seed/trace hashes.
+Writes are create-only through sibling temporary directories, fsync, and atomic
+rename. Resume validates every canonical rollout and P6 sidecar, checks all schema,
+protocol, source, observation, equality, and content hashes, and skips only an exact
+complete match. Missing/extra files, interrupted temporary directories, oversize,
+hash mismatch, or invalid replay fail the shard; nothing is overwritten or repaired
+in place. A create-only shard completion manifest is written only after every case
+validates.
+
+## 10. Canonical rollout and P6 sidecars
+
+P6 wraps the existing `RolloutWriter`; it does not redefine its core. Every shard
+contains:
+
+```text
+rollout/
+  metadata.json
+  config.json
+  metrics.json
+  events.jsonl
+  observations.npz
+  actions.parquet
+  summary.md
+p6/
+  queries.parquet
+  decisions.parquet
+  plans.parquet
+  memory_snapshots.jsonl
+  fact_sets.jsonl
+  replay.json
+artifact-manifest.json
+```
+
+`observations.npz` remains the canonical repository observation artifact. It contains
+freshly decoded architecture-visible `Observation` values. `actions.parquet` remains
+canonical `ActionChunk`/`ControlReference` data and is never repurposed for queries or
+plans; it is a valid empty canonical table when the benchmark executes no physical
+chunk. Canonical shared events retain their existing lifecycle meanings.
+
+P6-local sidecars have exact versioned schemas:
+
+- `queries.parquet`: query ID/time/type, canonical arguments, epistemic answer,
+  confidence, cited fact IDs, omitted count, and latency.
+- `decisions.parquet`: decision ID/query ID/time, closed decision enum, entity/route
+  IDs, cited facts, and uncertainty. It contains no outcome or truth-derived column;
+  the scorer writes outcome metrics elsewhere and never mutates this file.
+- `plans.parquet`: plan ID/mission ID, ordered step index, action enum, entity/edge,
+  precondition fact IDs, predicted cost, and invalidation reason.
+- `memory_snapshots.jsonl`: variant-visible canonical state after each update, actual
+  serialized byte count, input/context budget, and hash.
+- `fact_sets.jsonl`: compiler step, ordered fact IDs, canonical input-byte count,
+  expiry decisions, and equality-group hash.
+- `replay.json`: sidecar schema hashes, counts, terminal query/decision/plan IDs,
+  equality proof, and replay result.
+
+A P6 sidecar validator rejects extra/missing columns, duplicate IDs/keys, nonfinite
+values, time regression, unknown enums/relations/subtypes, dangling fact references,
+budget violations, unsealed outcomes, and hash mismatch. Sidecar replay reconstructs
+fact compilation, memory mutations, queries, decisions, and plan invalidations from
+`observations.npz`, shared events, and sidecars without the generator or truth.
+
+`artifact-manifest.json` lists the relative path, media type, byte count, and SHA-256
+of every immutable file under `rollout/` and `p6/`. It excludes itself and any temporary
+file, is canonicalized, fsynced, and atomically created last. Validation recomputes the
+listed set exactly, so a self-hash recursion or unlisted file is impossible.
+
+Truth traces and scorer outputs are separate orchestrator artifacts with their own
+manifests. They are never copied under a runner shard.
+
+## 11. Verification design
+
+Tests cover:
+
+- byte-identical truth/observation generation and named-RNG independence;
+- physical descriptor/path/import/environment isolation of truth from hostile runners;
+- fresh observation decode, immutable records, per-variant rehash, and zero shared
+  caches/state;
+- sealing before scorer launch and scorer refusal of writable/incomplete output;
+- epistemic-oracle unknown/stale/conflict answers versus outcome-oracle hidden-truth
+  safety decisions;
+- stable IDs, exact relation/subtype vocabularies, total coincident-event order, and
+  monotonic chronology;
+- fact-ID/byte/time/TTL/expiry golden fixtures, exact-budget boundaries, deterministic
+  truncation, and contradiction preservation;
+- stepwise H0/M5, V0/M5, and T4/TM input/equality hashes after every update and before
+  every query/mission;
+- M0-M6/H0/V0 retention semantics and MemoryView conformance;
+- BM25 tokenization/scoring, signed SHA-256 feature hashing, zero vectors, cosine/top-R
+  ties, rebuild after expiry, M6 typed authority, and V0 non-authority;
+- all ten query answers/decisions and five missions/invalid-plan reasons;
+- Dijkstra cost/tie ordering, bounded replan, and safety rejection before action;
+- exact pilot configurations, selection keys/ties, infeasibility, 25% headroom,
+  rounding, task units, derived margins, and no pilot-evaluation retuning;
+- post-freeze confirmation generation and rejection of a preexisting/reused seed or
+  scenario manifest;
+- paired bootstrap, every multiplicity family, hierarchy, equality boundaries,
+  missing rules, and lifecycle/artifact/scientific/blocker/promotion state separation;
+- canonical RolloutWriter compatibility with `observations.npz` and empty/nonempty
+  canonical actions;
+- exact sidecar schemas, replay, manifest self-exclusion, extra-file rejection,
+  corruption rejection, and truth absence;
+- one-shard command enforcement, case limits, wall/byte ceilings, create-only atomic
+  publication, validate-and-skip resume, and mismatch refusal; and
+- offline/network/LLM/physical/remote guards, clean implementation state, full tests,
+  secret scan, artifact sizes, and diff checks.
+
+## 12. Dependency and promotion boundaries
 
 The first implementation remains pure Python plus current repository dependencies:
-NumPy for numeric records, PyArrow for required Parquet artifacts, and PyYAML only
-for configuration (`pyproject.toml:5-14`). Topology uses a typed adjacency mapping
-and `heapq`; events and snapshots are append-only files/in-memory tuples.
+NumPy for numeric records, PyArrow for canonical Parquet, and PyYAML for configuration
+(`pyproject.toml:5-14`). Typed adjacency plus `heapq` is sufficient for topology.
 
-Experiment-local protocols isolate future substitutions:
+Experiment-local seams isolate future adapters:
 
-- `EventStore.append/scan`
-- `RelationStore.upsert/neighbors`
-- `RetrievalIndex.add/search`
-- `RoutePlanner.shortest_path`
-- `TwinExporter.export`
+```text
+EventStore.append/scan
+RelationStore.upsert/neighbors
+RetrievalIndex.add/search
+RoutePlanner.shortest_path
+TwinExporter.export
+```
 
 SQLite/DuckDB is considered only if measured retained-event size or query latency
-exceeds the frozen ceiling. NetworkX is considered only if graph algorithm
-complexity expands beyond the frozen Dijkstra/neighbor operations. A vector
-library is considered only if M6 passes and the deterministic index cannot meet
-its frozen budget. USD/IFC/Spark-DSG adapters are considered only after Exp05
-passes and export/interchange becomes a separately stated claim. No adapter may
-change evidence-bearing semantics.
+exceeds the frozen ceiling. NetworkX is considered only if graph algorithms expand
+beyond neighbor lookup and Dijkstra. A vector library is considered only if M6 passes
+and the deterministic hash index misses its budget. USD/IFC/Spark-DSG adapters require
+a later independent interchange claim. No adapter may change evidence semantics.
 
-Only stable, experimentally validated contracts may move into `reflect/`; world
-generators, policies, memory implementations, planners, scoring thresholds, and
-fixtures stay under experiment-local modules, matching the program's promotion
-boundary (`Reflect Lite Research Program.md:348`). Promotion requires a passing
-confirmation artifact, frozen protocol and hashes, full tests, explicit interface
-diff, and a decision record. Exp04 may promote only the useful `MemoryView` types
-and semantics. Exp05 may promote only the layer/query contracts justified by its
-gate. Rejected variants and optional adapters remain research artifacts.
+Only a `VALID + SUPPORTED + READY` confirmation may propose promotion. Exp04 may
+promote only the smallest useful `MemoryView` records and semantics. Exp05 may promote
+only layer/query contracts justified by its gates. The generator, truth schema,
+experiment-specific memory stores, planner, fixtures, thresholds, BM25/hash index,
+plots, and sidecars remain experiment-local. Promotion is a separate commit with
+compatibility tests and an explicit interface diff, matching the program boundary
+(`Reflect Lite Research Program.md:3153-3181`).
 
-## 11. Parallel-safe decomposition
+## 13. Parallel-safe preparation
 
-Preparation may proceed in five ownership-isolated workstreams:
+Preparation may use five ownership-isolated workstreams:
 
-1. **Fixture and protocol owner:** shared truth/observation records, named RNG,
-   trace generator, event templates, schemas, and golden fixtures.
-2. **Exp04 memory owner:** M0-M6, H0, V0, and `MemoryView`, consuming only frozen
-   observations.
-3. **Exp04 evaluation owner:** queries, answer keys, metrics, bootstrap, and gate,
-   with no access from architecture code to the scorer.
-4. **Exp05 preparation owner:** T0-T4/TM projections, deterministic planner,
-   missions, and metric implementation against a stub `MemoryView` conformance
-   fixture. This owner may not run evidence or select the actual Exp04 view early.
-5. **Artifact and verification owner:** CLI modes, canonical writers, replay,
-   manifests, resource/safety checks, and cross-experiment conformance tests.
+1. fixture/protocol: separated traces, IDs, RNG, fact compiler, vocabularies, schemas;
+2. Exp04 memory: M0-M6/H0/V0 and MemoryView over observation-only fixtures;
+3. Exp04 evaluation: epistemic/outcome scorers, queries, metrics, and gates;
+4. Exp05 preparation: T0-T4/TM, planner, missions, and stub MemoryView conformance;
+5. artifact/verification: canonical rollout wrapper, sidecars, replay, shards, and
+   validation.
 
-The fixture schema, observation contract, virtual clock, and stub `MemoryView`
-conformance cases freeze before parallel preparation begins. Exp04 pilot, freeze,
-confirmation, and promotion are serial. Exp05 then replaces its stub with the
-promoted conforming view, reruns all tests, freezes its own protocol, and performs
-pilot and confirmation serially. Neither experiment reuses pilot seeds for
-confirmation, and Exp05 evidence never feeds back into the Exp04 decision.
+Trace schemas, observation API, fact compiler, total order, sidecar schemas, and the
+stub MemoryView fixture freeze before parallel preparation. Exp04 pilot, freeze,
+post-freeze confirmation generation, confirmation, decision, and promotion are serial.
+Exp05 then consumes the promoted protocol, reruns conformance, and follows its own
+serial lifecycle. No Exp05 result feeds back into the Exp04 decision.
 
-## 12. Decision outputs
+## 14. Required decisions
 
-Exp04 produces `MEMORY_ARCHITECTURE_DECISION.md`, assigning every retained fact to
+Exp04 produces `MEMORY_ARCHITECTURE_DECISION.md`, assigning retained information to
 `FAST_STATE`, `EPISODIC_LOG`, `SEMANTIC_GRAPH`, `GEOMETRIC_STATE`,
-`EMBEDDING_INDEX`, or `LEARNED_LATENT`, as required by the program
+`EMBEDDING_INDEX`, or `LEARNED_LATENT` as required
 (`Reflect Lite Research Program.md:1710-1717`). Exp05 produces
-`TWIN_ARCHITECTURE_DECISION.md`, stating authority and mutation rules for BIM/IFC,
+`TWIN_ARCHITECTURE_DECISION.md`, recording authority and mutation rules for BIM/IFC,
 geometric export, runtime graph, and live belief
-(`Reflect Lite Research Program.md:1868-1879`). Each decision links its immutable
-confirmation manifest, reports every gate component, and records rejected layers
-and adapters so a failed gate cannot be reframed as promotion.
+(`Reflect Lite Research Program.md:1868-1879`).
+
+Each decision links valid immutable manifests, names its lifecycle/artifact/scientific/
+blocker/promotion states separately, reports every family and guard, and records
+rejected layers/adapters. A stopped or blocked component cannot be reframed as a
+promotion.
