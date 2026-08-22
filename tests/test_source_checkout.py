@@ -10,10 +10,13 @@ from typing import Any
 
 import pytest
 
+import reflect.source_checkout as checkout_module
+import reflect.source_evidence as evidence_module
 from reflect.source_checkout import (
     CheckoutCommandResult,
     CheckoutSpec,
     SparseCheckoutError,
+    SubprocessCheckoutRunner,
     checkout_sparse,
     eligible_checkout_specs,
 )
@@ -81,10 +84,26 @@ def complete_lock(*, missing: tuple[str, str] | None = None) -> tuple[Any, Sourc
 
 
 class RecordingRunner:
-    def __init__(self, *, replacement_root: Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        replacement_root: Path | None = None,
+        fail_on: str | None = None,
+        raise_on: str | None = None,
+        git_object_bytes: int = 0,
+        wrong_head: bool = False,
+        dirty: bool = False,
+        fetch_download_bytes: int = 17,
+    ) -> None:
         self.calls: list[dict[str, Any]] = []
         self.replacement_root = replacement_root
         self.sha = SHA
+        self.fail_on = fail_on
+        self.raise_on = raise_on
+        self.git_object_bytes = git_object_bytes
+        self.wrong_head = wrong_head
+        self.dirty = dirty
+        self.fetch_download_bytes = fetch_download_bytes
 
     def run(
         self,
@@ -104,9 +123,14 @@ class RecordingRunner:
                 "input": input_bytes,
             }
         )
+        if self.raise_on is not None and self.raise_on in argv:
+            raise RuntimeError("unexpected runner failure")
+        if self.fail_on is not None and self.fail_on in argv:
+            return CheckoutCommandResult(7, b"", b"failed", 19)
         if argv[:3] == ("git", "init", "--quiet"):
             checkout = cwd / argv[3]
-            (checkout / ".git" / "info").mkdir(parents=True)
+            assert stat.S_IMODE(checkout.stat().st_mode) == 0o700
+            (checkout / ".git" / "info").mkdir(parents=True, exist_ok=True)
         checkout_name = next(
             (argv[index + 1] for index, item in enumerate(argv[:-1]) if item == "-C"),
             None,
@@ -115,6 +139,10 @@ class RecordingRunner:
         command = argv[-1]
         if "fetch" in argv:
             self.sha = argv[-1]
+            if checkout is not None and self.git_object_bytes:
+                target = checkout / ".git" / "objects" / "pack"
+                target.mkdir(parents=True)
+                (target / "fixture.pack").write_bytes(b"x" * self.git_object_bytes)
         if "sparse-checkout" in argv and "set" in argv:
             assert checkout is not None and input_bytes is not None
             (checkout / ".git" / "info" / "sparse-checkout").write_bytes(input_bytes)
@@ -137,9 +165,10 @@ class RecordingRunner:
                 cwd.rename(moved)
                 self.replacement_root.mkdir()
         if argv[-2:] == ("rev-parse", "HEAD"):
-            return CheckoutCommandResult(0, (self.sha + "\n").encode(), b"", 0)
+            head = "b" * 40 if self.wrong_head else self.sha
+            return CheckoutCommandResult(0, (head + "\n").encode(), b"", 0)
         if "status" in argv:
-            return CheckoutCommandResult(0, b"", b"", 0)
+            return CheckoutCommandResult(0, b"dirty\0" if self.dirty else b"", b"", 0)
         if argv[-2:] == ("sparse-checkout", "list"):
             assert checkout is not None
             return CheckoutCommandResult(
@@ -148,7 +177,9 @@ class RecordingRunner:
                 b"",
                 0,
             )
-        return CheckoutCommandResult(0, b"", b"", 17)
+        return CheckoutCommandResult(
+            0, b"", b"", self.fetch_download_bytes if "fetch" in argv else 0
+        )
 
 
 def test_selector_returns_exact_eight_and_excludes_locked_missing_path() -> None:
@@ -236,6 +267,22 @@ def test_checkout_uses_fixed_git_commands_locked_sha_and_existing_patterns(tmp_p
     assert "gone" not in flattened
 
 
+def test_checkout_strips_ambient_git_hooks_fsmonitor_and_proxy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "2")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.hooksPath")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "/tmp/hostile")
+    monkeypatch.setenv("HTTPS_PROXY", "https://proxy.invalid")
+    spec = CheckoutSpec("9" * 64, "example", "https://github.com/example/project", SHA, ("README.md",), ("README.md",))
+    runner = RecordingRunner()
+    checkout_sparse(spec, tmp_path / "external", runner)
+    assert all(not any(key.startswith("GIT_CONFIG_") and key not in {"GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM"} for key in call["env"]) for call in runner.calls)
+    assert all("HTTPS_PROXY" not in call["env"] for call in runner.calls)
+    assert all("core.hooksPath=/dev/null" in call["argv"] for call in runner.calls[1:])
+    assert all("core.fsmonitor=false" in call["argv"] for call in runner.calls[1:])
+
+
 def test_checkout_refuses_symlinked_root_and_intermediate_without_touching_target(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -282,6 +329,10 @@ def test_checkout_reuses_only_clean_matching_existing_destination(tmp_path: Path
     second = checkout_sparse(spec, root, RecordingRunner())
     assert second.reused is True
     assert second.destination == first.destination
+    with pytest.raises(SparseCheckoutError, match="dirty"):
+        checkout_sparse(spec, root, RecordingRunner(dirty=True))
+    with pytest.raises(SparseCheckoutError, match="HEAD"):
+        checkout_sparse(spec, root, RecordingRunner(wrong_head=True))
 
 
 def test_checkout_evidence_is_canonical_create_only_and_mode_0600(tmp_path: Path) -> None:
@@ -307,6 +358,96 @@ def test_checkout_evidence_is_canonical_create_only_and_mode_0600(tmp_path: Path
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     with pytest.raises(FileExistsError):
         write_evidence_create_only(path, evidence)
+
+
+def test_failure_evidence_has_closed_matrix_and_atomic_publish_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(ValueError, match="outcome"):
+        CheckoutEvidence.create(
+            registry_sha256="9" * 64, repository="example", url="https://github.com/example/project",
+            locked_sha=SHA, patterns=("*.py",), commands=(("git", "fetch"),), statuses=(0,),
+            download_bytes=1, disk_bytes=1, outcome="UNKNOWN", blocker=None,
+            content_hashes={"root.py": "8" * 64},
+        )
+    failure = CheckoutEvidence.create(
+        registry_sha256="9" * 64, repository="example", url="https://github.com/example/project",
+        locked_sha=SHA, patterns=("*.py",), commands=(("git", "fetch"),), statuses=(7,),
+        download_bytes=19, disk_bytes=0, outcome="FAIL", blocker="fetch returned 7",
+        content_hashes={},
+    )
+    destination = tmp_path / "fragments" / "failure.json"
+
+    def fail_link(*args: object, **kwargs: object) -> None:
+        raise OSError("publication failed")
+
+    monkeypatch.setattr(evidence_module.os, "link", fail_link)
+    with pytest.raises(OSError, match="publication"):
+        write_evidence_create_only(destination, failure)
+    assert not destination.exists()
+    assert tuple(destination.parent.iterdir()) == ()
+
+
+def test_retained_git_objects_count_toward_disk_cap_and_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(checkout_module, "_MAX_DISK_BYTES", 64)
+    spec = CheckoutSpec("9" * 64, "example", "https://github.com/example/project", SHA, ("README.md",), ("README.md",))
+    root = tmp_path / "external"
+    with pytest.raises(SparseCheckoutError, match="disk byte ceiling"):
+        checkout_sparse(spec, root, RecordingRunner(git_object_bytes=65))
+    assert tuple(root.iterdir()) == ()
+
+
+def test_download_cap_plus_one_and_failed_publication_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec = CheckoutSpec("9" * 64, "example", "https://github.com/example/project", SHA, ("README.md",), ("README.md",))
+    monkeypatch.setattr(checkout_module, "_MAX_DOWNLOAD_BYTES", 64)
+    root = tmp_path / "external"
+    with pytest.raises(SparseCheckoutError, match="download"):
+        checkout_sparse(spec, root, RecordingRunner(fetch_download_bytes=65))
+    assert tuple(root.iterdir()) == ()
+    monkeypatch.setattr(checkout_module, "_MAX_DOWNLOAD_BYTES", 512 * 1024 * 1024)
+
+    def fail_publish(*args: object) -> None:
+        raise SparseCheckoutError("publication failed")
+
+    monkeypatch.setattr(checkout_module, "_publish_no_replace", fail_publish)
+    with pytest.raises(SparseCheckoutError, match="publication"):
+        checkout_sparse(spec, root, RecordingRunner())
+    assert tuple(root.iterdir()) == ()
+
+
+def test_partial_cleanup_covers_unexpected_runner_exception(tmp_path: Path) -> None:
+    spec = CheckoutSpec("9" * 64, "example", "https://github.com/example/project", SHA, ("README.md",), ("README.md",))
+    root = tmp_path / "external"
+    with pytest.raises(RuntimeError, match="unexpected"):
+        checkout_sparse(spec, root, RecordingRunner(raise_on="remote"))
+    assert tuple(root.iterdir()) == ()
+
+
+def test_subprocess_runner_accounts_conservative_fetch_growth(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkout = tmp_path / "partial"
+    (checkout / ".git").mkdir(parents=True)
+
+    class Completed:
+        returncode = 0
+        stdout = b""
+        stderr = b""
+
+    def fake_run(*args: object, **kwargs: object) -> Completed:
+        (checkout / ".git" / "pack").write_bytes(b"x" * 37)
+        return Completed()
+
+    monkeypatch.setattr(checkout_module.subprocess, "run", fake_run)
+    result = SubprocessCheckoutRunner().run(
+        ("git", "-C", "partial", "fetch", "origin", SHA),
+        cwd=tmp_path, env={}, timeout=1,
+    )
+    assert result.download_bytes >= 37
 
 
 def test_sparse_cli_requires_explicit_fragment_directory() -> None:
@@ -354,3 +495,26 @@ def test_sparse_cli_audits_lock_writes_one_fragment_and_preserves_lock(
             "reused": False,
         }
     ]
+
+
+def test_sparse_cli_writes_immutable_failure_fragment(tmp_path: Path) -> None:
+    _, lock = complete_lock()
+    lock_path = tmp_path / "repos.lock.yaml"
+    lock_path.write_bytes(lock_yaml_bytes(lock))
+    fragments = tmp_path / "fragments"
+    with pytest.raises(SparseCheckoutError, match="returned 7"):
+        fetch_main(
+            ["--name", "mujoco_mpc", "--sparse-checkout", "--fragment-dir", os.fspath(fragments)],
+            root=tmp_path, registry_path=Path("references/repos.yaml"), lock_path=lock_path,
+            checkout_runner=RecordingRunner(fail_on="fetch"),
+        )
+    payload = json.loads((fragments / "mujoco_mpc-checkout.json").read_text())
+    assert payload["outcome"] == "FAIL"
+    assert payload["statuses"][-1] == 7
+    assert payload["blocker"]
+    with pytest.raises(FileExistsError):
+        fetch_main(
+            ["--name", "mujoco_mpc", "--sparse-checkout", "--fragment-dir", os.fspath(fragments)],
+            root=tmp_path, registry_path=Path("references/repos.yaml"), lock_path=lock_path,
+            checkout_runner=RecordingRunner(fail_on="fetch"),
+        )

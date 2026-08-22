@@ -146,12 +146,26 @@ class CheckoutEvidence:
             raise ValueError("patterns must be nonempty and unique")
         if len(self.commands) != len(self.statuses):
             raise ValueError("commands and statuses must have equal length")
+        if not self.commands:
+            raise ValueError("commands must contain at least one receipt")
         if any(type(status) is not int or status < 0 for status in self.statuses):
             raise ValueError("statuses must be nonnegative integers")
         if type(self.download_bytes) is not int or self.download_bytes < 0:
             raise ValueError("download_bytes must be nonnegative")
         if type(self.disk_bytes) is not int or self.disk_bytes < 0:
             raise ValueError("disk_bytes must be nonnegative")
+        if self.outcome not in {"PASS", "FAIL"}:
+            raise ValueError("outcome must be PASS or FAIL")
+        if self.outcome == "PASS":
+            if self.download_bytes > 512 * 1024 * 1024 or self.disk_bytes > 512 * 1024 * 1024:
+                raise ValueError("PASS checkout evidence exceeds the program ceiling")
+            if self.blocker is not None or any(self.statuses) or not self.content_hashes:
+                raise ValueError("PASS outcome requires zero statuses, content, and no blocker")
+        else:
+            if type(self.blocker) is not str or not self.blocker or "\n" in self.blocker:
+                raise ValueError("FAIL outcome requires a single-line blocker")
+            if self.disk_bytes != 0 or self.content_hashes:
+                raise ValueError("FAIL outcome cannot claim retained disk content")
         for path, digest in self.content_hashes:
             _string(path, "content path")
             _sha(digest, "content hash", length=64)
@@ -192,7 +206,7 @@ class CheckoutEvidence:
 
 
 def write_evidence_create_only(path: Path, evidence: CheckoutEvidence) -> None:
-    """Publish one mode-0600 evidence file without following or replacing paths."""
+    """Atomically publish one mode-0600 evidence file without replacement."""
     if path.name in {"", ".", ".."} or Path(path.name).name != path.name:
         raise ValueError("evidence path must end in one safe basename")
     parent = open_directory_chain(path.parent, create=True)
@@ -203,9 +217,13 @@ def write_evidence_create_only(path: Path, evidence: CheckoutEvidence) -> None:
         | getattr(os, "O_NOFOLLOW", 0)
         | getattr(os, "O_CLOEXEC", 0)
     )
+    temporary = f".{path.name}.partial-{os.urandom(8).hex()}"
     descriptor = -1
+    temporary_identity: tuple[int, int] | None = None
     try:
-        descriptor = os.open(path.name, flags, 0o600, dir_fd=parent)
+        descriptor = os.open(temporary, flags, 0o600, dir_fd=parent)
+        value = os.fstat(descriptor)
+        temporary_identity = (value.st_dev, value.st_ino)
         data = evidence.canonical_bytes()
         offset = 0
         while offset < len(data):
@@ -214,8 +232,23 @@ def write_evidence_create_only(path: Path, evidence: CheckoutEvidence) -> None:
         value = os.fstat(descriptor)
         if not stat.S_ISREG(value.st_mode):
             raise ValueError("evidence destination is not a regular file")
+        os.link(
+            temporary,
+            path.name,
+            src_dir_fd=parent,
+            dst_dir_fd=parent,
+            follow_symlinks=False,
+        )
         os.fsync(parent)
     finally:
         if descriptor >= 0:
             os.close(descriptor)
+        if temporary_identity is not None:
+            try:
+                current = os.stat(temporary, dir_fd=parent, follow_symlinks=False)
+            except FileNotFoundError:
+                current = None
+            if current is not None and temporary_identity == (current.st_dev, current.st_ino):
+                os.unlink(temporary, dir_fd=parent)
+                os.fsync(parent)
         os.close(parent)

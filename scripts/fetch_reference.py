@@ -118,7 +118,26 @@ def main(
         checkout_impl = checkout_runner or SubprocessCheckoutRunner()
         output = []
         for spec in specs:
-            checkout = checkout_sparse(spec, checkout_root, checkout_impl)
+            evidence_path = fragment_dir / f"{spec.name}-checkout.json"
+            try:
+                checkout = checkout_sparse(spec, checkout_root, checkout_impl)
+            except SparseCheckoutError as exc:
+                failure = CheckoutEvidence.create(
+                    registry_sha256=spec.registry_sha256,
+                    repository=spec.name,
+                    url=spec.url,
+                    locked_sha=spec.commit_sha,
+                    patterns=spec.patterns,
+                    commands=exc.commands,
+                    statuses=exc.statuses,
+                    download_bytes=exc.download_bytes,
+                    disk_bytes=0,
+                    outcome="FAIL",
+                    blocker=str(exc),
+                    content_hashes={},
+                )
+                write_evidence_create_only(evidence_path, failure)
+                raise
             evidence = CheckoutEvidence.create(
                 registry_sha256=spec.registry_sha256,
                 repository=spec.name,
@@ -133,9 +152,7 @@ def main(
                 blocker=None,
                 content_hashes=checkout.content_hashes,
             )
-            write_evidence_create_only(
-                fragment_dir / f"{spec.name}-checkout.json", evidence
-            )
+            write_evidence_create_only(evidence_path, evidence)
             output.append(
                 {
                     "destination": os.fspath(checkout.destination),

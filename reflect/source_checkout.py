@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 import re
 import stat
 import subprocess
-from typing import Any, Protocol
+from typing import Protocol
 
 from reflect._rollout_io import FileIdentity, cleanup_exact_directory, open_directory_at
 from reflect.source_evidence import open_directory_chain
@@ -36,6 +36,19 @@ _GIT_TIMEOUT = 600.0
 
 class SparseCheckoutError(RuntimeError):
     """Raised when a sparse source checkout cannot be proven safe and pinned."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        commands: Sequence[Sequence[str]] = (),
+        statuses: Sequence[int] = (),
+        download_bytes: int = 0,
+    ) -> None:
+        super().__init__(message)
+        self.commands = tuple(tuple(command) for command in commands)
+        self.statuses = tuple(statuses)
+        self.download_bytes = download_bytes
 
 
 @dataclass(frozen=True)
@@ -92,6 +105,13 @@ class SubprocessCheckoutRunner:
         timeout: float,
         input_bytes: bytes | None = None,
     ) -> CheckoutCommandResult:
+        checkout = None
+        if "-C" in argv:
+            index = argv.index("-C")
+            if index + 1 >= len(argv):
+                raise SparseCheckoutError("Git -C argument is missing")
+            checkout = cwd / argv[index + 1]
+        before = _retained_git_bytes(checkout) if checkout is not None else 0
         try:
             completed = subprocess.run(
                 argv,
@@ -106,12 +126,48 @@ class SubprocessCheckoutRunner:
             raise SparseCheckoutError(
                 f"Git checkout command failed: {type(exc).__name__}"
             ) from exc
+        after = _retained_git_bytes(checkout) if checkout is not None else 0
+        retained_growth = max(0, after - before)
+        network_capable = "fetch" in argv or "checkout" in argv
+        # Git exposes no exact transport counter. Pack growth plus a fixed
+        # protocol/filesystem allowance is a deterministic conservative receipt.
+        accounted_download = (
+            retained_growth + 64 * 1024
+            if network_capable and retained_growth
+            else 0
+        )
         return CheckoutCommandResult(
             completed.returncode,
             completed.stdout,
             completed.stderr,
-            0,
+            accounted_download,
         )
+
+
+def _retained_git_bytes(checkout: Path | None) -> int:
+    if checkout is None:
+        return 0
+    git = checkout / ".git"
+    if not git.exists():
+        return 0
+    total = 0
+    for current, directories, files in os.walk(git, topdown=True, followlinks=False):
+        current_path = Path(current)
+        safe = []
+        for name in sorted(directories):
+            value = (current_path / name).lstat()
+            if stat.S_ISLNK(value.st_mode):
+                raise SparseCheckoutError("Git metadata contains a symlinked directory")
+            safe.append(name)
+        directories[:] = safe
+        for name in sorted(files):
+            value = (current_path / name).lstat()
+            if not stat.S_ISREG(value.st_mode) or value.st_nlink != 1:
+                raise SparseCheckoutError("Git metadata contains a nonregular or linked file")
+            total += max(value.st_size, getattr(value, "st_blocks", 0) * 512)
+            if total > _MAX_DOWNLOAD_BYTES:
+                raise SparseCheckoutError("Git transport accounting exceeded its byte ceiling")
+    return total
 
 
 def _validate_pattern(pattern: str) -> None:
@@ -233,14 +289,19 @@ def _run_checked(
         timeout=_GIT_TIMEOUT,
         input_bytes=input_bytes,
     )
+    if type(result.stdout) is not bytes or type(result.stderr) is not bytes:
+        raise SparseCheckoutError("Git checkout command output must be bytes", commands=(argv,))
+    if type(result.download_bytes) is not int or not 0 <= result.download_bytes <= _MAX_DOWNLOAD_BYTES:
+        raise SparseCheckoutError("Git checkout download exceeded its byte ceiling", commands=(argv,))
+    if type(result.returncode) is not int or result.returncode < 0:
+        raise SparseCheckoutError("Git checkout command status is invalid", commands=(argv,))
     if result.returncode != 0:
         raise SparseCheckoutError(
-            f"Git checkout command returned {result.returncode}: {argv[-1]}"
+            f"Git checkout command returned {result.returncode}: {argv[-1]}",
+            commands=(argv,),
+            statuses=(result.returncode,),
+            download_bytes=result.download_bytes,
         )
-    if type(result.stdout) is not bytes or type(result.stderr) is not bytes:
-        raise SparseCheckoutError("Git checkout command output must be bytes")
-    if type(result.download_bytes) is not int or not 0 <= result.download_bytes <= _MAX_DOWNLOAD_BYTES:
-        raise SparseCheckoutError("Git checkout download exceeded its byte ceiling")
     return result
 
 
@@ -268,22 +329,22 @@ def _tree_facts(path: Path) -> tuple[int, dict[str, str]]:
             value = child.lstat()
             if stat.S_ISLNK(value.st_mode):
                 raise SparseCheckoutError("checkout contains a symlinked directory")
-            if name != ".git":
-                safe_directories.append(name)
+            safe_directories.append(name)
         directories[:] = safe_directories
-        if ".git" in Path(current).parts:
-            continue
         for name in sorted(files):
             child = current_path / name
             value = child.lstat()
             if not stat.S_ISREG(value.st_mode) or value.st_nlink != 1:
                 raise SparseCheckoutError("checkout contains a nonregular or linked file")
             relative = child.relative_to(path).as_posix()
-            content = child.read_bytes()
-            total += len(content)
+            total += max(value.st_size, getattr(value, "st_blocks", 0) * 512)
             if total > _MAX_DISK_BYTES:
                 raise SparseCheckoutError("checkout exceeded its disk byte ceiling")
-            hashes[relative] = hashlib.sha256(content).hexdigest()
+            if ".git" not in PurePosixPath(relative).parts:
+                content = child.read_bytes()
+                if len(content) != value.st_size:
+                    raise SparseCheckoutError("checkout file changed during inspection")
+                hashes[relative] = hashlib.sha256(content).hexdigest()
     return total, hashes
 
 
@@ -333,25 +394,40 @@ def _validate_checkout(
 
     def run(argv: tuple[str, ...]) -> CheckoutCommandResult:
         nonlocal download
-        result = _run_checked(runner, argv, cwd=root, environment=environment)
+        try:
+            result = _run_checked(runner, argv, cwd=root, environment=environment)
+        except SparseCheckoutError as exc:
+            raise SparseCheckoutError(
+                str(exc),
+                commands=(*commands, *exc.commands),
+                statuses=(*statuses, *exc.statuses),
+                download_bytes=download + exc.download_bytes,
+            ) from exc
         commands.append(argv)
         statuses.append(result.returncode)
         download += result.download_bytes
+        if download > _MAX_DOWNLOAD_BYTES:
+            raise SparseCheckoutError("cumulative Git download exceeded its byte ceiling", commands=commands, statuses=statuses, download_bytes=download)
         return result
 
     prefix = _inspection_prefix(checkout_name)
     head = run((*prefix, "rev-parse", "HEAD")).stdout.decode("ascii", errors="strict").strip()
     if head != spec.commit_sha:
-        raise SparseCheckoutError("checkout HEAD does not match locked SHA")
+        raise SparseCheckoutError("checkout HEAD does not match locked SHA", commands=commands, statuses=statuses, download_bytes=download)
     status = run((*prefix, "status", "--porcelain=v1", "-z")).stdout
     if status:
-        raise SparseCheckoutError("checkout destination is dirty")
+        raise SparseCheckoutError("checkout destination is dirty", commands=commands, statuses=statuses, download_bytes=download)
     listed = run((*prefix, "sparse-checkout", "list")).stdout.decode("utf-8", errors="strict").splitlines()
     if tuple(listed) != spec.patterns:
-        raise SparseCheckoutError("checkout sparse patterns do not match lock")
+        raise SparseCheckoutError("checkout sparse patterns do not match lock", commands=commands, statuses=statuses, download_bytes=download)
     checkout = root / checkout_name
-    _materialized(checkout, spec.patterns)
-    disk, hashes = _tree_facts(checkout)
+    try:
+        _materialized(checkout, spec.patterns)
+        disk, hashes = _tree_facts(checkout)
+    except SparseCheckoutError as exc:
+        raise SparseCheckoutError(
+            str(exc), commands=commands, statuses=statuses, download_bytes=download
+        ) from exc
     return commands, statuses, download, disk, hashes
 
 
@@ -383,7 +459,7 @@ def checkout_sparse(
                 spec, spec.name, root=root, runner=runner, environment=environment
             )
             if not _path_matches_root(root, root_identity):
-                raise SparseCheckoutError("checkout root changed during operation")
+                raise SparseCheckoutError("checkout root changed during operation", commands=commands, statuses=statuses, download_bytes=download)
             return CheckoutResult(spec.name, root / spec.name, spec.commit_sha, spec.patterns, tuple(commands), tuple(statuses), download, disk, hashes, True)
 
         commands: list[tuple[str, ...]] = []
@@ -392,26 +468,43 @@ def checkout_sparse(
 
         def run(argv: tuple[str, ...], input_bytes: bytes | None = None) -> None:
             nonlocal download
-            result = _run_checked(
-                runner,
-                argv,
-                cwd=root,
-                environment=environment,
-                input_bytes=input_bytes,
-            )
+            try:
+                result = _run_checked(
+                    runner,
+                    argv,
+                    cwd=root,
+                    environment=environment,
+                    input_bytes=input_bytes,
+                )
+            except SparseCheckoutError as exc:
+                raise SparseCheckoutError(
+                    str(exc),
+                    commands=(*commands, *exc.commands),
+                    statuses=(*statuses, *exc.statuses),
+                    download_bytes=download + exc.download_bytes,
+                ) from exc
             commands.append(argv)
             statuses.append(result.returncode)
             download += result.download_bytes
+            if download > _MAX_DOWNLOAD_BYTES:
+                raise SparseCheckoutError("cumulative Git download exceeded its byte ceiling", commands=commands, statuses=statuses, download_bytes=download)
             if not _path_matches_root(root, root_identity):
-                raise SparseCheckoutError("checkout root changed during operation")
+                raise SparseCheckoutError(
+                    "checkout root changed during operation",
+                    commands=commands,
+                    statuses=statuses,
+                    download_bytes=download,
+                )
 
-        run(("git", "init", "--quiet", partial))
+        os.mkdir(partial, 0o700, dir_fd=root_descriptor)
         partial_created = True
         opened = os.open(partial, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0), dir_fd=root_descriptor)
         try:
+            os.fchmod(opened, 0o700)
             partial_identity = _directory_identity(opened)
         finally:
             os.close(opened)
+        run(("git", "init", "--quiet", partial))
         prefix = _inspection_prefix(partial)
         run((*prefix, "remote", "add", "origin", spec.url))
         run((*prefix, "fetch", "--quiet", "--depth=1", "--filter=blob:none", "origin", spec.commit_sha))
@@ -424,16 +517,21 @@ def checkout_sparse(
         commands.extend(checked_commands)
         statuses.extend(checked_statuses)
         download += checked_download
+        if download > _MAX_DOWNLOAD_BYTES:
+            raise SparseCheckoutError("cumulative Git download exceeded its byte ceiling", commands=commands, statuses=statuses, download_bytes=download)
         if not _path_matches_root(root, root_identity):
-            raise SparseCheckoutError("checkout root changed during operation")
+            raise SparseCheckoutError("checkout root changed during operation", commands=commands, statuses=statuses, download_bytes=download)
         current = os.stat(partial, dir_fd=root_descriptor, follow_symlinks=False)
         if partial_identity != (current.st_dev, current.st_ino):
-            raise SparseCheckoutError("checkout partial directory changed during operation")
-        _publish_no_replace(root_descriptor, partial, spec.name)
+            raise SparseCheckoutError("checkout partial directory changed during operation", commands=commands, statuses=statuses, download_bytes=download)
+        try:
+            _publish_no_replace(root_descriptor, partial, spec.name)
+        except SparseCheckoutError as exc:
+            raise SparseCheckoutError(str(exc), commands=commands, statuses=statuses, download_bytes=download) from exc
         partial_created = False
         os.fsync(root_descriptor)
         return CheckoutResult(spec.name, root / spec.name, spec.commit_sha, spec.patterns, tuple(commands), tuple(statuses), download, disk, hashes, False)
-    except SparseCheckoutError:
+    except BaseException:
         if partial_created and partial_identity is not None and _path_matches_root(root, root_identity):
             try:
                 current = os.stat(partial, dir_fd=root_descriptor, follow_symlinks=False)
