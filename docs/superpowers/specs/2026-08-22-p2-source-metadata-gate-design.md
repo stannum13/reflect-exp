@@ -78,18 +78,35 @@ identity. It follows no arbitrary host supplied by response data and sends no
 credentials by default.
 
 For each entry it runs read-only `git ls-remote --symref URL HEAD` to resolve the
-default branch and branch-head SHA, retrieves one pinned recursive Git tree for path
+default branch and branch-head SHA, resolves the commit's tree SHA through the
+documented Git commit endpoint, retrieves the pinned recursive tree for path
 verification and root license discovery, and fetches only the discovered license
-file from `raw.githubusercontent.com` at that SHA. If GitHub marks a recursive tree
-truncated, the resolver traverses only the requested path prefixes and root license
-candidates through non-recursive tree calls; it never guesses from incomplete data.
-Raw responses and request metadata are cached below ignored
+blob by its tree-recorded blob SHA. If GitHub marks a recursive tree truncated, the
+resolver traverses only the requested path prefixes and root license candidates
+through non-recursive tree calls; it never guesses from incomplete data. Raw
+responses and request metadata are cached below ignored
 `external/.metadata/` using checksummed, repository-scoped files. A valid dated cache
 may resume an interrupted pass, but the final lock is published through a
 same-directory temporary file and atomic rename only after the selected set is
 complete and passes structural validation.
 
-The resolver uses an injectable command runner, HTTPS transport, and clock. Unit
+Git executes with system/global configuration disabled, terminal prompting disabled,
+and credential, askpass, proxy, and trace environment removed. The output parser is
+order-independent, requires exactly one symbolic HEAD and matching full SHA, accepts
+slashes in branch names, and treats detached, unborn, missing, malformed, SHA-256,
+or ambiguous HEAD results as explicit unsupported/invalid metadata rather than
+silently guessing.
+
+Unauthenticated GitHub REST resolution is serialized and resumable because the
+documented public limit is 60 requests per hour and the documented commit, tree, and
+license-blob sequence needs more than one window for 45 repositories. On exhaustion,
+the process stores validated partial cache entries, reports the reset timestamp, and
+exits without publishing the lock. A later invocation resumes from cache; it does
+not sleep for an unbounded interval or issue immediate forbidden retries.
+
+The resolver uses an injectable command runner, HTTPS transport, and clock. It
+accepts only derived `api.github.com` endpoint paths and rejects redirects that
+change the canonical owner/repository or pinned object identity. Unit
 tests use checked-in fixtures and make no network request. Network errors include
 endpoint or command, status/return code or exception class, and rate-limit
 observations without secrets.

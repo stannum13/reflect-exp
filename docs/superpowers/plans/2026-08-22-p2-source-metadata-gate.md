@@ -13,7 +13,7 @@
 - P2 contains all 39 canonical Section 8 repositories plus the six existing bootstrap entries, exactly 45 unique names.
 - Reuse mode is exactly one of `DIRECT_DEPENDENCY`, `ADAPTER_DEPENDENCY`, `SPARSE_REFERENCE`, `REMOTE_ONLY`, `PAPER_AND_CODE_REFERENCE`, or `DEFERRED`.
 - Metadata mode performs no clone, install, import, build, source copy, model/checkpoint download, remote execution, or physical communication.
-- Network endpoints are `github.com`, `api.github.com`, or `raw.githubusercontent.com` HTTPS identities derived only from exact `https://github.com/OWNER/REPO` registry URLs.
+- Network endpoints are `github.com` and `api.github.com` HTTPS identities derived only from exact `https://github.com/OWNER/REPO` registry URLs.
 - Every resolved revision is a 40-character lowercase hexadecimal SHA.
 - Every requested selected path is preserved verbatim and marked `EXISTS` or `MISSING`; `mjctrl`'s `*.py` means a root-entry glob.
 - Unknown license metadata is factual evidence, not legal approval; it blocks direct/adapter approval and copying.
@@ -110,10 +110,12 @@ git commit -m "feat: materialize validated source registry"
 
 - [ ] **Step 1: Write failing resolver tests**
 
-Cover `ls-remote` default-branch/SHA parsing, SPDX discovery and unknown license
-handling, literal paths, root globs, missing paths, truncated-tree targeted fallback,
-exact evidence URLs, deterministic YAML, cache checksums, one cache fallback after a
-live failure, and atomic failure:
+Cover order-independent `ls-remote` default-branch/SHA parsing, missing/detached/
+unborn/duplicate/SHA-256 HEAD rejection, Git-config isolation, commit-to-tree
+resolution, SPDX discovery and unknown license handling, literal paths, root globs,
+missing paths, truncated-tree targeted fallback, exact evidence URLs, deterministic
+YAML, cache checksums, rate-limit resume, one cache fallback after a live failure,
+and atomic failure:
 
 ```python
 def test_failed_resolution_preserves_existing_lock(tmp_path: Path) -> None:
@@ -142,36 +144,45 @@ or extra path components. Invoke only:
 
 ```text
 git ls-remote --symref https://github.com/{owner}/{repo} HEAD
-https://api.github.com/repos/{owner}/{repo}/git/trees/{sha}?recursive=1
+https://api.github.com/repos/{owner}/{repo}/git/commits/{commit_sha}
+https://api.github.com/repos/{owner}/{repo}/git/trees/{tree_sha}?recursive=1
 https://api.github.com/repos/{owner}/{repo}/git/trees/{tree_sha}
-https://raw.githubusercontent.com/{owner}/{repo}/{sha}/{license_path}
+https://api.github.com/repos/{owner}/{repo}/git/blobs/{license_blob_sha}
 ```
 
 Run Git with a fixed argument vector, noninteractive environment, bounded timeout,
-and captured output; require exactly one `ref: refs/heads/... HEAD` and its matching
-40-character HEAD SHA. Use `urllib.request` with a fixed user agent, bounded timeout,
-bounded response size, and no authentication. Reject a final response URL outside
-the two derived GitHub hosts. Surface HTTP status and rate-limit headers without
+captured output, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_SYSTEM=/dev/null`,
+`GIT_CONFIG_NOSYSTEM=1`, and `GIT_TERMINAL_PROMPT=0`; remove credential, askpass,
+proxy, and trace environment. Parse records by ref identity rather than line order;
+require exactly one `ref: refs/heads/... HEAD` and matching 40-character HEAD SHA.
+Use `urllib.request` with a fixed user agent, bounded timeout, bounded response size,
+and no authentication. Reject a final response outside the exact derived API owner/
+repo and pinned-object path. Surface HTTP status and rate-limit headers without
 response-body secrets.
 
 - [ ] **Step 4: Implement factual resolution and path matching**
 
-Resolve the default branch and SHA from `ls-remote`, then verify tree entries. A
-literal requested path exists when it equals an entry or is a directory prefix of
-an entry. A root glob matches only root entries via `fnmatchcase`. When a recursive
-tree is truncated, walk only requested prefixes by tree SHA and refuse unresolved
-paths. Preserve every requested string in the lock. Discover conventional root
-license filenames case-insensitively, fetch at the pinned SHA, and classify only
-recognized SPDX-identifiable texts; otherwise record `UNKNOWN` or `UNAVAILABLE`
-with its exact evidence endpoint.
+Resolve the default branch and commit SHA from `ls-remote`; validate the Git commit
+response matches that SHA and use its `tree.sha` for tree requests. A literal
+requested path exists when its exact tree/blob entry exists or when it is a tree
+prefix of an entry. A root glob matches only root entries via `fnmatchcase`. When a
+recursive tree is truncated, walk only requested prefixes by tree SHA and refuse
+unresolved paths. Preserve every requested string in the lock. Discover conventional
+root license filenames case-insensitively, fetch the exact blob by its recorded SHA,
+decode its declared base64 encoding, and classify only recognized SPDX-identifiable
+texts; otherwise record `UNKNOWN` or `UNAVAILABLE` with its evidence endpoint.
 
 - [ ] **Step 5: Implement checksummed cache and atomic lock output**
 
-Write raw JSON plus endpoint, retrieval timestamp, ETag, and SHA-256 below
+Write raw JSON/text plus endpoint or Git command, retrieval timestamp, ETag where
+available, and SHA-256 below
 `external/.metadata/{name}/`. Validate cache metadata and payload digest before a
-single fallback. Serialize the full candidate deterministically, validate it, write
-a same-directory temporary file with descriptor-safe permissions, `fsync`, and
-`os.replace`. Clean the temporary file on every error.
+single fallback. Process requests serially. When `x-ratelimit-remaining` reaches
+zero or GitHub returns its rate-limit response, report `x-ratelimit-reset`, exit
+nonzero, and resume from the validated cache on a later invocation; do not sleep or
+retry immediately. Serialize the full candidate deterministically, validate it,
+write a same-directory temporary file with descriptor-safe permissions, `fsync`,
+and `os.replace`. Clean the temporary file on every error.
 
 - [ ] **Step 6: Implement the P2 command surface**
 
@@ -303,10 +314,12 @@ Expected: failure because `references/repos.lock.yaml` and P2 report evidence do
 
 Run: `UV_CACHE_DIR=.cache/uv uv run python scripts/fetch_reference.py --all-metadata-only`
 
-Expected: 45 resolved entries and atomic publication of `references/repos.lock.yaml`.
-If live resolution fails, preserve exact command/error evidence, use one valid cached
-retry where materially different, and keep independent P3-local baseline planning
-active; never fabricate a lock entry.
+Expected: eventual 45 resolved entries and atomic publication of
+`references/repos.lock.yaml`. The unauthenticated 60-request/hour limit means this
+command may exit resumably across multiple invocations/rate windows. Preserve exact
+command/error/reset evidence, reuse only validated cache entries, and keep
+independent P3-local baseline planning active; never fabricate a lock entry or wait
+inside one invocation for an unbounded reset interval.
 
 - [ ] **Step 4: Run the complete offline audit and verification suite**
 
