@@ -13,7 +13,7 @@ from typing import Iterable, Mapping, Sequence
 
 import numpy as np
 
-from reflect.rollout import RolloutMetadata, RolloutRecord, sha256_json
+from reflect.rollout import RolloutMetadata, RolloutRecord, canonical_json_bytes, sha256_json
 from reflect.types import Constraint, ObjectBelief, Observation, Pose, Predicate, RobotState, SkillSpec
 
 from .contracts import (
@@ -578,4 +578,563 @@ def run_episode(
         scheduler.actions,
         scheduler.control_references,
         "Experiment 01 deterministic rollout.\n",
+    )
+
+
+class PilotStage(str, Enum):
+    BASE = "base"
+    PD_60_6 = "pd_60_6"
+    PD_100_10 = "pd_100_10"
+    IK_0_001 = "ik_0_001"
+    IK_0_05 = "ik_0_05"
+    P5_0_01 = "p5_0_01"
+    P5_0_04 = "p5_0_04"
+    FINAL_FOUR = "final_four"
+
+
+_PILOT_STAGE_ORDER = tuple(PilotStage)
+_STACK_ORDER = tuple(item.value for item in CommandStack)
+
+
+def pilot_stage_order() -> tuple[PilotStage, ...]:
+    return _PILOT_STAGE_ORDER
+
+
+def _hash(value: object, name: str) -> str:
+    if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        raise ValueError(f"{name} must be a lowercase SHA-256")
+    return value
+
+
+@dataclass(frozen=True)
+class StackSeedScore:
+    stack_id: str
+    seed: int
+    condition_bundle_sha256s: tuple[str, str, str]
+    score: float
+
+    def __post_init__(self) -> None:
+        if self.stack_id not in _STACK_ORDER or type(self.seed) is not int or self.seed < 0:
+            raise ValueError("stack/seed score identity is invalid")
+        hashes = tuple(_hash(item, "condition bundle hash") for item in self.condition_bundle_sha256s)
+        if len(hashes) != 3 or not math.isfinite(float(self.score)):
+            raise ValueError("stack/seed score requires three bundles and a finite score")
+        object.__setattr__(self, "condition_bundle_sha256s", hashes)
+        object.__setattr__(self, "score", float(self.score))
+
+
+@dataclass(frozen=True)
+class PilotCandidate:
+    stage: PilotStage
+    parameter_vector: Mapping[str, object]
+    parameter_hash: str
+    fixed_survivors: tuple[str, ...]
+    feasible: bool
+    reuse_hashes: tuple[str, ...]
+    stack_seed_scores: tuple[StackSeedScore, ...]
+    global_score: float | None
+    tie_rank: int
+    reasons: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "stage", PilotStage(self.stage))
+        vector = dict(self.parameter_vector)
+        if set(vector) != {"pd", "ik", "p5_smoothness"}:
+            raise ValueError("parameter vector schema is not closed")
+        pd = vector["pd"]
+        if not isinstance(pd, (tuple, list)) or len(pd) != 2:
+            raise ValueError("parameter vector PD must contain two values")
+        normalized = {"pd": [float(pd[0]), float(pd[1])], "ik": float(vector["ik"]), "p5_smoothness": float(vector["p5_smoothness"])}
+        if not all(math.isfinite(value) for value in (*normalized["pd"], normalized["ik"], normalized["p5_smoothness"])):
+            raise ValueError("parameter vector must be finite")
+        object.__setattr__(self, "parameter_vector", MappingProxyType(normalized))
+        if self.parameter_hash != sha256_json(normalized):
+            raise ValueError("parameter hash does not bind the parameter vector")
+        survivors = tuple(self.fixed_survivors)
+        if tuple(sorted(survivors, key=_STACK_ORDER.index)) != survivors or len(set(survivors)) != len(survivors):
+            raise ValueError("fixed survivors must be unique in P1-P6 order")
+        object.__setattr__(self, "fixed_survivors", survivors)
+        reuse = tuple(_hash(item, "reuse hash") for item in self.reuse_hashes)
+        object.__setattr__(self, "reuse_hashes", reuse)
+        scores = tuple(sorted(self.stack_seed_scores, key=lambda item: (_STACK_ORDER.index(item.stack_id), item.seed)))
+        if len({(item.stack_id, item.seed) for item in scores}) != len(scores):
+            raise ValueError("stack/seed scores must be unique")
+        object.__setattr__(self, "stack_seed_scores", scores)
+        if type(self.feasible) is not bool or type(self.tie_rank) is not int or self.tie_rank < 0:
+            raise ValueError("candidate feasibility/tie rank is invalid")
+        if self.feasible != (self.global_score is not None):
+            raise ValueError("feasible candidate must have exactly one global score")
+        if self.global_score is not None and not math.isfinite(float(self.global_score)):
+            raise ValueError("global score must be finite or null")
+        reasons = tuple(self.reasons)
+        if self.feasible and reasons:
+            raise ValueError("feasible candidate cannot carry failure reasons")
+        if not self.feasible and not reasons:
+            raise ValueError("infeasible candidate requires a reason")
+        object.__setattr__(self, "reasons", reasons)
+
+
+def _candidate_vector(stage: PilotStage) -> dict[str, object]:
+    vectors: dict[PilotStage, dict[str, object]] = {
+        PilotStage.BASE: {"pd": [80.0, 8.0], "ik": 0.01, "p5_smoothness": 0.02},
+        PilotStage.PD_60_6: {"pd": [60.0, 6.0], "ik": 0.01, "p5_smoothness": 0.02},
+        PilotStage.PD_100_10: {"pd": [100.0, 10.0], "ik": 0.01, "p5_smoothness": 0.02},
+        PilotStage.IK_0_001: {"pd": [80.0, 8.0], "ik": 0.001, "p5_smoothness": 0.02},
+        PilotStage.IK_0_05: {"pd": [80.0, 8.0], "ik": 0.05, "p5_smoothness": 0.02},
+        PilotStage.P5_0_01: {"pd": [80.0, 8.0], "ik": 0.01, "p5_smoothness": 0.01},
+        PilotStage.P5_0_04: {"pd": [80.0, 8.0], "ik": 0.01, "p5_smoothness": 0.04},
+        PilotStage.FINAL_FOUR: {"pd": [80.0, 8.0], "ik": 0.01, "p5_smoothness": 0.02},
+    }
+    return vectors[stage]
+
+
+@dataclass(frozen=True)
+class PilotParameterSpec:
+    stage: PilotStage
+    parameter_vector: Mapping[str, object]
+    parameter_hash: str
+    tie_rank: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "stage", PilotStage(self.stage))
+        vector = dict(self.parameter_vector)
+        if self.parameter_hash != sha256_json(vector):
+            raise ValueError("parameter spec hash mismatch")
+        object.__setattr__(self, "parameter_vector", MappingProxyType(vector))
+        if type(self.tie_rank) is not int or self.tie_rank <= 0:
+            raise ValueError("parameter spec tie rank must be positive")
+
+
+def pilot_candidates(
+    *,
+    selected_pd: tuple[float, float] = (80.0, 8.0),
+    selected_ik: float = 0.01,
+    selected_p5_smoothness: float = 0.02,
+) -> tuple[PilotParameterSpec, ...]:
+    result = []
+    for rank, stage in enumerate(_PILOT_STAGE_ORDER, start=1):
+        vector = _candidate_vector(stage)
+        if stage in {PilotStage.IK_0_001, PilotStage.IK_0_05, PilotStage.P5_0_01, PilotStage.P5_0_04, PilotStage.FINAL_FOUR}:
+            vector["pd"] = list(selected_pd)
+        if stage in {PilotStage.P5_0_01, PilotStage.P5_0_04, PilotStage.FINAL_FOUR}:
+            vector["ik"] = selected_ik
+        if stage is PilotStage.FINAL_FOUR:
+            vector["p5_smoothness"] = selected_p5_smoothness
+        result.append(PilotParameterSpec(stage, vector, sha256_json(vector), rank))
+    return tuple(result)
+
+
+_TUNING_CONDITION_IDS = ("tune-05-700-2", "tune-10-300-2", "tune-20-000-1")
+
+
+@dataclass(frozen=True)
+class PilotEpisodeScore:
+    stack_id: str
+    seed: int
+    condition_id: str
+    bundle_sha256: str
+    recovery_s: float | None
+    valid: bool
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.stack_id not in _STACK_ORDER or type(self.seed) is not int or self.seed < 0:
+            raise ValueError("pilot episode score identity is invalid")
+        if self.condition_id not in _TUNING_CONDITION_IDS:
+            raise ValueError("pilot episode is outside the tuning subset")
+        _hash(self.bundle_sha256, "episode bundle hash")
+        if self.valid != (self.recovery_s is not None):
+            raise ValueError("valid pilot episode requires exactly one recovery score")
+        if self.recovery_s is not None and (not math.isfinite(float(self.recovery_s)) or self.recovery_s < 0):
+            raise ValueError("pilot recovery score must be finite and nonnegative")
+        if self.valid != (self.reason is None):
+            raise ValueError("invalid pilot episode requires exactly one reason")
+
+
+def evaluate_candidate(
+    stage: PilotStage,
+    parameter_vector: Mapping[str, object],
+    survivors: Sequence[str],
+    episodes: Sequence[PilotEpisodeScore],
+    *,
+    tie_rank: int,
+    reuse_hashes: Sequence[str] = (),
+) -> PilotCandidate:
+    fixed = tuple(survivors)
+    rows = tuple(episodes)
+    expected = {(stack, seed, condition) for stack in fixed for seed in range(4) for condition in _TUNING_CONDITION_IDS}
+    actual = {(item.stack_id, item.seed, item.condition_id) for item in rows}
+    invalid = [item for item in rows if not item.valid]
+    reasons: list[str] = []
+    if actual != expected:
+        reasons.append("INCOMPLETE_FIXED_SURVIVOR_DOMAIN")
+    reasons.extend(f"{item.bundle_sha256}:{item.reason}" for item in invalid)
+    scores = []
+    if not reasons:
+        for stack in fixed:
+            for seed in range(4):
+                domain = sorted(
+                    (item for item in rows if item.stack_id == stack and item.seed == seed),
+                    key=lambda item: _TUNING_CONDITION_IDS.index(item.condition_id),
+                )
+                scores.append(StackSeedScore(stack, seed, tuple(item.bundle_sha256 for item in domain), float(np.mean([item.recovery_s for item in domain]))))
+    vector = dict(parameter_vector)
+    global_score = None
+    if not reasons:
+        stack_means = [float(np.mean([item.score for item in scores if item.stack_id == stack])) for stack in fixed]
+        global_score = float(np.mean(stack_means))
+    return PilotCandidate(
+        stage,
+        vector,
+        sha256_json(vector),
+        fixed,
+        not reasons,
+        tuple(reuse_hashes),
+        tuple(scores),
+        global_score,
+        tie_rank,
+        tuple(reasons),
+    )
+
+
+def _score_candidate(candidate: PilotCandidate, survivors: tuple[str, ...]) -> float:
+    expected = {(stack, seed) for stack in survivors for seed in range(4)}
+    actual = {(item.stack_id, item.seed) for item in candidate.stack_seed_scores}
+    if actual != expected:
+        raise ValueError("candidate stack/seed domain is incomplete")
+    stack_means = []
+    for stack in survivors:
+        stack_means.append(float(np.mean([item.score for item in candidate.stack_seed_scores if item.stack_id == stack])))
+    return float(np.mean(stack_means))
+
+
+def select_global_candidate(candidates: Sequence[PilotCandidate], survivors: Sequence[str]) -> PilotCandidate:
+    fixed = tuple(survivors)
+    if not fixed or not candidates:
+        raise ValueError("selection requires candidates and fixed survivors")
+    scored: list[tuple[float, int, PilotCandidate]] = []
+    for candidate in candidates:
+        if candidate.fixed_survivors != fixed:
+            raise ValueError("candidate survivor domain changed during selection")
+        if candidate.feasible:
+            score = _score_candidate(candidate, fixed)
+            if not math.isclose(score, float(candidate.global_score), rel_tol=0.0, abs_tol=1e-15):
+                raise ValueError("candidate global score does not match stack/seed evidence")
+            scored.append((score, candidate.tie_rank, candidate))
+    if not scored:
+        raise ValueError("no feasible global candidate")
+    return min(scored, key=lambda item: (item[0], item[1]))[2]
+
+
+def select_p5_smoothness(candidates: Sequence[PilotCandidate]) -> PilotCandidate | None:
+    feasible = [item for item in candidates if item.feasible]
+    if not feasible:
+        return None
+    return select_global_candidate(candidates, (CommandStack.P5.value,))
+
+
+@dataclass(frozen=True)
+class BaseStackOutcome:
+    stack_id: str
+    episode_count: int
+    hard_failure: bool
+    reasons: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class BaseQualification:
+    survivors: tuple[str, ...]
+    killed_stacks: tuple[str, ...]
+    lifecycle_state: str
+    scientific_result: str
+    reasons: tuple[str, ...]
+
+
+def qualify_base(outcomes: Sequence[BaseStackOutcome]) -> BaseQualification:
+    ordered = tuple(outcomes)
+    if tuple(item.stack_id for item in ordered) != _STACK_ORDER or any(item.episode_count != 12 for item in ordered):
+        raise ValueError("base qualification requires 12 episodes for each P1-P6 stack")
+    p1 = ordered[0]
+    if p1.hard_failure:
+        return BaseQualification((), (), "STOPPED", "INCONCLUSIVE", p1.reasons or ("P1_BASE_HARD_FAILURE",))
+    killed = tuple(item.stack_id for item in ordered[1:] if item.hard_failure)
+    survivors = tuple(item.stack_id for item in ordered if not item.hard_failure)
+    reasons = tuple(reason for item in ordered if item.hard_failure for reason in (item.reasons or (f"{item.stack_id}_BASE_HARD_FAILURE",)))
+    return BaseQualification(survivors, killed, "RUNNING", "PENDING", reasons)
+
+
+def expected_pilot_episode_counts(
+    survivors: Sequence[str],
+    *,
+    base_killed: Sequence[str] = (),
+    p5_all_smoothness_infeasible: bool = False,
+) -> dict[str, object]:
+    survivor_set = set(survivors)
+    killed = set(base_killed)
+    if survivor_set & killed or not survivor_set | killed <= set(_STACK_ORDER):
+        raise ValueError("pilot stack sets are invalid")
+    counts: dict[str, int] = {}
+    for stack in _STACK_ORDER:
+        if stack in killed:
+            counts[stack] = 12
+        elif stack not in survivor_set:
+            counts[stack] = 84 if stack == "P5" and p5_all_smoothness_infeasible else 12
+        elif stack == "P5":
+            counts[stack] = 188
+        else:
+            counts[stack] = 164
+    return {"by_stack": counts, "total": sum(counts.values())}
+
+
+@dataclass(frozen=True)
+class PilotShard:
+    shard_id: str
+    stack_id: str
+    seed: int
+    episode_ids: tuple[str, ...]
+    scientific_failure: bool = False
+
+    def __post_init__(self) -> None:
+        if self.stack_id not in _STACK_ORDER or type(self.seed) is not int or self.seed < 0:
+            raise ValueError("pilot shard identity is invalid")
+        episodes = tuple(self.episode_ids)
+        if episodes != tuple(sorted(episodes)) or len(episodes) != len(set(episodes)) or not episodes:
+            raise ValueError("pilot shard episodes must be nonempty sorted unique IDs")
+        object.__setattr__(self, "episode_ids", episodes)
+
+
+@dataclass(frozen=True)
+class PilotManifest:
+    revision: int
+    stage: PilotStage
+    predecessor_sha256: str
+    config_sha256: str
+    implementation_sha: str
+    parameter_sha256: str
+    shards: tuple[PilotShard, ...]
+    reuse_hashes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.revision not in (1, 2):
+            raise ValueError("pilot revision must be 1 or 2")
+        object.__setattr__(self, "stage", PilotStage(self.stage))
+        _hash(self.predecessor_sha256, "predecessor hash")
+        _hash(self.config_sha256, "config hash")
+        if re.fullmatch(r"[0-9a-f]{40}", self.implementation_sha) is None:
+            raise ValueError("implementation SHA must be lowercase 40-hex")
+        _hash(self.parameter_sha256, "parameter hash")
+        shards = tuple(self.shards)
+        keys = [(_STACK_ORDER.index(item.stack_id), item.seed, item.shard_id) for item in shards]
+        if keys != sorted(keys) or len({item.shard_id for item in shards}) != len(shards):
+            raise ValueError("pilot shards must be unique in stack/seed order")
+        episode_ids = [episode for item in shards for episode in item.episode_ids]
+        if len(episode_ids) != len(set(episode_ids)):
+            raise ValueError("manifest episodes must be unique")
+        object.__setattr__(self, "shards", shards)
+        object.__setattr__(self, "reuse_hashes", tuple(_hash(item, "reuse hash") for item in self.reuse_hashes))
+
+
+def pilot_manifest_bytes(manifest: PilotManifest) -> bytes:
+    return canonical_json_bytes(
+        {
+            "schema_version": 1,
+            "revision": manifest.revision,
+            "stage": manifest.stage.value,
+            "predecessor_sha256": manifest.predecessor_sha256,
+            "config_sha256": manifest.config_sha256,
+            "implementation_sha": manifest.implementation_sha,
+            "parameter_sha256": manifest.parameter_sha256,
+            "shards": [
+                {
+                    "shard_id": item.shard_id,
+                    "stack_id": item.stack_id,
+                    "seed": item.seed,
+                    "episode_ids": list(item.episode_ids),
+                    "scientific_failure": item.scientific_failure,
+                }
+                for item in manifest.shards
+            ],
+            "reuse_hashes": list(manifest.reuse_hashes),
+        }
+    ) + b"\n"
+
+
+def build_stage_shards(stage: PilotStage, survivors: Sequence[str], seeds: Sequence[int]) -> tuple[PilotShard, ...]:
+    stage = PilotStage(stage)
+    stacks = ("P5",) if stage in {PilotStage.P5_0_01, PilotStage.P5_0_04} else tuple(survivors)
+    if tuple(sorted(stacks, key=_STACK_ORDER.index)) != stacks:
+        raise ValueError("stage survivors must be in P1-P6 order")
+    seed_values = tuple(seeds)
+    if len(seed_values) != 4 or tuple(sorted(seed_values)) != seed_values or len(set(seed_values)) != 4:
+        raise ValueError("pilot stage requires four sorted unique seeds")
+    condition_ids = tuple(f"core-or-probe-{index:02d}" for index in range(26)) if stage is PilotStage.FINAL_FOUR else _TUNING_CONDITION_IDS
+    return tuple(
+        PilotShard(
+            f"{stack}:{stage.value}:{seed:08d}",
+            stack,
+            seed,
+            tuple(sorted(f"{stage.value}:{stack}:{seed:08d}:{condition}" for condition in condition_ids)),
+        )
+        for stack in stacks
+        for seed in seed_values
+    )
+
+
+def build_pilot_manifest(
+    stage: PilotStage,
+    *,
+    revision: int,
+    predecessor_sha256: str,
+    config_sha256: str,
+    implementation_sha: str,
+    parameter_sha256: str,
+    survivors: Sequence[str],
+    seeds: Sequence[int],
+    reuse_hashes: Sequence[str] = (),
+) -> PilotManifest:
+    return PilotManifest(
+        revision,
+        stage,
+        predecessor_sha256,
+        config_sha256,
+        implementation_sha,
+        parameter_sha256,
+        build_stage_shards(stage, survivors, seeds),
+        tuple(reuse_hashes),
+    )
+
+
+@dataclass(frozen=True)
+class StageTerminalDisposition:
+    stage: PilotStage
+    first_failing_shard_id: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class PilotDisposition:
+    lifecycle_state: str
+    scientific_result: str
+    terminal_stage: PilotStage
+    total_episode_count: int
+    final_four_episode_count: int
+    later_stage_commands: tuple[str, ...]
+    remaining_final_four_stacks: tuple[str, ...]
+    requires_final_four: bool
+
+
+def pilot_disposition(
+    last_manifest: PilotManifest,
+    *,
+    prior_manifests: Sequence[PilotManifest] = (),
+    terminal_disposition: StageTerminalDisposition | None = None,
+) -> PilotDisposition:
+    manifests = tuple(prior_manifests) + (last_manifest,)
+    expected_stages = _PILOT_STAGE_ORDER[: _PILOT_STAGE_ORDER.index(last_manifest.stage) + 1]
+    if tuple(item.stage for item in manifests) != expected_stages:
+        raise ValueError("pilot disposition requires the complete ordered stage prefix")
+    if any(item.revision != last_manifest.revision or item.config_sha256 != last_manifest.config_sha256 or item.implementation_sha != last_manifest.implementation_sha for item in manifests):
+        raise ValueError("pilot manifests do not share one revision/config/implementation")
+    for predecessor, current in zip(manifests, manifests[1:]):
+        if current.predecessor_sha256 != hashlib.sha256(pilot_manifest_bytes(predecessor)).hexdigest():
+            raise ValueError("pilot manifest predecessor hash chain is broken")
+    episode_ids = [episode for manifest in manifests for shard in manifest.shards for episode in shard.episode_ids]
+    if len(episode_ids) != len(set(episode_ids)):
+        raise ValueError("executed pilot episodes cannot be counted twice")
+    total = len(episode_ids)
+    final_count = sum(len(shard.episode_ids) for manifest in manifests if manifest.stage is PilotStage.FINAL_FOUR for shard in manifest.shards)
+    if terminal_disposition is not None:
+        if terminal_disposition.stage is not last_manifest.stage:
+            raise ValueError("terminal disposition does not name the last stage")
+        matches = [item for item in last_manifest.shards if item.shard_id == terminal_disposition.first_failing_shard_id]
+        if len(matches) != 1 or matches[0].stack_id != "P1" or not matches[0].scientific_failure or matches[0] is not last_manifest.shards[-1]:
+            raise ValueError("terminal disposition must name the final completed failing P1 shard")
+        return PilotDisposition("STOPPED", "INCONCLUSIVE", last_manifest.stage, total, final_count, (), (), False)
+    return PilotDisposition(
+        "COMPLETE" if last_manifest.stage is PilotStage.FINAL_FOUR else "RUNNING",
+        "PENDING",
+        last_manifest.stage,
+        total,
+        final_count,
+        tuple(stage.value for stage in _PILOT_STAGE_ORDER[_PILOT_STAGE_ORDER.index(last_manifest.stage) + 1 :]),
+        (),
+        last_manifest.stage is not PilotStage.FINAL_FOUR,
+    )
+
+
+def _candidate_wire(candidate: PilotCandidate) -> dict[str, object]:
+    return {
+        "stage": candidate.stage.value,
+        "parameter_vector": dict(candidate.parameter_vector),
+        "parameter_hash": candidate.parameter_hash,
+        "fixed_survivors": list(candidate.fixed_survivors),
+        "feasible": candidate.feasible,
+        "reuse_hashes": list(candidate.reuse_hashes),
+        "stack_seed_scores": [
+            {
+                "stack_id": item.stack_id,
+                "seed": item.seed,
+                "condition_bundle_sha256s": list(item.condition_bundle_sha256s),
+                "score": item.score,
+            }
+            for item in candidate.stack_seed_scores
+        ],
+        "global_score": candidate.global_score,
+        "tie_rank": candidate.tie_rank,
+        "reasons": list(candidate.reasons),
+    }
+
+
+def candidate_evaluations_bytes(candidates: Sequence[PilotCandidate]) -> bytes:
+    ordered = tuple(candidates)
+    keys = [(_PILOT_STAGE_ORDER.index(item.stage), item.tie_rank) for item in ordered]
+    if keys != sorted(keys):
+        raise ValueError("candidate evaluations are not in frozen order")
+    return canonical_json_bytes([_candidate_wire(item) for item in ordered]) + b"\n"
+
+
+@dataclass(frozen=True)
+class SmoothnessEpisodeScore:
+    seed: int
+    episode_id: str
+    bundle_sha256: str
+    jerk_p95: float
+    discontinuity_p95: float
+
+    def __post_init__(self) -> None:
+        if type(self.seed) is not int or self.seed < 0 or not isinstance(self.episode_id, str) or not self.episode_id:
+            raise ValueError("smoothness episode identity is invalid")
+        _hash(self.bundle_sha256, "smoothness bundle hash")
+        if any(not math.isfinite(float(value)) or value < 0 for value in (self.jerk_p95, self.discontinuity_p95)):
+            raise ValueError("smoothness episode metrics must be finite and nonnegative")
+
+
+@dataclass(frozen=True)
+class P1SmoothnessBaseline:
+    seed_ids: tuple[int, ...]
+    episode_ids: tuple[str, ...]
+    episode_bundle_sha256s: tuple[str, ...]
+    jerk_episode_p95s: tuple[float, ...]
+    discontinuity_episode_p95s: tuple[float, ...]
+    jerk_p95: float
+    discontinuity_p95: float
+
+
+def compute_p1_smoothness_baseline(rows: Sequence[SmoothnessEpisodeScore]) -> P1SmoothnessBaseline:
+    ordered = tuple(sorted(rows, key=lambda item: (item.seed, item.episode_id)))
+    seeds = tuple(sorted({item.seed for item in ordered}))
+    if len(seeds) != 4 or any(sum(item.seed == seed for item in ordered) != 24 for seed in seeds):
+        raise ValueError("P1 smoothness baseline requires 24 core episodes for each of four seeds")
+    if len({item.episode_id for item in ordered}) != len(ordered):
+        raise ValueError("P1 smoothness episode IDs must be unique")
+    jerk_seed_p95 = [nearest_rank((item.jerk_p95 for item in ordered if item.seed == seed), 0.95) for seed in seeds]
+    discontinuity_seed_p95 = [nearest_rank((item.discontinuity_p95 for item in ordered if item.seed == seed), 0.95) for seed in seeds]
+    return P1SmoothnessBaseline(
+        seeds,
+        tuple(item.episode_id for item in ordered),
+        tuple(item.bundle_sha256 for item in ordered),
+        tuple(float(item.jerk_p95) for item in ordered),
+        tuple(float(item.discontinuity_p95) for item in ordered),
+        nearest_rank(jerk_seed_p95, 0.95),
+        nearest_rank(discontinuity_seed_p95, 0.95),
     )
