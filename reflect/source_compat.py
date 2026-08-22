@@ -9,6 +9,7 @@ from enum import Enum
 import hashlib
 import io
 import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -106,7 +107,7 @@ def _validate_raw_findings(
         dynamics = raw["dynamics"]
         if not isinstance(artifact, Mapping) or set(artifact) != {
             "wheel_filename", "lock_artifact_sha256", "installed_tree_sha256",
-            "record_entries", "installed_files", "installed_bytes",
+            "record_entries", "installed_files", "installed_bytes", "executed_origins",
         }:
             raise ValueError("package artifact findings schema is invalid")
         _string(artifact["wheel_filename"], "wheel filename")
@@ -116,6 +117,21 @@ def _validate_raw_findings(
             raise ValueError("package artifact inventory counts are invalid")
         if artifact["record_entries"] != artifact["installed_files"]:
             raise ValueError("package RECORD does not cover the complete installed inventory")
+        origins = artifact["executed_origins"]
+        if not isinstance(origins, list) or not origins:
+            raise ValueError("package executed-origin inventory is invalid")
+        origin_modules = set()
+        for origin in origins:
+            if not isinstance(origin, Mapping) or set(origin) != {"module", "record_path", "sha256", "native_extension"}:
+                raise ValueError("package executed-origin row is invalid")
+            module = _string(origin["module"], "executed module")
+            _safe_relative(origin["record_path"], "executed RECORD path")
+            _sha(origin["sha256"], "executed module sha256", 64)
+            if type(origin["native_extension"]) is not bool or module in origin_modules:
+                raise ValueError("package executed-origin identity is invalid")
+            origin_modules.add(module)
+        if not {"mujoco", "mujoco._functions", "mujoco._structs"}.issubset(origin_modules) or not any(row["native_extension"] for row in origins):
+            raise ValueError("package core/native execution origins are incomplete")
         if not isinstance(dynamics, Mapping) or set(dynamics) != {
             "xml_sha256", "control", "timestep", "nq", "nv", "nu", "post_step",
         }:
@@ -128,23 +144,27 @@ def _validate_raw_findings(
                 raise ValueError("package dynamics dimensions are invalid")
         if not isinstance(dynamics["control"], list) or len(dynamics["control"]) != dynamics["nu"]:
             raise ValueError("package dynamics control shape is invalid")
-        if any(type(value) is not str or not float.fromhex(value) == float.fromhex(value) for value in dynamics["control"]):
+        if any(type(value) is not str or not math.isfinite(float.fromhex(value)) for value in dynamics["control"]):
             raise ValueError("package dynamics control encoding is invalid")
-        if type(dynamics["timestep"]) is not str or float.fromhex(dynamics["timestep"]) <= 0:
+        if dynamics["control"] != [float(0.125).hex()] or (dynamics["nq"], dynamics["nv"], dynamics["nu"]) != (8, 7, 1):
+            raise ValueError("package dynamics frozen control/dimensions mismatch")
+        if type(dynamics["timestep"]) is not str or not math.isfinite(float.fromhex(dynamics["timestep"])) or dynamics["timestep"] != float(0.002).hex():
             raise ValueError("package dynamics timestep encoding is invalid")
         post = dynamics["post_step"]
         if not isinstance(post, Mapping) or set(post) != {"time", "qpos", "qvel", "qpos_sha256", "qvel_sha256"}:
             raise ValueError("package post-step state schema is invalid")
-        if type(post["time"]) is not str or float.fromhex(post["time"]) <= 0:
+        if type(post["time"]) is not str or not math.isfinite(float.fromhex(post["time"])) or post["time"] != dynamics["timestep"]:
             raise ValueError("package post-step time encoding is invalid")
         if not isinstance(post["qpos"], list) or not isinstance(post["qvel"], list) or len(post["qpos"]) != dynamics["nq"] or len(post["qvel"]) != dynamics["nv"]:
             raise ValueError("package post-step state shape is invalid")
         for key in ("qpos", "qvel"):
-            if any(type(value) is not str or not float.fromhex(value) == float.fromhex(value) for value in post[key]):
+            if any(type(value) is not str or not math.isfinite(float.fromhex(value)) for value in post[key]):
                 raise ValueError("package post-step state encoding is invalid")
             _sha(post[f"{key}_sha256"], f"{key} sha256", 64)
             if post[f"{key}_sha256"] != canonical_sha256(post[key]):
                 raise ValueError("package post-step state hash mismatch")
+        if float.fromhex(post["qpos"][0]) == 0.0 or float.fromhex(post["qvel"][0]) == 0.0:
+            raise ValueError("package actuated hinge did not move")
         return
     if operation not in _STATIC_FILE_KEYS or set(raw) != {"files", "summary"}:
         raise ValueError("static operation findings schema is invalid")

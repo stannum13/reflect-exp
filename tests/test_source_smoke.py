@@ -5,6 +5,7 @@ from importlib import metadata
 import json
 from pathlib import Path
 import platform
+import sys
 
 import mujoco
 import pytest
@@ -100,6 +101,9 @@ def test_headless_one_step_smoke_binds_package_not_git_execution() -> None:
     assert artifact["installed_tree_sha256"] == item.package_artifact_sha256
     assert artifact["record_entries"] == artifact["installed_files"] > 0
     assert artifact["installed_bytes"] == item.disk_bytes > 0
+    origins = {row["module"]: row for row in artifact["executed_origins"]}
+    assert {"mujoco", "mujoco._functions", "mujoco._structs"} <= set(origins)
+    assert origins["mujoco._functions"]["native_extension"] is True
     model = mujoco.MjModel.from_xml_string(_smoke._XML)
     data = mujoco.MjData(model)
     data.ctrl[:] = [float.fromhex(value) for value in dynamics["control"]]
@@ -122,6 +126,43 @@ def test_headless_one_step_smoke_binds_package_not_git_execution() -> None:
     first_semantics["findings"].pop("duration_ns")
     second_semantics["findings"].pop("duration_ns")
     assert first_semantics == second_semantics
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("timestep", float("inf").hex()),
+        ("time", float("nan").hex()),
+        ("control", [float(0.25).hex()]),
+        ("nq", 7),
+        ("qpos0", float(0).hex()),
+    ],
+)
+def test_smoke_reload_rejects_nonfinite_mismatch_and_noop(field: str, value: object) -> None:
+    registry, lock = complete_lock()
+    raw = json.loads(run_mujoco_smoke(registry, lock).canonical_bytes())
+    dynamics = raw["findings"]["dynamics"]
+    if field == "time":
+        dynamics["post_step"]["time"] = value
+    elif field == "qpos0":
+        dynamics["post_step"]["qpos"][0] = value
+        dynamics["post_step"]["qpos_sha256"] = canonical_sha256(dynamics["post_step"]["qpos"])
+    else:
+        dynamics[field] = value
+    raw["evidence_sha256"] = canonical_sha256({key: item for key, item in raw.items() if key != "evidence_sha256"})
+    with pytest.raises(ValueError, match="dynamics|post-step|hinge"):
+        _smoke.CompatibilityEvidence.from_dict(raw)
+
+
+def test_smoke_rejects_shadowed_executed_native_module(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry, lock = complete_lock()
+    shadow = tmp_path / "_functions.so"
+    shadow.write_bytes(b"shadow")
+    monkeypatch.setattr(sys.modules["mujoco._functions"], "__file__", str(shadow))
+    with pytest.raises(ValueError, match="outside the verified RECORD"):
+        run_mujoco_smoke(registry, lock)
 
 
 def test_smoke_writer_uses_only_closed_manifest_output_and_refuses_overwrite(tmp_path: Path) -> None:

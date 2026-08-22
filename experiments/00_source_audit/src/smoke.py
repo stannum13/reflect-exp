@@ -6,6 +6,7 @@ import base64
 import csv
 from importlib import metadata
 import hashlib
+import importlib.machinery
 import io
 import platform
 from pathlib import Path
@@ -75,7 +76,7 @@ def _locked_wheel_identity(lock_path: Path) -> tuple[str, str]:
     return matches[0][0], digest
 
 
-def _distribution_identity(lock_path: Path) -> tuple[str, str, str, int, int, str]:
+def _distribution_identity(lock_path: Path) -> tuple[str, str, str, int, int, str, dict[Path, tuple[str, str]]]:
     distribution = metadata.distribution("mujoco")
     version = distribution.version
     if version != "3.12.0":
@@ -95,6 +96,7 @@ def _distribution_identity(lock_path: Path) -> tuple[str, str, str, int, int, st
         raise ValueError("installed MuJoCo RECORD is not the complete distribution inventory")
     disk_bytes = 0
     tree_rows = []
+    installed_inventory: dict[Path, tuple[str, str]] = {}
     for relative, encoded_hash, encoded_size in rows:
         path = distribution.locate_file(relative)
         try:
@@ -118,6 +120,7 @@ def _distribution_identity(lock_path: Path) -> tuple[str, str, str, int, int, st
             raise ValueError("installed MuJoCo RECORD self-entry must be unhashed")
         disk_bytes += len(data)
         tree_rows.append({"path": relative, "sha256": digest, "size": len(data)})
+        installed_inventory[path.resolve(strict=True)] = (relative, digest)
     return (
         version,
         canonical_sha256(sorted(tree_rows, key=lambda item: item["path"])),
@@ -125,7 +128,34 @@ def _distribution_identity(lock_path: Path) -> tuple[str, str, str, int, int, st
         disk_bytes,
         len(tree_rows),
         wheel_filename,
+        installed_inventory,
     )
+
+
+def _executed_origins(installed_inventory: dict[Path, tuple[str, str]]) -> list[dict[str, object]]:
+    rows = []
+    for name, module in sorted(sys.modules.items()):
+        if name != "mujoco" and not name.startswith("mujoco."):
+            continue
+        origin = getattr(module, "__file__", None)
+        if origin is None:
+            continue
+        path = Path(origin).resolve(strict=True)
+        identity = installed_inventory.get(path)
+        if identity is None:
+            raise ValueError("executed MuJoCo module is outside the verified RECORD inventory")
+        data = path.read_bytes()
+        digest = hashlib.sha256(data).hexdigest()
+        if digest != identity[1]:
+            raise ValueError("executed MuJoCo module changed after RECORD verification")
+        rows.append({
+            "module": name, "record_path": identity[0], "sha256": digest,
+            "native_extension": any(str(path).endswith(suffix) for suffix in importlib.machinery.EXTENSION_SUFFIXES),
+        })
+    names = {row["module"] for row in rows}
+    if not {"mujoco", "mujoco._functions", "mujoco._structs"}.issubset(names):
+        raise ValueError("executed MuJoCo core module origins are incomplete")
+    return rows
 
 
 def run_mujoco_smoke(
@@ -140,7 +170,7 @@ def run_mujoco_smoke(
     locked = {item.name: item for item in lock.entries}
     source = sources["mujoco"]
     pin = locked["mujoco"]
-    version, artifact_sha256, lock_artifact_sha256, disk_bytes, installed_files, wheel_filename = _distribution_identity(
+    version, artifact_sha256, lock_artifact_sha256, disk_bytes, installed_files, wheel_filename, installed_inventory = _distribution_identity(
         uv_lock_path or Path(__file__).resolve().parents[3] / "uv.lock"
     )
     started = time.perf_counter_ns()
@@ -154,6 +184,9 @@ def run_mujoco_smoke(
     finite_qvel = bool(np.isfinite(data.qvel).all())
     if not (data.time > 0 and finite_time and finite_qpos and finite_qvel):
         raise ValueError("MuJoCo one-step state is not finite and advanced")
+    if data.time != model.opt.timestep or data.qpos[0] == 0 or data.qvel[0] == 0:
+        raise ValueError("MuJoCo one-step actuated hinge predicate failed")
+    executed_origins = _executed_origins(installed_inventory)
     xml_sha256 = hashlib.sha256(_XML.encode()).hexdigest()
     qpos = [float(value).hex() for value in data.qpos]
     qvel = [float(value).hex() for value in data.qvel]
@@ -191,6 +224,7 @@ def run_mujoco_smoke(
                 "record_entries": installed_files,
                 "installed_files": installed_files,
                 "installed_bytes": disk_bytes,
+                "executed_origins": executed_origins,
             },
             "dynamics": {
                 "xml_sha256": xml_sha256,
