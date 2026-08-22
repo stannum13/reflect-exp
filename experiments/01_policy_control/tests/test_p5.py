@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -65,3 +66,19 @@ def test_p5_transition_complete_lifecycle() -> None:
     reaccepted = rep.p5_transition(expired, "ACCEPT", chunk_id="c", active_still_valid=False)
     coincident = rep.p5_transition(reaccepted, "PLANNER_SELECTED", qdot=np.array([0.75, 0.0, 0.0]), q_ref=np.array([0.015, 0.0, 0.0]))
     assert coincident.active_chunk_id == "c" and coincident.p5_qdot_previous[0] == 0.75
+
+
+def test_nonbase_mpc_protocol_propagates_to_cost_and_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = config()
+    changed = replace(cfg, mpc=replace(cfg.mpc, smoothness_weight=0.04, cost_revision="DIMENSIONLESS_INTEGRATED_V2"))
+    value = policy_input()
+    chunk = rep.emit_chunk(contracts.CommandStack.P5, value, changed)
+    assert chunk.metadata["cost_revision"] == "DIMENSIONLESS_INTEGRATED_V2"
+    observed = []
+    original = rep.mpc_cost
+    def capture(q, target, qdot, previous, local_config, smoothness):
+        observed.append(smoothness)
+        return original(q, target, qdot, previous, local_config, smoothness)
+    monkeypatch.setattr(rep, "mpc_cost", capture)
+    rep.reference_for_tick(contracts.CommandStack.P5, chunk, value.q_initial, np.zeros(3), chunk.valid_from_ns, rep.initial_executor_state(value.q_initial), changed)
+    assert observed and set(observed) == {0.04}

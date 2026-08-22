@@ -79,10 +79,11 @@ def emit_chunk(stack: CommandStack, policy_input: PolicyInput, config: Experimen
         representation=representation,
         expected_phase="track_target",
         metadata=(
-            {"stack_id": stack.value, "cost_revision": 1, "joint_limit_rad": config.arm.joint_max_rad,
+            {"stack_id": stack.value, "joint_limit_rad": config.arm.joint_max_rad,
              "velocity_limit_rad_s": config.controller.qdot_limit_rad_s,
              "torque_limit_nm": config.arm.torque_max_nm,
-             "success_radius_m": config.thresholds["success_radius_m"]}
+             "success_radius_m": config.thresholds["success_radius_m"],
+             "cost_revision": config.mpc.cost_revision}
             if stack is CommandStack.P5 else (
                 {"stack_id": stack.value, "q_initial": tuple(policy_input.q_initial.tolist()), "q_initial_target": tuple(policy_input.q_initial_target.tolist()), "nominal_revision": config.residual.nominal_revision}
                 if stack is CommandStack.P6 else {"stack_id": stack.value}
@@ -122,7 +123,7 @@ def reference_for_tick(
         if planner_tick or not state.p5_planner_enabled:
             selected = min(
                 mpc_candidates(config),
-                key=lambda qdot: mpc_cost(np.asarray(q), target, qdot, state.p5_qdot_previous, config, config.controller.mpc_smoothness_candidates[0]),
+                key=lambda qdot: mpc_cost(np.asarray(q), target, qdot, state.p5_qdot_previous, config, config.mpc.smoothness_weight),
             )
             candidate = np.asarray(q) + config.controller.mpc_period_s * selected
             p5_previous = selected
