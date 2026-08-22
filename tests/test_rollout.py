@@ -7,6 +7,7 @@ import io
 import json
 import os
 from pathlib import Path
+import tempfile
 from types import MappingProxyType
 import zipfile
 
@@ -15,6 +16,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+import reflect._rollout_io as rollout_io
 import reflect.rollout as rollout_module
 from reflect.events import ExecutionEvent, ExecutionEventType
 from reflect.rollout import (
@@ -459,6 +461,92 @@ def test_writer_preserves_a_chunk_rejected_after_expiry(tmp_path: Path) -> None:
     assert validate_rollout(artifact_path).actions[1].generated_time_ns == 300
 
 
+def test_writer_accepts_expired_rejection_exactly_at_expiry(tmp_path: Path) -> None:
+    events = valid_events()
+    events = (
+        *events[:-2],
+        replace(
+            events[-2],
+            event_type=ExecutionEventType.CHUNK_REJECTED_EXPIRED,
+            monotonic_time_ns=290,
+            wall_time_ns=10_190,
+        ),
+    )
+
+    artifact_path = RolloutWriter(tmp_path, "rollout-1").write(
+        valid_record(
+            events=events,
+            control_references=valid_control_references()[:1],
+        )
+    )
+
+    assert validate_rollout(artifact_path).events[-1].event_type is (
+        ExecutionEventType.CHUNK_REJECTED_EXPIRED
+    )
+
+
+def test_writer_rejects_chunk_acceptance_exactly_at_expiry(tmp_path: Path) -> None:
+    events = (
+        *valid_events()[:-2],
+        replace(
+            valid_events()[-2],
+            monotonic_time_ns=290,
+            wall_time_ns=10_190,
+        ),
+    )
+
+    with pytest.raises(RolloutValidationError, match="validity interval|expired"):
+        RolloutWriter(tmp_path, "rollout-1").write(
+            valid_record(
+                events=events,
+                control_references=valid_control_references()[:1],
+            )
+        )
+
+
+def test_writer_rejects_chunk_replacement_exactly_at_expiry(tmp_path: Path) -> None:
+    events = list(valid_events())
+    events.insert(
+        3,
+        replace(
+            events[1],
+            event_type=ExecutionEventType.CHUNK_REPLACED,
+            monotonic_time_ns=190,
+            wall_time_ns=10_090,
+            sequence_id=3,
+        ),
+    )
+    events = [replace(event, sequence_id=index) for index, event in enumerate(events)]
+
+    with pytest.raises(RolloutValidationError, match="validity interval|expired"):
+        RolloutWriter(tmp_path, "rollout-1").write(valid_record(events=tuple(events)))
+
+
+def test_writer_rejects_control_reference_exactly_at_expiry(tmp_path: Path) -> None:
+    references = (
+        replace(valid_control_references()[0], time_ns=190),
+        valid_control_references()[1],
+    )
+    events = tuple(event for index, event in enumerate(valid_events()) if index != 2)
+    events = tuple(replace(event, sequence_id=index) for index, event in enumerate(events))
+
+    with pytest.raises(RolloutValidationError, match="validity interval"):
+        RolloutWriter(tmp_path, "rollout-1").write(
+            valid_record(events=events, control_references=references)
+        )
+
+
+def test_writer_rejects_action_execution_exactly_at_expiry(tmp_path: Path) -> None:
+    references = valid_control_references()[1:]
+    events = list(valid_events())
+    events[2] = replace(events[2], monotonic_time_ns=190, wall_time_ns=10_090)
+
+    with pytest.raises(RolloutValidationError, match="validity interval"):
+        RolloutWriter(tmp_path, "rollout-1").write(
+            valid_record(events=tuple(events), control_references=references)
+        )
+
+
 def test_writer_rejects_chunk_acceptance_after_expiry(tmp_path: Path) -> None:
     events = list(valid_events())
     events[4] = replace(events[4], monotonic_time_ns=291, wall_time_ns=10_191)
@@ -578,6 +666,29 @@ def test_writer_accepts_one_coherent_chunk_replacement_transition(
     )
 
 
+def test_writer_rejects_ambiguous_replaced_chunk_id_payload(tmp_path: Path) -> None:
+    events = list(valid_events())
+    events.insert(
+        3,
+        replace(
+            events[1],
+            event_type=ExecutionEventType.CHUNK_REPLACED,
+            monotonic_time_ns=150,
+            wall_time_ns=10_050,
+            sequence_id=3,
+            payload={
+                "chunk_id": "chunk-0",
+                "source_observation_id": 0,
+                "replaced_chunk_id": "chunk-1",
+            },
+        ),
+    )
+    events = [replace(event, sequence_id=index) for index, event in enumerate(events)]
+
+    with pytest.raises(RolloutValidationError, match="replaced_chunk_id.*unsupported"):
+        RolloutWriter(tmp_path, "rollout-1").write(valid_record(events=tuple(events)))
+
+
 def test_writer_rejects_replacing_an_expired_chunk(tmp_path: Path) -> None:
     events = list(valid_events())
     events.insert(
@@ -663,23 +774,21 @@ def test_writer_failure_cleanup_preserves_replacement_temp_sentinel(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     created: list[Path] = []
-    real_mkdtemp = rollout_module.tempfile.mkdtemp
-
-    def tracked_mkdtemp(*args: object, **kwargs: object) -> str:
-        path = real_mkdtemp(*args, **kwargs)  # type: ignore[arg-type]
-        created.append(Path(path))
-        return path
 
     def replace_temp_then_fail(observations: tuple[Observation, ...]) -> bytes:
         del observations
-        temporary = created[0]
+        candidates = [
+            entry for entry in tmp_path.iterdir() if entry.name.startswith(".rollout-1.")
+        ]
+        assert len(candidates) == 1
+        temporary = candidates[0]
+        created.append(temporary)
         original = temporary.with_name(f"{temporary.name}.original")
         temporary.rename(original)
         temporary.mkdir()
         (temporary / "sentinel.txt").write_text("replacement\n", encoding="utf-8")
         raise RuntimeError("injected artifact encoding failure")
 
-    monkeypatch.setattr(rollout_module.tempfile, "mkdtemp", tracked_mkdtemp)
     monkeypatch.setattr(
         rollout_module, "_observations_npz_bytes", replace_temp_then_fail
     )
@@ -689,6 +798,96 @@ def test_writer_failure_cleanup_preserves_replacement_temp_sentinel(
 
     assert (created[0] / "sentinel.txt").read_text(encoding="utf-8") == "replacement\n"
     assert not created[0].with_name(f"{created[0].name}.original").exists()
+
+
+def test_writer_cleans_original_empty_temp_when_descriptor_open_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail_open(parent_descriptor: int, name: str) -> object:
+        del parent_descriptor, name
+        raise rollout_io.ArtifactIOError("injected temp open failure")
+
+    monkeypatch.setattr(rollout_io, "open_directory_at", fail_open)
+
+    with pytest.raises(RolloutValidationError, match="temp open failure"):
+        RolloutWriter(tmp_path, "rollout-1").write(valid_record())
+
+    assert not any(entry.name.startswith(".rollout-1.") for entry in tmp_path.iterdir())
+
+
+def test_writer_rejects_preopen_temp_replacement_and_preserves_sentinel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    replacement_names: list[str] = []
+    real_open = rollout_io.open_directory_at
+
+    def replace_before_open(parent_descriptor: int, name: str) -> object:
+        if name.startswith(".rollout-1.") and not replacement_names:
+            original_name = f"{name}.original"
+            os.rename(
+                name,
+                original_name,
+                src_dir_fd=parent_descriptor,
+                dst_dir_fd=parent_descriptor,
+            )
+            os.mkdir(name, 0o700, dir_fd=parent_descriptor)
+            replacement_descriptor = os.open(
+                name, os.O_RDONLY | os.O_DIRECTORY, dir_fd=parent_descriptor
+            )
+            try:
+                sentinel_descriptor = os.open(
+                    "sentinel.txt",
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                    0o600,
+                    dir_fd=replacement_descriptor,
+                )
+                try:
+                    os.write(sentinel_descriptor, b"replacement\n")
+                finally:
+                    os.close(sentinel_descriptor)
+            finally:
+                os.close(replacement_descriptor)
+            replacement_names.append(name)
+        return real_open(parent_descriptor, name)
+
+    monkeypatch.setattr(rollout_io, "open_directory_at", replace_before_open)
+
+    with pytest.raises(RolloutValidationError, match="temporary directory identity"):
+        RolloutWriter(tmp_path, "rollout-1").write(valid_record())
+
+    replacement = tmp_path / replacement_names[0]
+    assert (replacement / "sentinel.txt").read_text(encoding="utf-8") == (
+        "replacement\n"
+    )
+    assert not replacement.with_name(f"{replacement.name}.original").exists()
+
+
+def test_writer_rejects_unexpected_temp_entry_before_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_fsync = rollout_module.fsync_directory
+    injected = False
+
+    def inject_extra_entry(directory_descriptor: int) -> None:
+        nonlocal injected
+        if not injected:
+            injected = True
+            descriptor = os.open(
+                "unexpected.bin",
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+                dir_fd=directory_descriptor,
+            )
+            os.close(descriptor)
+        real_fsync(directory_descriptor)
+
+    monkeypatch.setattr(rollout_module, "fsync_directory", inject_extra_entry)
+
+    with pytest.raises(RolloutValidationError, match="declared artifact outputs"):
+        RolloutWriter(tmp_path, "rollout-1").write(valid_record())
+
+    assert not (tmp_path / "rollout-1").exists()
+    assert not any(entry.name.startswith(".rollout-1.") for entry in tmp_path.iterdir())
 
 
 def test_writer_detects_output_root_replacement_and_cleans_original_temp(
@@ -794,21 +993,106 @@ def test_validate_parses_the_exact_payload_snapshot_that_was_hashed(
     real_sha256 = hashlib.sha256
     replaced = False
 
-    def replace_after_hash(data: object = b"", *args: object, **kwargs: object) -> object:
-        nonlocal replaced
-        digest = real_sha256(data, *args, **kwargs)  # type: ignore[arg-type]
-        if not replaced and bytes(data) == original:  # type: ignore[arg-type]
-            replaced = True
-            os.replace(replacement_path, event_path)
-        return digest
+    class ReplacingDigest:
+        def __init__(self, data: object = b"", *args: object, **kwargs: object) -> None:
+            self._digest = real_sha256(data, *args, **kwargs)  # type: ignore[arg-type]
+            self._captured = bytearray(bytes(data))  # type: ignore[arg-type]
 
-    monkeypatch.setattr(hashlib, "sha256", replace_after_hash)
+        def update(self, data: bytes) -> None:
+            self._captured.extend(data)
+            self._digest.update(data)
+
+        def hexdigest(self) -> str:
+            nonlocal replaced
+            if not replaced and bytes(self._captured) == original:
+                replaced = True
+                os.replace(replacement_path, event_path)
+            return self._digest.hexdigest()
+
+    monkeypatch.setattr(hashlib, "sha256", ReplacingDigest)
 
     try:
         artifact = validate_rollout(artifact_path)
     except RolloutValidationError:
+        assert replaced
         return
+    assert replaced
     assert {event.component for event in artifact.events} == {"rollout-test"}
+
+
+def test_validate_rolls_parseable_snapshot_to_disk_at_low_threshold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifact_path = write_valid_rollout(tmp_path)
+    real_spooled_file = tempfile.SpooledTemporaryFile
+    snapshots: list[object] = []
+
+    def tracking_spooled_file(*args: object, **kwargs: object) -> object:
+        kwargs["max_size"] = 1
+        snapshot = real_spooled_file(*args, **kwargs)  # type: ignore[arg-type]
+        snapshots.append(snapshot)
+        return snapshot
+
+    monkeypatch.setattr(tempfile, "SpooledTemporaryFile", tracking_spooled_file)
+
+    artifact = validate_rollout(artifact_path)
+
+    assert artifact.events == valid_events()
+    assert len(snapshots) == len(REQUIRED_FILES)
+    assert any(getattr(snapshot, "_rolled", False) for snapshot in snapshots)
+    assert all(getattr(snapshot, "closed", False) for snapshot in snapshots)
+
+
+def test_validate_hashes_optional_video_without_retaining_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifact_path = write_valid_rollout(tmp_path)
+    video_path = artifact_path / "video.mp4"
+    video_path.write_bytes(b"synthetic-video" * 100)
+    rewrite_metadata(
+        artifact_path,
+        lambda raw: raw["artifact_hashes"].__setitem__(
+            "video.mp4", hashlib.sha256(video_path.read_bytes()).hexdigest()
+        ),
+    )
+    real_spooled_file = tempfile.SpooledTemporaryFile
+    snapshots: list[object] = []
+
+    def tracking_spooled_file(*args: object, **kwargs: object) -> object:
+        kwargs["max_size"] = 1
+        snapshot = real_spooled_file(*args, **kwargs)  # type: ignore[arg-type]
+        snapshots.append(snapshot)
+        return snapshot
+
+    monkeypatch.setattr(tempfile, "SpooledTemporaryFile", tracking_spooled_file)
+
+    artifact = validate_rollout(artifact_path)
+
+    assert artifact.optional_files == ("video.mp4",)
+    assert len(snapshots) == len(REQUIRED_FILES)
+    assert all(getattr(snapshot, "closed", False) for snapshot in snapshots)
+
+
+def test_validate_closes_all_spools_when_hash_validation_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifact_path = write_valid_rollout(tmp_path)
+    (artifact_path / "summary.md").write_text("corrupted\n", encoding="utf-8")
+    real_spooled_file = tempfile.SpooledTemporaryFile
+    snapshots: list[object] = []
+
+    def tracking_spooled_file(*args: object, **kwargs: object) -> object:
+        snapshot = real_spooled_file(*args, **kwargs)  # type: ignore[arg-type]
+        snapshots.append(snapshot)
+        return snapshot
+
+    monkeypatch.setattr(tempfile, "SpooledTemporaryFile", tracking_spooled_file)
+
+    with pytest.raises(RolloutValidationError, match="hash mismatch"):
+        validate_rollout(artifact_path)
+
+    assert len(snapshots) == len(REQUIRED_FILES)
+    assert all(getattr(snapshot, "closed", False) for snapshot in snapshots)
 
 
 def test_validate_rejects_duplicate_raw_npz_members(tmp_path: Path) -> None:
