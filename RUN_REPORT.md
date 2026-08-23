@@ -6,7 +6,7 @@ The bounded Experiment 00 source-compatibility gate passed locally. No comparati
 
 ## Environment
 
-- Implementation/evidence-base Git SHA: `461647b03849660b91043163e0d032a483a9d960`
+- Implementation/evidence-base Git SHA: `2a38fcda1b6abdfcfb6d3baf763dd7c1599457c4`
 - Workspace: repository root
 - Branch: `integration/autonomous-run`
 - Platform contract: `darwin-arm64`
@@ -15,7 +15,7 @@ The bounded Experiment 00 source-compatibility gate passed locally. No comparati
 
 ## Commands
 
-Exact report command: `python scripts/write_p3_report.py --evidence-base-sha 461647b03849660b91043163e0d032a483a9d960`. The reporter executed only fixed local Git identity/blob reads; it ran no source operation, network request, or installation.
+Exact report command: `python scripts/write_p3_report.py --evidence-base-sha 2a38fcda1b6abdfcfb6d3baf763dd7c1599457c4`. The reporter executed only fixed local Git identity/blob reads; it ran no source operation, network request, or installation.
 
 ## Tests
 
