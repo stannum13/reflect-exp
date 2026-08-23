@@ -47,13 +47,21 @@ GREEN commits:
 
 Review-fix RED/GREEN evidence included five authority-tamper failures (trace target/action flags, reported reset count, retained EEF, matched qref/torque envelope tampering, and T3 provenance/evidence hash), a last-object-only mission structural failure, missing spec/environment/PNG/archive failures, and independent gate failures. Focused GREEN runs were **18 scorer tests passed in 47.38s**, **1 full qualification/publication/reconstruction test passed in 211.46s**, and **1 durable archive extraction test passed in 140.09s**.
 
-Final focused verification before this report:
+Initial focused verification before the first review:
 
 - `python -m pytest experiments/03_recovery/tests -q`: **89 passed in 121.17s**.
 - `git diff --check`: pass.
 - `shasum -a 256 -c /private/tmp/hierarchy-v3-frozen-baseline.sha256`: **64/64 OK**.
 - Repository-wide sandboxed run: **640 passed, 5 environment-only failures in 91.95s**. The failures were caused by sandbox-denied macOS dynamic-store/sysctl/localhost operations in existing P0/P1/replay/source-checkout tests, not V3 assertions.
 - Repository-wide run with the required macOS dynamic-store/sysctl/localhost test capabilities: **645 passed in 92.39s**.
+
+Final post-review-fix verification:
+
+- V3-only selection: **43 passed, 60 deselected in 444.70s**.
+- Complete Experiment 03 suite: **103 passed in 474.15s**.
+- Canonical qualification CLI: **18 episodes; 17 SUCCESS, 1 expected FAILURE; 10/10 gates; `READY_FOR_FRESH_READ_ONLY_REVIEW`**.
+- Independent clean reconstruction: **18 episodes, `matched=true`**, raw manifest `786dcdaf…`, derived manifest `44494430…`.
+- Durable archive extraction round trip: **1 passed in 140.09s**.
 
 ## Qualification episodes
 
