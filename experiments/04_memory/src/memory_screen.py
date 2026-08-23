@@ -18,6 +18,11 @@ import numpy as np
 
 VARIANTS = ("M0", "M1", "M2", "M3", "M4", "M5", "M6", "H0", "V0")
 SEEDS = (20260891, 20260892, 20260893, 20260894)
+FUZZY_SEED_SLOTS = (1, 3)
+FUZZY_ALIAS_TOKENS = tuple(
+    hashlib.sha256(f"exp04-fuzzy-v3:{index}".encode("ascii")).hexdigest()[:12]
+    for index in range(16)
+)
 QUERY_IDS = (
     "LOCATION", "LAST_OBSERVED", "POSE_USABLE", "PRIOR_ATTEMPT",
     "LAST_FAILURE_REASON", "REACHABLE_VALVE", "CHANGES_SINCE",
@@ -166,12 +171,22 @@ def generate_seed(seed: int) -> tuple[tuple[dict[str, object], ...], tuple[dict[
     rng = np.random.Generator(np.random.PCG64(seed ^ 0x04A11CE))
     delays = rng.choice(np.array((0, 1)), size=10, p=(0.5, 0.5))
     last_seen = f"tick/{world.seed % 17}"
-    aliases = [
-        _fact(8, f"{world.seed}-a", world.primary_valve_id, "ALIAS", "service valve", 1, 2, .90),
-        _fact(8, f"{world.seed}-b", world.alternate_valve_id, "ALIAS", "service valve", 1, 2, .90),
-    ]
-    if world.duplicate_reverse_order:
-        aliases.reverse()
+    seed_slot = SEEDS.index(seed) if seed in SEEDS else seed % 4
+    if seed_slot in FUZZY_SEED_SLOTS:
+        aliases = [
+            _fact(8, f"{world.seed}-p{index:02d}", world.primary_valve_id, "ALIAS", f"service valve unit {index}", 1, 2, .90)
+            for index in range(8)
+        ] + [
+            _fact(8, f"{world.seed}-z{index:02d}", world.alternate_valve_id, "ALIAS", token, 1, 2, .90)
+            for index, token in enumerate(FUZZY_ALIAS_TOKENS)
+        ]
+    else:
+        aliases = [
+            _fact(8, f"{world.seed}-a", world.primary_valve_id, "ALIAS", "service valve", 1, 2, .90),
+            _fact(8, f"{world.seed}-b", world.alternate_valve_id, "ALIAS", "service valve", 1, 2, .90),
+        ]
+        if world.duplicate_reverse_order:
+            aliases.reverse()
     definitions = (
         ("LOCATION", [_fact(0, "base", "tool/0001", "IN", "room/0001", 0, 0, .90)], [], "UNKNOWN", "RESCAN"),
         ("LAST_OBSERVED", [_fact(1, "seen", world.primary_valve_id, "OBSERVED_AT", last_seen, 0, 0, .90)], [_fact(1, "occ", world.primary_valve_id, "VISIBILITY", "OCCLUDED", 1, 2, .95)], last_seen, "REPORT"),
@@ -204,13 +219,13 @@ def generate_seed(seed: int) -> tuple[tuple[dict[str, object], ...], tuple[dict[
             "delivery_delay_ticks": int(delays[index]),
             "query_id": query,
             "query_tick": query_tick,
-            "schema_version": "exp04-engineering-observation-v2",
+            "schema_version": "exp04-engineering-observation-v3",
             "seed": seed,
         })
         answer, decision = truth_map[query]
         truths.append({"case_id": f"case/{index:02d}", "expected_answer": answer,
                        "expected_decision": decision, "query_id": query,
-                       "schema_version": "exp04-engineering-scorer-truth-v2", "seed": seed})
+                       "schema_version": "exp04-engineering-scorer-truth-v3", "seed": seed})
     return tuple(observations), tuple(truths)
 
 
@@ -289,7 +304,11 @@ _QUERY_PREDICATES = {
 
 def _typed_retrieve(query_id: str, facts: Sequence[Mapping[str, object]]) -> tuple[dict[str, object], ...]:
     predicates = set(_QUERY_PREDICATES[query_id])
-    return tuple(dict(row) for row in facts if row["predicate"] in predicates)
+    return tuple(
+        dict(row) for row in facts
+        if row["predicate"] in predicates
+        and (query_id != "DUPLICATE_IDENTITY" or _tokens(str(row["value"])) == ("service", "valve"))
+    )
 
 
 def _lexical_retrieve(query_id: str, facts: Sequence[Mapping[str, object]]) -> tuple[dict[str, object], ...]:
@@ -307,6 +326,14 @@ def _lexical_retrieve(query_id: str, facts: Sequence[Mapping[str, object]]) -> t
 def _retrieval_union(query_id: str, facts: Sequence[Mapping[str, object]]) -> tuple[dict[str, object], ...]:
     by_id: dict[str, dict[str, object]] = {}
     for channel in (_typed_retrieve, _lexical_retrieve, _vector_retrieve):
+        for row in channel(query_id, facts):
+            by_id.setdefault(str(row["fact_id"]), row)
+    return tuple(by_id[key] for key in sorted(by_id))
+
+
+def _nonvector_union(query_id: str, facts: Sequence[Mapping[str, object]]) -> tuple[dict[str, object], ...]:
+    by_id: dict[str, dict[str, object]] = {}
+    for channel in (_typed_retrieve, _lexical_retrieve):
         for row in channel(query_id, facts):
             by_id.setdefault(str(row["fact_id"]), row)
     return tuple(by_id[key] for key in sorted(by_id))
@@ -429,7 +456,7 @@ def _run_flat_history(seed: int, observations: Sequence[Mapping[str, object]]) -
             "cited_fact_ids": tuple(str(row["event_id"]) for row in cited),
             "context_bytes": len(_canonical(cited)), "decision": decision, "query_id": query,
             "retrieval_channel": None, "retrieval_channels": (), "retrieval_fact_ids": (),
-            "schema_version": "exp04-engineering-query-decision-v2", "seed": seed, "variant_id": "H0",
+            "schema_version": "exp04-engineering-query-decision-v3", "seed": seed, "variant_id": "H0",
         })
     return tuple(compiled), tuple(decisions)
 
@@ -448,17 +475,24 @@ def run_variant(variant_id: str, seed: int, observations: Sequence[Mapping[str, 
         facts = _facts_for(variant_id, observation)
         compiled.extend({"case_id": observation["case_id"], "variant_id": variant_id, **row} for row in facts)
         query_id = str(observation["query_id"])
-        retrieved = _retrieval_union(query_id, facts) if variant_id == "M6" else (_vector_retrieve(query_id, facts) if variant_id == "V0" else ())
-        answer_facts = retrieved if variant_id in {"M6", "V0"} else facts
+        if variant_id == "M6":
+            retrieved = _retrieval_union(query_id, facts)
+        elif variant_id == "V0":
+            retrieved = _vector_retrieve(query_id, facts)
+        elif variant_id == "M5" and query_id == "DUPLICATE_IDENTITY":
+            retrieved = _nonvector_union(query_id, facts)
+        else:
+            retrieved = ()
+        answer_facts = retrieved if variant_id in {"M6", "V0"} or (variant_id == "M5" and query_id == "DUPLICATE_IDENTITY") else facts
         answer, decision, cited = _answer(variant_id, query_id, answer_facts, int(observation["query_tick"]))
         context_bytes = len(_canonical([row for row in facts if str(row["fact_id"]) in cited]))
         decisions.append({
             "answer": answer, "case_id": observation["case_id"], "cited_fact_ids": cited,
             "context_bytes": context_bytes, "decision": decision, "query_id": observation["query_id"],
-            "retrieval_channel": "TYPED_LEXICAL_VECTOR_UNION_V2" if variant_id == "M6" else ("SIGNED_HASH_VECTOR_V2" if variant_id == "V0" else None),
-            "retrieval_channels": ("TYPED", "LEXICAL", "VECTOR") if variant_id == "M6" else (("VECTOR",) if variant_id == "V0" else ()),
+            "retrieval_channel": "TYPED_LEXICAL_VECTOR_UNION_V3" if variant_id == "M6" else ("SIGNED_HASH_VECTOR_V3" if variant_id == "V0" else ("TYPED_LEXICAL_UNION_V3" if variant_id == "M5" and query_id == "DUPLICATE_IDENTITY" else None)),
+            "retrieval_channels": ("TYPED", "LEXICAL", "VECTOR") if variant_id == "M6" else (("VECTOR",) if variant_id == "V0" else (("TYPED", "LEXICAL") if variant_id == "M5" and query_id == "DUPLICATE_IDENTITY" else ())),
             "retrieval_fact_ids": tuple(str(row["fact_id"]) for row in retrieved),
-            "schema_version": "exp04-engineering-query-decision-v2", "seed": seed,
+            "schema_version": "exp04-engineering-query-decision-v3", "seed": seed,
             "variant_id": variant_id,
         })
     return tuple(compiled), tuple(decisions)
@@ -478,10 +512,21 @@ def _score(decisions: Sequence[Mapping[str, object]], truths: Sequence[Mapping[s
     wrong = sum(bool(row["wrong_identity"]) for row in scored if row["query_id"] in IDENTITY_QUERIES)
     scans = sum(row["decision"] in {"RESCAN", "REIDENTIFY"} for row in decisions)
     ambiguous = next(row for row in scored if row["query_id"] == "DUPLICATE_IDENTITY")
+    duplicate_decision = next(row for row in decisions if row["query_id"] == "DUPLICATE_IDENTITY")
+    fuzzy_candidates = {
+        str(row.get("fact_id", row.get("event_id"))) for row in facts
+        if row.get("predicate", row.get("payload_predicate")) == "ALIAS"
+        and row.get("value", row.get("payload_value")) in FUZZY_ALIAS_TOKENS
+    }
+    vector_executed = "VECTOR" in duplicate_decision["retrieval_channels"]
+    fuzzy_hits = len(fuzzy_candidates & set(duplicate_decision["retrieval_fact_ids"])) if vector_executed else None
     return {
         "ambiguous_retrieval_rate": float(bool(ambiguous["correct"])), "correct_count": correct,
         "correct_rate": correct / 10.0, "disposition": "COMPLETE", "input_fact_count": len(facts),
-        "repeated_scan_count": scans, "schema_version": "exp04-engineering-metrics-v2",
+        "fuzzy_vector_candidate_count": len(fuzzy_candidates),
+        "fuzzy_vector_candidate_hit_count": fuzzy_hits,
+        "fuzzy_vector_candidate_miss_count": len(fuzzy_candidates) - fuzzy_hits if fuzzy_hits is not None else None,
+        "repeated_scan_count": scans, "schema_version": "exp04-engineering-metrics-v3",
         "stale_action_rate": stale / 4.0, "stale_wrong_composite": 0.5 * stale / 4.0 + 0.5 * wrong / 2.0,
         "wrong_identity_rate": wrong / 2.0,
     }
@@ -505,7 +550,7 @@ def _bundle_files(variant: str, seed: int, observations: Sequence[Mapping[str, o
         "claim_status": "ENGINEERING_NONCONFIRMATORY", "disposition": "COMPLETE", "files": inventory,
         "implementation_git_sha": implementation_git_sha, "implementation_source_sha256": implementation_source_sha256,
         "observation_trace_sha256": _sha(files["observation-trace.jsonl"]), "replay_sha256": replay,
-        "protocol_config_sha256": protocol_config_sha256, "schema_version": "exp04-engineering-bundle-manifest-v2",
+        "protocol_config_sha256": protocol_config_sha256, "schema_version": "exp04-engineering-bundle-manifest-v3",
         "seed": seed, "variant_id": variant,
     }
     files["bundle-manifest.json"] = _canonical(manifest)
@@ -558,9 +603,16 @@ def _derive(raw: Path) -> dict[str, bytes]:
     variants = []
     for variant in VARIANTS:
         rows = [row for row in metric_rows if row["variant_id"] == variant]
+        fuzzy_count = sum(int(row["fuzzy_vector_candidate_count"]) for row in rows)
+        fuzzy_hits = [int(row["fuzzy_vector_candidate_hit_count"]) for row in rows if row["fuzzy_vector_candidate_hit_count"] is not None]
+        fuzzy_misses = [int(row["fuzzy_vector_candidate_miss_count"]) for row in rows if row["fuzzy_vector_candidate_miss_count"] is not None]
         variants.append({
             "ambiguous_retrieval_rate": sum(float(row["ambiguous_retrieval_rate"]) for row in rows) / len(rows),
             "correct_rate": sum(float(row["correct_rate"]) for row in rows) / len(rows),
+            "fuzzy_vector_candidate_count": fuzzy_count,
+            "fuzzy_vector_candidate_hit_count": sum(fuzzy_hits) if fuzzy_hits else None,
+            "fuzzy_vector_candidate_hit_rate": sum(fuzzy_hits) / fuzzy_count if fuzzy_hits and fuzzy_count else (0.0 if fuzzy_hits else None),
+            "fuzzy_vector_candidate_miss_count": sum(fuzzy_misses) if fuzzy_misses else None,
             "repeated_scan_count": sum(int(row["repeated_scan_count"]) for row in rows) / len(rows),
             "seed_count": len(rows),
             "stale_action_rate": sum(float(row["stale_action_rate"]) for row in rows) / len(rows),
@@ -574,23 +626,25 @@ def _derive(raw: Path) -> dict[str, bytes]:
         for label in ("WORKING", "NONWORKING"):
             match = next((row for row in candidates if row["class"] == label), None)
             selected.append(match if match is not None else {"class": "CLASS_NOT_OBSERVED", "denominator": len(candidates), "requested_class": label, "variant_id": variant})
-    aggregate = {"bundle_count": len(metric_rows), "case_answer_count": len(samples), "claim_status": "ENGINEERING_NONCONFIRMATORY", "schema_version": "exp04-engineering-aggregate-v2", "variants": variants}
-    annotations = {"samples": selected, "schema_version": "exp04-engineering-annotations-v2", "selection_rule": "FIRST_CANONICAL_WORKING_AND_NONWORKING_PER_VARIANT_WHEN_OBSERVED"}
+    aggregate = {"bundle_count": len(metric_rows), "case_answer_count": len(samples), "claim_status": "ENGINEERING_NONCONFIRMATORY", "schema_version": "exp04-engineering-aggregate-v3", "variants": variants}
+    annotations = {"samples": selected, "schema_version": "exp04-engineering-annotations-v3", "selection_rule": "FIRST_CANONICAL_WORKING_AND_NONWORKING_PER_VARIANT_WHEN_OBSERVED"}
     recipe = {
         "code_sha256": root_manifest["implementation_source_sha256"],
         "inputs": {"raw_manifest_sha256": _sha(root_manifest_bytes)},
         "operation": "validate every bundle hash; replay independent graph, flat-log, and retrieval comparators from observation-trace without scorer truth; join independently derived scorer truth; recompute metrics, aggregate, annotations, and report",
-        "schema_version": "exp04-engineering-recipe-v2", "seeds": list(SEEDS), "variants": list(VARIANTS),
+        "schema_version": "exp04-engineering-recipe-v3", "seeds": list(SEEDS), "variants": list(VARIANTS),
     }
     by = {row["variant_id"]: row for row in variants}
     report = (
-        "# Experiment 04 Engineering Memory Screen v2\n\n"
+        "# Experiment 04 Engineering Memory Screen v3\n\n"
         "Status: ENGINEERING_NONCONFIRMATORY\n\n"
         f"The BASE-only screen completed {len(metric_rows)} bundles and {len(samples)} case answers. "
         f"M4 correctness was {by['M4']['correct_rate']:.3f} versus M0 {by['M0']['correct_rate']:.3f}, "
         f"V0 {by['V0']['correct_rate']:.3f}, and H0 {by['H0']['correct_rate']:.3f}. "
         f"M5 stale/wrong composite was {by['M5']['stale_wrong_composite']:.3f} versus M4 {by['M4']['stale_wrong_composite']:.3f}. "
-        f"M6 ambiguous retrieval was {by['M6']['ambiguous_retrieval_rate']:.3f} versus M5 {by['M5']['ambiguous_retrieval_rate']:.3f}.\n\n"
+        f"M6 ambiguous retrieval was {by['M6']['ambiguous_retrieval_rate']:.3f} versus M5 {by['M5']['ambiguous_retrieval_rate']:.3f}. "
+        f"The frozen signed-hash vector retrieved {by['M6']['fuzzy_vector_candidate_hit_count']} of "
+        f"{by['M6']['fuzzy_vector_candidate_count']} fuzzy alternate candidates; misses are retained, not replaced.\n\n"
         "These fixed public engineering seeds do not support confirmation, promotion, or a production memory claim.\n"
     ).encode("ascii")
     return {"RESULTS.md": report, "aggregate.json": _canonical(aggregate), "annotations.json": _canonical(annotations), "recipe.json": _canonical(recipe)}
@@ -602,7 +656,15 @@ def run_screen(output: Path, *, seeds: Sequence[int], implementation_git_sha: st
     if len(implementation_git_sha) != 40 or any(character not in "0123456789abcdef" for character in implementation_git_sha):
         raise ScreenError("implementation_git_sha must be lowercase SHA-1")
     source_sha256 = _sha(Path(__file__).read_bytes())
-    config_sha256 = _sha(_canonical({"base_config": BASE_CONFIG, "queries": QUERY_IDS, "seeds": SEEDS, "variants": VARIANTS}))
+    config_sha256 = _sha(_canonical({
+        "base_config": BASE_CONFIG,
+        "fuzzy_alias_generator": "sha256('exp04-fuzzy-v3:<zero-based-index>')[:12]",
+        "fuzzy_alias_tokens": FUZZY_ALIAS_TOKENS,
+        "fuzzy_seed_slots": FUZZY_SEED_SLOTS,
+        "queries": QUERY_IDS,
+        "seeds": SEEDS,
+        "variants": VARIANTS,
+    }))
     bundles = output / "raw" / "bundles"; derived = output / "derived"
     bundles.mkdir(parents=True); derived.mkdir()
     inventory = []
@@ -613,7 +675,7 @@ def run_screen(output: Path, *, seeds: Sequence[int], implementation_git_sha: st
             files = _bundle_files(variant, seed, observations, truths, implementation_git_sha=implementation_git_sha, implementation_source_sha256=source_sha256, protocol_config_sha256=config_sha256)
             for name, content in files.items(): _write(destination / name, content)
             inventory.append({"bundle_id": bundle_id, "manifest_sha256": _sha(files["bundle-manifest.json"])})
-    raw_manifest = {"bundles": inventory, "claim_status": "ENGINEERING_NONCONFIRMATORY", "implementation_git_sha": implementation_git_sha, "implementation_source_sha256": source_sha256, "protocol_config_sha256": config_sha256, "schema_version": "exp04-engineering-raw-manifest-v2"}
+    raw_manifest = {"bundles": inventory, "claim_status": "ENGINEERING_NONCONFIRMATORY", "implementation_git_sha": implementation_git_sha, "implementation_source_sha256": source_sha256, "protocol_config_sha256": config_sha256, "schema_version": "exp04-engineering-raw-manifest-v3"}
     _write(output / "raw" / "raw-manifest.json", _canonical(raw_manifest))
     for name, content in _derive(output / "raw").items(): _write(derived / name, content)
 

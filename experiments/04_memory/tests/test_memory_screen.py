@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import hashlib
 import inspect
 import json
 from pathlib import Path
@@ -55,6 +56,9 @@ def test_screen_writes_exact_matrix_with_equal_information_and_real_comparators(
     assert by_variant["M4"]["correct_rate"] >= by_variant["H0"]["correct_rate"]
     assert by_variant["M5"]["stale_wrong_composite"] <= by_variant["M4"]["stale_wrong_composite"]
     assert by_variant["M6"]["ambiguous_retrieval_rate"] >= by_variant["M5"]["ambiguous_retrieval_rate"]
+    assert by_variant["M6"]["fuzzy_vector_candidate_count"] == 32
+    assert by_variant["M6"]["fuzzy_vector_candidate_hit_count"] + by_variant["M6"]["fuzzy_vector_candidate_miss_count"] == 32
+    assert by_variant["M5"]["fuzzy_vector_candidate_hit_count"] is None
 
 
 def test_runner_has_no_truth_input_and_reconstruction_is_byte_equal(tmp_path: Path) -> None:
@@ -98,7 +102,7 @@ def test_m6_and_v0_use_real_deterministic_retrieval() -> None:
     for variant in ("M6", "V0"):
         _, decisions = screen.run_variant(variant, screen.SEEDS[0], observations)
         duplicate = next(row for row in decisions if row["query_id"] == "DUPLICATE_IDENTITY")
-        assert duplicate["retrieval_channel"] in {"TYPED_LEXICAL_VECTOR_UNION_V2", "SIGNED_HASH_VECTOR_V2"}
+        assert duplicate["retrieval_channel"] in {"TYPED_LEXICAL_VECTOR_UNION_V3", "SIGNED_HASH_VECTOR_V3"}
         assert set(duplicate["retrieval_fact_ids"]) >= duplicate_ids
 
 
@@ -181,3 +185,91 @@ def test_correct_fresh_pose_action_is_not_scored_as_stale() -> None:
     truth = next(row for row in truths if row["query_id"] == "POSE_USABLE")
     assert (pose["answer"], pose["decision"]) == (truth["expected_answer"], truth["expected_decision"]) == ("USABLE", "ACT")
     assert screen._score(decisions, truths, facts)["stale_action_rate"] == 0.0
+
+
+def test_v3_fuzzy_identity_tokens_are_preregistered_not_outcome_selected() -> None:
+    screen = _screen()
+    expected = tuple(
+        hashlib.sha256(f"exp04-fuzzy-v3:{index}".encode("ascii")).hexdigest()[:12]
+        for index in range(16)
+    )
+    assert screen.FUZZY_ALIAS_TOKENS == expected
+    assert screen.FUZZY_SEED_SLOTS == (1, 3)
+
+    for slot in screen.FUZZY_SEED_SLOTS:
+        seed = screen.SEEDS[slot]
+        observations, _ = screen.generate_seed(seed)
+        duplicate = next(row for row in observations if row["query_id"] == "DUPLICATE_IDENTITY")
+        facts = duplicate["delivered_facts"]
+        world = screen._world_for_seed(seed)
+        alternate = [row for row in facts if row["subject_id"] == world.alternate_valve_id]
+        assert tuple(row["value"] for row in alternate) == expected
+        assert len([row for row in facts if row["subject_id"] == world.primary_valve_id]) == 8
+
+
+def test_v3_fuzzy_identity_measures_vector_membership_hits_and_misses() -> None:
+    screen = _screen()
+    total_hits = 0
+    total_candidates = 0
+    for slot in screen.FUZZY_SEED_SLOTS:
+        seed = screen.SEEDS[slot]
+        observations, _ = screen.generate_seed(seed)
+        duplicate = next(row for row in observations if row["query_id"] == "DUPLICATE_IDENTITY")
+        facts = duplicate["delivered_facts"]
+        world = screen._world_for_seed(seed)
+        alternate_ids = {row["fact_id"] for row in facts if row["subject_id"] == world.alternate_valve_id}
+        typed_ids = {row["fact_id"] for row in screen._typed_retrieve("DUPLICATE_IDENTITY", facts)}
+        lexical = screen._lexical_retrieve("DUPLICATE_IDENTITY", facts)
+        vector_ids = {row["fact_id"] for row in screen._vector_retrieve("DUPLICATE_IDENTITY", facts)}
+        assert typed_ids == set()
+        assert {row["subject_id"] for row in lexical} == {world.primary_valve_id}
+        total_hits += len(vector_ids & alternate_ids)
+        total_candidates += len(alternate_ids)
+    assert total_candidates == 32
+    assert 0 <= total_hits < total_candidates
+
+    exact_observations, _ = screen.generate_seed(screen.SEEDS[0])
+    exact = next(row for row in exact_observations if row["query_id"] == "DUPLICATE_IDENTITY")
+    exact_ids = {row["fact_id"] for row in exact["delivered_facts"]}
+    exact_vector_ids = {row["fact_id"] for row in screen._vector_retrieve("DUPLICATE_IDENTITY", exact["delivered_facts"])}
+    assert exact_ids <= exact_vector_ids
+
+
+def test_v3_vector_channel_ablation_is_mechanical_without_changing_m5_nonidentity(monkeypatch: pytest.MonkeyPatch) -> None:
+    screen = _screen()
+    seed = screen.SEEDS[screen.FUZZY_SEED_SLOTS[0]]
+    observations, _ = screen.generate_seed(seed)
+    _, m5 = screen.run_variant("M5", seed, observations)
+    _, m6 = screen.run_variant("M6", seed, observations)
+    m5_duplicate = next(row for row in m5 if row["query_id"] == "DUPLICATE_IDENTITY")
+    m6_duplicate = next(row for row in m6 if row["query_id"] == "DUPLICATE_IDENTITY")
+    assert m5_duplicate["retrieval_channels"] == ("TYPED", "LEXICAL")
+    assert m5_duplicate["answer"] == "UNKNOWN"
+    vector_ids = {
+        row["fact_id"]
+        for row in screen._vector_retrieve(
+            "DUPLICATE_IDENTITY",
+            next(row for row in observations if row["query_id"] == "DUPLICATE_IDENTITY")["delivered_facts"],
+        )
+    }
+    assert set(m6_duplicate["retrieval_fact_ids"]) == set(m5_duplicate["retrieval_fact_ids"]) | vector_ids
+
+    monkeypatch.setattr(screen, "_vector_retrieve", lambda *_args, **_kwargs: ())
+    _, ablated = screen.run_variant("M6", seed, observations)
+    ablated_duplicate = next(row for row in ablated if row["query_id"] == "DUPLICATE_IDENTITY")
+    assert ablated_duplicate["retrieval_fact_ids"] == m5_duplicate["retrieval_fact_ids"]
+    assert [row for row in m5 if row["query_id"] != "DUPLICATE_IDENTITY"] == [
+        row for row in screen.run_variant("M5", seed, observations)[1]
+        if row["query_id"] != "DUPLICATE_IDENTITY"
+    ]
+
+
+def test_v3_metrics_retain_fuzzy_vector_candidate_membership() -> None:
+    screen = _screen()
+    seed = screen.SEEDS[screen.FUZZY_SEED_SLOTS[0]]
+    observations, truths = screen.generate_seed(seed)
+    facts, decisions = screen.run_variant("M6", seed, observations)
+    metrics = screen._score(decisions, truths, facts)
+    assert metrics["fuzzy_vector_candidate_count"] == 16
+    assert 0 <= metrics["fuzzy_vector_candidate_hit_count"] <= 16
+    assert metrics["fuzzy_vector_candidate_miss_count"] == 16 - metrics["fuzzy_vector_candidate_hit_count"]
