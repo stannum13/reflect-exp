@@ -58,6 +58,14 @@ _FIXED_ARTIFACTS = (
     "docs/ASSUMPTIONS.md",
     "docs/RUN_MANIFEST.yaml",
 )
+_LEROBOT_REVISION_ARTIFACTS = (
+    "experiments/00_source_audit/configs/lerobot-contained-symlinks-v1.json",
+    "experiments/00_source_audit/MANIFEST_AMENDMENT.yaml",
+    "experiments/00_source_audit/MANIFEST_AMENDMENT_R2.yaml",
+    "experiments/00_source_audit/MANIFEST_AMENDMENT_R3.yaml",
+    "experiments/00_source_audit/results/attempts/lerobot-checkout-v1-fail.json",
+    "experiments/00_source_audit/results/attempts/lerobot-checkout-v2-pass.json",
+)
 _OPERATION_KEYS = {
     "operation_id", "repository", "operation", "runtime_subject", "experiment",
     "selected_path", "command", "relative_output", "platform", "python_requirement",
@@ -329,7 +337,14 @@ def _read_snapshot(root: Path, evidence_sha: str) -> P3Snapshot:
     tracked = tuple(item.decode("utf-8", "strict") for item in _git(root, "ls-tree", "-r", "-z", "--name-only", evidence_sha).split(b"\0") if item)
     fragment_prefix = "experiments/00_source_audit/results/fragments/"
     fragment_paths = tuple(path for path in tracked if path.startswith(fragment_prefix))
-    paths = (*_FIXED_ARTIFACTS, *fragment_paths)
+    has_lerobot_revision = any(
+        isinstance(item, dict)
+        and item.get("operation_id") == "LEROBOT_CHECKOUT"
+        and item.get("operation") == "CHECKOUT"
+        for item in manifest.get("operations", [])
+    )
+    revision_paths = _LEROBOT_REVISION_ARTIFACTS if has_lerobot_revision else ()
+    paths = (*_FIXED_ARTIFACTS, *revision_paths, *fragment_paths)
     if len(paths) != len(set(paths)):
         raise ValueError("P3 artifact inventory contains a path collision")
     artifacts = {path: _git_artifact(root, evidence_sha, path) for path in paths}

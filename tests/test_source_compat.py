@@ -5,9 +5,12 @@ import hashlib
 import importlib
 import json
 from pathlib import Path
+import shutil
 
 import pytest
 import yaml
+
+import reflect.source_compat as source_compat_module
 
 from reflect.source_compat import (
     CSV_HEADER,
@@ -727,3 +730,49 @@ def test_make_source_audit_is_offline_and_requires_complete_lock() -> None:
     assert "audit_references.py --require-complete" in recipe
     assert "experiments.00_source_audit.run" in recipe
     assert "fetch_reference.py" not in recipe
+
+
+def test_lerobot_revision_chain_hash_joins_contract_attempts_modes_and_receipt(
+    tmp_path: Path,
+) -> None:
+    project = Path.cwd()
+    paths = (
+        "experiments/00_source_audit/configs/lerobot-contained-symlinks-v1.json",
+        "experiments/00_source_audit/results/attempts/lerobot-checkout-v1-fail.json",
+    )
+    for relative in paths:
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(project / relative, destination)
+    v2_bytes = (project / "experiments/00_source_audit/results/fragments/lerobot-checkout.json").read_bytes()
+    v2_path = tmp_path / "experiments/00_source_audit/results/attempts/lerobot-checkout-v2-pass.json"
+    v2_path.parent.mkdir(parents=True, exist_ok=True)
+    v2_path.write_bytes(v2_bytes)
+    raw = json.loads(v2_bytes)
+    raw["schema_version"] = 3
+    for row in raw["contained_symlinks"]:
+        row["link_mode"] = "120000"
+        row["target_mode"] = "100644"
+    raw.pop("evidence_sha256")
+    raw["evidence_sha256"] = canonical_sha256(raw)
+    receipt = CheckoutEvidence.from_dict(raw)
+    receipt_bytes = receipt.canonical_bytes()
+    amendment = yaml.safe_load((project / "experiments/00_source_audit/MANIFEST_AMENDMENT_R2.yaml").read_text())
+    amendment["revision"] = 3
+    amendment["revision_2_receipt"]["path"] = "experiments/00_source_audit/results/attempts/lerobot-checkout-v2-pass.json"
+    amendment["revision_2_receipt"]["file_sha256"] = hashlib.sha256(v2_bytes).hexdigest()
+    amendment["revision_3_receipt"] = {
+        "path": "experiments/00_source_audit/results/fragments/lerobot-checkout.json",
+        "file_sha256": hashlib.sha256(receipt_bytes).hexdigest(),
+        "evidence_sha256": receipt.evidence_sha256,
+        "outcome": "PASS",
+    }
+    amendment_path = tmp_path / "experiments/00_source_audit/MANIFEST_AMENDMENT_R3.yaml"
+    amendment_path.write_text(yaml.safe_dump(amendment, sort_keys=False))
+
+    source_compat_module._validate_lerobot_revision_chain(tmp_path, receipt, receipt_bytes)
+
+    contract_path = tmp_path / paths[0]
+    contract_path.write_bytes(contract_path.read_bytes() + b" ")
+    with pytest.raises(ValueError, match="hash join"):
+        source_compat_module._validate_lerobot_revision_chain(tmp_path, receipt, receipt_bytes)

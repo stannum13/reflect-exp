@@ -119,7 +119,7 @@ class CheckoutEvidence:
         recursive_tree_sha: str | None = None,
         contained_symlinks: Sequence[Mapping[str, object]] = (),
     ) -> "CheckoutEvidence":
-        version = 2 if symlink_policy != "REJECT_ALL" else 1
+        version = 3 if symlink_policy != "REJECT_ALL" else 1
         record = cls(
             schema_version=version,
             evidence_type="CHECKOUT",
@@ -157,7 +157,7 @@ class CheckoutEvidence:
             "download_bytes", "disk_bytes", "outcome", "blocker",
             "content_hashes", "evidence_sha256",
         }
-        if raw.get("schema_version") == 2:
+        if raw.get("schema_version") in {2, 3}:
             required |= {"symlink_policy", "recursive_tree_sha", "contained_symlinks"}
         if set(raw) != required:
             raise ValueError("checkout evidence has missing or extra keys")
@@ -171,7 +171,7 @@ class CheckoutEvidence:
                 raise ValueError("checkout content hash path is duplicated")
             hashes[item["path"]] = item["sha256"]
         symlink_rows: list[tuple[tuple[str, object], ...]] = []
-        if raw.get("schema_version") == 2:
+        if raw.get("schema_version") in {2, 3}:
             if not isinstance(raw["contained_symlinks"], list):
                 raise ValueError("contained symlink evidence must be a list")
             for row in raw["contained_symlinks"]:
@@ -196,7 +196,7 @@ class CheckoutEvidence:
         return record
 
     def _validate(self, *, include_hash: bool = True) -> None:
-        if self.schema_version not in {1, 2} or self.evidence_type != "CHECKOUT":
+        if self.schema_version not in {1, 2, 3} or self.evidence_type != "CHECKOUT":
             raise ValueError("checkout evidence schema/type is invalid")
         if self.schema_version == 1:
             if self.symlink_policy != "REJECT_ALL" or self.recursive_tree_sha is not None or self.contained_symlinks:
@@ -209,6 +209,8 @@ class CheckoutEvidence:
                 "path", "link_blob_sha1", "link_bytes", "link_sha256", "target",
                 "target_path", "target_blob_sha1", "target_bytes", "target_sha256",
             }
+            if self.schema_version == 3:
+                keys |= {"link_mode", "target_mode"}
             rows = [dict(row) for row in self.contained_symlinks]
             if any(set(row) != keys for row in rows) or (self.outcome == "PASS" and not rows):
                 raise ValueError("contained symlink evidence schema is invalid")
@@ -217,6 +219,8 @@ class CheckoutEvidence:
             for row in rows:
                 for field in ("path", "target", "target_path"):
                     _string(row[field], field)
+                if self.schema_version == 3 and (row["link_mode"] != "120000" or row["target_mode"] not in {"100644", "100755"}):
+                    raise ValueError("contained symlink evidence Git modes are invalid")
                 for field in ("link_blob_sha1", "target_blob_sha1"):
                     _sha(row[field], field, length=40)
                 for field in ("link_sha256", "target_sha256"):
@@ -282,7 +286,7 @@ class CheckoutEvidence:
         }
         if include_hash:
             result["evidence_sha256"] = self.evidence_sha256
-        if self.schema_version == 2:
+        if self.schema_version in {2, 3}:
             result["symlink_policy"] = self.symlink_policy
             result["recursive_tree_sha"] = self.recursive_tree_sha
             result["contained_symlinks"] = [dict(row) for row in self.contained_symlinks]

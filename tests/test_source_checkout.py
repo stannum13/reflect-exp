@@ -151,6 +151,37 @@ def test_contained_git_symlink_audit_never_follows_output_links(tmp_path: Path) 
         )
 
 
+def test_contained_git_symlink_audit_rejects_undeclared_fourth_link(
+    tmp_path: Path,
+) -> None:
+    link_path = "src/pkg/README.md"
+    target = "../../docs/pkg.md"
+    target_path = "docs/pkg.md"
+    descriptor = target.encode()
+    content = b"locked\n"
+    (tmp_path / "src/pkg").mkdir(parents=True)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / link_path).write_bytes(descriptor)
+    (tmp_path / target_path).write_bytes(content)
+    contract = ContainedGitSymlink(
+        path=link_path,
+        link_blob_sha1=_git_blob_sha1(descriptor),
+        target=target,
+        target_path=target_path,
+        target_blob_sha1=_git_blob_sha1(content),
+    )
+    with pytest.raises(SparseCheckoutError, match="undeclared"):
+        audit_contained_git_symlinks(
+            tmp_path,
+            (contract,),
+            git_objects={
+                link_path: ("120000", "blob", contract.link_blob_sha1),
+                target_path: ("100644", "blob", contract.target_blob_sha1),
+                "src/pkg/EXTRA": ("120000", "blob", "7" * 40),
+            },
+        )
+
+
 def test_lerobot_contract_binds_exact_locked_tree_and_objects() -> None:
     registry = load_registry(Path("references/repos.yaml"))
     lock = load_lock(Path("references/repos.lock.yaml"))
@@ -174,11 +205,13 @@ def test_lerobot_contract_binds_exact_locked_tree_and_objects() -> None:
 def test_checkout_evidence_v2_seals_contained_git_symlink_audit() -> None:
     row = {
         "path": "src/pkg/README.md",
+        "link_mode": "120000",
         "link_blob_sha1": "1" * 40,
         "link_bytes": 17,
         "link_sha256": "2" * 64,
         "target": "../../docs/pkg.md",
         "target_path": "docs/pkg.md",
+        "target_mode": "100644",
         "target_blob_sha1": "3" * 40,
         "target_bytes": 23,
         "target_sha256": "4" * 64,
@@ -201,7 +234,7 @@ def test_checkout_evidence_v2_seals_contained_git_symlink_audit() -> None:
         contained_symlinks=(row,),
     )
     reloaded = CheckoutEvidence.from_dict(json.loads(evidence.canonical_bytes()))
-    assert reloaded.schema_version == 2
+    assert reloaded.schema_version == 3
     assert dict(reloaded.contained_symlinks[0]) == row
 
 

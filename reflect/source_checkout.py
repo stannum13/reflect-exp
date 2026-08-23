@@ -71,11 +71,13 @@ class ContainedGitSymlink:
 @dataclass(frozen=True)
 class ContainedGitSymlinkAudit:
     path: str
+    link_mode: str
     link_blob_sha1: str
     link_bytes: int
     link_sha256: str
     target: str
     target_path: str
+    target_mode: str
     target_blob_sha1: str
     target_bytes: int
     target_sha256: str
@@ -742,9 +744,18 @@ def audit_contained_git_symlinks(
     """Validate declared Git symlink objects without following filesystem links."""
     if not contracts or len({item.path for item in contracts}) != len(contracts):
         raise SparseCheckoutError("contained Git symlink contract must be nonempty and unique")
-    expected_paths = {item.path for item in contracts} | {item.target_path for item in contracts}
-    if set(git_objects) != expected_paths:
-        raise SparseCheckoutError("contained Git symlink Git inventory is incomplete or extra")
+    expected_link_paths = {item.path for item in contracts}
+    actual_link_paths = {
+        path for path, (mode, kind, _) in git_objects.items()
+        if mode == "120000" and kind == "blob"
+    }
+    if actual_link_paths != expected_link_paths:
+        raise SparseCheckoutError("selected Git tree contains an undeclared or missing symlink object")
+    if any(
+        kind != "blob" or mode not in {"100644", "100755", "120000"}
+        for mode, kind, _ in git_objects.values()
+    ):
+        raise SparseCheckoutError("selected Git tree contains a submodule or unsupported object mode")
     rows = []
     for item in contracts:
         _validate_pattern(item.path)
@@ -768,11 +779,13 @@ def audit_contained_git_symlinks(
         rows.append(
             ContainedGitSymlinkAudit(
                 path=item.path,
+                link_mode="120000",
                 link_blob_sha1=item.link_blob_sha1,
                 link_bytes=len(link_content),
                 link_sha256=hashlib.sha256(link_content).hexdigest(),
                 target=item.target,
                 target_path=item.target_path,
+                target_mode=target_object[0],
                 target_blob_sha1=item.target_blob_sha1,
                 target_bytes=len(target_content),
                 target_sha256=hashlib.sha256(target_content).hexdigest(),
@@ -981,13 +994,14 @@ def _validate_checkout(
             tree = run((*prefix, "rev-parse", "HEAD^{tree}")).stdout.decode("ascii", errors="strict").strip()
             if tree != spec.recursive_tree_sha:
                 raise SparseCheckoutError("checkout tree does not match locked recursive tree")
-            object_paths = tuple(
-                path
-                for item in spec.contained_symlinks
-                for path in (item.path, item.target_path)
-            )
             inventory = _parse_ls_tree(
-                run((*prefix, "ls-tree", "-z", "HEAD", "--", *object_paths)).stdout
+                run(
+                    (
+                        *prefix, "ls-tree", "-r", "-z", "HEAD", "--",
+                        *spec.patterns,
+                        *(item.target_path for item in spec.contained_symlinks),
+                    )
+                ).stdout
             )
             audits = audit_contained_git_symlinks(
                 checkout, spec.contained_symlinks, git_objects=inventory

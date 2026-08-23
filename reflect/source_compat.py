@@ -18,7 +18,7 @@ from typing import Any
 
 import yaml
 
-from reflect.source_evidence import canonical_json_bytes, canonical_sha256
+from reflect.source_evidence import canonical_json_bytes, canonical_sha256, open_directory_chain
 from reflect.source_evidence import CheckoutEvidence
 from reflect.sources import (
     LicenseStatus,
@@ -59,6 +59,11 @@ CSV_HEADER = (
 _SHA40 = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _FIXED_SMOKE_PATH = "experiments/00_source_audit/results/fragments/mujoco-package-smoke.json"
+_LEROBOT_CONTRACT_PATH = "experiments/00_source_audit/configs/lerobot-contained-symlinks-v1.json"
+_LEROBOT_AMENDMENT_PATH = "experiments/00_source_audit/MANIFEST_AMENDMENT_R3.yaml"
+_LEROBOT_V1_PATH = "experiments/00_source_audit/results/attempts/lerobot-checkout-v1-fail.json"
+_LEROBOT_V2_PATH = "experiments/00_source_audit/results/attempts/lerobot-checkout-v2-pass.json"
+_LEROBOT_RECEIPT_PATH = "experiments/00_source_audit/results/fragments/lerobot-checkout.json"
 _EVIDENCE_KEYS = {
     "schema_version", "evidence_type", "registry_sha256", "repository",
     "commit_sha", "experiment", "selected_path", "operation_id", "operation", "platform",
@@ -494,6 +499,108 @@ def _unique_mapping(loader: yaml.SafeLoader, node: yaml.MappingNode, deep: bool 
 _UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _unique_mapping)
 
 
+def _read_regular_artifact(root: Path, relative: str) -> bytes:
+    path = PurePosixPath(relative)
+    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+        raise ValueError("P3 revision artifact path is unsafe")
+    parent = open_directory_chain(root.joinpath(*path.parts[:-1]), create=False)
+    try:
+        descriptor = os.open(
+            path.parts[-1],
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
+            dir_fd=parent,
+        )
+    finally:
+        os.close(parent)
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > 2 * 1024 * 1024:
+            raise ValueError("P3 revision artifact must be one bounded regular file")
+        data = os.read(descriptor, before.st_size + 1)
+        after = os.fstat(descriptor)
+        if len(data) != before.st_size or (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns):
+            raise ValueError("P3 revision artifact changed during inspection")
+        return data
+    finally:
+        os.close(descriptor)
+
+
+def _validate_lerobot_revision_chain(
+    project_root: Path,
+    receipt: CheckoutEvidence,
+    receipt_bytes: bytes,
+) -> None:
+    contract_bytes = _read_regular_artifact(project_root, _LEROBOT_CONTRACT_PATH)
+    amendment_bytes = _read_regular_artifact(project_root, _LEROBOT_AMENDMENT_PATH)
+    v1_bytes = _read_regular_artifact(project_root, _LEROBOT_V1_PATH)
+    v2_bytes = _read_regular_artifact(project_root, _LEROBOT_V2_PATH)
+    contract = _json_no_duplicates(contract_bytes)
+    amendment = yaml.load(amendment_bytes, Loader=_UniqueLoader)
+    v1 = CheckoutEvidence.from_dict(_json_no_duplicates(v1_bytes))
+    v2 = CheckoutEvidence.from_dict(_json_no_duplicates(v2_bytes))
+    if not isinstance(amendment, Mapping):
+        raise ValueError("LeRobot revision amendment must be a mapping")
+    contract_binding = amendment.get("contract")
+    prior = amendment.get("revision_1_failure")
+    prior_pass = amendment.get("revision_2_receipt")
+    current = amendment.get("revision_3_receipt")
+    validation = amendment.get("validation")
+    if (
+        amendment.get("schema_version") != 1
+        or amendment.get("record_type") != "P3_OPERATION_CONTRACT_REVISION"
+        or amendment.get("revision") != 3
+        or amendment.get("operation_id") != "LEROBOT_CHECKOUT"
+        or amendment.get("policy") != "CONTAINED_GIT_SYMLINKS_V1"
+        or not isinstance(contract_binding, Mapping)
+        or contract_binding.get("path") != _LEROBOT_CONTRACT_PATH
+        or contract_binding.get("sha256") != hashlib.sha256(contract_bytes).hexdigest()
+        or not isinstance(prior, Mapping)
+        or prior.get("path") != _LEROBOT_V1_PATH
+        or prior.get("file_sha256") != hashlib.sha256(v1_bytes).hexdigest()
+        or prior.get("evidence_sha256") != v1.evidence_sha256
+        or prior.get("outcome") != "FAIL"
+        or v1.outcome != "FAIL"
+        or not isinstance(prior_pass, Mapping)
+        or prior_pass.get("path") != _LEROBOT_V2_PATH
+        or prior_pass.get("file_sha256") != hashlib.sha256(v2_bytes).hexdigest()
+        or prior_pass.get("evidence_sha256") != v2.evidence_sha256
+        or prior_pass.get("outcome") != "PASS"
+        or v2.schema_version != 2
+        or v2.outcome != "PASS"
+        or not isinstance(current, Mapping)
+        or current.get("path") != _LEROBOT_RECEIPT_PATH
+        or current.get("file_sha256") != hashlib.sha256(receipt_bytes).hexdigest()
+        or current.get("evidence_sha256") != receipt.evidence_sha256
+        or current.get("outcome") != "PASS"
+        or receipt.outcome != "PASS"
+        or not isinstance(validation, Mapping)
+        or validation.get("materialization") != "CORE_SYMLINKS_FALSE_REGULAR_DESCRIPTOR"
+        or validation.get("target_rule") != "RELATIVE_CONTAINED_DECLARED_REGULAR_BLOB"
+    ):
+        raise ValueError("LeRobot revision receipt/contract/amendment hash join is invalid")
+    if (
+        contract.get("policy") != receipt.symlink_policy
+        or contract.get("repository") != receipt.repository
+        or contract.get("commit_sha") != receipt.locked_sha
+        or contract.get("recursive_tree_sha") != receipt.recursive_tree_sha
+    ):
+        raise ValueError("LeRobot revision receipt does not match its exact contract identity")
+    contract_rows = contract.get("symlinks")
+    receipt_rows = [dict(row) for row in receipt.contained_symlinks]
+    if not isinstance(contract_rows, list) or len(contract_rows) != len(receipt_rows):
+        raise ValueError("LeRobot revision symlink inventory cardinality differs")
+    by_path = {row.get("path"): row for row in contract_rows if isinstance(row, Mapping)}
+    for row in receipt_rows:
+        expected = by_path.get(row["path"])
+        if (
+            not isinstance(expected, Mapping)
+            or any(row[key] != expected[key] for key in ("path", "link_blob_sha1", "target", "target_path", "target_blob_sha1"))
+            or row["link_mode"] != "120000"
+            or row["target_mode"] not in {"100644", "100755"}
+        ):
+            raise ValueError("LeRobot revision receipt object modes or identities differ")
+
+
 def load_operation_manifest(path: Path, registry: SourceRegistry, lock: SourceLock, root: Path) -> OperationManifest:
     raw = yaml.load(path.read_text(), Loader=_UniqueLoader)
     required = {"schema_version", "registry_sha256", "lock_sha256", "repositories", "operations", "requirement_observations", "mujoco_smoke_output"}
@@ -715,6 +822,10 @@ def load_manifest_fragments(
                 raise ValueError("checkout receipt does not bind the manifest/lock")
             if item.download_bytes > operation.download_ceiling_bytes or item.disk_bytes > operation.disk_ceiling_bytes or len(item.content_hashes) > operation.file_count_ceiling:
                 raise ValueError("checkout receipt exceeds manifest byte/inventory ceilings")
+            if item.schema_version == 2:
+                if operation.operation_id != "LEROBOT_CHECKOUT":
+                    raise ValueError("contained-symlink authority is restricted to LEROBOT_CHECKOUT")
+                _validate_lerobot_revision_chain(project_root, item, data)
             checkouts.append(item)
         else:
             compatibility.append(validate_fragment(raw, registry, lock, manifest, relative))

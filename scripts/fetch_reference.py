@@ -191,11 +191,13 @@ def main(
                 contained_symlinks=(
                     {
                         "path": row.path,
+                        "link_mode": row.link_mode,
                         "link_blob_sha1": row.link_blob_sha1,
                         "link_bytes": row.link_bytes,
                         "link_sha256": row.link_sha256,
                         "target": row.target,
                         "target_path": row.target_path,
+                        "target_mode": row.target_mode,
                         "target_blob_sha1": row.target_blob_sha1,
                         "target_bytes": row.target_bytes,
                         "target_sha256": row.target_sha256,
