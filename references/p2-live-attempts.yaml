@@ -1166,3 +1166,130 @@ attempts:
       pass but was not persisted with its HTTP status, so the same exact endpoint
       became a cache miss. The retry made no HTTP request, published no partial lock,
       and stopped without looping.
+
+  - id: single_metadata_window_9_01_ifcopenshell_test_files
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - ifcopenshell_test_files
+      - --metadata-only
+    started_at_utc: 2026-08-23T00:51:02Z
+    finished_at_utc: 2026-08-23T00:51:19Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [ifcopenshell_test_files]
+    summary: >-
+      Resolved the exact pinned IfcOpenShell/files entry at
+      9fc2267d7f1ff35284c5b0fc28cc97bff7ace8e7. The license endpoint's valid
+      absence was retained as UNKNOWN and the selected ifc path was MISSING.
+
+  - id: single_metadata_window_9_02_lawam
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - lawam
+      - --metadata-only
+    started_at_utc: 2026-08-23T00:51:19Z
+    finished_at_utc: 2026-08-23T00:51:30Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [lawam]
+    summary: >-
+      Resolved LaWAM at 4ea6fdadce6c9b8746028307a246b79ee2c4fd55 with all
+      five selected paths present and a retained UNKNOWN license observation.
+
+  - id: single_metadata_window_9_03_unifolm_vla
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --name
+      - unifolm_vla
+      - --metadata-only
+    started_at_utc: 2026-08-23T00:51:30Z
+    finished_at_utc: 2026-08-23T00:51:49Z
+    exit_code: 0
+    published_lock: false
+    completed_entries: [unifolm_vla]
+    summary: >-
+      Resolved UniFoLM-VLA at ff6c39aeb0454cfb95418c66aef40ca777f935c1 with
+      all four selected paths present and a retained UNKNOWN license observation.
+
+  - id: all_metadata_window_9_live_refresh
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --all-metadata-only
+    started_at_utc: 2026-08-23T00:51:49Z
+    finished_at_utc: 2026-08-23T00:52:52Z
+    exit_code: 1
+    published_lock: false
+    completed_entries:
+      - mujoco
+      - mujoco_mpc
+      - mujoco_menagerie
+      - mink
+      - mjctrl
+      - hydrax
+      - curobo
+      - moveit2
+      - ros2_control
+      - ros2_controllers
+      - mujoco_ros2_control
+      - act
+      - lerobot
+      - openpi
+      - diffusion_policy
+      - behaviortree_cpp
+    incomplete_entry: navigation2
+    error: >-
+      GitHub rate limit exhausted for https://api.github.com/repos/ros-navigation/navigation2/license?ref=a3a97043ee93d92fe8d70ec56d183933169beb1c; reset 1787449873
+    rate_limit_reset_utc: 2026-08-23T01:51:13Z
+    lock_absence_verified: true
+    cache_validation: >-
+      The targeted passes filled the three known absent-license cache holes. The
+      live full pass then stopped at a previously stale Navigation2 license cache
+      observation and published no partial lock.
+
+  - id: all_metadata_window_9_cache_retry
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --all-metadata-only
+    started_at_utc: 2026-08-23T00:52:52Z
+    finished_at_utc: 2026-08-23T00:52:56Z
+    exit_code: 1
+    published_lock: false
+    completed_entries: []
+    incomplete_entry: numpy
+    error: >-
+      resolved source lock is invalid: direct/adapter license is not discovered: numpy
+    lock_absence_verified: true
+    cache_validation: >-
+      The single prescribed immediate cache replay resolved the complete candidate
+      without another HTTP request, then failed closed at structural validation.
+      GitHub's pinned NumPy license payload identifies LICENSE.txt and its exact blob
+      but reports SPDX NOASSERTION, which the preregistered P2 policy records as
+      UNKNOWN and forbids for a DIRECT_DEPENDENCY. This is a substantive license
+      approval blocker, not an unresolved metadata or environment-test failure.
