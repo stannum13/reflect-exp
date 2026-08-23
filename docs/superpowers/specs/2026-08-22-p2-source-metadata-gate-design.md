@@ -59,9 +59,46 @@ no mutable resolution result.
 - `RESOLVED`, `BLOCKED_NETWORK`, or `INVALID` metadata status.
 
 GitHub's license metadata is evidence, not legal approval. `UNKNOWN` or
-`NOASSERTION` prevents direct/adapter approval and future copying, but does not add
-an undeclared seventh reuse mode. Globs such as `mjctrl`'s `*.py` are matched only
-against root tree entries and remain recorded verbatim.
+`NOASSERTION` prevents adapter approval and future copying. It also prevents direct
+dependency approval unless the exact installed distribution independently satisfies
+the artifact-scoped exception below. This exception does not add a reuse mode or
+turn package metadata into repository-copy authority. Globs such as `mjctrl`'s
+`*.py` are matched only against root tree entries and remain recorded verbatim.
+
+### Exact-wheel install evidence for direct dependencies
+
+A `DIRECT_DEPENDENCY` whose pinned GitHub repository-license response is
+`NOASSERTION` may be approved for installation only when P2 validates the upstream
+Core Metadata from the exact wheel selected for the current locked interpreter and
+platform. The wheel must be a `uv.lock` artifact for the same normalized package
+name and exact version. P2 downloads that exact HTTPS artifact without installing
+or importing it, enforces the metadata-response size bound, and verifies its full
+SHA-256 before opening it as a ZIP archive.
+
+The wheel must contain exactly one matching `{distribution}-{version}.dist-info`
+directory, `METADATA`, and `RECORD`. `METADATA` must declare the same package name
+and version, exactly one nonempty `License-Expression`, and one or more distinct,
+safe `License-File` values. Every declared license file must exist below the same
+dist-info `licenses/` directory. P2 verifies the SHA-256 and size recorded by
+`RECORD` for `METADATA` and every declared license file, requires one record for
+each, rejects duplicate/archive-unsafe names and unlisted declared files, and hashes
+the exact `METADATA`, `RECORD`, and complete declared license-file inventory.
+`RECORD` itself may have the wheel-standard empty digest and size because the
+already-verified wheel digest authenticates its bytes.
+
+The lock preserves the GitHub observation as `UNKNOWN` with its original evidence
+URL. Closed `artifact_license.*` namespaced string fields in `metadata_evidence`
+additionally bind package name, version, exact wheel filename and URL, wheel
+SHA-256, `METADATA` and `RECORD` paths and SHA-256 values, the full
+`License-Expression`, the canonical sorted complete license-file path/SHA-256
+inventory, and authority `EXACT_WHEEL_INSTALL_ONLY`. These values are factual
+upstream assertions; P2 performs no SPDX inference and does not reduce a compound
+expression to a preferred component. Only a direct-dependency install may consume
+this authority. Adapters, sparse/reference source use, copied code, and attribution
+markers continue to require discovered repository-level SPDX evidence. P3's report
+renderer must later learn this separate install-only authority before it may remove
+the direct package's review blocker; P2 does not overload `license_status` to make
+that downstream change implicitly.
 
 ## Resolver architecture
 
@@ -124,8 +161,10 @@ descriptors; a symlink at the cache root or any intermediate component is reject
 License classification is not reimplemented locally. GitHub's pinned license API
 SPDX result is recorded as factual upstream metadata and checked against the
 tree-discovered root license path/blob when supplied. `NOASSERTION`, absent,
-malformed, conflicting, or ambiguous results remain `UNKNOWN`; they never cross the
-direct/adapter approval gate. Conventional root filenames, including suffixed or
+malformed, conflicting, or ambiguous results remain `UNKNOWN`; they never authorize
+repository copying or an adapter. A GitHub `NOASSERTION` may cross only the exact
+wheel install boundary above, using the wheel publisher's complete
+`License-Expression` verbatim. Conventional root filenames, including suffixed or
 multiple license files, remain recorded for P3 review rather than being collapsed
 into a locally inferred legal conclusion.
 
@@ -138,7 +177,13 @@ The offline audit rejects:
 - a non-full SHA or missing default branch/retrieval timestamp;
 - selected paths that were substituted, dropped, or lack a factual status;
 - missing license observations for direct and adapter dependencies;
-- direct/adapter entries with an unknown license status;
+- adapter entries with an unknown repository license status;
+- direct entries with neither discovered repository SPDX evidence nor complete,
+  exact-wheel `EXACT_WHEEL_INSTALL_ONLY` evidence;
+- artifact evidence on a non-direct entry, a wheel absent from `uv.lock`, a
+  package/version/platform mismatch, an unverified wheel digest, malformed Core
+  Metadata/RECORD, an incomplete license-file inventory, or any attempt to use
+  artifact authority for copied/adapted source;
 - upstream source copied into `reflect/` without explicit attribution metadata;
 - a tracked model/checkpoint artifact or a created source checkout.
 

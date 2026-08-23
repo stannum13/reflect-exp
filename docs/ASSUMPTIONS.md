@@ -53,3 +53,13 @@ validates and preserves them rather than silently probing or inventing values.
 
 When event timestamp and sequence values are equal, replay preserves original JSONL
 order as the final stable ordering key.
+
+## A-011 — Direct-dependency package license evidence
+
+When a direct dependency's pinned GitHub license endpoint reports `NOASSERTION`, an
+exact locked wheel's upstream Core Metadata `License-Expression` may authorize only
+installation of that artifact. The evidence must bind the normalized package name,
+exact version, selected `uv.lock` wheel filename and SHA-256, exact `METADATA` and
+`RECORD` hashes, and the complete declared `License-File` inventory. GitHub's
+`NOASSERTION` remains recorded; no license text is classified locally. Repository
+copying and adapter use remain blocked without repository-level SPDX evidence.

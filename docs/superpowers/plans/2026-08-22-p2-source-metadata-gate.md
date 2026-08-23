@@ -12,11 +12,13 @@
 
 - P2 contains all 39 canonical Section 8 repositories plus the six existing bootstrap entries, exactly 45 unique names.
 - Reuse mode is exactly one of `DIRECT_DEPENDENCY`, `ADAPTER_DEPENDENCY`, `SPARSE_REFERENCE`, `REMOTE_ONLY`, `PAPER_AND_CODE_REFERENCE`, or `DEFERRED`.
-- Metadata mode performs no clone, install, import, build, source copy, model/checkpoint download, remote execution, or physical communication.
-- Network endpoints are `github.com` and `api.github.com` HTTPS identities derived only from exact `https://github.com/OWNER/REPO` registry URLs.
+- Metadata mode performs no clone, install, import, build, source copy, model/checkpoint download, remote execution, or physical communication. It may download one bounded exact locked wheel solely to verify upstream Core Metadata.
+- Network endpoints are `github.com` and `api.github.com` HTTPS identities derived only from exact `https://github.com/OWNER/REPO` registry URLs, plus an exact `files.pythonhosted.org` wheel URL already sealed in `uv.lock` for artifact-license verification.
 - Every resolved revision is a 40-character lowercase hexadecimal SHA.
 - Every requested selected path is preserved verbatim and marked `EXISTS` or `MISSING`; `mjctrl`'s `*.py` means a root-entry glob.
-- Unknown license metadata is factual evidence, not legal approval; it blocks direct/adapter approval and copying.
+- Unknown repository license metadata is factual evidence, not legal approval; it
+  blocks adapters and copying. A direct dependency may instead receive install-only
+  authority from exact locked-wheel evidence under the closed contract below.
 - A partial or failed live pass must not replace an existing tracked lock.
 - Tests are offline and use only checked-in compact fixtures.
 - Physical deployment and remote execution remain disabled.
@@ -107,6 +109,24 @@ git commit -m "feat: materialize validated source registry"
 - Create: `tests/fixtures/source_metadata/github-license.json`
 - Modify: `.gitignore`
 
+**Exact-wheel license extension:** When and only when a `DIRECT_DEPENDENCY` returns
+GitHub `NOASSERTION`, select the first compatible wheel by the current interpreter's
+ordered platform tags from that package's exact `uv.lock` version. Fetch the exact
+locked files.pythonhosted.org wheel with redirects disabled and the existing bounded
+transport discipline; verify its `uv.lock` SHA-256 before ZIP parsing. Parse the
+wheel's Core Metadata without importing or installing the package. Require matching
+normalized name/version, one `License-Expression`, a nonempty distinct safe
+`License-File` list, one matching dist-info directory, and `RECORD` SHA-256/size
+coverage for `METADATA` plus every declared license file. Record closed namespaced
+`artifact_license.*` string fields inside `metadata_evidence`: wheel filename,
+URL/hash, `METADATA` and `RECORD` paths/hashes, the verbatim full SPDX expression,
+the canonical sorted complete license-file hashes, and
+`EXACT_WHEEL_INSTALL_ONLY`. Preserve the GitHub observation as `UNKNOWN`; do not
+infer an SPDX identifier from license text. A missing/incompatible/oversize,
+bad-digest/bad-ZIP/ambiguous, or incomplete wheel fails closed without publication.
+The backward-compatible P2 representation intentionally leaves P3 rendering as a
+separate explicitly owned seam.
+
 **Interfaces:**
 - Consumes: `SourceRegistry`, exact registry selectors, an injected `Runner.run_ls_remote(url)`, an injected `Transport.get(url)`, and an injected UTC clock.
 - Produces: `GitHubIdentity`, `HttpResponse`, `MetadataEvidence`, `resolve_entry(entry, transport, clock) -> LockedEntry`, `resolve_registry(registry, names, transport, clock) -> SourceLock`, `CacheStore`, and `atomic_write_lock(path, lock) -> None`.
@@ -122,10 +142,18 @@ from `reflect.source_fetch`.
 
 Cover order-independent `ls-remote` default-branch/SHA parsing, missing/detached/
 unborn/duplicate/SHA-256 HEAD rejection, Git-config isolation, commit-to-tree
-resolution, SPDX discovery and unknown license handling, literal paths, root globs,
+resolution, SPDX discovery and unknown repository-license handling, exact-wheel
+direct-install evidence, literal paths, root globs,
 missing paths, truncated-tree targeted fallback, exact evidence URLs, deterministic
 YAML, cache checksums, rate-limit resume, one cache fallback after a live failure,
 and atomic failure:
+
+Add RED tests for a valid compound-expression wheel and for wrong wheel hash,
+package/version mismatch, duplicate or unsafe archive names, missing/duplicate
+`License-Expression`, absent/unsafe/duplicate `License-File`, missing or mismatched
+RECORD digests/sizes, incomplete license inventory, no compatible locked wheel,
+artifact evidence on adapter/reference entries, and copy attribution backed only by
+install authority. Fixtures are compact local wheels and make no network request.
 
 ```python
 def test_failed_resolution_preserves_existing_lock(tmp_path: Path) -> None:
@@ -247,7 +275,8 @@ git commit -m "feat: resolve source metadata atomically"
 
 Create an accepted fixture and mutations proving rejection of registry digest
 mismatch, extra/missing entries, short SHA, absent license observation, unknown
-direct/adapter license, dropped/substituted path, incomplete status, checkout
+adapter license, direct dependency without repository or exact-wheel install
+evidence, dropped/substituted path, incomplete status, checkout
 directory, attributed/unattributed copied source, and tracked checkpoint suffixes.
 
 ```python
