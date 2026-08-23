@@ -28,12 +28,48 @@ def _gate(stack, *, jerk=3.0, discontinuity=3.0):
     return evaluate.GateMetrics(stack, 95, 100, 90, 100, 0, 0, 1, 5, 100, (jerk,), (discontinuity,))
 
 
-def _resource(*, complete=True):
-    return evaluate.ResourceCompletionEvidence("confirmation", 1, "f" * 64, complete)
+PILOT_PROTOCOL_SHA256 = "9" * 64
+
+
+def _resource(*, phase="confirmation", complete=True):
+    expected = ("shard-000",)
+    completed = expected if complete else ()
+    return evaluate.ResourceCompletionEvidence(
+        phase, 1, PILOT_PROTOCOL_SHA256 if phase == "pilot" else "8" * 64,
+        None if phase == "pilot" else PILOT_PROTOCOL_SHA256, "f" * 64,
+        expected, completed, ("e" * 64,) if complete else (),
+    )
 
 
 def _pilot_reproduction():
-    return evaluate.PilotReproductionEvidence("a" * 64, "b" * 64, "c" * 64)
+    conditions = ("tune-05-700-2", "tune-10-300-2", "tune-20-000-1")
+    episodes = tuple(
+        evaluate.PilotEpisodeScore(
+            "P1", seed, condition, f"{1000 + seed * 3 + index:064x}", 0.2, True,
+        )
+        for seed in range(4) for index, condition in enumerate(conditions)
+    )
+    vector = {"pd": [80.0, 8.0], "ik": 0.01, "p5_smoothness": 0.02}
+    candidate = evaluate.evaluate_candidate(evaluate.PilotStage.BASE, vector, ("P1",), episodes)
+    raw = evaluate.CandidateReproductionInput(
+        evaluate.PilotStage.BASE, vector, ("P1",), episodes,
+    )
+    core = tuple(
+        f"core-{rate:02d}-{latency:03d}-{moves}"
+        for rate in (5, 10, 20) for latency in (0, 100, 300, 700) for moves in (1, 2)
+    )
+    smoothness = tuple(
+        evaluate.SmoothnessEpisodeScore(
+            "P1", evaluate.PilotStage.FINAL_FOUR, seed, condition,
+            f"P1:{seed}:{condition}", f"{3000 + seed * 24 + index:064x}", 1.0, 1.0,
+        )
+        for seed in range(4) for index, condition in enumerate(core)
+    )
+    baseline = evaluate.compute_p1_smoothness_baseline(smoothness)
+    return evaluate.verify_pilot_reproduction(
+        (raw,), evaluate.candidate_evaluations_bytes((candidate,)), smoothness,
+        baseline, resource_evidence=_resource(phase="pilot"),
+    )
 
 
 def test_paired_bootstrap_uses_exact_sha_pcg64_and_bonferroni_endpoints() -> None:
@@ -108,7 +144,9 @@ def test_frozen_candidate_and_baseline_evidence_must_reproduce_exactly() -> None
     )
     vector = {"pd": [80.0, 8.0], "ik": 0.01, "p5_smoothness": 0.02}
     candidate = evaluate.evaluate_candidate(evaluate.PilotStage.BASE, vector, ("P1",), episodes)
-    reproduction = evaluate.CandidateReproductionInput(evaluate.PilotStage.BASE, vector, ("P1",), tuple(reversed(episodes)), (), ())
+    reproduction = evaluate.CandidateReproductionInput(
+        evaluate.PilotStage.BASE, vector, ("P1",), tuple(reversed(episodes)),
+    )
     conditions_core = tuple(f"core-{rate:02d}-{latency:03d}-{moves}" for rate in (5, 10, 20) for latency in (0, 100, 300, 700) for moves in (1, 2))
     smoothness = tuple(
         evaluate.SmoothnessEpisodeScore("P1", evaluate.PilotStage.FINAL_FOUR, seed, condition, f"P1:{seed}:{condition}", f"{3000 + seed * 24 + episode:064x}", seed + episode, seed + episode / 2)
@@ -116,7 +154,7 @@ def test_frozen_candidate_and_baseline_evidence_must_reproduce_exactly() -> None
     )
     baseline = evaluate.compute_p1_smoothness_baseline(tuple(reversed(smoothness)))
     frozen = evaluate.candidate_evaluations_bytes((candidate,))
-    resource = evaluate.ResourceCompletionEvidence("pilot", 1, "e" * 64, True)
+    resource = _resource(phase="pilot")
     proof = evaluate.verify_pilot_reproduction((reproduction,), frozen, smoothness, baseline, resource_evidence=resource)
     assert proof.resource_disposition_sha256 == resource.disposition_sha256
     changed = list(smoothness)

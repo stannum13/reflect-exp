@@ -34,19 +34,40 @@ def _candidate(stage, survivors, score, tie_rank, *, feasible=True, reuse=()):
     )
 
 
+def _selection_evidence(*, p5_all_infeasible=False):
+    survivors = ("P1", "P2", "P3", "P4", "P5", "P6")
+    outcomes = tuple(evaluate.BaseStackOutcome(stack, 12, False) for stack in survivors)
+    pd = (
+        _candidate(PilotStage.BASE, survivors, 0.5, 1),
+        _candidate(PilotStage.PD_60_6, survivors, 0.6, 2),
+        _candidate(PilotStage.PD_100_10, survivors, 0.7, 3),
+    )
+    ik = (
+        _candidate(PilotStage.IK_0_001, survivors, 0.6, 4),
+        _candidate(PilotStage.IK_0_05, survivors, 0.7, 5),
+    )
+    reused_p5_hashes = tuple(
+        digest for score in pd[0].stack_seed_scores if score.stack_id == "P5"
+        for digest in score.condition_bundle_sha256s
+    )
+    p5 = (
+        _candidate(PilotStage.BASE, ("P5",), 0.5, 1, feasible=not p5_all_infeasible, reuse=reused_p5_hashes),
+        _candidate(PilotStage.P5_0_01, ("P5",), 0.6, 6, feasible=not p5_all_infeasible),
+        _candidate(PilotStage.P5_0_04, ("P5",), 0.7, 7, feasible=not p5_all_infeasible),
+    )
+    return evaluate.derive_pilot_selection(outcomes, pd, ik, p5)
+
+
 def _p1_manifest(stage, shard_count, episodes_per_shard, predecessor_sha="1" * 64):
-    shards = []
-    for seed in range(shard_count):
-        episodes = tuple(f"{stage.value}:P1:{seed}:{condition:02d}" for condition in range(episodes_per_shard))
-        shards.append(evaluate.PilotShard(f"P1:{stage.value}:{seed:03d}", "P1", seed, episodes))
-    return evaluate.PilotManifest(
-        1,
-        stage,
-        predecessor_sha,
-        "2" * 64,
-        "3" * 40,
-        "4" * 64,
-        tuple(shards),
+    assert shard_count == 4
+    expected_count = 26 if stage is PilotStage.FINAL_FOUR else 3
+    assert episodes_per_shard == expected_count
+    return evaluate.build_pilot_manifest(
+        stage, revision=1, predecessor_sha256=predecessor_sha,
+        config_sha256="2" * 64, implementation_sha="3" * 40,
+        parameter_sha256="4" * 64,
+        survivors=("P1", "P2", "P3", "P4", "P5", "P6"),
+        seeds=(20, 21, 22, 23) if stage is PilotStage.FINAL_FOUR else (10, 11, 12, 13),
     )
 
 
@@ -137,7 +158,10 @@ def test_final_four_p1_failure_stops_before_other_stack_shards() -> None:
             for index, item in enumerate(final_completions)
         )
         terminal = evaluate.StageTerminalDisposition(PilotStage.FINAL_FOUR, completions[-1].shard_id, "EASIEST_RECOVERY_FAILURE", completions[-1].completion_sha256)
-        disposition = evaluate.pilot_disposition(manifest, prior_manifests=prefix, completions=completions, terminal_disposition=terminal)
+        disposition = evaluate.pilot_disposition(
+            manifest, prior_manifests=prefix, completions=completions,
+            terminal_disposition=terminal, selection_evidence=_selection_evidence(),
+        )
         assert disposition.scientific_result == "INCONCLUSIVE" and disposition.lifecycle_state == "STOPPED"
         assert disposition.final_four_episode_count == final_four_count
         assert disposition.remaining_final_four_stacks == ()
@@ -227,8 +251,28 @@ def test_stage_builders_bind_hashes_sort_episodes_and_final_four_runs_once() -> 
         seeds=(20, 21, 22, 23),
     )
     assert len(final.shards) == 24 and sum(len(item.episode_ids) for item in final.shards) == 624
-    disposition = evaluate.pilot_disposition(final, prior_manifests=prefix, completions=_completions((*prefix, final)))
+    disposition = evaluate.pilot_disposition(
+        final, prior_manifests=prefix, completions=_completions((*prefix, final)),
+        selection_evidence=_selection_evidence(),
+    )
     assert disposition.total_episode_count == 1008 and disposition.final_four_episode_count == 624
+
+
+def test_final_four_inventory_is_derived_from_all_p5_candidates() -> None:
+    prefix, predecessor = _complete_tuning_prefix()
+    selection = _selection_evidence(p5_all_infeasible=True)
+    assert selection.survivors == ("P1", "P2", "P3", "P4", "P6")
+    invalid = evaluate.build_pilot_manifest(
+        PilotStage.FINAL_FOUR, revision=1, predecessor_sha256=predecessor,
+        config_sha256="2" * 64, implementation_sha="3" * 40,
+        parameter_sha256="5" * 64,
+        survivors=("P1", "P2", "P3", "P4", "P5", "P6"), seeds=(20, 21, 22, 23),
+    )
+    with pytest.raises(ValueError, match="selection-derived"):
+        evaluate.pilot_disposition(
+            invalid, prior_manifests=prefix,
+            completions=_completions((*prefix, invalid)), selection_evidence=selection,
+        )
 
 
 def test_p1_final_four_smoothness_baseline_is_two_stage_and_order_independent() -> None:
