@@ -31,7 +31,7 @@ def test_repository_manifest_has_bounded_recommended_scope() -> None:
     assert manifest.stages["p0"] == "complete"
     assert manifest.stages["p1"] == "complete"
     assert manifest.stages["p2"] == "complete"
-    assert manifest.stages["p3"] == "in_progress"
+    assert manifest.stages["p3"] == "complete"
     assert all(manifest.stages[f"p{index}"] == "pending" for index in range(4, 11))
 
 

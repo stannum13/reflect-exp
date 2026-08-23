@@ -22,7 +22,7 @@ stages:
   p0: complete
   p1: complete
   p2: complete
-  p3: in_progress
+  p3: complete
   p4: pending
   p5: pending
   p6: pending
