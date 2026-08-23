@@ -51,6 +51,9 @@ def test_f_derivation_binds_positive_h_and_full_new_suffix() -> None:
         machine.issue(measured_q=np.zeros(3)); machine.close_tick()
     active = machine.active
     assert active is not None and active.rule == "OVERLAP_BLEND" and active.h == 2
+    accepted = [event for event in machine.events if event.event_type == "CHUNK_ACCEPTED"][-1]
+    assert accepted.sidecar["derivation_revision"] == "exp02-overlap-blend-v1"
+    assert accepted.sidecar["derivation_parameter"] == {"M": 2}
     assert active.coverage == (76, 201)
     assert len(active.parent_sha256s) == 2 and active.parent_sha256s == tuple(sorted(active.parent_sha256s))
     np.testing.assert_array_equal(active.actions[2:], _proposal(1, 76).actions[2:])
@@ -68,6 +71,8 @@ def test_c_orders_parents_and_recomputes_at_earliest_expiry() -> None:
     recomputed = [event for event in machine.events if event.event_type == "DERIVATION_RECOMPUTED"]
     assert len(recomputed) == 1 and recomputed[0].tick == 135
     assert tuple(row[0] for row in recomputed[0].sidecar["parent_coverages"]) == ("p1",)
+    assert recomputed[0].sidecar["derivation_revision"] == "exp02-temporal-ensemble-v1"
+    assert recomputed[0].sidecar["derivation_parameter"] == {"lambda": 0.0}
     assert machine.active is not None and machine.active.coverage == (135, 136)
 
 

@@ -427,9 +427,18 @@ class TemporalBroker:
         coverages = (*old.parent_coverages, (proposal.proposal_id, proposal.coverage_start_tick, proposal.coverage_end_tick))
         return ExecutableChunk(f"derived-{self.protocol_id}-{proposal.proposal_id}-{self._current_tick}", proposal.representation, proposal.skill_id, proposal.source_observation_id, proposal.source_observation_time_ns, (self._current_tick, z), actions, rule, hashes, coverages, proposal.source_observation_id, h, _array_sha(actions))
 
-    @staticmethod
-    def _sidecar(chunk: ExecutableChunk) -> dict[str, object]:
-        return {"parent_sha256s": chunk.parent_sha256s, "parent_coverages": chunk.parent_coverages, "owner_observation_id": chunk.owner_observation_id, "b": chunk.coverage[0], "z": chunk.coverage[1], "h": chunk.h, "rule": chunk.rule, "output_sha256": chunk.output_sha256}
+    def _sidecar(self, chunk: ExecutableChunk) -> dict[str, object]:
+        revision, parameter = {
+            "DIRECT_NORMALIZED": ("exp02-direct-normalized-v1", None),
+            "TEMPORAL_ENSEMBLE": ("exp02-temporal-ensemble-v1", {"lambda": self._lambda}),
+            "OVERLAP_BLEND": ("exp02-overlap-blend-v1", {"M": self._overlap_rows}),
+            "RTC_APPROXIMATION": ("exp02-rtc-approximation-v1", {"L": self._overlap_rows}),
+        }[chunk.rule]
+        return {"parent_sha256s": chunk.parent_sha256s, "parent_coverages": chunk.parent_coverages,
+                "owner_observation_id": chunk.owner_observation_id, "b": chunk.coverage[0],
+                "z": chunk.coverage[1], "h": chunk.h, "rule": chunk.rule,
+                "derivation_revision": revision, "derivation_parameter": parameter,
+                "output_sha256": chunk.output_sha256}
 
     def issue(self, *, measured_q: object) -> IssuedAction:
         if not self._tick_open or self._current_tick >= self._terminal_tick or self._issued_this_tick:
