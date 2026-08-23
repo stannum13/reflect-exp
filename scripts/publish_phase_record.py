@@ -100,7 +100,7 @@ def canonical_record_bytes(value: Any) -> bytes:
 
 
 def _git(root: Path, *arguments: str) -> bytes:
-    environment = hardened_environment()
+    environment = hardened_environment({"GIT_NO_LAZY_FETCH": "1"})
     environment["GIT_NO_REPLACE_OBJECTS"] = "1"
     completed = subprocess.run(
         [
@@ -254,18 +254,22 @@ def _derive_record(
     bound_sha = _report_binding(report_bytes)
     if bound_sha != implementation_sha:
         raise ValueError("report bound evidence SHA does not match implementation SHA")
+    member_paths = _members_for_phase(root, phase, implementation_sha)
     if phase == "p3":
-        from scripts.write_p3_report import validate_rendered_report
+        from scripts.write_p3_report import _read_snapshot, _render, validate_rendered_report
 
         try:
             report_text = report_bytes.decode("utf-8", "strict")
         except UnicodeDecodeError as exc:
             raise ValueError("P3 report must be strict UTF-8") from exc
         validate_rendered_report(report_text, implementation_sha)
+        canonical_report = _render(_read_snapshot(root, implementation_sha)).encode("utf-8")
+        if report_bytes != canonical_report:
+            raise ValueError("P3 report bytes are not the canonical historical rendering")
 
     members: list[dict[str, str]] = []
     for path in sorted(
-        _members_for_phase(root, phase, implementation_sha),
+        member_paths,
         key=lambda value: value.encode("utf-8"),
     ):
         source_sha = report_sha if path == "RUN_REPORT.md" else implementation_sha
@@ -448,8 +452,11 @@ def _atomic_write_manifest(
 ) -> None:
     directory_fd = snapshot.directory_fd
     temporary = f".{snapshot.filename}.phase-{secrets.token_hex(8)}"
+    backup = f".{snapshot.filename}.backup-{secrets.token_hex(8)}"
     descriptor: int | None = None
     identity: tuple[int, int] | None = None
+    backup_identity: tuple[int, int] | None = None
+    cleanup_backup = True
     try:
         descriptor = os.open(
             temporary,
@@ -487,12 +494,56 @@ def _atomic_write_manifest(
             or current != content
         ):
             raise ValueError("run manifest temporary changed before replacement")
+        os.link(
+            snapshot.filename,
+            backup,
+            src_dir_fd=directory_fd,
+            dst_dir_fd=directory_fd,
+            follow_symlinks=False,
+        )
+        backup_state = os.stat(backup, dir_fd=directory_fd, follow_symlinks=False)
+        backup_identity = (backup_state.st_dev, backup_state.st_ino)
+        if backup_identity != (snapshot.device, snapshot.inode):
+            raise ValueError("run manifest backup identity mismatch")
         os.replace(
             temporary,
             snapshot.filename,
             src_dir_fd=directory_fd,
             dst_dir_fd=directory_fd,
         )
+        try:
+            destination_state = os.stat(
+                snapshot.filename, dir_fd=directory_fd, follow_symlinks=False
+            )
+            if (
+                (destination_state.st_dev, destination_state.st_ino) != identity
+                or not stat.S_ISREG(destination_state.st_mode)
+                or destination_state.st_size != len(content)
+                or _read_fd(descriptor, destination_state.st_size) != content
+            ):
+                raise ValueError("run manifest publication destination changed")
+        except (OSError, ValueError) as exc:
+            cleanup_backup = False
+            os.replace(
+                backup,
+                snapshot.filename,
+                src_dir_fd=directory_fd,
+                dst_dir_fd=directory_fd,
+            )
+            backup_identity = None
+            cleanup_backup = True
+            os.fsync(directory_fd)
+            restored = os.stat(
+                snapshot.filename, dir_fd=directory_fd, follow_symlinks=False
+            )
+            if (
+                (restored.st_dev, restored.st_ino) != (snapshot.device, snapshot.inode)
+                or _read_fd(snapshot.source_fd, snapshot.size) != snapshot.content
+            ):
+                raise RuntimeError("could not restore prior run manifest after publication drift") from exc
+            raise ValueError("run manifest publication destination changed") from exc
+        os.unlink(backup, dir_fd=directory_fd)
+        backup_identity = None
         os.fsync(directory_fd)
     finally:
         if descriptor is not None:
@@ -503,6 +554,16 @@ def _atomic_write_manifest(
             current = None
         if current is not None and identity == (current.st_dev, current.st_ino):
             os.unlink(temporary, dir_fd=directory_fd)
+        if cleanup_backup and backup_identity is not None:
+            try:
+                backup_state = os.stat(backup, dir_fd=directory_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                backup_state = None
+            if backup_state is not None and backup_identity == (
+                backup_state.st_dev,
+                backup_state.st_ino,
+            ):
+                os.unlink(backup, dir_fd=directory_fd)
 
 
 def publish(

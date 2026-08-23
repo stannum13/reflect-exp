@@ -430,8 +430,11 @@ def _network_denied():
 def _atomic_write_report(root: Path, content: str, final_check: Callable[[str], None] | None = None) -> None:
     root_fd = _open_directory_path_no_follow(root)
     temporary = f".RUN_REPORT.md.p3-{secrets.token_hex(12)}"
+    backup = f".RUN_REPORT.md.backup-{secrets.token_hex(12)}"
     descriptor = -1
     identity: tuple[int, int] | None = None
+    backup_identity: tuple[int, int] | None = None
+    cleanup_backup = True
     replaced = False
     try:
         descriptor = os.open(temporary, os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600, dir_fd=root_fd)
@@ -469,8 +472,61 @@ def _atomic_write_report(root: Path, content: str, final_check: Callable[[str], 
             or current != payload
         ):
             raise ValueError("P3 report temporary changed before replacement")
+        try:
+            old_state = os.stat("RUN_REPORT.md", dir_fd=root_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            old_state = None
+        if old_state is not None:
+            if not stat.S_ISREG(old_state.st_mode):
+                raise ValueError("prior P3 report destination is not regular")
+            os.link(
+                "RUN_REPORT.md", backup,
+                src_dir_fd=root_fd, dst_dir_fd=root_fd, follow_symlinks=False,
+            )
+            backup_state = os.stat(backup, dir_fd=root_fd, follow_symlinks=False)
+            backup_identity = (backup_state.st_dev, backup_state.st_ino)
+            if backup_identity != (old_state.st_dev, old_state.st_ino):
+                raise ValueError("prior P3 report backup identity mismatch")
         os.replace(temporary, "RUN_REPORT.md", src_dir_fd=root_fd, dst_dir_fd=root_fd)
         replaced = True
+        try:
+            destination_state = os.stat(
+                "RUN_REPORT.md", dir_fd=root_fd, follow_symlinks=False
+            )
+            current = b""
+            while len(current) < destination_state.st_size:
+                chunk = os.pread(
+                    descriptor, destination_state.st_size - len(current), len(current)
+                )
+                if not chunk:
+                    break
+                current += chunk
+            if (
+                (destination_state.st_dev, destination_state.st_ino) != identity
+                or not stat.S_ISREG(destination_state.st_mode)
+                or destination_state.st_size != len(payload)
+                or current != payload
+            ):
+                raise ValueError("P3 report publication destination changed")
+        except (OSError, ValueError) as exc:
+            cleanup_backup = False
+            if backup_identity is not None:
+                os.replace(
+                    backup, "RUN_REPORT.md",
+                    src_dir_fd=root_fd, dst_dir_fd=root_fd,
+                )
+                backup_identity = None
+                cleanup_backup = True
+            else:
+                try:
+                    os.unlink("RUN_REPORT.md", dir_fd=root_fd)
+                except FileNotFoundError:
+                    pass
+            os.fsync(root_fd)
+            raise ValueError("P3 report publication destination changed") from exc
+        if cleanup_backup and backup_identity is not None:
+            os.unlink(backup, dir_fd=root_fd)
+            backup_identity = None
         os.fsync(root_fd)
     finally:
         if descriptor >= 0:
@@ -482,6 +538,16 @@ def _atomic_write_report(root: Path, content: str, final_check: Callable[[str], 
                 current = None
             if current is not None and (current.st_dev, current.st_ino) == identity:
                 os.unlink(temporary, dir_fd=root_fd)
+        if cleanup_backup and backup_identity is not None:
+            try:
+                current_backup = os.stat(backup, dir_fd=root_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                current_backup = None
+            if current_backup is not None and (
+                current_backup.st_dev,
+                current_backup.st_ino,
+            ) == backup_identity:
+                os.unlink(backup, dir_fd=root_fd)
         os.close(root_fd)
 
 

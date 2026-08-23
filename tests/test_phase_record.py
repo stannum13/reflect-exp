@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import importlib.util
 from pathlib import Path
+import shutil
 import subprocess
 
 import pytest
@@ -96,14 +98,20 @@ def _p3_report_repository(
     *,
     smoke_symlink: bool = False,
     invalid_report: bool = False,
-    operations_yaml: str = (
-        "operations:\n"
-        "  - operation_id: MUJOCO_PACKAGE_SMOKE\n"
-        "    runtime_subject: package\n"
-        "    relative_output: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json\n"
-    ),
+    report_replacement: tuple[str, str] | None = None,
+    operations_yaml: str | None = None,
 ) -> tuple[Path, str, str]:
     publisher = importlib.import_module("scripts.publish_phase_record")
+    fixture_spec = importlib.util.spec_from_file_location(
+        "_phase_record_p3_fixture",
+        Path(__file__).with_name("test_p3_commands.py"),
+    )
+    assert fixture_spec is not None and fixture_spec.loader is not None
+    fixture_module = importlib.util.module_from_spec(fixture_spec)
+    fixture_spec.loader.exec_module(fixture_module)
+    complete = tmp_path / "complete-p3"
+    complete.mkdir()
+    fixture_module._write_repository(complete)
     repository, p2_evidence_sha, p2_report_sha = _p2_report_repository(tmp_path)
     publisher.publish(
         root=repository,
@@ -117,34 +125,23 @@ def _p3_report_repository(
         (repository / "docs" / "RUN_MANIFEST.yaml").read_text(encoding="utf-8")
     )["phase_records"]["p2"]
 
-    operation_path = (
-        repository
-        / "experiments"
-        / "00_source_audit"
-        / "configs"
-        / "operation-manifest.yaml"
-    )
-    operation_path.parent.mkdir(parents=True)
-    operation_path.write_text(
-        "mujoco_smoke_output:\n"
-        "  operation_id: MUJOCO_PACKAGE_SMOKE\n"
-        "  relative_path: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json\n"
-        + operations_yaml,
-        encoding="utf-8",
-    )
-    contents = {
-        "experiments/00_source_audit/results/compatibility.csv": "name,status\nmujoco,SUPPORTED\n",
-        "references/licenses.md": "# Licenses\n",
-        "docs/SOURCE_MAP.md": "# Source map\n",
-        "docs/MATURITY_LEDGER.md": "# Maturity ledger\n",
-        "experiments/00_source_audit/RESULTS.md": "# Results\n",
-        "experiments/00_source_audit/INTERFACE_FINDINGS.md": "# Interfaces\n",
-        "experiments/00_source_audit/results/fragments/mujoco-package-smoke.json": '{"ok":true}\n',
-    }
-    for relative, content in contents.items():
+    for source in complete.rglob("*"):
+        relative_path = source.relative_to(complete)
+        if not source.is_file() or ".git" in relative_path.parts:
+            continue
+        relative = relative_path.as_posix()
+        if relative in {"docs/RUN_MANIFEST.yaml", "RUN_REPORT.md"}:
+            continue
         target = repository / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
+        shutil.copyfile(source, target)
+    operation_path = repository / "experiments/00_source_audit/configs/operation-manifest.yaml"
+    if operations_yaml is not None:
+        operation_manifest = yaml.safe_load(operation_path.read_text(encoding="utf-8"))
+        operation_manifest["operations"] = yaml.safe_load(operations_yaml)["operations"]
+        operation_path.write_text(
+            yaml.safe_dump(operation_manifest, sort_keys=False), encoding="utf-8"
+        )
     if smoke_symlink:
         smoke_path = repository / (
             "experiments/00_source_audit/results/fragments/"
@@ -157,18 +154,28 @@ def _p3_report_repository(
     manifest["stages"]["p3"] = "complete"
     manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
     evidence_sha = _commit(repository, "p3 evidence")
-    headings = (
-        "Executive result", "Environment", "Commands", "Tests", "Results",
-        "Public-source use", "Interface findings", "Blockers",
-        "Highest-value next action", "Safety",
-    )
-    report = "# P3 Run Report\n\n" + "\n\n".join(
-        f"## {heading}\n\nfixture" for heading in headings
-    )
-    report += f"\n\n- Implementation/evidence-base Git SHA: `{evidence_sha}`\n"
+    report_path = repository / "RUN_REPORT.md"
+    if operations_yaml is None and not smoke_symlink:
+        reporter = importlib.import_module("scripts.write_p3_report")
+        reporter.main(["--evidence-base-sha", evidence_sha], root=repository)
+        report = report_path.read_text(encoding="utf-8")
+    else:
+        headings = (
+            "Executive result", "Environment", "Commands", "Tests", "Results",
+            "Public-source use", "Interface findings", "Blockers",
+            "Highest-value next action", "Safety",
+        )
+        report = "# P3 Run Report\n\n" + "\n\n".join(
+            f"## {heading}\n\nfixture" for heading in headings
+        )
+        report += f"\n\n- Implementation/evidence-base Git SHA: `{evidence_sha}`\n"
+    if report_replacement is not None:
+        old, new = report_replacement
+        assert old in report
+        report = report.replace(old, new, 1)
     if invalid_report:
         report += f"- Other Git SHA: `{evidence_sha}`\n"
-    (repository / "RUN_REPORT.md").write_text(report, encoding="utf-8")
+    report_path.write_text(report, encoding="utf-8")
     report_sha = _commit(repository, "p3 report")
     assert yaml.safe_load(manifest_path.read_text(encoding="utf-8"))[
         "phase_records"
@@ -354,6 +361,39 @@ def test_publish_refuses_temporary_manifest_inode_substitution(
             manifest_path="docs/RUN_MANIFEST.yaml",
         )
     assert calls >= 2
+
+
+def test_publish_restores_old_manifest_when_temp_is_swapped_at_replace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    publisher = importlib.import_module("scripts.publish_phase_record")
+    repository, evidence_sha, report_sha = _p2_report_repository(tmp_path)
+    manifest_path = repository / "docs/RUN_MANIFEST.yaml"
+    original = manifest_path.read_bytes()
+    real_replace = publisher.os.replace
+    attacked = False
+
+    def replace_with_swap(source: str, target: str, **kwargs: object) -> None:
+        nonlocal attacked
+        if not attacked and source.startswith(".RUN_MANIFEST.yaml.phase-"):
+            attacked = True
+            directory_fd = kwargs["src_dir_fd"]
+            publisher.os.unlink(source, dir_fd=directory_fd)
+            descriptor = publisher.os.open(
+                source, publisher.os.O_WRONLY | publisher.os.O_CREAT | publisher.os.O_EXCL,
+                0o600, dir_fd=directory_fd,
+            )
+            publisher.os.write(descriptor, b"attacker bytes\n")
+            publisher.os.close(descriptor)
+        real_replace(source, target, **kwargs)
+
+    monkeypatch.setattr(publisher.os, "replace", replace_with_swap)
+    with pytest.raises(ValueError, match="temporary|publication"):
+        publisher.publish(
+            root=repository, phase="p2", implementation_sha=evidence_sha,
+            report_sha=report_sha, manifest_path="docs/RUN_MANIFEST.yaml",
+        )
+    assert attacked and manifest_path.read_bytes() == original
 
 
 def test_publish_refuses_concurrent_unrelated_worktree_drift(
@@ -676,6 +716,41 @@ def test_p3_publish_rejects_report_with_unknown_provenance(tmp_path: Path) -> No
             report_sha=report_sha,
             manifest_path="docs/RUN_MANIFEST.yaml",
         )
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        ("gate passed locally", "gate blocked locally"),
+        ("Git blob `", "Git blob `0"),
+        ("MuJoCo 3.12.0", "MuJoCo 3.11.0"),
+        ("No physical motor messages were sent.", "Physical motor messages were sent."),
+    ],
+)
+def test_p3_publish_rejects_semantically_mutated_report(
+    tmp_path: Path, replacement: tuple[str, str]
+) -> None:
+    publisher = importlib.import_module("scripts.publish_phase_record")
+    repository, evidence_sha, report_sha = _p3_report_repository(
+        tmp_path, report_replacement=replacement
+    )
+    with pytest.raises(ValueError, match="canonical|report"):
+        publisher.publish(
+            root=repository, phase="p3", implementation_sha=evidence_sha,
+            report_sha=report_sha, manifest_path="docs/RUN_MANIFEST.yaml",
+        )
+
+
+def test_publisher_git_disables_lazy_fetch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    publisher = importlib.import_module("scripts.publish_phase_record")
+
+    def missing_promised_blob(*args: object, **kwargs: object):
+        assert kwargs["env"]["GIT_NO_LAZY_FETCH"] == "1"
+        return subprocess.CompletedProcess(args[0], 1, b"", b"missing promised blob")
+
+    monkeypatch.setattr(publisher.subprocess, "run", missing_promised_blob)
+    with pytest.raises(RuntimeError, match="missing promised blob"):
+        publisher._git(tmp_path, "cat-file", "blob", "a" * 40)
 
 
 def test_p3_publisher_rejects_symlink_smoke_artifact(tmp_path: Path) -> None:

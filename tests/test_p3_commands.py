@@ -397,3 +397,35 @@ def test_reporter_rejects_temporary_inode_substitution(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="temporary|changed"):
         report._atomic_write_report(repository, "validated\n", substitute)
     assert not (repository / "RUN_REPORT.md").exists()
+
+
+def test_reporter_restores_old_report_when_temp_is_swapped_at_replace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report = importlib.import_module("scripts.write_p3_report")
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    target = repository / "RUN_REPORT.md"
+    target.write_text("old report\n")
+    original = target.read_bytes()
+    real_replace = report.os.replace
+    attacked = False
+
+    def replace_with_swap(source: str, destination: str, **kwargs: object) -> None:
+        nonlocal attacked
+        if not attacked and source.startswith(".RUN_REPORT.md.p3-"):
+            attacked = True
+            directory_fd = kwargs["src_dir_fd"]
+            report.os.unlink(source, dir_fd=directory_fd)
+            descriptor = report.os.open(
+                source, report.os.O_WRONLY | report.os.O_CREAT | report.os.O_EXCL,
+                0o600, dir_fd=directory_fd,
+            )
+            report.os.write(descriptor, b"attacker bytes\n")
+            report.os.close(descriptor)
+        real_replace(source, destination, **kwargs)
+
+    monkeypatch.setattr(report.os, "replace", replace_with_swap)
+    with pytest.raises(ValueError, match="temporary|publication"):
+        report._atomic_write_report(repository, "validated report\n")
+    assert attacked and target.read_bytes() == original
