@@ -31,7 +31,7 @@ PRIMARY_CONTROLLER_ID = "P6-res0p5-slew48"
 SENSITIVITY_CONTROLLER_ID = "P4-lookahead1-dqon"
 TIMESTEP_S = 0.002
 REOBSERVE_TICKS = 25
-EPISODE_TICKS = 1250
+EPISODE_TICKS = 3125
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -137,7 +137,7 @@ def make_realization(scenario_id: str, seed: int) -> V3Realization:
         raise ValueError("unknown V3 scenario")
     if seed not in CALIBRATION_SEEDS:
         raise ValueError("V3 qualification accepts calibration seeds only")
-    namespace = int.from_bytes(hashlib.sha256(f"hierarchy-v3-qualification:{scenario_id}:{seed}".encode("ascii")).digest()[:8], "little")
+    namespace = int.from_bytes(hashlib.sha256(f"hierarchy-v3-qualification:{seed}".encode("ascii")).digest()[:8], "little")
     rng = np.random.Generator(np.random.PCG64(namespace))
     q0 = tuple(float(item) for item in np.array((0.35, -0.70, 0.35)) + rng.uniform(-0.025, 0.025, 3))
     target_a = np.array((0.55, 0.08)) + rng.uniform(-0.018, 0.018, 2)
@@ -145,7 +145,9 @@ def make_realization(scenario_id: str, seed: int) -> V3Realization:
     shift_m = float(rng.uniform(0.035, 0.070))
     shift_angle = float(rng.uniform(-math.pi, math.pi))
     shift = shift_m * np.array((math.cos(shift_angle), math.sin(shift_angle)))
-    start = np.array((0.68, -0.08))
+    angles = np.cumsum(np.asarray(q0))
+    links = np.asarray((0.30, 0.25, 0.20))
+    start = np.asarray((np.dot(links, np.cos(angles)), np.dot(links, np.sin(angles))))
     midpoint = (start + target_a) / 2.0
     obstacle = midpoint + rng.uniform(-0.006, 0.006, 2)
     sampled = {
@@ -171,6 +173,8 @@ class ObservableState:
     history_start_tick: int
     tracking_error_mean_m: float
     tracking_error_slope_m_per_tick: float
+    external_load_mean_nm: float
+    command_gap_ticks: int
     controller_safe: bool
     action_valid: bool
     geometry_feasible: bool
@@ -183,7 +187,7 @@ class ObservableState:
     def __post_init__(self) -> None:
         if type(self.tick) is not int or type(self.history_start_tick) is not int or self.tick < 0 or not 0 <= self.history_start_tick <= self.tick:
             raise ValueError("observable tick interval is invalid")
-        for name in ("tracking_error_mean_m", "tracking_error_slope_m_per_tick"):
+        for name in ("tracking_error_mean_m", "tracking_error_slope_m_per_tick", "external_load_mean_nm"):
             if not math.isfinite(float(getattr(self, name))):
                 raise ValueError(f"{name} must be finite")
         for name in ("controller_safe", "action_valid", "geometry_feasible", "semantic_preconditions_valid"):
@@ -191,6 +195,8 @@ class ObservableState:
                 raise ValueError(f"{name} must be boolean")
         if type(self.memory_version) is not int or self.memory_version < 1:
             raise ValueError("memory version must be positive")
+        if type(self.command_gap_ticks) is not int or self.command_gap_ticks < 0:
+            raise ValueError("command gap ticks must be nonnegative")
         _sha(self.command_content_sha256, "command_content_sha256")
         _sha(self.successful_execution_content_sha256, "successful_execution_content_sha256")
         if type(self.reobserve_index) is not int or self.reobserve_index < 0:
@@ -203,7 +209,9 @@ class ObservableState:
     @property
     def failure_detected(self) -> bool:
         return (
-            self.tracking_error_mean_m > 0.025
+            (self.tracking_error_mean_m > 0.10 and self.tracking_error_slope_m_per_tick >= -1e-5)
+            or self.external_load_mean_nm > 0.05
+            or self.command_gap_ticks > 0
             or not self.controller_safe
             or not self.action_valid
             or not self.geometry_feasible

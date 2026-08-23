@@ -28,6 +28,8 @@ def observation(**changes: object) -> ObservableState:
         "history_start_tick": 675,
         "tracking_error_mean_m": 0.0,
         "tracking_error_slope_m_per_tick": 0.0,
+        "external_load_mean_nm": 0.0,
+        "command_gap_ticks": 0,
         "controller_safe": True,
         "action_valid": True,
         "geometry_feasible": True,
@@ -56,8 +58,16 @@ def test_observable_and_policy_signatures_exclude_hidden_taxonomy() -> None:
     assert set(inspect.signature(decide).parameters) == {"architecture", "observable", "budget"}
 
 
+def test_control_signals_are_derived_observables_not_scenario_labels() -> None:
+    budget = initial_budget(ZERO)
+    load = observation(external_load_mean_nm=0.12)
+    gap = observation(command_gap_ticks=3)
+    assert decide(Architecture.R3, load, budget).level is DecisionLevel.CONTROL
+    assert decide(Architecture.R3, gap, budget).level is DecisionLevel.CONTROL
+
+
 def test_architectures_select_from_observable_content_and_consume_exact_budgets() -> None:
-    control = observation(tracking_error_mean_m=0.04)
+    control = observation(tracking_error_mean_m=0.12)
     motion = observation(action_valid=False)
     semantic = observation(semantic_preconditions_valid=False)
     budget = initial_budget(ZERO)
@@ -71,9 +81,9 @@ def test_architectures_select_from_observable_content_and_consume_exact_budgets(
 
     first = decide(Architecture.R0, control, budget)
     assert first.budget_after == BudgetState(1, 2, 1, ZERO, 700)
-    second = decide(Architecture.R0, observation(tick=725, tracking_error_mean_m=0.04, reobserve_index=1), first.budget_after)
+    second = decide(Architecture.R0, observation(tick=725, tracking_error_mean_m=0.12, reobserve_index=1), first.budget_after)
     assert second.budget_after == BudgetState(0, 2, 1, ZERO, 725)
-    exhausted = decide(Architecture.R0, observation(tick=750, tracking_error_mean_m=0.04, reobserve_index=2), second.budget_after)
+    exhausted = decide(Architecture.R0, observation(tick=750, tracking_error_mean_m=0.12, reobserve_index=2), second.budget_after)
     assert exhausted.level is DecisionLevel.SAFE_ABORT
 
 
