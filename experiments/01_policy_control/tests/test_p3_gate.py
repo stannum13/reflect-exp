@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import stat
 import subprocess
+import threading
 
 import pytest
 import yaml
@@ -167,15 +168,34 @@ def test_gate_rejects_duplicate_yaml_and_symlink_destination(tmp_path: Path) -> 
         gate.write_p3_gate(repository, destination)
 
 
-def test_create_only_publication_does_not_use_swappable_temporary_link(
+def test_create_only_publication_commits_authenticated_stage_no_replace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def forbidden_link(*args: object, **kwargs: object) -> None:
-        raise AssertionError("direct create-only publication must not link a temp path")
+    real_link = gate.os.link
+    committed = False
 
-    monkeypatch.setattr(gate.os, "link", forbidden_link)
+    def authenticated_link(source: str, target: str, **kwargs: object) -> None:
+        nonlocal committed
+        assert source == gate._stage_name("gate.yaml")
+        assert target == "gate.yaml"
+        directory_fd = kwargs["src_dir_fd"]
+        descriptor = gate.os.open(
+            source,
+            gate.os.O_RDONLY | getattr(gate.os, "O_NOFOLLOW", 0),
+            dir_fd=directory_fd,
+        )
+        try:
+            assert gate.os.read(descriptor, 64) == b"authentic\n"
+        finally:
+            gate.os.close(descriptor)
+        real_link(source, target, **kwargs)
+        committed = True
+
+    monkeypatch.setattr(gate.os, "link", authenticated_link)
     gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
+    assert committed
     assert (tmp_path / "gate.yaml").read_bytes() == b"authentic\n"
+    assert not (tmp_path / gate._stage_name("gate.yaml")).exists()
 
 
 def test_create_only_publication_lock_is_bounded_and_fail_closed(tmp_path: Path) -> None:
@@ -190,66 +210,106 @@ def test_create_only_publication_lock_is_bounded_and_fail_closed(tmp_path: Path)
         gate.os.close(directory_fd)
 
 
-def test_create_only_publication_rejects_post_create_destination_swap(
+def test_create_only_recovers_complete_stage_after_precommit_crash(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    real_open = gate.os.open
-    created = False
-    attacked = False
+    real_link = gate.os.link
+    crashed = False
 
-    def swap_before_destination_open(
-        path: str, flags: int, mode: int = 0o777, *, dir_fd: int | None = None
-    ) -> int:
-        nonlocal attacked, created
-        if created and not attacked and path == "gate.yaml" and dir_fd is not None:
-            attacked = True
-            gate.os.unlink(path, dir_fd=dir_fd)
-            attacker = real_open(
-                path,
-                gate.os.O_WRONLY | gate.os.O_CREAT | gate.os.O_EXCL,
-                0o600,
-                dir_fd=dir_fd,
-            )
-            gate.os.write(attacker, b"attacker\n")
-            gate.os.close(attacker)
-        descriptor = real_open(path, flags, mode, dir_fd=dir_fd)
-        if path == "gate.yaml" and flags & gate.os.O_CREAT:
-            created = True
-        return descriptor
+    def crash_before_commit(*args: object, **kwargs: object) -> None:
+        nonlocal crashed
+        crashed = True
+        raise OSError("simulated crash before no-replace commit")
 
-    monkeypatch.setattr(gate.os, "open", swap_before_destination_open)
-    with pytest.raises(gate.P3GateError, match="publication|destination|inode"):
+    monkeypatch.setattr(gate.os, "link", crash_before_commit)
+    with pytest.raises(gate.P3GateError, match="commit|publication|crash"):
         gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
-    assert attacked
-    assert (tmp_path / "gate.yaml").read_bytes() == b"attacker\n"
+    assert crashed
+    assert not (tmp_path / "gate.yaml").exists()
+    stage = tmp_path / gate._stage_name("gate.yaml")
+    assert stage.read_bytes() == b"authentic\n"
+
+    monkeypatch.setattr(gate.os, "link", real_link)
+    gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
+    assert (tmp_path / "gate.yaml").read_bytes() == b"authentic\n"
+    assert not stage.exists()
 
 
-def test_create_only_publication_preserves_unowned_post_verification_conflict(
+def test_create_only_partial_crash_never_exposes_final_destination(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    real_fsync = gate.os.fsync
-    attacked = False
+    real_write = gate.os.write
+    failed = False
 
-    def swap_before_final_identity_check(descriptor: int) -> None:
-        nonlocal attacked
-        if not attacked and stat.S_ISDIR(gate.os.fstat(descriptor).st_mode):
-            attacked = True
-            gate.os.unlink("gate.yaml", dir_fd=descriptor)
-            attacker = gate.os.open(
-                "gate.yaml",
-                gate.os.O_WRONLY | gate.os.O_CREAT | gate.os.O_EXCL,
-                0o600,
-                dir_fd=descriptor,
-            )
-            gate.os.write(attacker, b"unowned\n")
-            gate.os.close(attacker)
-        real_fsync(descriptor)
+    def partial_then_crash(descriptor: int, content: bytes) -> int:
+        nonlocal failed
+        if not failed:
+            failed = True
+            real_write(descriptor, content[:3])
+            raise OSError("simulated partial stage crash")
+        return real_write(descriptor, content)
 
-    monkeypatch.setattr(gate.os, "fsync", swap_before_final_identity_check)
-    with pytest.raises(gate.P3GateError, match="publication|destination|inode"):
+    monkeypatch.setattr(gate.os, "write", partial_then_crash)
+    with pytest.raises(gate.P3GateError, match="publication|partial|crash"):
         gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
-    assert attacked
-    assert (tmp_path / "gate.yaml").read_bytes() == b"unowned\n"
+    assert not (tmp_path / "gate.yaml").exists()
+    stage = tmp_path / gate._stage_name("gate.yaml")
+    assert stage.read_bytes() == b"aut"
+    with pytest.raises(gate.P3GateError, match="stage|conflict|invalid"):
+        gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
+    assert not (tmp_path / "gate.yaml").exists()
+
+
+def test_shared_lock_reader_never_observes_partial_stage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_link = gate.os.link
+    stage_ready = threading.Event()
+    release_writer = threading.Event()
+    reader_done = threading.Event()
+    writer_errors: list[BaseException] = []
+    reader_result: list[bytes] = []
+
+    def pause_before_commit(source: str, target: str, **kwargs: object) -> None:
+        stage_ready.set()
+        assert release_writer.wait(2.0)
+        real_link(source, target, **kwargs)
+
+    def write_gate() -> None:
+        try:
+            gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
+        except BaseException as exc:  # pragma: no cover - asserted below
+            writer_errors.append(exc)
+
+    def read_gate() -> None:
+        reader_result.append(gate._read_no_follow(tmp_path / "gate.yaml"))
+        reader_done.set()
+
+    monkeypatch.setattr(gate.os, "link", pause_before_commit)
+    writer = threading.Thread(target=write_gate)
+    writer.start()
+    assert stage_ready.wait(2.0)
+    reader = threading.Thread(target=read_gate)
+    reader.start()
+    assert not reader_done.wait(0.05)
+    release_writer.set()
+    writer.join(2.0)
+    reader.join(2.0)
+    assert not writer_errors
+    assert reader_result == [b"authentic\n"]
+    assert reader_done.is_set()
+
+
+def test_create_only_publication_rejects_unauthenticated_stale_stage(
+    tmp_path: Path,
+) -> None:
+    stage = tmp_path / gate._stage_name("gate.yaml")
+    stage.write_bytes(b"attacker\n")
+    stage.chmod(0o600)
+    with pytest.raises(gate.P3GateError, match="stage|partial|invalid|conflict"):
+        gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
+    assert not (tmp_path / "gate.yaml").exists()
+    assert stage.read_bytes() == b"attacker\n"
 
 
 def test_create_only_publication_has_no_final_stat_to_return_window(
@@ -328,6 +388,12 @@ def test_create_only_failure_never_enters_cleanup_stat_unlink_window(
         gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
     assert not attacked
     assert (tmp_path / "gate.yaml").read_bytes() == b"authentic\n"
+    assert (tmp_path / gate._stage_name("gate.yaml")).exists()
+
+    monkeypatch.setattr(gate.os, "fsync", real_fsync)
+    monkeypatch.setattr(gate.os, "stat", real_stat)
+    gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
+    assert not (tmp_path / gate._stage_name("gate.yaml")).exists()
 
 
 def test_state_index_search_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

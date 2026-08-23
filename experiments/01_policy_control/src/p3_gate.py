@@ -478,10 +478,12 @@ def _gate_bytes(evidence: P3GateEvidence) -> bytes:
 def _read_no_follow(path: Path) -> bytes:
     directory_fd = _open_directory_path_no_follow(path.parent)
     try:
+        fcntl.flock(directory_fd, fcntl.LOCK_SH)
         return _read_file_at(directory_fd, path.name)
     except ValueError as exc:
         raise P3GateError(f"P3 gate must be a bounded no-follow regular file: {exc}") from exc
     finally:
+        fcntl.flock(directory_fd, fcntl.LOCK_UN)
         os.close(directory_fd)
 
 
@@ -568,21 +570,58 @@ def _destination(root: Path, destination: Path) -> tuple[Path, str]:
     return candidate.parent, relative.as_posix()
 
 
+def _stage_name(name: str) -> str:
+    if not name or "/" in name or name in {".", ".."}:
+        raise P3GateError("P3 gate publication name is invalid")
+    return f".{name}.p3-stage-v1"
+
+
+def _descriptor_content(descriptor: int, size: int) -> bytes:
+    content = b""
+    while len(content) < size:
+        chunk = os.pread(descriptor, size - len(content), len(content))
+        if not chunk:
+            break
+        content += chunk
+    return content
+
+
+def _validated_publication_descriptor(
+    descriptor: int, content: bytes, label: str
+) -> tuple[int, int]:
+    state = os.fstat(descriptor)
+    if (
+        not stat.S_ISREG(state.st_mode)
+        or stat.S_IMODE(state.st_mode) != 0o600
+        or state.st_size != len(content)
+        or _descriptor_content(descriptor, state.st_size) != content
+    ):
+        raise P3GateError(f"P3 gate {label} is conflicting, partial, or invalid")
+    return state.st_dev, state.st_ino
+
+
 def _publish_create_only(parent: Path, name: str, content: bytes) -> None:
+    """Crash-atomically publish within the cooperative repository lock boundary.
+
+    Every gate reader and writer in this module locks the containing directory.
+    A same-UID actor that ignores that lock and renames paths after lock release is
+    explicitly outside the threat model: POSIX pathname APIs cannot prevent it.
+    """
     directory_fd = _open_directory_path_no_follow(parent)
-    descriptor = -1
-    verification_descriptor = -1
+    stage = _stage_name(name)
+    stage_descriptor = -1
+    destination_descriptor = -1
     locked = False
     try:
-        # Cooperative publishers serialize on the directory without creating a
-        # second pathname that would itself need unsafe cleanup.  The direct
-        # O_EXCL create below is the transaction's publication linearization
-        # point; any later failure retains that pathname for fail-closed reuse.
+        # The lock is the explicit repository concurrency boundary. A process
+        # that mutates these paths without taking it is outside the POSIX path
+        # publication threat model; all gate readers and writers below comply.
         try:
             fcntl.flock(directory_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             locked = True
         except OSError as exc:
             raise P3GateError("P3 gate publication directory is locked") from exc
+        destination_exists = False
         try:
             existing = _read_file_at(directory_fd, name)
         except ValueError as exc:
@@ -591,100 +630,95 @@ def _publish_create_only(parent: Path, name: str, content: bytes) -> None:
         else:
             if existing != content:
                 raise P3GateError("existing P3 gate conflicts with reconstructed evidence")
+            destination_exists = True
+
+        try:
+            stage_descriptor = os.open(
+                stage,
+                os.O_RDWR
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_CLOEXEC", 0),
+                dir_fd=directory_fd,
+            )
+            stage_exists = True
+        except FileNotFoundError:
+            stage_exists = False
+        except OSError as exc:
+            raise P3GateError("existing P3 gate stage is unsafe") from exc
+
+        if not stage_exists and destination_exists:
             try:
                 os.fsync(directory_fd)
             except OSError as exc:
                 raise P3GateError("existing P3 gate durability check failed") from exc
             return
+
         try:
-            descriptor = os.open(
-                name,
-                os.O_RDWR
-                | os.O_CREAT
-                | os.O_EXCL
-                | getattr(os, "O_NOFOLLOW", 0)
-                | getattr(os, "O_CLOEXEC", 0),
-                0o600,
-                dir_fd=directory_fd,
-            )
-        except FileExistsError:
-            try:
-                existing = _read_file_at(directory_fd, name)
-            except ValueError as exc:
-                raise P3GateError("concurrent P3 gate destination is unsafe") from exc
-            if existing != content:
-                raise P3GateError("concurrent P3 gate publication conflict")
-            try:
-                os.fsync(directory_fd)
-            except OSError as exc:
-                raise P3GateError("concurrent P3 gate durability check failed") from exc
-            return
-        state = os.fstat(descriptor)
-        identity = (state.st_dev, state.st_ino)
-        offset = 0
-        try:
-            while offset < len(content):
-                count = os.write(descriptor, content[offset:])
-                if count <= 0:
-                    raise OSError("short P3 gate write")
-                offset += count
-            os.fsync(descriptor)
-            descriptor_state = os.fstat(descriptor)
-            held_content = b""
-            while len(held_content) < descriptor_state.st_size:
-                chunk = os.pread(
-                    descriptor,
-                    descriptor_state.st_size - len(held_content),
-                    len(held_content),
+            if not stage_exists:
+                stage_descriptor = os.open(
+                    stage,
+                    os.O_RDWR
+                    | os.O_CREAT
+                    | os.O_EXCL
+                    | getattr(os, "O_NOFOLLOW", 0)
+                    | getattr(os, "O_CLOEXEC", 0),
+                    0o600,
+                    dir_fd=directory_fd,
                 )
-                if not chunk:
-                    break
-                held_content += chunk
-            if (
-                not stat.S_ISREG(descriptor_state.st_mode)
-                or stat.S_IMODE(descriptor_state.st_mode) != 0o600
-                or descriptor_state.st_size != len(content)
-                or held_content != content
-            ):
-                raise P3GateError("P3 gate direct publication inode is invalid")
-            os.fsync(directory_fd)
-            verification_descriptor = os.open(
+                offset = 0
+                while offset < len(content):
+                    count = os.write(stage_descriptor, content[offset:])
+                    if count <= 0:
+                        raise OSError("short P3 gate stage write")
+                    offset += count
+                os.fsync(stage_descriptor)
+            stage_identity = _validated_publication_descriptor(
+                stage_descriptor, content, "stage"
+            )
+            stage_state = os.fstat(stage_descriptor)
+            if stage_state.st_nlink not in {1, 2}:
+                raise P3GateError("P3 gate stage link ownership is invalid")
+
+            if not destination_exists:
+                os.link(
+                    stage,
+                    name,
+                    src_dir_fd=directory_fd,
+                    dst_dir_fd=directory_fd,
+                    follow_symlinks=False,
+                )
+            destination_descriptor = os.open(
                 name,
                 os.O_RDONLY
                 | getattr(os, "O_NOFOLLOW", 0)
                 | getattr(os, "O_CLOEXEC", 0),
                 dir_fd=directory_fd,
             )
-            destination_state = os.fstat(verification_descriptor)
-            destination_content = b""
-            while len(destination_content) < destination_state.st_size:
-                chunk = os.pread(
-                    verification_descriptor,
-                    destination_state.st_size - len(destination_content),
-                    len(destination_content),
-                )
-                if not chunk:
-                    break
-                destination_content += chunk
-            if (
-                (destination_state.st_dev, destination_state.st_ino) != identity
-                or not stat.S_ISREG(destination_state.st_mode)
-                or stat.S_IMODE(destination_state.st_mode) != 0o600
-                or destination_state.st_size != len(content)
-                or destination_content != content
-            ):
+            destination_identity = _validated_publication_descriptor(
+                destination_descriptor, content, "destination"
+            )
+            if destination_identity != stage_identity:
                 raise P3GateError(
-                    "P3 gate destination does not name the held direct publication inode"
+                    "P3 gate destination and authenticated stage identities differ"
                 )
+            os.fsync(directory_fd)
+
+            # Under the held exclusive cooperative lock, this identity check and
+            # unlink cannot race another compliant repository actor.
+            current_stage = os.stat(stage, dir_fd=directory_fd, follow_symlinks=False)
+            if (current_stage.st_dev, current_stage.st_ino) != stage_identity:
+                raise P3GateError("P3 gate stage identity changed under exclusive lock")
+            os.unlink(stage, dir_fd=directory_fd)
+            os.fsync(directory_fd)
         except (OSError, P3GateError) as exc:
             if isinstance(exc, P3GateError):
                 raise
             raise P3GateError(f"P3 gate destination publication failed: {exc}") from exc
     finally:
-        if verification_descriptor >= 0:
-            os.close(verification_descriptor)
-        if descriptor >= 0:
-            os.close(descriptor)
+        if destination_descriptor >= 0:
+            os.close(destination_descriptor)
+        if stage_descriptor >= 0:
+            os.close(stage_descriptor)
         if locked:
             fcntl.flock(directory_fd, fcntl.LOCK_UN)
         os.close(directory_fd)
@@ -693,6 +727,7 @@ def _publish_create_only(parent: Path, name: str, content: bytes) -> None:
 def _destination_exists(parent: Path, name: str) -> bool:
     directory_fd = _open_directory_path_no_follow(parent)
     try:
+        fcntl.flock(directory_fd, fcntl.LOCK_SH)
         try:
             state = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
         except FileNotFoundError:
@@ -701,21 +736,27 @@ def _destination_exists(parent: Path, name: str) -> bool:
             raise P3GateError("existing P3 gate destination is not a regular file")
         return True
     finally:
+        fcntl.flock(directory_fd, fcntl.LOCK_UN)
         os.close(directory_fd)
 
 
 def write_p3_gate(repo_root: Path, destination: Path) -> None:
     root = Path(repo_root)
     parent, relative = _destination(root, Path(destination))
+    stage_relative = (
+        PurePosixPath(relative).parent / _stage_name(Path(relative).name)
+    ).as_posix()
     status = __import__("scripts.publish_phase_record", fromlist=["*"])._worktree_status(
-        root, allowed_untracked=frozenset({relative})
+        root, allowed_untracked=frozenset({relative, stage_relative})
     )
     if status:
         raise P3GateError("P3 gate capture requires a clean worktree")
     target = root / relative
     if _destination_exists(parent, target.name):
         try:
-            require_p3_gate(root, load_p3_gate(target))
+            existing = load_p3_gate(target)
+            require_p3_gate(root, existing)
+            _publish_create_only(parent, target.name, _gate_bytes(existing))
         except P3GateError as exc:
             raise P3GateError(f"existing P3 gate conflicts with historical evidence: {exc}") from exc
         return
