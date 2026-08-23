@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 import hashlib
 import importlib
 import json
@@ -13,9 +12,9 @@ import numpy as np
 
 from reflect.types import ActionChunk
 
-from .adapter import PolicyRaw, dispatch_executable, make_safe_hold, normalize_policy_raw
-from .broker import apply_fault_payload, derive_ensemble, derive_overlap_blend, derive_rtc_approximation
-from .contracts import FaultId, ProtocolId, VectorId
+from .adapter import PolicyRaw, dispatch_executable, inject_fault, make_safe_hold, normalize_policy_raw, verify_normalized_policy
+from .broker import TemporalBroker
+from .contracts import FaultId, ProtocolId, VECTOR_VALUES, VectorId
 from .schedule import iter_cells, iter_request_ticks
 
 
@@ -67,31 +66,6 @@ def _selected_cells(seed: int) -> tuple[object, ...]:
     return tuple(cells)
 
 
-def _action_chunk(normalized: object, protocol: ProtocolId, active: ActionChunk | None, tick: int) -> ActionChunk:
-    direct = dispatch_executable(normalized, tick=tick)
-    assert isinstance(direct, ActionChunk)
-    if protocol not in {ProtocolId.C, ProtocolId.F, ProtocolId.G} or active is None or not (active.valid_from_ns <= tick * _DT_NS < active.expires_at_ns):
-        return direct
-    old_row = (tick * _DT_NS - active.valid_from_ns) // _DT_NS
-    old = np.asarray(active.actions[old_row:])
-    new = np.asarray(direct.actions)
-    count = min(len(old), len(new))
-    old, new = old[:count], new[:count]
-    if protocol is ProtocolId.C:
-        actions = derive_ensemble((old, new)); rule = "TEMPORAL_ENSEMBLE"
-    elif protocol is ProtocolId.F:
-        actions = derive_overlap_blend(old, new, min(2, count)); rule = "OVERLAP_BLEND"
-    else:
-        actions = derive_rtc_approximation(old, new, min(2, count)); rule = "RTC_APPROXIMATION"
-    return ActionChunk(
-        chunk_id=f"p5-derived-{protocol.value}-{normalized.proposal_id}-{tick}", skill_id=normalized.skill_id,
-        source_observation_id=normalized.source_observation_id, source_observation_time_ns=normalized.source_observation_time_ns,
-        generated_time_ns=tick * _DT_NS, valid_from_ns=tick * _DT_NS, expires_at_ns=(tick + count) * _DT_NS,
-        dt_s=0.002, actions=actions, representation="EEF_TRAJECTORY", expected_phase=normalized.expected_phase,
-        metadata={"origin": "derived", "rule": rule, "parent_sha256s": tuple(sorted((_matrix_bytes(old), normalized.actions_sha256)))},
-    )
-
-
 def _run_cell(cell: object, config: object) -> tuple[np.ndarray, dict[str, object], list[dict[str, object]]]:
     arm = arm_module.PlanarArm(config)
     q0 = np.array((0.2, -0.4, 0.2), dtype=np.float64)
@@ -104,14 +78,19 @@ def _run_cell(cell: object, config: object) -> tuple[np.ndarray, dict[str, objec
     delivery_at = {plan.actual_delivery_tick: plan for plan in plans if plan.actual_delivery_tick is not None}
     captures: dict[int, tuple[np.ndarray, np.ndarray, int]] = {}
     telemetry = np.empty(3125, dtype=_TELEMETRY_DTYPE)
-    active: ActionChunk | None = None
-    hold: ActionChunk | None = None
+    vector = None if cell.vector_id is None else VECTOR_VALUES[cell.vector_id]
+    capacity = 1 if vector is None else vector[1]
+    overlap = 1 if vector is None else (vector[3] if cell.protocol_id is ProtocolId.F else vector[4] if cell.protocol_id is ProtocolId.G else 1)
+    ensemble_lambda = 0.0 if vector is None else float(vector[2])
+    machine = TemporalBroker(protocol_id=cell.protocol_id.value, capacity=capacity, terminal_tick=3125, proposal_verifier=verify_normalized_policy, overlap_rows=overlap, ensemble_lambda=ensemble_lambda)
+    hold: ActionChunk | None = None; hold_broker_id: str | None = None; executable: ActionChunk | None = None
     executor = representations.initial_executor_state(q0)
     previous_q_ref = np.array(q0, copy=True)
     events: list[dict[str, object]] = []
     injected_jump = 0.0
     move_ticks = set(cell.move_ticks)
     for tick in range(3125):
+        machine.open_tick(tick)
         if tick in move_ticks:
             target = np.array(moved_target if np.array_equal(target, initial_target) else initial_target, copy=True)
             events.append({"tick": tick, "event_type": "TARGET_MOVED"})
@@ -119,31 +98,49 @@ def _run_cell(cell: object, config: object) -> tuple[np.ndarray, dict[str, objec
         if tick in request_at:
             plan = request_at[tick]
             captures[plan.request_sequence] = (np.array(q, copy=True), np.array(target, copy=True), tick * _DT_NS)
-            events.append({"tick": tick, "event_type": "POLICY_REQUESTED", "sequence": plan.request_sequence, "disposition": plan.disposition})
+            machine.request(f"r{plan.request_sequence}", plan.request_sequence, delivery_tick=plan.nominal_delivery_tick if plan.actual_delivery_tick is None else plan.actual_delivery_tick, drop=plan.disposition == "DROP")
         if tick in delivery_at:
             plan = delivery_at[tick]
             q_request, target_request, source_time = captures[plan.request_sequence]
             start = kinematics.forward_kinematics(q_request, config.arm.link_lengths_m)
             knots = np.vstack([(1.0 - index / 8) * start + (index / 8) * target_request for index in range(9)])
             raw = PolicyRaw(f"{cell.cell_id}-r{plan.request_sequence}", "P4", "qualification-skill", plan.request_sequence, source_time, "track_target", knots)
-            normalized = normalize_policy_raw(raw, tick)
+            normalized = normalize_policy_raw(raw, tick, normal_delivery_tick=plan.nominal_delivery_tick, request_id=f"r{plan.request_sequence}", request_sequence=plan.request_sequence)
             if cell.fault_id in {FaultId.ALTERNATIVE, FaultId.DISCONTINUITY} and plan.request_sequence == len(plans) - 1:
-                fault = apply_fault_payload(normalized.actions, stack_id="P4", fault_id=cell.fault_id.value, envelope=(-1.0, 1.0))
-                injected_jump = float(np.max(np.linalg.norm(np.diff(fault.actions, axis=0), axis=1)))
-                normalized = replace(normalized, actions=fault.actions)
-            active = _action_chunk(normalized, cell.protocol_id, active, tick)
-            hold = None
-            events.append({"tick": tick, "event_type": "CHUNK_ACCEPTED", "sequence": plan.request_sequence, "chunk_id": active.chunk_id, "actions_sha256": _matrix_bytes(active.actions)})
-        if active is not None and tick * _DT_NS >= active.expires_at_ns:
-            active = None
+                normalized = inject_fault(normalized, fault_id=cell.fault_id.value, envelope=(-1.0, 1.0))
+                injected_jump = float(np.max(np.linalg.norm(np.diff(normalized.actions, axis=0), axis=1)))
+            events.append({"tick": tick, "event_type": "PROPOSAL_BYTES", "proposal_id": normalized.proposal_id,
+                           "request_id": normalized.request_id, "request_sequence": normalized.request_sequence,
+                           "coverage": [normalized.coverage_start_tick, normalized.coverage_end_tick],
+                           "policy_actions_sha256": normalized.policy_actions_sha256,
+                           "normalized_actions_sha256": normalized.normalized_actions_sha256,
+                           "raw_actions": normalized.raw_actions.tolist(), "normalized_actions": normalized.actions.tolist(),
+                           "fault_id": normalized.fault_id, "fault_revision": normalized.fault_revision,
+                           "fault_step_index": normalized.fault_step_index, "fault_amplitude": normalized.fault_amplitude,
+                           "fault_direction": normalized.fault_direction, "fault_sign": normalized.fault_sign,
+                           "pre_fault_normalized_sha256": normalized.pre_fault_normalized_sha256})
+            machine.deliver(normalized); hold = None; hold_broker_id = None; executable = None
         q, dq = arm.state()
-        if active is not None:
-            reference, executor, _ = representations.reference_for_tick(contracts.CommandStack.P4, active, q, dq, tick * _DT_NS, executor, config)
+        issued = machine.issue(measured_q=q)
+        if issued.origin != "broker_safe_hold":
+            active = machine.active
+            assert active is not None
+            if executable is None or executable.chunk_id != active.chunk_id:
+                executable = ActionChunk(
+                    chunk_id=active.chunk_id, skill_id=active.skill_id, source_observation_id=active.source_observation_id,
+                    source_observation_time_ns=active.source_observation_time_ns, generated_time_ns=active.coverage[0] * _DT_NS,
+                    valid_from_ns=active.coverage[0] * _DT_NS, expires_at_ns=active.coverage[1] * _DT_NS, dt_s=0.002,
+                    actions=active.actions, representation=active.representation, expected_phase="track_target",
+                    metadata={"origin": "broker_executable", "rule": active.rule, "parent_sha256s": active.parent_sha256s,
+                              "parent_coverages": active.parent_coverages, "owner_observation_id": active.owner_observation_id,
+                              "b": active.coverage[0], "z": active.coverage[1], "h": active.h, "output_sha256": active.output_sha256},
+                )
+            reference, executor, _ = representations.reference_for_tick(contracts.CommandStack.P4, executable, q, dq, tick * _DT_NS, executor, config)
             command_q = reference.q_ref; is_hold = False
         else:
-            if hold is None:
-                hold = make_safe_hold(q, source_observation_id=max(captures, default=0), source_observation_time_ns=tick * _DT_NS, skill_id="qualification-skill", expected_phase="track_target", start_tick=tick, terminal_tick=3125)
-                events.append({"tick": tick, "event_type": "SAFE_HOLD_ENTERED", "chunk_id": hold.chunk_id})
+            if hold is None or hold_broker_id != issued.chunk_id:
+                hold = make_safe_hold(issued.action, source_observation_id=max(captures, default=0), source_observation_time_ns=tick * _DT_NS, skill_id="qualification-skill", expected_phase="track_target", start_tick=tick, terminal_tick=3125)
+                hold_broker_id = issued.chunk_id
             reference = dispatch_executable(hold, tick=tick)
             assert reference is not None and not isinstance(reference, ActionChunk)
             command_q = reference.q_ref; is_hold = True
@@ -151,7 +148,8 @@ def _run_cell(cell: object, config: object) -> tuple[np.ndarray, dict[str, objec
         previous_q_ref = np.array(q_ref, copy=True)
         arm.step(torque)
         eef = arm.site_xy()
-        telemetry[tick] = (q, dq, eef, target, q_ref, torque, float(np.linalg.norm(target - eef)), is_hold, active is not None)
+        telemetry[tick] = (q, dq, eef, target, q_ref, torque, float(np.linalg.norm(target - eef)), is_hold, machine.active is not None)
+        machine.close_tick()
     recovery = True
     for move in cell.move_ticks:
         end = min(3125, move + 1001)
@@ -161,7 +159,14 @@ def _run_cell(cell: object, config: object) -> tuple[np.ndarray, dict[str, objec
     finite = all(np.isfinite(telemetry[name]).all() for name in ("q", "dq", "eef", "q_ref", "torque", "error"))
     disposition = "WORKING" if recovery and fault_guard and finite else "NONWORKING"
     metrics = {"recovery_pass": bool(recovery), "fault_guard_pass": bool(fault_guard), "finite": bool(finite), "max_error_m": float(np.max(telemetry["error"])), "final_error_m": float(telemetry["error"][-1]), "hold_ticks": int(np.sum(telemetry["hold"])), "injected_jump": injected_jump, "disposition": disposition}
-    events.append({"tick": 3125, "event_type": "TERMINAL_EMPTY"})
+    machine.open_tick(3125); machine.finish()
+    events.extend({"tick": event.tick, "event_type": event.event_type, "chunk_id": event.chunk_id, "detail": event.detail, "sidecar": None if event.sidecar is None else dict(event.sidecar)} for event in machine.events)
+    events.extend({"tick": item.tick, "event_type": "HOLD_COMMAND_ISSUED", "chunk_id": item.chunk_id, "q_ref": item.action.tolist(), "dq_ref": [0.0, 0.0, 0.0]} for item in machine.issued if item.origin == "broker_safe_hold")
+    phase = {"TARGET_MOVED": 0, "POLICY_REQUESTED": 1, "REQUEST_DROPPED": 1, "PROPOSAL_BYTES": 2,
+             "CHUNK_EXPIRED": 3, "POLICY_RESPONDED": 4, "CHUNK_REPLACED": 5, "DERIVATION_RECOMPUTED": 5,
+             "CHUNK_ACCEPTED": 6, "SAFE_HOLD_ENTERED": 7, "HOLD_COMMAND_ISSUED": 8, "TERMINAL_EMPTY": 9}
+    events.sort(key=lambda row: (int(row["tick"]), phase[str(row["event_type"])], str(row.get("chunk_id", row.get("proposal_id", "")))))
+    events = [{"sequence_id": sequence, **row} for sequence, row in enumerate(events)]
     return telemetry, metrics, events
 
 
@@ -179,7 +184,7 @@ def _derived_files(trials: list[dict[str, object]], manifest_sha256: str) -> dic
     for label in ("WORKING", "NONWORKING"):
         row = next(item for item in ordered if item["disposition"] == label)
         samples.append({"label": label, "cell_id": row["cell_id"], "telemetry_file": row["telemetry_file"], "telemetry_sha256": row["telemetry_sha256"], "events_sha256": row["events_sha256"], "selection": "FIRST_CANONICAL_ID"})
-    recipe = {"schema_version": "exp02-unsealed-dynamics-recipe-v1", "renderer": "dynamics_qualification.py", "manifest_sha256": manifest_sha256, "sort": ["cell_id"], "time_axis": {"column": "tick", "scale_s": 0.002}, "series": [{"column": "error", "units": "m"}, {"column": "q", "units": "rad"}, {"column": "torque", "units": "N*m"}], "sample_rule": "first canonical WORKING and NONWORKING"}
+    recipe = {"schema_version": "exp02-unsealed-dynamics-recipe-v2", "renderer": "dynamics_qualification.py", "manifest_sha256": manifest_sha256, "event_link_formula": "sha256(canonical_json(event_row,sort_keys=True,separators=comma_colon,allow_nan=False)+LF)", "sort": ["cell_id"], "time_axis": {"column": "tick", "scale_s": 0.002}, "series": [{"column": "error", "units": "m"}, {"column": "q", "units": "rad"}, {"column": "torque", "units": "N*m"}], "sample_rule": "first canonical WORKING and NONWORKING"}
     return {"summary.json": _summary(trials), "sample-index.json": _canonical({"schema_version": "exp02-unsealed-dynamics-samples-v1", "samples": samples}), "recipe.json": _canonical(recipe)}
 
 
@@ -204,7 +209,7 @@ def run_dynamics_qualification(output: Path, *, seeds: Sequence[int], implementa
     trials_bytes = b"".join(_canonical(row) for row in trials); events_bytes = b"".join(_canonical(row) for row in events)
     (raw / "trials.jsonl").write_bytes(trials_bytes); (raw / "events.jsonl").write_bytes(events_bytes)
     members = [raw / "events.jsonl", raw / "trials.jsonl", *sorted(telemetry_dir.iterdir())]
-    manifest = {"schema_version": "exp02-unsealed-dynamics-manifest-v1", "qualification_only": True, "sealed_pilot": False, "implementation_git_sha": implementation_git_sha, "mujoco_version": "3.12.0", "model_sha256": _sha(arm_module.MJCF_BYTES), "config_sha256": _sha(Path("experiments/01_policy_control/configs/base.yaml").read_bytes()), "files": [{"path": path.relative_to(raw).as_posix(), "bytes": path.stat().st_size, "sha256": _sha(path.read_bytes())} for path in members]}
+    manifest = {"schema_version": "exp02-unsealed-dynamics-manifest-v2", "qualification_only": True, "sealed_pilot": False, "implementation_git_sha": implementation_git_sha, "mujoco_version": "3.12.0", "model_sha256": _sha(arm_module.MJCF_BYTES), "config_sha256": _sha(Path("experiments/01_policy_control/configs/base.yaml").read_bytes()), "event_link_formula": "sha256(canonical_json(event_row,sort_keys=True,separators=comma_colon,allow_nan=False)+LF)", "files": [{"path": path.relative_to(raw).as_posix(), "bytes": path.stat().st_size, "sha256": _sha(path.read_bytes())} for path in members]}
     manifest_bytes = _canonical(manifest); (raw / "manifest.json").write_bytes(manifest_bytes)
     for name, content in _derived_files(trials, _sha(manifest_bytes)).items():
         (derived / name).write_bytes(content)
@@ -221,6 +226,25 @@ def reconstruct_dynamics(raw: Path, clean: Path) -> None:
         if path.is_symlink() or not path.is_file() or path.stat().st_size != row["bytes"] or _sha(path.read_bytes()) != row["sha256"]:
             raise DynamicsQualificationError("raw member hash mismatch")
     trials = [json.loads(line) for line in (raw / "trials.jsonl").read_text(encoding="ascii").splitlines()]
+    event_rows = [json.loads(line) for line in (raw / "events.jsonl").read_text(encoding="ascii").splitlines()]
+    by_cell = {row["cell_id"]: row for row in event_rows}
+    if len(by_cell) != len(event_rows):
+        raise DynamicsQualificationError("duplicate event identity")
+    for trial in trials:
+        event_row = by_cell.get(trial["cell_id"])
+        telemetry_path = raw / "telemetry" / trial["telemetry_file"]
+        if event_row is None or _sha(_canonical(event_row)) != trial["events_sha256"] or _sha(telemetry_path.read_bytes()) != trial["telemetry_sha256"]:
+            raise DynamicsQualificationError("trial event/telemetry link is invalid")
+        if [event.get("sequence_id") for event in event_row["events"]] != list(range(len(event_row["events"]))) or any(event_row["events"][index]["tick"] > event_row["events"][index + 1]["tick"] for index in range(len(event_row["events"]) - 1)):
+            raise DynamicsQualificationError("canonical event order is invalid")
+        proposals = {event["normalized_actions_sha256"]: event for event in event_row["events"] if event["event_type"] == "PROPOSAL_BYTES"}
+        for event in event_row["events"]:
+            sidecar = event.get("sidecar")
+            if event["event_type"] in {"CHUNK_ACCEPTED", "DERIVATION_RECOMPUTED"} and sidecar is not None:
+                if any(parent not in proposals for parent in sidecar["parent_sha256s"]):
+                    raise DynamicsQualificationError("derived parent hash is absent")
+                if sidecar["rule"] in {"OVERLAP_BLEND", "RTC_APPROXIMATION"} and (type(sidecar["h"]) is not int or sidecar["h"] <= 0):
+                    raise DynamicsQualificationError("derived overlap h is invalid")
     clean.mkdir(parents=True)
     for name, content in _derived_files(trials, _sha(manifest_bytes)).items():
         (clean / name).write_bytes(content)
