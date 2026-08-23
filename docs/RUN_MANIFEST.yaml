@@ -36,3 +36,14 @@ lanes:
   prediction_contact: pending
   platform: pending
   integration: pending
+phase_records:
+  p2:
+    phase_id: p2
+    lifecycle_state: complete
+    implementation_evidence_git_sha: 8a88575f3dcee186a620bfdd151d1adc08504623
+    report_commit_git_sha: 8e11d8962c54e7c6a59322f412b1a8418f610adb
+    report_path: RUN_REPORT.md
+    report_git_blob_id: 9fac999f1ba97e2a9d7046bef8ba1165283e5fc4
+    report_sha256: 1756bb3d1dc43d2900fd62e9d991a2510a8f2c84d864ddffafbf1ddbf1c964ad
+    bound_evidence_git_sha: 8a88575f3dcee186a620bfdd151d1adc08504623
+    artifact_ledger_sha256: 8bb236b2b878b350df4f539ef91a0b696d3cc647e383d8afcdef7e1b8df40898
