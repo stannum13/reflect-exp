@@ -17,6 +17,7 @@ from reflect.sources import (
     SourceLock,
     SourceRegistry,
     SourceValidationError,
+    has_exact_bootstrap_binary_authority,
     has_exact_wheel_install_authority,
     load_lock,
     load_registry,
@@ -281,3 +282,76 @@ def test_exact_wheel_evidence_never_authorizes_adapter_or_partial_record() -> No
     malformed["artifact_license.license_expression"] = "not an SPDX expression"
     registry, lock = _unknown_license_lock(ReuseMode.DIRECT_DEPENDENCY, malformed)
     assert not has_exact_wheel_install_authority(lock.entries[0])
+
+
+def _bootstrap_evidence() -> dict[str, str]:
+    version = "0.9.17"
+    commit = "2" * 40
+    dist_info = f"uv-{version}.dist-info"
+    return {
+        "bootstrap_artifact.authority": "EXACT_BOOTSTRAP_BINARY_USE_ONLY",
+        "bootstrap_artifact.package_name": "uv",
+        "bootstrap_artifact.package_version": version,
+        "bootstrap_artifact.tag": version,
+        "bootstrap_artifact.commit_sha": commit,
+        "bootstrap_artifact.repository_url": "https://github.com/astral-sh/uv",
+        "bootstrap_artifact.sdist_filename": f"uv-{version}.tar.gz",
+        "bootstrap_artifact.sdist_url": f"https://files.pythonhosted.org/packages/aa/bb/{'a' * 64}/uv-{version}.tar.gz",
+        "bootstrap_artifact.sdist_sha256": "a" * 64,
+        "bootstrap_artifact.sdist_size": "100",
+        "bootstrap_artifact.wheel_filename": f"uv-{version}-py3-none-macosx_11_0_arm64.whl",
+        "bootstrap_artifact.wheel_url": f"https://files.pythonhosted.org/packages/aa/bb/{'b' * 64}/uv-{version}-py3-none-macosx_11_0_arm64.whl",
+        "bootstrap_artifact.wheel_sha256": "b" * 64,
+        "bootstrap_artifact.wheel_size": "200",
+        "bootstrap_artifact.workspace_manifest_path": "Cargo.toml",
+        "bootstrap_artifact.workspace_manifest_url": f"https://raw.githubusercontent.com/astral-sh/uv/{commit}/Cargo.toml",
+        "bootstrap_artifact.workspace_manifest_sha256": "c" * 64,
+        "bootstrap_artifact.package_manifest_path": "crates/uv/Cargo.toml",
+        "bootstrap_artifact.package_manifest_url": f"https://raw.githubusercontent.com/astral-sh/uv/{commit}/crates/uv/Cargo.toml",
+        "bootstrap_artifact.package_manifest_sha256": "d" * 64,
+        "bootstrap_artifact.license_expression": "MIT OR Apache-2.0",
+        "bootstrap_artifact.metadata_sha256": "e" * 64,
+        "bootstrap_artifact.record_sha256": "f" * 64,
+        "bootstrap_artifact.license_files_json": (
+            f'[{ {"path": f"{dist_info}/licenses/LICENSE-APACHE", "sha256": "1" * 64} },'
+            f'{ {"path": f"{dist_info}/licenses/LICENSE-MIT", "sha256": "2" * 64} }]'
+        ).replace("'", '"').replace(" ", ""),
+        "bootstrap_artifact.embedded_executable_path": f"uv-{version}.data/scripts/uv",
+        "bootstrap_artifact.executable_sha256": "3" * 64,
+        "bootstrap_artifact.executable_size": "300",
+        "bootstrap_artifact.host_executable_path": "/opt/uv",
+        "bootstrap_artifact.version_output": f"uv {version} ({commit[:9]} 2025-12-09)",
+    }
+
+
+def _unknown_uv_lock(metadata: dict[str, str]) -> tuple[SourceRegistry, SourceLock]:
+    entry = RegistryEntry(
+        name="uv", url="https://github.com/astral-sh/uv",
+        mode=ReuseMode.DIRECT_DEPENDENCY, experiments=("bootstrap",),
+        selected_paths=(), use="Bootstrap tool.",
+    )
+    locked = LockedEntry(
+        name="uv", url=entry.url, default_branch="main", commit_sha="1" * 40,
+        retrieved_at="2026-08-23T00:00:00Z", metadata_evidence=metadata,
+        license_spdx=None, license_status=LicenseStatus.UNKNOWN,
+        license_evidence_url=f"https://api.github.com/repos/astral-sh/uv/license?ref={'1' * 40}",
+        path_statuses={}, path_evidence_urls={}, metadata_status=MetadataStatus.RESOLVED,
+    )
+    registry = SourceRegistry("2026-08-22", False, False, (entry,), "9" * 64)
+    return registry, SourceLock("9" * 64, "2026-08-23T00:00:00Z", (locked,))
+
+
+def test_bootstrap_binary_authority_is_uv_only_and_closed() -> None:
+    registry, lock = _unknown_uv_lock(_bootstrap_evidence())
+    assert has_exact_bootstrap_binary_authority(lock.entries[0])
+    assert not has_exact_wheel_install_authority(lock.entries[0])
+    assert validate_lock(registry, lock, require_complete=True) == []
+
+    incomplete = _bootstrap_evidence()
+    del incomplete["bootstrap_artifact.record_sha256"]
+    registry, lock = _unknown_uv_lock(incomplete)
+    assert not has_exact_bootstrap_binary_authority(lock.entries[0])
+    assert validate_lock(registry, lock, require_complete=True) == [
+        "bootstrap artifact evidence is incomplete: uv",
+        "direct/adapter license is not discovered: uv",
+    ]

@@ -12,7 +12,10 @@ import re
 import stat
 import subprocess
 
-from reflect.package_license import validate_locked_install_evidence
+from reflect.package_license import (
+    validate_bootstrap_binary_evidence,
+    validate_locked_install_evidence,
+)
 from reflect.sources import (
     LicenseStatus,
     ReuseMode,
@@ -20,6 +23,7 @@ from reflect.sources import (
     SourceRegistry,
     SourceValidationError,
     has_exact_wheel_install_authority,
+    has_exact_bootstrap_binary_authority,
     load_lock,
     load_registry,
     validate_lock,
@@ -333,6 +337,14 @@ def audit_repository(root: Path, *, require_complete: bool) -> AuditResult:
                             package_name=locked.name,
                             metadata_evidence=locked.metadata_evidence,
                             uv_lock_bytes=uv_lock_bytes,
+                        )
+                    )
+            for locked in lock.entries:
+                if has_exact_bootstrap_binary_authority(locked):
+                    errors.extend(
+                        validate_bootstrap_binary_evidence(
+                            config_path=project_root / "references" / "bootstrap-artifacts.yaml",
+                            metadata_evidence=locked.metadata_evidence,
                         )
                     )
             for entry in registry.repositories:

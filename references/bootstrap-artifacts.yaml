@@ -1,0 +1,24 @@
+schema_version: 1
+artifacts:
+  - name: uv
+    version: 0.9.17
+    tag: 0.9.17
+    commit_sha: 2b5d65e61d829bc81ce116388f849174d56a84ca
+    repository_url: https://github.com/astral-sh/uv
+    sdist_filename: uv-0.9.17.tar.gz
+    sdist_url: https://files.pythonhosted.org/packages/52/1a/cb0c37ae8513b253bcbc13d42392feb7d95ea696eb398b37535a28df9040/uv-0.9.17.tar.gz
+    sdist_sha256: 6d93ab9012673e82039cfa7f9f66f69b388bc3f910f9e8a2ebee211353f620aa
+    sdist_size: 3815957
+    wheel_filename: uv-0.9.17-py3-none-macosx_11_0_arm64.whl
+    wheel_url: https://files.pythonhosted.org/packages/de/30/b3a343893681a569cbb74f8747a1c24e5f18ca9e07de0430aceaf9389ef4/uv-0.9.17-py3-none-macosx_11_0_arm64.whl
+    wheel_sha256: 4b8e5513d48a267bfa180ca7fefaf6f27b1267e191573b3dba059981143e88ef
+    wheel_size: 18924624
+    workspace_manifest_path: Cargo.toml
+    workspace_manifest_sha256: bea4b08b14e4ee2d0dbb51acfa300a33c319d8b98c717d18d9969f13892d1eb5
+    package_manifest_path: crates/uv/Cargo.toml
+    package_manifest_sha256: d7e5bd11533e9cd4b9233f5c83b62ccbc34b57ce86ed04821f7b7830dcaf1ade
+    license_apache_sha256: c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4
+    license_mit_sha256: 860e3d7a86b84e6a7012c7a635fc64df475cebc6cce34dfeb73a5982ec58176c
+    embedded_executable_path: uv-0.9.17.data/scripts/uv
+    embedded_executable_sha256: ee694042316fcb760b176ea8d3fb673790fd8d573ed06f28a4d52a01066c358d
+    embedded_executable_size: 43403808

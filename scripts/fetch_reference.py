@@ -11,7 +11,11 @@ import sys
 from typing import Any, Callable
 
 from reflect.safety import SafetyConfig, SafetyViolation
-from reflect.package_license import LockedWheelLicenseResolver
+from reflect.package_license import (
+    BootstrapArtifactResolver,
+    CompositeLicenseResolver,
+    LockedWheelLicenseResolver,
+)
 from reflect.source_checkout import (
     SparseCheckoutError,
     SubprocessCheckoutRunner,
@@ -191,11 +195,26 @@ def main(
     artifact_resolver = artifact_license_resolver
     uv_lock_path = project_root / "uv.lock"
     if artifact_resolver is None and uv_lock_path.is_file():
-        artifact_resolver = LockedWheelLicenseResolver(
-            uv_lock_bytes=uv_lock_path.read_bytes(),
-            transport=http_transport or UrllibTransport(),
-            cache=cache,
-            clock=clock,
+        artifact_cache = CacheStore(
+            project_root / "external" / ".metadata",
+            max_payload_bytes=32 * 1024 * 1024,
+        )
+        artifact_transport = http_transport or UrllibTransport(
+            max_response_bytes=32 * 1024 * 1024
+        )
+        artifact_resolver = CompositeLicenseResolver(
+            LockedWheelLicenseResolver(
+                uv_lock_bytes=uv_lock_path.read_bytes(),
+                transport=artifact_transport,
+                cache=artifact_cache,
+                clock=clock,
+            ),
+            BootstrapArtifactResolver(
+                config_path=project_root / "references" / "bootstrap-artifacts.yaml",
+                transport=artifact_transport,
+                cache=artifact_cache,
+                clock=clock,
+            ),
         )
     candidate = resolve_registry(
         registry,

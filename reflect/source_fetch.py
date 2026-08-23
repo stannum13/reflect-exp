@@ -314,7 +314,7 @@ def resolve_entry(
         for key, value in artifact_evidence.items():
             if (
                 type(key) is not str
-                or not key.startswith("artifact_license.")
+                or not key.startswith(("artifact_license.", "bootstrap_artifact."))
                 or type(value) is not str
                 or not value
                 or key in metadata_evidence

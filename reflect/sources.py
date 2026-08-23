@@ -65,6 +65,39 @@ _ARTIFACT_LICENSE_KEYS = frozenset(
         "artifact_license.license_files_json",
     }
 )
+_BOOTSTRAP_ARTIFACT_KEYS = frozenset(
+    {
+        "bootstrap_artifact.authority",
+        "bootstrap_artifact.package_name",
+        "bootstrap_artifact.package_version",
+        "bootstrap_artifact.tag",
+        "bootstrap_artifact.commit_sha",
+        "bootstrap_artifact.repository_url",
+        "bootstrap_artifact.sdist_filename",
+        "bootstrap_artifact.sdist_url",
+        "bootstrap_artifact.sdist_sha256",
+        "bootstrap_artifact.sdist_size",
+        "bootstrap_artifact.wheel_filename",
+        "bootstrap_artifact.wheel_url",
+        "bootstrap_artifact.wheel_sha256",
+        "bootstrap_artifact.wheel_size",
+        "bootstrap_artifact.workspace_manifest_path",
+        "bootstrap_artifact.workspace_manifest_url",
+        "bootstrap_artifact.workspace_manifest_sha256",
+        "bootstrap_artifact.package_manifest_path",
+        "bootstrap_artifact.package_manifest_url",
+        "bootstrap_artifact.package_manifest_sha256",
+        "bootstrap_artifact.license_expression",
+        "bootstrap_artifact.metadata_sha256",
+        "bootstrap_artifact.record_sha256",
+        "bootstrap_artifact.license_files_json",
+        "bootstrap_artifact.embedded_executable_path",
+        "bootstrap_artifact.executable_sha256",
+        "bootstrap_artifact.executable_size",
+        "bootstrap_artifact.host_executable_path",
+        "bootstrap_artifact.version_output",
+    }
+)
 
 
 def is_spdx_expression(value: object) -> bool:
@@ -393,6 +426,92 @@ def has_exact_wheel_install_authority(entry: LockedEntry) -> bool:
     return isinstance(entry, LockedEntry) and _artifact_license_state(entry)[1]
 
 
+def _bootstrap_artifact_state(entry: LockedEntry) -> tuple[bool, bool]:
+    evidence = entry.metadata_evidence
+    present = {key for key in evidence if key.startswith("bootstrap_artifact.")}
+    if not present:
+        return False, False
+    if present != _BOOTSTRAP_ARTIFACT_KEYS:
+        return True, False
+    if (
+        entry.name != "uv"
+        or evidence["bootstrap_artifact.authority"] != "EXACT_BOOTSTRAP_BINARY_USE_ONLY"
+        or evidence["bootstrap_artifact.package_name"] != "uv"
+        or evidence["bootstrap_artifact.package_version"] != evidence["bootstrap_artifact.tag"]
+        or evidence["bootstrap_artifact.repository_url"] != "https://github.com/astral-sh/uv"
+        or _SHA40.fullmatch(evidence["bootstrap_artifact.commit_sha"]) is None
+        or not is_spdx_expression(evidence["bootstrap_artifact.license_expression"])
+        or entry.license_status is not LicenseStatus.UNKNOWN
+        or entry.license_spdx is not None
+    ):
+        return True, False
+    for key in (
+        "bootstrap_artifact.sdist_sha256",
+        "bootstrap_artifact.wheel_sha256",
+        "bootstrap_artifact.workspace_manifest_sha256",
+        "bootstrap_artifact.package_manifest_sha256",
+        "bootstrap_artifact.metadata_sha256",
+        "bootstrap_artifact.record_sha256",
+        "bootstrap_artifact.executable_sha256",
+    ):
+        if _SHA256.fullmatch(evidence[key]) is None:
+            return True, False
+    if (
+        not evidence["bootstrap_artifact.sdist_url"].startswith("https://files.pythonhosted.org/packages/")
+        or evidence["bootstrap_artifact.sdist_url"].rsplit("/", 1)[-1] != evidence["bootstrap_artifact.sdist_filename"]
+        or not evidence["bootstrap_artifact.wheel_url"].startswith("https://files.pythonhosted.org/packages/")
+        or evidence["bootstrap_artifact.wheel_url"].rsplit("/", 1)[-1] != evidence["bootstrap_artifact.wheel_filename"]
+        or not evidence["bootstrap_artifact.host_executable_path"].startswith("/")
+        or evidence["bootstrap_artifact.embedded_executable_path"] != f"uv-{evidence['bootstrap_artifact.package_version']}.data/scripts/uv"
+        or evidence["bootstrap_artifact.workspace_manifest_path"] != "Cargo.toml"
+        or evidence["bootstrap_artifact.package_manifest_path"] != "crates/uv/Cargo.toml"
+        or evidence["bootstrap_artifact.workspace_manifest_url"] != f"https://raw.githubusercontent.com/astral-sh/uv/{evidence['bootstrap_artifact.commit_sha']}/Cargo.toml"
+        or evidence["bootstrap_artifact.package_manifest_url"] != f"https://raw.githubusercontent.com/astral-sh/uv/{evidence['bootstrap_artifact.commit_sha']}/crates/uv/Cargo.toml"
+    ):
+        return True, False
+    try:
+        size = int(evidence["bootstrap_artifact.executable_size"])
+        sdist_size = int(evidence["bootstrap_artifact.sdist_size"])
+        wheel_size = int(evidence["bootstrap_artifact.wheel_size"])
+        inventory = json.loads(evidence["bootstrap_artifact.license_files_json"])
+    except (ValueError, json.JSONDecodeError):
+        return True, False
+    if min(size, sdist_size, wheel_size) <= 0 or not isinstance(inventory, list) or len(inventory) != 2:
+        return True, False
+    expected_paths = [
+        f"uv-{evidence['bootstrap_artifact.package_version']}.dist-info/licenses/LICENSE-APACHE",
+        f"uv-{evidence['bootstrap_artifact.package_version']}.dist-info/licenses/LICENSE-MIT",
+    ]
+    if [item.get("path") for item in inventory if isinstance(item, dict)] != expected_paths:
+        return True, False
+    if any(
+        not isinstance(item, dict)
+        or set(item) != {"path", "sha256"}
+        or type(item.get("sha256")) is not str
+        or _SHA256.fullmatch(item["sha256"]) is None
+        for item in inventory
+    ):
+        return True, False
+    canonical = json.dumps(inventory, sort_keys=True, separators=(",", ":"))
+    if canonical != evidence["bootstrap_artifact.license_files_json"]:
+        return True, False
+    output = evidence["bootstrap_artifact.version_output"]
+    match = re.fullmatch(r"uv ([0-9]+\.[0-9]+\.[0-9]+) \(([0-9a-f]+) [^)]+\)", output)
+    if (
+        match is None
+        or match.group(1) != evidence["bootstrap_artifact.package_version"]
+        or len(match.group(2)) < 9
+        or not evidence["bootstrap_artifact.commit_sha"].startswith(match.group(2))
+    ):
+        return True, False
+    return True, True
+
+
+def has_exact_bootstrap_binary_authority(entry: LockedEntry) -> bool:
+    """Return whether an entry carries closed uv binary-use-only evidence."""
+    return isinstance(entry, LockedEntry) and _bootstrap_artifact_state(entry)[1]
+
+
 def _read_yaml(path: Path, label: str) -> Mapping[str, Any]:
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -493,11 +612,20 @@ def validate_lock(registry: SourceRegistry, lock: SourceLock, *, require_complet
         if set(locked.path_evidence_urls) != requested:
             errors.append(f"lock path evidence does not match registry: {name}")
         artifact_present, artifact_valid = _artifact_license_state(locked)
+        bootstrap_present, bootstrap_valid = _bootstrap_artifact_state(locked)
         if artifact_present and not artifact_valid:
             errors.append(f"artifact license evidence is incomplete: {name}")
+        if bootstrap_present and not bootstrap_valid:
+            errors.append(f"bootstrap artifact evidence is incomplete: {name}")
+        if artifact_present and bootstrap_present:
+            errors.append(f"multiple artifact authority namespaces are present: {name}")
         if artifact_valid and entry.mode is not ReuseMode.DIRECT_DEPENDENCY:
             errors.append(
                 f"artifact install authority is permitted only for a direct dependency: {name}"
+            )
+        if bootstrap_valid and entry.mode is not ReuseMode.DIRECT_DEPENDENCY:
+            errors.append(
+                f"bootstrap binary authority is permitted only for a direct dependency: {name}"
             )
         if require_complete:
             if locked.metadata_status is not MetadataStatus.RESOLVED:
@@ -512,7 +640,8 @@ def validate_lock(registry: SourceRegistry, lock: SourceLock, *, require_complet
                 entry.mode in {ReuseMode.DIRECT_DEPENDENCY, ReuseMode.ADAPTER_DEPENDENCY}
                 and locked.license_status is not LicenseStatus.DISCOVERED
                 and not (
-                    entry.mode is ReuseMode.DIRECT_DEPENDENCY and artifact_valid
+                    entry.mode is ReuseMode.DIRECT_DEPENDENCY
+                    and (artifact_valid or bootstrap_valid)
                 )
             ):
                 errors.append(f"direct/adapter license is not discovered: {name}")

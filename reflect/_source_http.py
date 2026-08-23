@@ -28,9 +28,13 @@ _LICENSE_ENDPOINT = re.compile(
     r"https://api\.github\.com/repos/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/"
     r"license\?ref=([0-9a-f]{40})\Z"
 )
-_WHEEL_ENDPOINT = re.compile(
+_PYPI_ARTIFACT_ENDPOINT = re.compile(
     r"https://files\.pythonhosted\.org/packages/[0-9a-f]{2}/[0-9a-f]{2}/"
-    r"[0-9a-f]{32,}/[^/?#]+\.whl\Z"
+    r"[0-9a-f]{32,}/[^/?#]+(?:\.whl|\.tar\.gz)\Z"
+)
+_UV_RELEASE_BLOB_ENDPOINT = re.compile(
+    r"https://raw\.githubusercontent\.com/astral-sh/uv/[0-9a-f]{40}/"
+    r"(?:Cargo\.toml|crates/uv/Cargo\.toml|LICENSE-APACHE|LICENSE-MIT)\Z"
 )
 _USER_AGENT = "reflect-lite-source-metadata/0.1"
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
@@ -148,7 +152,8 @@ def _validate_api_endpoint(url: str) -> None:
     if (
         match is None
         and _LICENSE_ENDPOINT.fullmatch(url) is None
-        and _WHEEL_ENDPOINT.fullmatch(url) is None
+        and _PYPI_ARTIFACT_ENDPOINT.fullmatch(url) is None
+        and _UV_RELEASE_BLOB_ENDPOINT.fullmatch(url) is None
     ):
         raise SourceFetchError("HTTP endpoint is not an exact allowed metadata object")
     if match is None:
@@ -181,7 +186,10 @@ class UrllibTransport:
         _validate_api_endpoint(url)
         accept = (
             "application/octet-stream"
-            if _WHEEL_ENDPOINT.fullmatch(url) is not None
+            if (
+                _PYPI_ARTIFACT_ENDPOINT.fullmatch(url) is not None
+                or _UV_RELEASE_BLOB_ENDPOINT.fullmatch(url) is not None
+            )
             else "application/vnd.github+json"
         )
         request = urllib.request.Request(
