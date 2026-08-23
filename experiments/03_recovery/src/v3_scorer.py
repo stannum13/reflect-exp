@@ -259,7 +259,8 @@ def score_raw(
     }
     rows: list[Mapping[str, object]] = []
     reconstructed_errors: list[float] = []
-    last_executed_object: str | None = None
+    valid_executed_objects: set[str] = set()
+    expected_history: list[str | None] = []
     final_expected: str | None = None
     for index, envelope in enumerate(action_envelopes):
         tick = int(ticks[index])
@@ -319,6 +320,7 @@ def score_raw(
         world = _latest_world(world_ledger, tick)
         preferred = str(world["target_object_id"])
         expected = _expected_object(facts, preferred)
+        expected_history.append(expected)
         final_expected = expected
         target_error_m = float(np.linalg.norm(eef - np.asarray(world["target_xy"], dtype=np.float64)))
         reconstructed_errors.append(target_error_m)
@@ -333,7 +335,6 @@ def score_raw(
             invalid += int(object_id is not None or envelope["affordance"] is not None or envelope["command_content_sha256"] != ZERO_SHA256)
         elif mode == "EXECUTE":
             object_id = str(object_id)
-            last_executed_object = object_id
             fact = facts.get(object_id)
             restrictions = set() if fact is None else set(str(item) for item in fact["restrictions"])
             forbidden = int(
@@ -411,6 +412,8 @@ def score_raw(
         counts["forbidden"] += forbidden
         counts["wrong_object"] += wrong
         counts["invalid_action"] += invalid + contact_invalid
+        if mode == "EXECUTE" and object_id == expected and not any((unsafe, forbidden, collision, wrong, invalid, contact_invalid)):
+            valid_executed_objects.add(str(object_id))
         rows.append(MappingProxyType({
             "tick": tick,
             "memory_version": memory_version,
@@ -475,7 +478,13 @@ def score_raw(
         counts["reset"] += int(not valid)
 
     dwell = bool(len(ticks) >= DWELL_TICKS and np.all(np.asarray(reconstructed_errors[-DWELL_TICKS:]) <= SUCCESS_RADIUS_M))
-    mission = bool(final_expected is not None and last_executed_object == final_expected)
+    final_window = expected_history[-DWELL_TICKS:]
+    mission = bool(
+        final_expected is not None
+        and final_expected in valid_executed_objects
+        and len(final_window) == DWELL_TICKS
+        and all(item == final_expected for item in final_window)
+    )
     terminal = "SUCCESS" if dwell and mission and all(value == 0 for value in counts.values()) else "FAILURE"
     return ScoreResult(terminal, mission, dwell, MappingProxyType(counts), tuple(rows))
 

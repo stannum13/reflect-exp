@@ -4,17 +4,24 @@ from __future__ import annotations
 
 import ast
 import csv
+import gzip
 import hashlib
 import html
 import io
 import json
 import os
+import platform
 from pathlib import Path
+import struct
 import subprocess
+import sys
+import tarfile
 import tempfile
+import zlib
 from typing import Iterable, Mapping, Sequence
 
 import numpy as np
+import mujoco
 
 from .v3_contracts import (
     Architecture,
@@ -44,7 +51,12 @@ _SEED_MODULES = (
     "experiments.01_policy_control.src.kinematics",
     "experiments.01_policy_control.src.representations",
 )
-_EXPLICIT_INPUTS = ("experiments/01_policy_control/configs/base.yaml",)
+_EXPLICIT_INPUTS = (
+    "experiments/01_policy_control/configs/base.yaml",
+    "docs/superpowers/specs/2026-08-23-hierarchical-recovery-v3-preregistered.md",
+    "pyproject.toml",
+    "uv.lock",
+)
 _BANNED_DECISION_TOKENS = (b"scenario", b"cause", b"expected_level", b"intended_level", b"domain")
 _OBSERVABLE_PARAMETERS = (
     "tick", "trace_rows", "action_valid", "geometry_feasible", "semantic_preconditions_valid",
@@ -390,8 +402,123 @@ def _diagnostic_svg(title: str, rows: Sequence[Mapping[str, object]], columns: S
     return "".join(parts).encode("ascii")
 
 
+def _png_chunk(kind: bytes, data: bytes) -> bytes:
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+
+def _diagnostic_png(rows: Sequence[Mapping[str, object]], columns: Sequence[str]) -> bytes:
+    """Deterministic stdlib raster companion: one authenticated band per canonical cell."""
+    width, row_height = 1100, 12
+    height = max(48, 24 + row_height * (len(rows) + 1))
+    pixels = bytearray([255] * width * height * 3)
+    cell_width = max(1, width // max(1, len(columns)))
+    for row_index, row in enumerate((dict(zip(columns, columns, strict=True)), *rows)):
+        y0 = 12 + row_index * row_height
+        for column_index, column in enumerate(columns):
+            digest = hashlib.sha256(str(row.get(column, "")).encode("utf-8")).digest()
+            color = bytes((40 + digest[0] % 176, 40 + digest[1] % 176, 40 + digest[2] % 176))
+            x0 = column_index * cell_width
+            x1 = width if column_index + 1 == len(columns) else (column_index + 1) * cell_width - 1
+            for y in range(y0, min(height, y0 + row_height - 2)):
+                for x in range(x0, x1):
+                    offset = (y * width + x) * 3
+                    pixels[offset:offset + 3] = color
+    raw = b"".join(b"\x00" + bytes(pixels[y * width * 3:(y + 1) * width * 3]) for y in range(height))
+    return b"\x89PNG\r\n\x1a\n" + _png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)) + _png_chunk(b"IDAT", zlib.compress(raw, 9)) + _png_chunk(b"IEND", b"")
+
+
 def _sequence(raw: V3EpisodeRaw) -> str:
     return ">".join(item.level.value for item in raw.decisions if item.level is not DecisionLevel.NONE) or "NONE"
+
+
+def _disturbance_audit(raws: Mapping[str, V3EpisodeRaw]) -> dict[str, object]:
+    receipts: list[dict[str, object]] = []
+    for raw in sorted(raws.values(), key=lambda item: item.spec.episode_id):
+        scenario = raw.spec.scenario_id
+        tick = raw.realization.injection_tick
+        passed = raw.injection_rows == (tick,) and int(raw.trace["tick"][tick]) == tick
+        details: dict[str, object] = {"episode_id": raw.spec.episode_id, "scenario_id": scenario, "injection_tick": tick}
+        if scenario == "control-impulse":
+            force = np.asarray(raw.trace["applied_force_nm"])
+            nz = np.flatnonzero(np.linalg.norm(force, axis=1) > 0.0).tolist()
+            expected = list(range(tick, tick + raw.realization.impulse_ticks))
+            vector = (1.0 if raw.realization.seed % 2 else -1.0) * raw.realization.impulse_nm * np.asarray((1.0, -1.0, 0.5))
+            passed = passed and nz == expected and np.array_equal(force[expected], np.tile(vector, (len(expected), 1)))
+            details.update({"nonzero_force_ticks": nz, "expected_force_ticks": expected, "force_vector_nm": vector.tolist()})
+        elif scenario == "control-dropout":
+            held = [int(item["tick"]) for item in raw.action_envelopes if item.get("hold_reason") == "COMMAND_WITHHELD"]
+            expected = list(range(tick, tick + raw.realization.dropout_ticks))
+            passed = passed and held == expected
+            details.update({"withheld_ticks": held, "expected_withheld_ticks": expected})
+        elif scenario == "motion-target-shift":
+            events = [item for item in raw.world_ledger if item["event"] == "TARGET_SHIFT"]
+            expected_target = np.asarray(raw.realization.target_a_xy) + np.asarray(raw.realization.target_shift_xy)
+            passed = passed and len(events) == 1 and int(events[0]["tick"]) == tick and np.array_equal(np.asarray(events[0]["target_xy"]), expected_target)
+            details.update({"events": events, "expected_target_xy": expected_target.tolist()})
+        elif scenario == "motion-path-infeasible":
+            events = [item for item in raw.world_ledger if item["event"] == "OBSTACLE_ACTIVATED"]
+            waypoint_commands = [item for item in raw.commands if len(item["path_xy"]) > 1]
+            passed = passed and len(events) == 1 and int(events[0]["tick"]) == tick and bool(waypoint_commands) and not bool(np.asarray(raw.trace["obstacle_contact"]).any())
+            details.update({"obstacle_events": events, "waypoint_command_count": len(waypoint_commands)})
+        elif scenario.startswith("semantic-"):
+            delivery = tick + raw.realization.semantic_delay_ticks
+            delivered = [item for item in raw.semantic_events if item["event"] == "DELIVERED_OBSERVATION"]
+            snapshots = [item for item in raw.memory_ledger if int(item["tick"]) == delivery]
+            selected = [item for item in raw.world_ledger if item["event"] == "AUTHORIZED_ALTERNATIVE_SELECTED" and int(item["tick"]) >= delivery]
+            holds = [item for item in raw.action_envelopes if int(item["tick"]) == delivery and item["mode"] == "HOLD"]
+            forbidden_a = [item for item in raw.action_envelopes if int(item["tick"]) >= delivery and item["mode"] == "EXECUTE" and item["object_id"] == "object-a"]
+            appropriate_resolution = not forbidden_a and (
+                raw.spec.architecture is Architecture.R0
+                or any(item["target_object_id"] == "object-b" for item in selected)
+            )
+            passed = passed and len(delivered) == 1 and int(delivered[0]["delivery_tick"]) == delivery and bool(snapshots) and bool(holds) and appropriate_resolution
+            details.update({"delivery_tick": delivery, "delivered": delivered, "snapshot_count": len(snapshots), "safe_hold_count": len(holds), "alternative_events": selected})
+        elif scenario == "anchor-slow-policy":
+            generated = [int(item["generated_tick"]) for item in raw.commands]
+            passed = passed and tick + 10 in generated and all(value >= tick + 10 for value in generated)
+            details["command_generation_ticks"] = generated
+        details["passed"] = bool(passed)
+        receipts.append(details)
+    return {"passed": all(bool(item["passed"]) for item in receipts), "receipts": receipts}
+
+
+def _budget_audit(raws: Mapping[str, V3EpisodeRaw], scores: Mapping[str, ScoreResult]) -> dict[str, object]:
+    receipts: list[dict[str, object]] = []
+    for episode_id, raw in sorted(raws.items()):
+        prior = {DecisionLevel.CONTROL: 2, DecisionLevel.MOTION: 2, DecisionLevel.SEMANTIC: 1}
+        prior_tick = -REOBSERVE_TICKS
+        valid = True
+        transitions = []
+        for decision in raw.decisions:
+            if decision.level in prior:
+                valid = valid and decision.observed_tick - prior_tick >= REOBSERVE_TICKS and prior[decision.level] > 0
+                prior[decision.level] -= 1
+                prior_tick = decision.observed_tick
+                transitions.append({"tick": decision.observed_tick, "level": decision.level.value, "remaining": prior[decision.level]})
+        scorer = scores[episode_id]
+        for reset in raw.budget_resets:
+            matching = [item for item in raw.execution_receipts if item["receipt_sha256"] == reset["execution_receipt_sha256"]]
+            valid = valid and reset["old_content_sha256"] != reset["new_content_sha256"] and len(matching) == 1 and scorer.violation_counts["reset"] == 0
+        receipts.append({"episode_id": episode_id, "passed": bool(valid), "transitions": transitions, "reset_count": len(raw.budget_resets)})
+    return {"passed": all(bool(item["passed"]) for item in receipts), "receipts": receipts}
+
+
+def _not_run_audit(not_run: Mapping[str, object]) -> dict[str, object]:
+    retained = not_run["precheck_input"]
+    fresh = _not_run_control()
+    target = np.asarray(getattr(retained, "target_a_xy"), dtype=np.float64)
+    q0 = np.asarray(getattr(retained, "q0"), dtype=np.float64)
+    arm_reach = 0.75
+    radius = float(np.linalg.norm(target))
+    receipt_equal = canonical_bytes(fresh) == canonical_bytes(not_run)
+    return {
+        "passed": bool(radius > arm_reach and receipt_equal and not_run["disposition"] == "NOT_RUN"),
+        "target_radius_m": radius,
+        "arm_reach_m": arm_reach,
+        "q0": q0.tolist(),
+        "receipt_recomputed_equal": receipt_equal,
+        "reason": not_run["reason"],
+    }
 
 
 def _gate_rows(
@@ -404,10 +531,7 @@ def _gate_rows(
     def select(architecture: Architecture, scenario: str, seed: int, controller: str = PRIMARY_CONTROLLER_ID) -> V3EpisodeRaw:
         return next(item for item in raws.values() if item.spec.architecture is architecture and item.spec.scenario_id == scenario and item.spec.seed == seed and item.spec.controller_id == controller)
 
-    reached = all(item.injection_rows == (item.realization.injection_tick,) and int(item.trace["tick"][item.realization.injection_tick]) == item.realization.injection_tick for item in raws.values())
-    anchor = select(Architecture.R3, "anchor-nominal", 20261891)
-    disturbances = [select(Architecture.R3, scenario, 20261891) for scenario in SCENARIO_IDS[2:]]
-    disturbance_changed = all(item.trace["q"].tobytes() != anchor.trace["q"].tobytes() and item.parameter_use_receipt["injection_tick"] == item.realization.injection_tick for item in disturbances)
+    disturbance_receipt = _disturbance_audit(raws)
 
     semantic_expected = {
         Architecture.R0: "CONTROL>CONTROL>SAFE_ABORT",
@@ -432,34 +556,22 @@ def _gate_rows(
         and p6.trace["actuator_cmd_nm"].tobytes() != p4.trace["actuator_cmd_nm"].tobytes()
     )
 
-    time_budget = True
-    resets_valid = True
-    for raw in raws.values():
-        intervention_ticks = [item.observed_tick for item in raw.decisions if item.level not in {DecisionLevel.NONE, DecisionLevel.SAFE_ABORT}]
-        time_budget = time_budget and all(later - earlier >= REOBSERVE_TICKS for earlier, later in zip(intervention_ticks, intervention_ticks[1:]))
-        resets_valid = resets_valid and all(
-            item["old_content_sha256"] != item["new_content_sha256"]
-            and item["successful_execution_receipt_sha256"] == item["new_content_sha256"]
-            for item in raw.budget_resets
-        )
+    budget_receipt = _budget_audit(raws, scores)
     boundary_receipt = cause_boundary_audit()
-    boundaries = bool(boundary_receipt["passed"]) and all(
-        not any(token in canonical_bytes(item).lower() for token in _BANNED_DECISION_TOKENS)
-        for raw in raws.values() for item in (*raw.observations, *raw.decisions)
-    )
+    boundaries = bool(boundary_receipt["passed"])
     scorer_closed = all(score_episode(raw) == scores[episode_id] for episode_id, raw in raws.items()) and b"v3_runtime" not in (_root() / "experiments/03_recovery/src/v3_scorer.py").read_bytes()
     positives = set(controls) == {"unsafe", "forbidden", "collision", "stale", "invalid_action", "wrong_object", "missed_dwell", "loop", "reset"} and all(item["terminal"] == "FAILURE" and int(item["detected_count"]) > 0 for item in controls.values())
     return [
-        {"gate": 1, "passed": reached, "evidence": "sampled injection tick equals retained row"},
-        {"gate": 2, "passed": disturbance_changed, "evidence": "six disturbances differ from matched physical anchor"},
+        {"gate": 1, "passed": disturbance_receipt["passed"], "evidence": "independent disturbance receipts include exact injection timing"},
+        {"gate": 2, "passed": disturbance_receipt["passed"], "evidence": "scenario-specific units, intervals, world events and effects independently audited"},
         {"gate": 3, "passed": policies_distinct, "evidence": "observable R0/R1/R2/R3 sequences retained"},
         {"gate": 4, "passed": controllers_distinct, "evidence": "real P6/P4 path and bytes differ"},
-        {"gate": 5, "passed": time_budget and resets_valid, "evidence": "25-tick reobserve and guarded content resets"},
+        {"gate": 5, "passed": budget_receipt["passed"], "evidence": "independent 2/2/1 transitions, elapsed time and guarded reset receipts"},
         {"gate": 6, "passed": boundaries, "evidence": "decision/observable cause boundary closed"},
         {"gate": 7, "passed": scorer_closed, "evidence": "independent scorer reconstructs immutable raw"},
         {"gate": 8, "passed": positives, "evidence": "nine scorer terminal positive controls"},
         {"gate": 9, "passed": bool(replay["raw_matched"] and replay["derived_matched"]), "evidence": "raw replay and derived reconstruction byte exact"},
-        {"gate": 10, "passed": not_run["disposition"] == "NOT_RUN" and bool(not_run["architecture_independent"]), "evidence": "architecture-independent NOT_RUN control"},
+        {"gate": 10, "passed": _not_run_audit(not_run)["passed"], "evidence": "geometry-derived NOT_RUN receipt independently recomputed"},
     ]
 
 
@@ -518,19 +630,30 @@ def _derive(
     working = next(episode_id for episode_id, score in sorted(scores.items()) if score.terminal == "SUCCESS" and "semantic-object-unavailable" in episode_id and "R3" in episode_id)
     nonworking = next(episode_id for episode_id, score in sorted(scores.items()) if score.terminal == "FAILURE")
     examples = {"working": working, "nonworking": nonworking, "not_run": not_run["control_id"]}
+    gate_audits = {
+        "disturbance": _disturbance_audit(raws),
+        "budgets": _budget_audit(raws, scores),
+        "cause_boundary": cause_boundary_audit(),
+        "not_run": _not_run_audit(not_run),
+    }
     payloads: dict[str, bytes] = {
         "qualification-summary.json": canonical_bytes(summary),
         "hard-gates.csv": _csv(gate_csv_rows, ("gate", "passed", "evidence")),
         "replay.json": canonical_bytes(replay),
         "examples.json": canonical_bytes(examples),
+        "gate-audits.json": canonical_bytes(gate_audits),
         "injection-timing.csv": _csv(injection_rows, ("episode_id", "scenario_id", "seed", "sampled_tick", "retained_tick", "parameter_sha256", "physical_trace_sha256")),
         "injection-timing.svg": _diagnostic_svg("Sampled and retained injection ticks", injection_rows, ("scenario_id", "seed", "sampled_tick", "retained_tick", "physical_trace_sha256")),
+        "injection-timing.png": _diagnostic_png(injection_rows, ("scenario_id", "seed", "sampled_tick", "retained_tick", "physical_trace_sha256")),
         "controller-paths.csv": _csv(controller_rows, ("controller_id", "call_path", "trajectory_sha256", "q_ref_sha256", "torque_sha256")),
         "controller-paths.svg": _diagnostic_svg("Existing P6 and repaired P4 byte identities", controller_rows, ("controller_id", "call_path", "trajectory_sha256", "q_ref_sha256", "torque_sha256")),
+        "controller-paths.png": _diagnostic_png(controller_rows, ("controller_id", "call_path", "trajectory_sha256", "q_ref_sha256", "torque_sha256")),
         "budget-sequences.csv": _csv(budget_rows, ("episode_id", "tick", "level", "control_remaining", "motion_remaining", "semantic_remaining")),
         "budget-sequences.svg": _diagnostic_svg("Time-advanced decision and budget sequences", budget_rows, ("episode_id", "tick", "level", "control_remaining", "motion_remaining", "semantic_remaining")),
+        "budget-sequences.png": _diagnostic_png(budget_rows, ("episode_id", "tick", "level", "control_remaining", "motion_remaining", "semantic_remaining")),
         "scorer-controls.csv": _csv(control_rows, ("control", "terminal", "detected_count")),
         "scorer-controls.svg": _diagnostic_svg("Independent scorer terminal positive controls", control_rows, ("control", "terminal", "detected_count")),
+        "scorer-controls.png": _diagnostic_png(control_rows, ("control", "terminal", "detected_count")),
         "qualification-hashes.json": canonical_bytes({
             "freeze_sha256": sha256_bytes((output / "qualification-freeze.json").read_bytes()),
             "raw_manifest_sha256": sha256_bytes((output / "raw/manifest.json").read_bytes()),
@@ -546,6 +669,46 @@ def _derive(
 
 def _tree_bytes(root: Path) -> dict[str, bytes]:
     return {path.relative_to(root).as_posix(): path.read_bytes() for path in sorted(root.rglob("*")) if path.is_file()}
+
+
+def tree_sha256(root: Path) -> str:
+    inventory = [
+        {"path": name, "bytes": len(payload), "sha256": sha256_bytes(payload)}
+        for name, payload in sorted(_tree_bytes(root).items())
+    ]
+    return sha256_bytes(canonical_bytes(inventory))
+
+
+def publish_durable_archive(output: Path, destination: Path) -> dict[str, object]:
+    """Publish a deterministic, content-addressed archive suitable for git retention."""
+    if not output.is_dir() or destination.exists():
+        raise FileExistsError(destination)
+    destination.mkdir(parents=True)
+    buffer = io.BytesIO()
+    with gzip.GzipFile(fileobj=buffer, mode="wb", filename="", mtime=0, compresslevel=9) as compressed:
+        with tarfile.open(fileobj=compressed, mode="w|") as archive:
+            for name, payload in sorted(_tree_bytes(output).items()):
+                info = tarfile.TarInfo(name)
+                info.size = len(payload)
+                info.mtime = 0
+                info.mode = 0o644
+                info.uid = info.gid = 0
+                info.uname = info.gname = ""
+                archive.addfile(info, io.BytesIO(payload))
+    payload = buffer.getvalue()
+    digest = sha256_bytes(payload)
+    archive_name = f"{digest}.tar.gz"
+    _write(destination / archive_name, payload)
+    receipt = {
+        "schema_version": 1,
+        "archive": archive_name,
+        "archive_sha256": digest,
+        "archive_bytes": len(payload),
+        "tree_sha256": tree_sha256(output),
+        "member_count": len(_tree_bytes(output)),
+    }
+    _write(destination / "manifest.json", canonical_bytes(receipt))
+    return receipt
 
 
 def _assert_trees_equal(expected: Path, actual: Path) -> None:
@@ -567,6 +730,26 @@ def _freeze_record(specs: Sequence[V3EpisodeSpec]) -> dict[str, object]:
         "calibration_seeds": CALIBRATION_SEEDS,
         "episode_ids": [item.episode_id for item in specs],
         "controllers": (PRIMARY_CONTROLLER_ID, SENSITIVITY_CONTROLLER_ID),
+        "outcome_matrix": {
+            "episode_count": 360,
+            "seeds": list(range(20261801, 20261811)),
+            "primary_cells": 320,
+            "sensitivity_cells": 40,
+            "approval_binding_required": True,
+        },
+    }
+    executable = Path(sys.executable).resolve()
+    environment = {
+        "python": platform.python_version(),
+        "python_implementation": platform.python_implementation(),
+        "python_executable": str(executable),
+        "python_executable_sha256": sha256_bytes(executable.read_bytes()),
+        "numpy": np.__version__,
+        "mujoco": mujoco.__version__,
+        "platform": platform.platform(),
+        "machine": platform.machine(),
+        "png_renderer": "V3_STDLIB_RGB_BANDS_V1",
+        "zlib": zlib.ZLIB_VERSION,
     }
     return {
         "schema_version": 1,
@@ -577,6 +760,8 @@ def _freeze_record(specs: Sequence[V3EpisodeSpec]) -> dict[str, object]:
         "source_closure_sha256": sha256_bytes(canonical_bytes(closure)),
         "configuration": configuration,
         "configuration_sha256": sha256_bytes(canonical_bytes(configuration)),
+        "environment": environment,
+        "environment_sha256": sha256_bytes(canonical_bytes(environment)),
     }
 
 
@@ -614,6 +799,8 @@ def reconstruct(output: Path, clean: Path) -> dict[str, object]:
         raise FileExistsError(clean)
     freeze = json.loads((output / "qualification-freeze.json").read_text(encoding="ascii"))
     verify_source_closure(freeze["source_closure"])
+    if freeze["environment"] != _freeze_record(qualification_specs())["environment"]:
+        raise RuntimeError("V3 qualification environment drift")
     raw_manifest = json.loads((output / "raw/manifest.json").read_text(encoding="ascii"))
     specs = tuple(_spec_from_row(item) for item in raw_manifest["episodes"])
     clean.mkdir(parents=True)
@@ -636,8 +823,10 @@ __all__ = [
     "cause_boundary_audit",
     "episode_payloads",
     "qualification_specs",
+    "publish_durable_archive",
     "reconstruct",
     "run_qualification",
     "source_closure",
+    "tree_sha256",
     "verify_source_closure",
 ]

@@ -33,6 +33,7 @@ def test_independent_scorer_reconstructs_success_from_full_raw(scenario: str) ->
 def test_scorer_does_not_import_runtime_or_trust_executor_debug() -> None:
     source = inspect.getsource(scorer)
     assert "v3_runtime" not in source
+    assert "last_executed_object" not in source
     raw = episode("anchor-nominal")
     falsified = replace(raw, executor_debug={"aborted": True, "success": False, "unsafe_count": 999})
     assert scorer.score_episode(raw) == scorer.score_episode(falsified)

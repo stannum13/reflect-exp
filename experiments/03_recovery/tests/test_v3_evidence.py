@@ -4,6 +4,7 @@ import hashlib
 import importlib
 import json
 from pathlib import Path
+import tarfile
 
 import pytest
 
@@ -42,6 +43,9 @@ def test_complete_local_import_closure_is_frozen() -> None:
         "experiments/01_policy_control/src/kinematics.py",
         "experiments/01_policy_control/src/representations.py",
         "reflect/types.py",
+        "docs/superpowers/specs/2026-08-23-hierarchical-recovery-v3-preregistered.md",
+        "pyproject.toml",
+        "uv.lock",
     } <= paths
     assert evidence.verify_source_closure(closure) == closure
     assert all(len(item["sha256"]) == 64 and item["bytes"] > 0 for item in closure)
@@ -82,6 +86,15 @@ def test_full_qualification_publication_and_raw_reconstruction_are_byte_exact(tm
     for stem in ("injection-timing", "controller-paths", "budget-sequences", "scorer-controls"):
         assert (output / f"derived/{stem}.csv").is_file()
         assert (output / f"derived/{stem}.svg").is_file()
+        assert (output / f"derived/{stem}.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    gate_audits = json.loads((output / "derived/gate-audits.json").read_text(encoding="ascii"))
+    assert set(gate_audits) == {"disturbance", "budgets", "cause_boundary", "not_run"}
+    assert all(item["passed"] is True for item in gate_audits.values())
+    freeze = json.loads((output / "qualification-freeze.json").read_text(encoding="ascii"))
+    assert set(freeze["environment"]) >= {
+        "python", "python_executable_sha256", "numpy", "mujoco", "platform", "png_renderer",
+    }
+    assert freeze["configuration"]["outcome_matrix"]["episode_count"] == 360
 
     clean = tmp_path / "clean-reconstruction"
     replay = evidence.reconstruct(output, clean)
@@ -92,6 +105,21 @@ def test_full_qualification_publication_and_raw_reconstruction_are_byte_exact(tm
     actual = sorted(path.relative_to(clean).as_posix() for path in clean.rglob("*") if path.is_file())
     assert actual == expected
     assert all((output / name).read_bytes() == (clean / name).read_bytes() for name in expected)
+
+
+def test_durable_archive_is_content_addressed_and_extracts_byte_exact(tmp_path: Path) -> None:
+    output = tmp_path / "hierarchical-recovery-v3-qualification"
+    evidence.run_qualification(output)
+    destination = tmp_path / "durable"
+    receipt = evidence.publish_durable_archive(output, destination)
+    archive = destination / receipt["archive"]
+    assert archive.name == f"{receipt['archive_sha256']}.tar.gz"
+    assert hashlib.sha256(archive.read_bytes()).hexdigest() == receipt["archive_sha256"]
+    extracted = tmp_path / "extracted"
+    extracted.mkdir()
+    with tarfile.open(archive, "r:gz") as stream:
+        stream.extractall(extracted, filter="data")
+    assert evidence.tree_sha256(output) == evidence.tree_sha256(extracted)
 
 
 def test_publication_is_create_only(tmp_path: Path) -> None:
