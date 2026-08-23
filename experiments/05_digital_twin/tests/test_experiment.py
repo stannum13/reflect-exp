@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import fields
+from dataclasses import fields, replace
 import importlib
 from pathlib import Path
 
@@ -20,6 +20,51 @@ def test_four_layers_are_typed_separate_and_seeded() -> None:
     assert type(first.semantics) is experiment.SemanticLayer
     assert type(first.belief) is experiment.LiveBelief
     assert not any(field.name == "layers" for field in fields(first))
+
+
+class _Poison:
+    def __getattribute__(self, name: str) -> object:
+        raise AssertionError(f"forbidden layer read: {name}")
+
+
+def test_planner_has_exact_variant_scoped_view_and_forbidden_layers_are_poison_safe() -> None:
+    case = experiment.make_case(7, experiment.Mission.INSPECT_NEAREST_COOLANT)
+    poisoned = replace(case, semantics=_Poison(), belief=_Poison(), history=(_Poison(),), actual_facts=(_Poison(),))
+    t0 = experiment.planner_view(poisoned, experiment.Variant.T0)
+    t1 = experiment.planner_view(poisoned, experiment.Variant.T1)
+    assert type(t0) is experiment.T0View and not hasattr(t0, "topology")
+    assert type(t1) is experiment.T1View and not hasattr(t1, "semantics")
+    assert experiment.plan(t0).access_log == ("geometry", "instruction")
+    assert experiment.plan(t1).access_log == ("geometry", "instruction", "topology")
+    expected = {
+        experiment.Variant.T2: ("geometry", "instruction", "topology", "semantics"),
+        experiment.Variant.T3: ("geometry", "instruction", "topology", "semantics", "belief"),
+        experiment.Variant.T4: ("geometry", "instruction", "topology", "semantics", "belief", "history"),
+    }
+    for variant, access in expected.items():
+        assert experiment.plan(experiment.planner_view(case, variant)).access_log == access
+
+
+def test_all_instruction_changes_are_authenticated_encountered_and_causal() -> None:
+    changed = []
+    for seed in range(40):
+        for mission in experiment.Mission:
+            case = experiment.make_case(seed, mission)
+            event = next((row for row in case.dynamic_events if row.event_type == "INSTRUCTION_CHANGED"), None)
+            if event is None:
+                continue
+            changed.append((case, event))
+    assert len(changed) == 40
+    for case, event in changed:
+        assert event.tick == 1 and event.authority == "mission-control"
+        assert event.payload == "AVOID_ROOM:ElectricalRoom"
+        counterfactual = replace(case, dynamic_events=tuple(row for row in case.dynamic_events if row is not event))
+        for variant in (experiment.Variant.T1, experiment.Variant.T2, experiment.Variant.T3, experiment.Variant.T4):
+            outcome = experiment.evaluate(case, variant)
+            baseline = experiment.evaluate(counterfactual, variant)
+            assert event in outcome.events_seen and outcome.replanned
+            assert f"INSTRUCTION_APPLIED:{event.payload}" in outcome.actions
+            assert (outcome.final_route, outcome.actions, outcome.terminal_reason) != (baseline.final_route, baseline.actions, baseline.terminal_reason)
 
 
 def test_strong_twins_reduce_invalid_dynamic_plans() -> None:

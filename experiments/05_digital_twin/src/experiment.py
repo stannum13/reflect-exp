@@ -103,6 +103,8 @@ class EpisodicEvent:
     event_type: str
     subject_id: str
     detail: str
+    payload: str
+    authority: str
 
 
 @dataclass(frozen=True)
@@ -125,6 +127,54 @@ class TwinCase:
     dynamic_events: tuple[EpisodicEvent, ...]
     actual_facts: tuple[WorldFact, ...]
     case_sha256: str
+
+
+@dataclass(frozen=True)
+class T0View:
+    seed: int
+    mission: Mission
+    instruction: str
+    geometry: GeometryLayer
+    encountered: tuple[EpisodicEvent, ...]
+
+
+@dataclass(frozen=True)
+class T1View(T0View):
+    topology: TopologyLayer
+
+
+@dataclass(frozen=True)
+class T2View(T1View):
+    semantics: SemanticLayer
+
+
+@dataclass(frozen=True)
+class T3View(T2View):
+    belief: LiveBelief
+
+
+@dataclass(frozen=True)
+class T4View(T3View):
+    history: tuple[EpisodicEvent, ...]
+
+
+PlannerView = T0View | T1View | T2View | T3View | T4View
+
+
+@dataclass(frozen=True)
+class PlanProposal:
+    variant: Variant
+    target_id: str | None
+    route: tuple[str, ...]
+    route_cost_m: float
+    actions: tuple[str, ...]
+    unavailable: tuple[str, ...]
+    restricted: tuple[str, ...]
+    operations: int
+    semantic_queries: int
+    geometry_queries: int
+    invalid_affordance: int
+    access_log: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -224,16 +274,16 @@ def make_case(seed: int, mission: Mission) -> TwinCase:
     ), key=lambda row: (row.subject_id, row.predicate))))
     history = []
     if not actual_door3 and belief_door3:
-        history.append(EpisodicEvent(-2, "EDGE_FAILED", "Door3", "door failed on the previous Valve7 attempt"))
+        history.append(EpisodicEvent(-2, "EDGE_FAILED", "Door3", "door failed on the previous Valve7 attempt", "UNAVAILABLE", "robot-observation"))
     if not lobby_storage:
-        history.append(EpisodicEvent(-3, "AFFORDANCE_FAILED", "ToolCabinetLobby", "cabinet was occupied"))
+        history.append(EpisodicEvent(-3, "AFFORDANCE_FAILED", "ToolCabinetLobby", "cabinet was occupied", "OCCUPIED", "robot-observation"))
     dynamic = []
     if mission is Mission.REPLAN_ON_RESTRICTION:
-        dynamic.append(EpisodicEvent(1, "ROOM_RESTRICTED", "CorridorA", "access policy changed during execution"))
+        dynamic.append(EpisodicEvent(1, "ROOM_RESTRICTED", "CorridorA", "access policy changed during execution", "RESTRICTED", "facility-access-control"))
     if blocker_door != "NONE":
-        dynamic.append(EpisodicEvent(0, "ROUTE_BLOCKED", blocker_door, "movable blocker obstructs door"))
+        dynamic.append(EpisodicEvent(0, "ROUTE_BLOCKED", blocker_door, "movable blocker obstructs door", "UNAVAILABLE", "route-monitor"))
     if seed % 5 == 0:
-        dynamic.append(EpisodicEvent(0, "INSTRUCTION_CHANGED", mission.value, "safety qualifier added"))
+        dynamic.append(EpisodicEvent(1, "INSTRUCTION_CHANGED", mission.value, "mission authority added a route constraint", "AVOID_ROOM:ElectricalRoom", "mission-control"))
     actual = tuple(sorted((
         WorldFact("Door2", "AVAILABLE", str(actual_door2).lower()),
         WorldFact("Door3", "AVAILABLE", str(actual_door3).lower()),
@@ -247,21 +297,31 @@ def make_case(seed: int, mission: Mission) -> TwinCase:
     return TwinCase(**(asdict(provisional) | {"mission": mission, "geometry": provisional.geometry, "topology": topology, "semantics": semantics, "belief": belief, "history": tuple(history), "dynamic_events": provisional.dynamic_events, "actual_facts": actual, "case_sha256": digest(asdict(provisional) | {"case_sha256": None})}))
 
 
-def _entity(case: TwinCase, entity_id: str) -> SemanticEntity:
-    return next(row for row in case.semantics.entities if row.entity_id == entity_id)
-
-
-def _position(case: TwinCase, entity_id: str) -> tuple[float, float]:
-    row = next(item for item in case.geometry.entities if item.entity_id == entity_id)
+def _position(geometry: GeometryLayer, entity_id: str) -> tuple[float, float]:
+    row = next(item for item in geometry.entities if item.entity_id == entity_id)
     return row.x_m, row.y_m
 
 
-def _route(case: TwinCase, target_room: str, variant: Variant, unavailable: set[str], restricted: set[str]) -> tuple[tuple[str, ...], float, int]:
-    if variant is Variant.T0:
-        x0, y0 = _position(case, "Lobby"); x1, y1 = _position(case, target_room)
+def _variant(view: PlannerView) -> Variant:
+    return {T0View: Variant.T0, T1View: Variant.T1, T2View: Variant.T2, T3View: Variant.T3, T4View: Variant.T4}[type(view)]
+
+
+def planner_view(case: TwinCase, variant: Variant, encountered: tuple[EpisodicEvent, ...] = ()) -> PlannerView:
+    common = (case.seed, case.mission, case.instruction, case.geometry, encountered)
+    if variant is Variant.T0: return T0View(*common)
+    if variant is Variant.T1: return T1View(*common, case.topology)
+    if variant is Variant.T2: return T2View(*common, case.topology, case.semantics)
+    if variant is Variant.T3: return T3View(*common, case.topology, case.semantics, case.belief)
+    if variant is Variant.T4: return T4View(*common, case.topology, case.semantics, case.belief, case.history)
+    raise ValueError("closed variant required")
+
+
+def _route(view: PlannerView, target_room: str, unavailable: set[str], restricted: set[str]) -> tuple[tuple[str, ...], float, int]:
+    if type(view) is T0View:
+        x0, y0 = _position(view.geometry, "Lobby"); x1, y1 = _position(view.geometry, target_room)
         return ("Lobby", target_room), math.hypot(x1-x0, y1-y0), 1
     adjacency: dict[str, list[tuple[str, str, float]]] = {room: [] for room in ROOMS}
-    for edge in case.topology.edges:
+    for edge in view.topology.edges:
         if edge.door_id in unavailable or edge.room_a in restricted or edge.room_b in restricted:
             continue
         adjacency[edge.room_a].append((edge.room_b, edge.door_id, edge.cost_m)); adjacency[edge.room_b].append((edge.room_a, edge.door_id, edge.cost_m))
@@ -275,81 +335,91 @@ def _route(case: TwinCase, target_room: str, variant: Variant, unavailable: set[
     return (), math.inf, operations
 
 
-def _door_for(case: TwinCase, a: str, b: str) -> str:
-    return next(edge.door_id for edge in case.topology.edges if {edge.room_a, edge.room_b} == {a, b})
+def _door_for(topology: TopologyLayer, a: str, b: str) -> str:
+    return next(edge.door_id for edge in topology.edges if {edge.room_a, edge.room_b} == {a, b})
 
 
-def evaluate(case: TwinCase, variant: Variant) -> Outcome:
-    if not isinstance(case, TwinCase) or not isinstance(variant, Variant): raise ValueError("closed case/variant required")
-    actual = _fact_map(case.actual_facts); belief = _fact_map(case.belief.facts)
-    semantic_queries = 0; geometry_queries = 1; invalid_affordance = 0; stale = 0; actions: list[str] = []; target: str | None
-    if case.mission is Mission.INSPECT_NEAREST_COOLANT:
-        if variant in {Variant.T0, Variant.T1}:
-            target = min((row.entity_id for row in case.geometry.entities if row.entity_id not in ROOMS), key=lambda entity: math.dist(_position(case, "Lobby"), _position(case, entity)))
+def plan(view: PlannerView) -> PlanProposal:
+    variant=_variant(view);semantic_queries=0;geometry_queries=1;invalid_affordance=0;actions=[];access=["geometry","instruction"]
+    belief = _fact_map(view.belief.facts) if isinstance(view, T3View) else {}
+    if isinstance(view,T1View):access.append("topology")
+    if isinstance(view,T2View):access.append("semantics")
+    if isinstance(view,T3View):access.append("belief")
+    if isinstance(view,T4View):access.append("history")
+    if view.mission is Mission.INSPECT_NEAREST_COOLANT:
+        if not isinstance(view,T2View):
+            target=min((row.entity_id for row in view.geometry.entities if row.entity_id not in ROOMS),key=lambda entity:math.dist(_position(view.geometry,"Lobby"),_position(view.geometry,entity)))
             invalid_affordance = int(target not in {"Valve3", "Valve7"})
         else:
             semantic_queries += 1; target = "Valve3"
-            if variant in {Variant.T3, Variant.T4} and belief[("Valve3", "POSE_STALE")] == "true": actions.append("REFRESH_GEOMETRY:Valve3"); geometry_queries += 1
-            elif actual[("Valve3", "POSE_STALE")] == "true": stale = 1
-    elif case.mission is Mission.REACH_PUMP2_WITH_RECHARGE:
+            if isinstance(view,T3View) and belief[("Valve3","POSE_STALE")]=="true":actions.append("REFRESH_GEOMETRY:Valve3");geometry_queries+=1
+    elif view.mission is Mission.REACH_PUMP2_WITH_RECHARGE:
         target = "Pump2"
-        if variant in {Variant.T2, Variant.T3, Variant.T4}: semantic_queries += 1
-        if variant in {Variant.T3, Variant.T4} and float(belief[("Robot", "BATTERY")]) < 0.42: actions.append("RECHARGE:ChargerLobby")
-    elif case.mission in {Mission.INSPECT_VALVE7_WITH_ALTERNATE, Mission.REPLAN_ON_RESTRICTION}:
-        target = "Valve7"; semantic_queries += int(variant in {Variant.T2, Variant.T3, Variant.T4})
+        if isinstance(view,T2View):semantic_queries+=1
+        if isinstance(view,T3View) and float(belief[("Robot","BATTERY")])<.42:actions.append("RECHARGE:ChargerLobby")
+    elif view.mission in {Mission.INSPECT_VALVE7_WITH_ALTERNATE,Mission.REPLAN_ON_RESTRICTION}:
+        target="Valve7";semantic_queries+=int(isinstance(view,T2View))
     else:
-        if variant in {Variant.T0, Variant.T1}:
-            target = "ChargerLobby"; invalid_affordance = 1
-        elif variant is Variant.T2:
-            semantic_queries += 1; target = "ToolCabinetLobby"
+        if not isinstance(view,T2View):target="ChargerLobby";invalid_affordance=1
+        elif not isinstance(view,T3View):semantic_queries+=1;target="ToolCabinetLobby"
         else:
-            semantic_queries += 1
-            candidates = [entity.entity_id for entity in case.semantics.entities if "STORE_TOOL" in entity.affordances and belief[(entity.entity_id, "SAFE_AVAILABLE")] == "true"]
-            target = candidates[0] if candidates else None
+            semantic_queries+=1;candidates=[entity.entity_id for entity in view.semantics.entities if "STORE_TOOL" in entity.affordances and belief[(entity.entity_id,"SAFE_AVAILABLE")]=="true"];target=candidates[0] if candidates else None
+    unavailable:set[str]=set();restricted:set[str]=set()
+    if isinstance(view,T2View):
+        restricted.update(view.semantics.restricted_rooms)
+        if view.mission in {Mission.INSPECT_VALVE7_WITH_ALTERNATE,Mission.REPLAN_ON_RESTRICTION}:restricted.discard("RestrictedLab")
+    if isinstance(view,T3View):unavailable.update(s for (s,p),v in belief.items() if p=="AVAILABLE" and v=="false")
+    if isinstance(view,T4View):unavailable.update(x.subject_id for x in view.history if x.event_type=="EDGE_FAILED")
+    for event in view.encountered:
+        if event.event_type in {"ROUTE_BLOCKED","EDGE_FAILED"} and isinstance(view,T3View):unavailable.add(event.subject_id)
+        if event.event_type=="ROOM_RESTRICTED" and isinstance(view,T3View):restricted.add(event.subject_id)
+        if event.event_type=="INSTRUCTION_CHANGED" and isinstance(view,T1View):
+            if event.authority!="mission-control" or not event.payload.startswith("AVOID_ROOM:"):raise ValueError("instruction change is unauthenticated")
+            restricted.add(event.payload.split(":",1)[1]);actions.append(f"INSTRUCTION_APPLIED:{event.payload}")
+    if target is None:return PlanProposal(variant,None,(),0.,tuple(actions),tuple(sorted(unavailable)),tuple(sorted(restricted)),1,semantic_queries,geometry_queries,invalid_affordance,tuple(access))
+    if isinstance(view,T2View):target_room=next(x.room_id for x in view.semantics.entities if x.entity_id==target)
+    else:target_room=next(x.frame for x in view.geometry.entities if x.entity_id==target)
+    route,cost,operations=_route(view,target_room,unavailable,restricted)
+    return PlanProposal(variant,target,route,cost,tuple(actions),tuple(sorted(unavailable)),tuple(sorted(restricted)),operations,semantic_queries,geometry_queries,invalid_affordance,tuple(access))
+
+
+def _execute(case:TwinCase,initial:PlanProposal)->Outcome:
+    variant=initial.variant;actual=_fact_map(case.actual_facts);target=initial.target_id;initial_route=initial.route;final_plan=initial;events_seen=[];replanned=False;total_ops=initial.operations
+    actual_unavailable={s for (s,p),v in actual.items() if p=="AVAILABLE" and v=="false"};actual_unavailable.update(x.subject_id for x in case.dynamic_events if x.event_type=="ROUTE_BLOCKED")
+    target_room=None if target is None else next((x.room_id for x in case.semantics.entities if x.entity_id==target),next(x.frame for x in case.geometry.entities if x.entity_id==target))
+    geometry_collision=bool(target_room is not None and variant is Variant.T0 and target_room!="Lobby" and not any({x.room_a,x.room_b}=={"Lobby",target_room} for x in case.topology.edges))
+    invalid_initial=not initial_route or geometry_collision or bool(initial_route and variant is not Variant.T0 and any(_door_for(case.topology,a,b) in actual_unavailable for a,b in zip(initial_route,initial_route[1:])))
+    for event in sorted(case.dynamic_events,key=lambda x:(x.tick,x.event_type,x.subject_id)):
+        encountered=False;eligible=False
+        if event.event_type=="INSTRUCTION_CHANGED":encountered=True;eligible=variant is not Variant.T0
+        elif event.event_type=="ROOM_RESTRICTED" and event.subject_id in final_plan.route:encountered=True;eligible=variant in {Variant.T3,Variant.T4}
+        elif event.event_type=="ROUTE_BLOCKED" and variant is not Variant.T0 and any(_door_for(case.topology,a,b)==event.subject_id for a,b in zip(final_plan.route,final_plan.route[1:])):encountered=True;eligible=variant in {Variant.T3,Variant.T4}
+        if encountered:
+            events_seen.append(event)
+            if eligible:
+                final_plan=plan(planner_view(case,variant,tuple(events_seen)));total_ops+=final_plan.operations;replanned=True
     if target is None:
-        return _finish(case, variant, target, (), (), tuple(actions), (), False, "NO_SAFE_TARGET", 0.0, 0, invalid_affordance, stale, True, False, 1, 0, semantic_queries, geometry_queries)
-    target_room = _entity(case, target).room_id if any(row.entity_id == target for row in case.semantics.entities) else next(row.frame for row in case.geometry.entities if row.entity_id == target)
-    unavailable: set[str] = set(); restricted: set[str] = set()
-    if variant in {Variant.T2, Variant.T3, Variant.T4}: restricted.update(case.semantics.restricted_rooms)
-    if case.mission in {Mission.INSPECT_VALVE7_WITH_ALTERNATE, Mission.REPLAN_ON_RESTRICTION}:
-        restricted.discard("RestrictedLab")
-    if variant in {Variant.T3, Variant.T4}:
-        unavailable.update(subject for (subject, predicate), value in belief.items() if predicate == "AVAILABLE" and value == "false")
-    if variant is Variant.T4:
-        unavailable.update(row.subject_id for row in case.history if row.event_type == "EDGE_FAILED")
-    initial, initial_cost, operations = _route(case, target_room, variant, unavailable, restricted)
-    geometry_collision = variant is Variant.T0 and target_room != "Lobby" and not any({edge.room_a, edge.room_b} == {"Lobby", target_room} for edge in case.topology.edges)
-    invalid_initial = not initial or geometry_collision
-    actual_unavailable = {subject for (subject, predicate), value in actual.items() if predicate == "AVAILABLE" and value == "false"}
-    actual_unavailable.update(row.subject_id for row in case.dynamic_events if row.event_type == "ROUTE_BLOCKED")
-    if initial and variant is not Variant.T0:
-        invalid_initial |= any(_door_for(case, a, b) in actual_unavailable for a, b in zip(initial, initial[1:]))
-    final = initial; replanned = False; events_seen: list[EpisodicEvent] = []; replan_ops = 0
-    dynamic_restriction = next((row for row in case.dynamic_events if row.event_type == "ROOM_RESTRICTED"), None)
-    if dynamic_restriction and len(final) > 1:
-        events_seen.append(dynamic_restriction)
-        if variant in {Variant.T3, Variant.T4}:
-            restricted.add(dynamic_restriction.subject_id); final, _, replan_ops = _route(case, target_room, variant, unavailable, restricted); replanned = True
-        elif dynamic_restriction.subject_id in final:
-            invalid_initial = True
-    if final and variant is not Variant.T0:
-        blocked = next((_door_for(case, a, b) for a, b in zip(final, final[1:]) if _door_for(case, a, b) in actual_unavailable), None)
-        if blocked and variant in {Variant.T3, Variant.T4}:
-            events_seen.append(EpisodicEvent(1, "EDGE_FAILED", blocked, "execution observed unavailable edge")); unavailable.add(blocked); final, _, extra = _route(case, target_room, variant, unavailable, restricted); replan_ops += extra; replanned = True
-    final_cost = initial_cost if variant is Variant.T0 else 0.0 if len(final) < 2 else sum(next(edge.cost_m for edge in case.topology.edges if {edge.room_a, edge.room_b} == {a, b}) for a, b in zip(final, final[1:]))
+        return _finish(case,variant,None,(),(),final_plan.actions,tuple(events_seen),False,"NO_SAFE_TARGET",0.,0,initial.invalid_affordance,0,True,replanned,total_ops,(total_ops-initial.operations)*7,final_plan.semantic_queries,final_plan.geometry_queries)
+    stale=int(variant is Variant.T2 and case.mission is Mission.INSPECT_NEAREST_COOLANT and actual[("Valve3","POSE_STALE")]=="true")
+    final=final_plan.route;actions=list(final_plan.actions)
+    final_cost=final_plan.route_cost_m if math.isfinite(final_plan.route_cost_m) else 0.0
     forbidden_rooms = set(case.semantics.restricted_rooms)
     if case.mission in {Mission.INSPECT_VALVE7_WITH_ALTERNATE, Mission.REPLAN_ON_RESTRICTION}:
         forbidden_rooms.discard("RestrictedLab")
-    if dynamic_restriction is not None:
-        forbidden_rooms.add(dynamic_restriction.subject_id)
+    forbidden_rooms.update(x.subject_id for x in events_seen if x.event_type=="ROOM_RESTRICTED")
     forbidden = int(any(room in forbidden_rooms for room in final[1:]))
-    blocked_remaining = geometry_collision or bool(final and variant is not Variant.T0 and any(_door_for(case, a, b) in actual_unavailable for a, b in zip(final, final[1:])))
+    blocked_remaining = geometry_collision or bool(final and variant is not Variant.T0 and any(_door_for(case.topology, a, b) in actual_unavailable for a, b in zip(final, final[1:])))
     battery_failure = case.mission is Mission.REACH_PUMP2_WITH_RECHARGE and float(actual[("Robot", "BATTERY")]) < 0.42 and not any(action.startswith("RECHARGE") for action in actions)
     storage_failure = case.mission is Mission.STORE_CARRIED_TOOL and (target not in {"ToolCabinetLobby", "ToolCabinetElectrical"} or actual.get((target, "SAFE_AVAILABLE")) != "true")
-    success = bool(final and not invalid_affordance and not stale and not forbidden and not blocked_remaining and not battery_failure and not storage_failure)
-    reason = "SUCCESS" if success else "NO_ROUTE" if not final else "INVALID_AFFORDANCE" if invalid_affordance else "STALE_GEOMETRY" if stale else "FORBIDDEN_REGION" if forbidden else "GEOMETRY_COLLISION" if geometry_collision else "BLOCKED_EDGE" if blocked_remaining else "BATTERY_EXHAUSTED" if battery_failure else "UNSAFE_STORAGE"
+    success = bool(final and not initial.invalid_affordance and not stale and not forbidden and not blocked_remaining and not battery_failure and not storage_failure)
+    reason = "SUCCESS" if success else "NO_ROUTE" if not final else "INVALID_AFFORDANCE" if initial.invalid_affordance else "STALE_GEOMETRY" if stale else "FORBIDDEN_REGION" if forbidden else "GEOMETRY_COLLISION" if geometry_collision else "BLOCKED_EDGE" if blocked_remaining else "BATTERY_EXHAUSTED" if battery_failure else "UNSAFE_STORAGE"
     actions.extend(f"TRAVERSE:{room}" for room in final[1:]); actions.append(f"ACT:{target}" if success else f"FAIL:{reason}")
-    return _finish(case, variant, target, initial, final, tuple(actions), tuple(events_seen), success, reason, final_cost if math.isfinite(final_cost) else initial_cost, forbidden, invalid_affordance, stale, invalid_initial, replanned, operations+replan_ops, replan_ops*7, semantic_queries, geometry_queries)
+    return _finish(case,variant,target,initial_route,final,tuple(actions),tuple(events_seen),success,reason,final_cost,forbidden,initial.invalid_affordance,stale,invalid_initial,replanned,total_ops,(total_ops-initial.operations)*7,final_plan.semantic_queries,final_plan.geometry_queries)
+
+
+def evaluate(case: TwinCase, variant: Variant) -> Outcome:
+    if not isinstance(case,TwinCase) or not isinstance(variant,Variant):raise ValueError("closed case/variant required")
+    return _execute(case,plan(planner_view(case,variant)))
 
 
 def _finish(case: TwinCase, variant: Variant, target: str | None, initial: tuple[str, ...], final: tuple[str, ...], actions: tuple[str, ...], events: tuple[EpisodicEvent, ...], success: bool, reason: str, cost: float, forbidden: int, invalid_affordance: int, stale: int, invalid_initial: bool, replanned: bool, operations: int, latency: int, semantic_queries: int, geometry_queries: int) -> Outcome:
