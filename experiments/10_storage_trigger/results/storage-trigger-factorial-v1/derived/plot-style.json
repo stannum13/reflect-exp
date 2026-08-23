@@ -1,0 +1,1 @@
+{"background":"#ffffff","cell_missing":"#d9d9d9","cell_one":"#08519c","cell_zero":"#f7fbff","font":"monospace","height":360,"metric":"completion_mean","theme_independent":true,"width":600,"x_order":["NO_REPLAN","PERIODIC_ONLY","FAILURE_THRESHOLD","EVENT_DRIVEN","HYBRID"],"y_order":["NO_MEMORY","FIXED_SNAPSHOT","LIVE_BELIEF","EPISODIC_ONLY","LIVE_EPISODIC"]}

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "study_id": "EXP10_STORAGE_TRIGGER_FACTORIAL_V1",
+  "claim_scope": "SYNTHETIC_ENGINEERING_ORACLE_NOT_VLA",
+  "planner_id": "ORACLE_TYPED_SEMANTIC_V1",
+  "storage_variants": ["NO_MEMORY", "FIXED_SNAPSHOT", "LIVE_BELIEF", "EPISODIC_ONLY", "LIVE_EPISODIC"],
+  "trigger_variants": ["NO_REPLAN", "PERIODIC_ONLY", "FAILURE_THRESHOLD", "EVENT_DRIVEN", "HYBRID"],
+  "disturbance_families": ["POSE_SHIFT", "AVAILABILITY_LOSS", "RESTRICTION_CHANGE", "CONTROL_FAILURE"],
+  "severities": ["LOW", "HIGH"],
+  "mission_horizons": [4, 8, 12],
+  "period_ticks": 3,
+  "failure_threshold": 2,
+  "hybrid_cooldown_ticks": 2,
+  "recovery_allowance_ticks": 4,
+  "bootstrap_draws": 10000,
+  "bootstrap_seed": 20264999,
+  "png_renderer": "STDLIB_ZLIB_RGB_V1"
+}
