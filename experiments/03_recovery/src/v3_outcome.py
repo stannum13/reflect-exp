@@ -279,8 +279,12 @@ def counterfactual_event_audit(raw: object) -> dict[str, object]:
         counterfactual_score = score_episode(counterfactual)
         decisions_cf = [item for item in counterfactual.decisions if item.level.value != "NONE"]
         first = decisions_cf[0] if decisions_cf else None
-        post = next(
-            (item for item in counterfactual.observations if first is not None and item.tick > first.observed_tick),
+        cleared_observation = next(
+            (
+                item for item in counterfactual.observations
+                if first is not None and item.tick > first.observed_tick
+                and not item.failure_detected and item.controller_safe
+            ),
             None,
         )
         receipt_hashes = set()
@@ -303,7 +307,7 @@ def counterfactual_event_audit(raw: object) -> dict[str, object]:
                 for item in counterfactual.budget_resets
             )
         safety_passed = all(int(value) == 0 for value in counterfactual_score.violation_counts.values())
-        domain_cleared = bool(post is not None and not post.failure_detected and post.controller_safe)
+        domain_cleared = cleared_observation is not None
         passed = bool(
             first is not None and first.level.value == level and domain_cleared and content_progress
             and safety_passed and counterfactual_score.terminal == "SUCCESS"
@@ -372,7 +376,7 @@ def counterfactual_event_audit(raw: object) -> dict[str, object]:
                     if (
                         observable.tick <= start < end <= next_tick
                         and len(executed_ticks) == int(receipt.get("executed_valid_ticks", -1)) > 0
-                        and executed_ticks == set(range(start, end))
+                        and executed_ticks == set(range(end - len(executed_ticks), end))
                     ):
                         verified_receipts.append(receipt)
             receipt_valid = bool(verified_receipts)

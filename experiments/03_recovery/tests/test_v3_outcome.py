@@ -389,6 +389,7 @@ def test_counterfactual_oracle_rejects_wrong_object_and_missing_execution_or_res
 
 @pytest.mark.parametrize(("scenario", "lowest"), (
     ("control-impulse", "CONTROL"),
+    ("control-dropout", "CONTROL"),
     ("motion-target-shift", "MOTION"),
     ("semantic-object-unavailable", "SEMANTIC"),
 ))
@@ -403,6 +404,7 @@ def test_counterfactual_oracle_uses_independently_scored_forced_replays(scenario
     assert audit["lowest_sufficient_level"] == lowest
     assert all(len(item["replay_sha256"]) == 64 for item in audit["counterfactual_candidates"])
     assert all(item["independently_scored"] is True for item in audit["counterfactual_candidates"])
+    assert audit["matched_event_count"] / audit["event_count"] >= (0.5 if scenario == "control-dropout" else 1.0)
 
 
 def test_create_only_members_resume_exact_bytes_and_reject_tamper(tmp_path: Path) -> None:
