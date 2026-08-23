@@ -133,6 +133,13 @@ def test_production_bootstrap_source_is_closed_and_duplicate_rejecting(tmp_path:
     with pytest.raises(PackageLicenseError, match="duplicate key"):
         load_bootstrap_artifact_config(duplicate)
 
+    unsafe = tmp_path / "unsafe.yaml"
+    document = yaml.safe_load(Path("references/bootstrap-artifacts.yaml").read_text())
+    document["artifacts"][0]["repository_url"] = "file:///private/tmp/uv"
+    unsafe.write_text(yaml.safe_dump(document))
+    with pytest.raises(PackageLicenseError, match="identity"):
+        load_bootstrap_artifact_config(unsafe)
+
 
 def test_offline_bootstrap_rebinds_sealed_source_and_current_host(tmp_path: Path) -> None:
     config, inputs = _uv_bootstrap_fixture(tmp_path)

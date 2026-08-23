@@ -491,6 +491,41 @@ def load_bootstrap_artifact_config(path: Path) -> MappingProxyType[str, object]:
     record = raw["artifacts"][0]
     if not isinstance(record, dict) or set(record) != _BOOTSTRAP_CONFIG_KEYS:
         raise PackageLicenseError("bootstrap artifact config has an invalid schema")
+    name = _bootstrap_string(record, "name")
+    version = _bootstrap_string(record, "version")
+    tag = _bootstrap_string(record, "tag")
+    commit = _bootstrap_string(record, "commit_sha")
+    repository = _bootstrap_string(record, "repository_url")
+    if (
+        name != "uv"
+        or re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version) is None
+        or tag != version
+        or re.fullmatch(r"[0-9a-f]{40}", commit) is None
+        or repository != "https://github.com/astral-sh/uv"
+        or record.get("workspace_manifest_path") != "Cargo.toml"
+        or record.get("package_manifest_path") != "crates/uv/Cargo.toml"
+        or record.get("embedded_executable_path") != f"uv-{version}.data/scripts/uv"
+    ):
+        raise PackageLicenseError("bootstrap artifact identity is invalid")
+    for label in ("sdist", "wheel"):
+        filename = _bootstrap_string(record, f"{label}_filename")
+        url = _bootstrap_string(record, f"{label}_url")
+        suffix = ".tar.gz" if label == "sdist" else ".whl"
+        if (
+            not filename.endswith(suffix)
+            or url.rsplit("/", 1)[-1] != filename
+            or not url.startswith("https://files.pythonhosted.org/packages/")
+        ):
+            raise PackageLicenseError(f"bootstrap {label} URL/filename is invalid")
+        _bootstrap_size(record, f"{label}_size")
+    _bootstrap_size(record, "embedded_executable_size")
+    for key in (
+        "sdist_sha256", "wheel_sha256", "workspace_manifest_sha256",
+        "package_manifest_sha256", "license_apache_sha256", "license_mit_sha256",
+        "embedded_executable_sha256",
+    ):
+        if _SHA256.fullmatch(_bootstrap_string(record, key)) is None:
+            raise PackageLicenseError(f"bootstrap {key} must be a SHA-256 string")
     return MappingProxyType(dict(record))
 
 
