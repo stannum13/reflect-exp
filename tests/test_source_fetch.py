@@ -53,6 +53,11 @@ COMMIT_URL = f"https://api.github.com/repos/example/project/git/commits/{COMMIT_
 TREE_URL = f"https://api.github.com/repos/example/project/git/trees/{TREE_SHA}?recursive=1"
 ROOT_TREE_URL = f"https://api.github.com/repos/example/project/git/trees/{TREE_SHA}"
 LICENSE_URL = f"https://api.github.com/repos/example/project/license?ref={COMMIT_SHA}"
+WHEEL_URL = (
+    "https://files.pythonhosted.org/packages/aa/bb/"
+    + "c" * 64
+    + "/example-1.2.3-py3-none-any.whl"
+)
 
 
 def _fixture(name: str) -> bytes:
@@ -293,6 +298,38 @@ def test_urllib_transport_rejects_redirected_final_url() -> None:
         UrllibTransport(opener=Opener()).get(COMMIT_URL)
 
 
+def test_urllib_transport_accepts_only_exact_pythonhosted_wheel_url() -> None:
+    class Response:
+        status = 200
+        headers = {"content-length": "5"}
+
+        def __enter__(self) -> "Response":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def geturl(self) -> str:
+            return WHEEL_URL
+
+        def read(self, size: int) -> bytes:
+            return b"wheel"
+
+    class Opener:
+        def open(self, request: object, timeout: float) -> Response:
+            assert getattr(request, "full_url") == WHEEL_URL
+            return Response()
+
+    assert UrllibTransport(opener=Opener()).get(WHEEL_URL).body == b"wheel"
+    for invalid in (
+        WHEEL_URL + "?download=1",
+        WHEEL_URL.replace("files.pythonhosted.org", "example.com"),
+        "https://files.pythonhosted.org/example.whl",
+    ):
+        with pytest.raises(SourceFetchError, match="endpoint"):
+            UrllibTransport(opener=Opener()).get(invalid)
+
+
 def test_default_http_redirect_policy_refuses_to_follow_response_location() -> None:
     handler = _RejectRedirect()
     with pytest.raises(SourceFetchError, match="redirect"):
@@ -477,6 +514,105 @@ def test_license_noassertion_and_malformed_metadata_remain_unknown() -> None:
         assert locked.license_status is LicenseStatus.UNKNOWN
         assert locked.license_spdx is None
         assert locked.license_evidence_url == LICENSE_URL
+
+
+def _wheel_artifact_evidence() -> dict[str, str]:
+    return {
+        "artifact_license.authority": "EXACT_WHEEL_INSTALL_ONLY",
+        "artifact_license.package_name": "example",
+        "artifact_license.package_version": "1.2.3",
+        "artifact_license.wheel_filename": "example-1.2.3-py3-none-any.whl",
+        "artifact_license.wheel_url": "https://files.pythonhosted.org/packages/aa/bb/"
+        + "c" * 64
+        + "/example-1.2.3-py3-none-any.whl",
+        "artifact_license.wheel_sha256": "a" * 64,
+        "artifact_license.metadata_path": "example-1.2.3.dist-info/METADATA",
+        "artifact_license.metadata_sha256": "b" * 64,
+        "artifact_license.record_path": "example-1.2.3.dist-info/RECORD",
+        "artifact_license.record_sha256": "c" * 64,
+        "artifact_license.license_expression": "BSD-3-Clause AND MIT",
+        "artifact_license.license_files_json": '[{"path":"example-1.2.3.dist-info/licenses/LICENSE","sha256":"'
+        + "d" * 64
+        + '"}]',
+    }
+
+
+def test_noassertion_direct_dependency_uses_separate_exact_wheel_resolver() -> None:
+    calls: list[str] = []
+
+    def artifact_license(entry: RegistryEntry) -> dict[str, str]:
+        calls.append(entry.name)
+        return _wheel_artifact_evidence()
+
+    registry = _registry(_entry(mode=ReuseMode.DIRECT_DEPENDENCY))
+    candidate = resolve_registry(
+        registry,
+        ("example",),
+        FixtureTransport(license_response=_license_response(spdx="NOASSERTION")),
+        _clock,
+        artifact_license_resolver=artifact_license,
+    )
+    assert calls == ["example"]
+    locked = candidate.entries[0]
+    assert locked.license_status is LicenseStatus.UNKNOWN
+    assert locked.license_spdx is None
+    assert locked.license_evidence_url == LICENSE_URL
+    assert {
+        key: value
+        for key, value in locked.metadata_evidence.items()
+        if key.startswith("artifact_license.")
+    } == _wheel_artifact_evidence()
+
+
+def test_artifact_license_resolver_is_not_used_for_non_direct_source() -> None:
+    def forbidden(entry: RegistryEntry) -> dict[str, str]:
+        raise AssertionError(f"unexpected artifact resolution for {entry.name}")
+
+    resolve_registry(
+        _registry(_entry(mode=ReuseMode.ADAPTER_DEPENDENCY)),
+        ("example",),
+        FixtureTransport(),
+        _clock,
+        artifact_license_resolver=forbidden,
+    )
+
+
+def test_metadata_cli_injects_exact_wheel_evidence_without_installing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    registry_path = tmp_path / "repos.yaml"
+    registry_path.write_text(
+        f'''verified_at: "2026-08-22"
+large_model_downloads_default: false
+physical_deployment_default: false
+repositories:
+  - name: example
+    url: {REPO_URL}
+    mode: DIRECT_DEPENDENCY
+    experiments: [bootstrap]
+    selected_paths: []
+    use: Exact wheel fixture.
+'''
+    )
+    assert fetch_main(
+        ["--name", "example", "--metadata-only"],
+        root=tmp_path,
+        registry_path=registry_path,
+        lock_path=tmp_path / "repos.lock.yaml",
+        resolution_transport=FixtureTransport(
+            license_response=_license_response(spdx="NOASSERTION")
+        ),
+        artifact_license_resolver=lambda entry: _wheel_artifact_evidence(),
+        clock=_clock,
+    ) == 0
+    output = yaml.safe_load(capsys.readouterr().out)
+    locked = output["entries"][0]
+    assert locked["license_status"] == "UNKNOWN"
+    assert locked["license_spdx"] is None
+    assert locked["metadata_evidence"]["artifact_license.authority"] == (
+        "EXACT_WHEEL_INSTALL_ONLY"
+    )
+    assert not (tmp_path / "repos.lock.yaml").exists()
 
 
 @pytest.mark.parametrize(

@@ -8,10 +8,15 @@ import pytest
 
 from reflect.sources import (
     LicenseStatus,
+    LockedEntry,
     MetadataStatus,
     PathStatus,
+    RegistryEntry,
     ReuseMode,
+    SourceLock,
+    SourceRegistry,
     SourceValidationError,
+    has_exact_wheel_install_authority,
     load_lock,
     load_registry,
     registry_sha256,
@@ -167,3 +172,97 @@ entries:
     assert lock.entries[0].license_status is LicenseStatus.DISCOVERED
     assert lock.entries[0].metadata_status is MetadataStatus.RESOLVED
     assert validate_lock(registry, lock, require_complete=True) == []
+
+
+def _artifact_evidence() -> dict[str, str]:
+    return {
+        "artifact_license.authority": "EXACT_WHEEL_INSTALL_ONLY",
+        "artifact_license.package_name": "numpy",
+        "artifact_license.package_version": "2.4.6",
+        "artifact_license.wheel_filename": "numpy-2.4.6-cp311-cp311-macosx_14_0_arm64.whl",
+        "artifact_license.wheel_url": "https://files.pythonhosted.org/packages/aa/bb/"
+        + "c" * 64
+        + "/numpy-2.4.6-cp311-cp311-macosx_14_0_arm64.whl",
+        "artifact_license.wheel_sha256": "a" * 64,
+        "artifact_license.metadata_path": "numpy-2.4.6.dist-info/METADATA",
+        "artifact_license.metadata_sha256": "b" * 64,
+        "artifact_license.record_path": "numpy-2.4.6.dist-info/RECORD",
+        "artifact_license.record_sha256": "c" * 64,
+        "artifact_license.license_expression": "BSD-3-Clause AND MIT",
+        "artifact_license.license_files_json": '[{"path":"numpy-2.4.6.dist-info/licenses/LICENSE.txt","sha256":"'
+        + "d" * 64
+        + '"}]',
+    }
+
+
+def _unknown_license_lock(mode: ReuseMode, metadata: dict[str, str]) -> tuple[SourceRegistry, SourceLock]:
+    entry = RegistryEntry(
+        name="numpy",
+        url="https://github.com/numpy/numpy",
+        mode=mode,
+        experiments=("bootstrap",),
+        selected_paths=(),
+        use="Typed arrays.",
+    )
+    registry = SourceRegistry(
+        verified_at="2026-08-22",
+        large_model_downloads_default=False,
+        physical_deployment_default=False,
+        repositories=(entry,),
+        registry_sha256="9" * 64,
+    )
+    lock = SourceLock(
+        registry_sha256="9" * 64,
+        generated_at="2026-08-23T00:00:00Z",
+        entries=(
+            LockedEntry(
+                name="numpy",
+                url=entry.url,
+                default_branch="main",
+                commit_sha="1" * 40,
+                retrieved_at="2026-08-23T00:00:00Z",
+                metadata_evidence={
+                    "commit": "https://api.github.com/repos/numpy/numpy/git/commits/" + "1" * 40,
+                    "tree": "https://api.github.com/repos/numpy/numpy/git/trees/" + "2" * 40 + "?recursive=1",
+                    **metadata,
+                },
+                license_spdx=None,
+                license_status=LicenseStatus.UNKNOWN,
+                license_evidence_url="https://api.github.com/repos/numpy/numpy/license?ref=" + "1" * 40,
+                path_statuses={},
+                path_evidence_urls={},
+                metadata_status=MetadataStatus.RESOLVED,
+            ),
+        ),
+    )
+    return registry, lock
+
+
+def test_exact_wheel_evidence_authorizes_only_unknown_direct_install() -> None:
+    registry, lock = _unknown_license_lock(ReuseMode.DIRECT_DEPENDENCY, _artifact_evidence())
+    assert has_exact_wheel_install_authority(lock.entries[0])
+    assert validate_lock(registry, lock, require_complete=True) == []
+    assert lock.entries[0].license_status is LicenseStatus.UNKNOWN
+    assert lock.entries[0].license_spdx is None
+
+
+def test_exact_wheel_evidence_never_authorizes_adapter_or_partial_record() -> None:
+    registry, lock = _unknown_license_lock(ReuseMode.ADAPTER_DEPENDENCY, _artifact_evidence())
+    assert validate_lock(registry, lock, require_complete=True) == [
+        "artifact install authority is permitted only for a direct dependency: numpy",
+        "direct/adapter license is not discovered: numpy",
+    ]
+
+    incomplete = _artifact_evidence()
+    del incomplete["artifact_license.record_sha256"]
+    registry, lock = _unknown_license_lock(ReuseMode.DIRECT_DEPENDENCY, incomplete)
+    assert not has_exact_wheel_install_authority(lock.entries[0])
+    assert validate_lock(registry, lock, require_complete=True) == [
+        "artifact license evidence is incomplete: numpy",
+        "direct/adapter license is not discovered: numpy",
+    ]
+
+    malformed = _artifact_evidence()
+    malformed["artifact_license.license_expression"] = "not an SPDX expression"
+    registry, lock = _unknown_license_lock(ReuseMode.DIRECT_DEPENDENCY, malformed)
+    assert not has_exact_wheel_install_authority(lock.entries[0])

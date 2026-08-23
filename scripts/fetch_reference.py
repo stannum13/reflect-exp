@@ -11,6 +11,7 @@ import sys
 from typing import Any, Callable
 
 from reflect.safety import SafetyConfig, SafetyViolation
+from reflect.package_license import LockedWheelLicenseResolver
 from reflect.source_checkout import (
     SparseCheckoutError,
     SubprocessCheckoutRunner,
@@ -68,6 +69,7 @@ def main(
     runner: Any | None = None,
     checkout_runner: Any | None = None,
     http_transport: Any | None = None,
+    artifact_license_resolver: Any | None = None,
     clock: Callable[[], datetime] = _utc_now,
 ) -> int:
     """Run the P2 command, with keyword-only offline test injection seams."""
@@ -176,9 +178,9 @@ def main(
     else:
         names = (arguments.name,)
 
+    cache = CacheStore(project_root / "external" / ".metadata")
     transport = resolution_transport
     if transport is None:
-        cache = CacheStore(project_root / "external" / ".metadata")
         transport = CachingTransport(
             runner or GitRunner(),
             http_transport or UrllibTransport(),
@@ -186,7 +188,22 @@ def main(
             clock,
             names[0],
         )
-    candidate = resolve_registry(registry, names, transport, clock)
+    artifact_resolver = artifact_license_resolver
+    uv_lock_path = project_root / "uv.lock"
+    if artifact_resolver is None and uv_lock_path.is_file():
+        artifact_resolver = LockedWheelLicenseResolver(
+            uv_lock_bytes=uv_lock_path.read_bytes(),
+            transport=http_transport or UrllibTransport(),
+            cache=cache,
+            clock=clock,
+        )
+    candidate = resolve_registry(
+        registry,
+        names,
+        transport,
+        clock,
+        artifact_license_resolver=artifact_resolver,
+    )
     if arguments.all_metadata_only:
         atomic_write_lock(source_lock_path, candidate)
     else:

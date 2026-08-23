@@ -6,7 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 import hashlib
-from pathlib import Path
+import json
+from pathlib import Path, PurePosixPath
 import re
 from types import MappingProxyType
 from typing import Any
@@ -46,6 +47,89 @@ class MetadataStatus(str, Enum):
 
 _GITHUB_URL = re.compile(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
 _SHA40 = re.compile(r"[0-9a-f]{40}\Z")
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_SPDX_TOKEN = re.compile(r"\(|\)|AND|OR|WITH|[A-Za-z0-9][A-Za-z0-9.+-]*")
+_ARTIFACT_LICENSE_KEYS = frozenset(
+    {
+        "artifact_license.authority",
+        "artifact_license.package_name",
+        "artifact_license.package_version",
+        "artifact_license.wheel_filename",
+        "artifact_license.wheel_url",
+        "artifact_license.wheel_sha256",
+        "artifact_license.metadata_path",
+        "artifact_license.metadata_sha256",
+        "artifact_license.record_path",
+        "artifact_license.record_sha256",
+        "artifact_license.license_expression",
+        "artifact_license.license_files_json",
+    }
+)
+
+
+def is_spdx_expression(value: object) -> bool:
+    """Validate SPDX expression syntax without classifying license text."""
+    if type(value) is not str:
+        return False
+    tokens: list[str] = []
+    position = 0
+    for match in _SPDX_TOKEN.finditer(value):
+        if value[position : match.start()].strip():
+            return False
+        tokens.append(match.group())
+        position = match.end()
+    if value[position:].strip() or not tokens or "NOASSERTION" in tokens:
+        return False
+    index = 0
+
+    def primary() -> bool:
+        nonlocal index
+        if index >= len(tokens):
+            return False
+        token = tokens[index]
+        if token == "(":
+            index += 1
+            if not expression() or index >= len(tokens) or tokens[index] != ")":
+                return False
+            index += 1
+            return True
+        if token in {"AND", "OR", "WITH", ")"}:
+            return False
+        index += 1
+        return True
+
+    def with_expression() -> bool:
+        nonlocal index
+        if not primary():
+            return False
+        if index < len(tokens) and tokens[index] == "WITH":
+            index += 1
+            if index >= len(tokens) or tokens[index] in {"AND", "OR", "WITH", "(", ")"}:
+                return False
+            index += 1
+        return True
+
+    def conjunction() -> bool:
+        nonlocal index
+        if not with_expression():
+            return False
+        while index < len(tokens) and tokens[index] == "AND":
+            index += 1
+            if not with_expression():
+                return False
+        return True
+
+    def expression() -> bool:
+        nonlocal index
+        if not conjunction():
+            return False
+        while index < len(tokens) and tokens[index] == "OR":
+            index += 1
+            if not conjunction():
+                return False
+        return True
+
+    return expression() and index == len(tokens)
 
 
 def _string(value: object, field: str, *, allow_none: bool = False) -> str | None:
@@ -237,6 +321,78 @@ class SourceLock:
             raise SourceValidationError("entries contains duplicate names")
 
 
+def _artifact_license_state(entry: LockedEntry) -> tuple[bool, bool]:
+    evidence = entry.metadata_evidence
+    present = {key for key in evidence if key.startswith("artifact_license.")}
+    if not present:
+        return False, False
+    if present != _ARTIFACT_LICENSE_KEYS:
+        return True, False
+    if evidence["artifact_license.authority"] != "EXACT_WHEEL_INSTALL_ONLY":
+        return True, False
+    package = evidence["artifact_license.package_name"]
+    version = evidence["artifact_license.package_version"]
+    filename = evidence["artifact_license.wheel_filename"]
+    url = evidence["artifact_license.wheel_url"]
+    if (
+        not package
+        or package != re.sub(r"[-_.]+", "-", entry.name).lower()
+        or not version
+        or filename != url.rsplit("/", 1)[-1]
+        or not filename.endswith(".whl")
+        or not url.startswith("https://files.pythonhosted.org/packages/")
+    ):
+        return True, False
+    for key in (
+        "artifact_license.wheel_sha256",
+        "artifact_license.metadata_sha256",
+        "artifact_license.record_sha256",
+    ):
+        if _SHA256.fullmatch(evidence[key]) is None:
+            return True, False
+    dist_info = f"{package.replace('-', '_')}-{version.replace('-', '_')}.dist-info"
+    if (
+        evidence["artifact_license.metadata_path"] != f"{dist_info}/METADATA"
+        or evidence["artifact_license.record_path"] != f"{dist_info}/RECORD"
+        or not is_spdx_expression(evidence["artifact_license.license_expression"])
+    ):
+        return True, False
+    try:
+        inventory = json.loads(evidence["artifact_license.license_files_json"])
+    except json.JSONDecodeError:
+        return True, False
+    if (
+        not isinstance(inventory, list)
+        or not inventory
+        or json.dumps(inventory, sort_keys=True, separators=(",", ":"))
+        != evidence["artifact_license.license_files_json"]
+    ):
+        return True, False
+    paths: list[str] = []
+    for item in inventory:
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"path", "sha256"}
+            or type(item["path"]) is not str
+            or not item["path"].startswith(f"{dist_info}/licenses/")
+            or ".." in PurePosixPath(item["path"]).parts
+            or type(item["sha256"]) is not str
+            or _SHA256.fullmatch(item["sha256"]) is None
+        ):
+            return True, False
+        paths.append(item["path"])
+    if paths != sorted(paths) or len(paths) != len(set(paths)):
+        return True, False
+    if entry.license_status is not LicenseStatus.UNKNOWN or entry.license_spdx is not None:
+        return True, False
+    return True, True
+
+
+def has_exact_wheel_install_authority(entry: LockedEntry) -> bool:
+    """Return whether a lock entry carries closed exact-wheel install evidence."""
+    return isinstance(entry, LockedEntry) and _artifact_license_state(entry)[1]
+
+
 def _read_yaml(path: Path, label: str) -> Mapping[str, Any]:
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -336,6 +492,13 @@ def validate_lock(registry: SourceRegistry, lock: SourceLock, *, require_complet
             errors.append(f"lock paths do not match registry: {name}")
         if set(locked.path_evidence_urls) != requested:
             errors.append(f"lock path evidence does not match registry: {name}")
+        artifact_present, artifact_valid = _artifact_license_state(locked)
+        if artifact_present and not artifact_valid:
+            errors.append(f"artifact license evidence is incomplete: {name}")
+        if artifact_valid and entry.mode is not ReuseMode.DIRECT_DEPENDENCY:
+            errors.append(
+                f"artifact install authority is permitted only for a direct dependency: {name}"
+            )
         if require_complete:
             if locked.metadata_status is not MetadataStatus.RESOLVED:
                 errors.append(f"metadata is not resolved: {name}")
@@ -345,7 +508,13 @@ def validate_lock(registry: SourceRegistry, lock: SourceLock, *, require_complet
                 errors.append(f"missing commit SHA: {name}")
             if locked.retrieved_at is None:
                 errors.append(f"missing retrieval timestamp: {name}")
-            if entry.mode in {ReuseMode.DIRECT_DEPENDENCY, ReuseMode.ADAPTER_DEPENDENCY} and locked.license_status is not LicenseStatus.DISCOVERED:
+            if (
+                entry.mode in {ReuseMode.DIRECT_DEPENDENCY, ReuseMode.ADAPTER_DEPENDENCY}
+                and locked.license_status is not LicenseStatus.DISCOVERED
+                and not (
+                    entry.mode is ReuseMode.DIRECT_DEPENDENCY and artifact_valid
+                )
+            ):
                 errors.append(f"direct/adapter license is not discovered: {name}")
             if locked.license_status is LicenseStatus.DISCOVERED and locked.license_spdx is None:
                 errors.append(f"discovered license has no SPDX observation: {name}")

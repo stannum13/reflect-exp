@@ -12,12 +12,14 @@ import re
 import stat
 import subprocess
 
+from reflect.package_license import validate_locked_install_evidence
 from reflect.sources import (
     LicenseStatus,
     ReuseMode,
     SourceLock,
     SourceRegistry,
     SourceValidationError,
+    has_exact_wheel_install_authority,
     load_lock,
     load_registry,
     validate_lock,
@@ -312,6 +314,27 @@ def audit_repository(root: Path, *, require_complete: bool) -> AuditResult:
         errors.extend(validate_lock(registry, lock, require_complete=require_complete))
         if require_complete:
             locked_by_name = {entry.name: entry for entry in lock.entries}
+            artifact_entries = tuple(
+                entry for entry in lock.entries if has_exact_wheel_install_authority(entry)
+            )
+            uv_lock_bytes: bytes | None = None
+            if artifact_entries:
+                try:
+                    uv_lock_bytes = (project_root / "uv.lock").read_bytes()
+                except OSError as exc:
+                    errors.append(
+                        "could not read uv.lock for artifact license evidence: "
+                        f"{type(exc).__name__}"
+                    )
+            if uv_lock_bytes is not None:
+                for locked in artifact_entries:
+                    errors.extend(
+                        validate_locked_install_evidence(
+                            package_name=locked.name,
+                            metadata_evidence=locked.metadata_evidence,
+                            uv_lock_bytes=uv_lock_bytes,
+                        )
+                    )
             for entry in registry.repositories:
                 locked = locked_by_name.get(entry.name)
                 if (

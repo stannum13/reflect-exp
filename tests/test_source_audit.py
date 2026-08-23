@@ -208,6 +208,79 @@ def test_require_complete_rejects_unknown_direct_or_adapter_license(
     assert "direct/adapter license is not discovered: example" in result.errors
 
 
+def _add_artifact_install_evidence(root: Path, *, locked_hash: str = "a" * 64) -> None:
+    lock_path = root / "references" / "repos.lock.yaml"
+    lock = _load_yaml(lock_path)
+    entry = lock["entries"][0]
+    entry["metadata_evidence"].update(
+        {
+            "artifact_license.authority": "EXACT_WHEEL_INSTALL_ONLY",
+            "artifact_license.package_name": "example",
+            "artifact_license.package_version": "1.2.3",
+            "artifact_license.wheel_filename": "example-1.2.3-py3-none-any.whl",
+            "artifact_license.wheel_url": "https://files.pythonhosted.org/packages/aa/bb/"
+            + "c" * 64
+            + "/example-1.2.3-py3-none-any.whl",
+            "artifact_license.wheel_sha256": "a" * 64,
+            "artifact_license.metadata_path": "example-1.2.3.dist-info/METADATA",
+            "artifact_license.metadata_sha256": "b" * 64,
+            "artifact_license.record_path": "example-1.2.3.dist-info/RECORD",
+            "artifact_license.record_sha256": "c" * 64,
+            "artifact_license.license_expression": "BSD-3-Clause AND MIT",
+            "artifact_license.license_files_json": '[{"path":"example-1.2.3.dist-info/licenses/LICENSE","sha256":"'
+            + "d" * 64
+            + '"}]',
+        }
+    )
+    _write_yaml(lock_path, lock)
+    wheel_url = entry["metadata_evidence"]["artifact_license.wheel_url"]
+    (root / "uv.lock").write_text(
+        f'''version = 1
+revision = 3
+[[package]]
+name = "example"
+version = "1.2.3"
+source = {{ registry = "https://pypi.org/simple" }}
+wheels = [{{ url = "{wheel_url}", hash = "sha256:{locked_hash}" }}]
+'''
+    )
+    _git(root, "add", "uv.lock")
+
+
+def test_audit_rebinds_direct_install_evidence_to_exact_uv_lock(tmp_path: Path) -> None:
+    root = complete_fixture(
+        tmp_path, mode="DIRECT_DEPENDENCY", license_status="UNKNOWN"
+    )
+    _add_artifact_install_evidence(root)
+    assert audit_repository(root, require_complete=True).errors == ()
+
+    _add_artifact_install_evidence(root, locked_hash="e" * 64)
+    assert (
+        "artifact evidence does not match the selected uv.lock wheel: example"
+        in audit_repository(root, require_complete=True).errors
+    )
+
+
+def test_artifact_install_evidence_does_not_authorize_source_attribution(
+    tmp_path: Path,
+) -> None:
+    root = complete_fixture(
+        tmp_path, mode="DIRECT_DEPENDENCY", license_status="UNKNOWN"
+    )
+    _add_artifact_install_evidence(root)
+    path = root / "reflect" / "adapted.py"
+    path.write_text(
+        "# Upstream-Source: example\n"
+        f"# Upstream-Revision: {SHA}\n"
+        "# SPDX-License-Identifier: MIT\n",
+        encoding="utf-8",
+    )
+    _git(root, "add", "reflect/adapted.py")
+    assert "locked attribution license is not discovered: reflect/adapted.py" in (
+        audit_repository(root, require_complete=True).errors
+    )
+
+
 @pytest.mark.parametrize(
     ("path", "message"),
     [

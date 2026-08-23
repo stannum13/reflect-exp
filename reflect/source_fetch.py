@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 import fnmatch
@@ -36,9 +36,27 @@ from reflect.sources import (
     MetadataStatus,
     PathStatus,
     RegistryEntry,
+    ReuseMode,
     SourceLock,
     SourceRegistry,
     validate_lock,
+)
+
+
+__all__ = (
+    "CacheStore",
+    "CachingTransport",
+    "GitHubIdentity",
+    "GitRunner",
+    "HttpResponse",
+    "MetadataEvidence",
+    "SourceFetchError",
+    "UrllibTransport",
+    "atomic_write_lock",
+    "lock_yaml_bytes",
+    "parse_ls_remote",
+    "resolve_entry",
+    "resolve_registry",
 )
 
 
@@ -204,6 +222,8 @@ def resolve_entry(
     entry: RegistryEntry,
     transport: ResolutionTransport,
     clock: Callable[[], datetime],
+    *,
+    artifact_license_resolver: Callable[[RegistryEntry], Mapping[str, str]] | None = None,
 ) -> LockedEntry:
     """Resolve one registry entry without creating a checkout."""
     if not isinstance(entry, RegistryEntry):
@@ -278,6 +298,24 @@ def resolve_entry(
         _root_licenses(license_entries),
         commit_sha,
     )
+    if (
+        license_status is LicenseStatus.UNKNOWN
+        and entry.mode is ReuseMode.DIRECT_DEPENDENCY
+        and artifact_license_resolver is not None
+    ):
+        artifact_evidence = artifact_license_resolver(entry)
+        if not isinstance(artifact_evidence, Mapping):
+            raise SourceFetchError("artifact license resolver returned invalid evidence")
+        for key, value in artifact_evidence.items():
+            if (
+                type(key) is not str
+                or not key.startswith("artifact_license.")
+                or type(value) is not str
+                or not value
+                or key in metadata_evidence
+            ):
+                raise SourceFetchError("artifact license resolver returned invalid evidence")
+            metadata_evidence[key] = value
     return LockedEntry(
         name=entry.name,
         url=entry.url,
@@ -302,6 +340,8 @@ def resolve_registry(
     names: Sequence[str],
     transport: ResolutionTransport,
     clock: Callable[[], datetime],
+    *,
+    artifact_license_resolver: Callable[[RegistryEntry], Mapping[str, str]] | None = None,
 ) -> SourceLock:
     if not isinstance(registry, SourceRegistry):
         raise SourceFetchError("registry must be a SourceRegistry")
@@ -321,7 +361,14 @@ def resolve_registry(
         factory = getattr(transport, "for_repository", None)
         if callable(factory):
             entry_transport = factory(entry.name)
-        locked.append(resolve_entry(entry, entry_transport, clock))
+        locked.append(
+            resolve_entry(
+                entry,
+                entry_transport,
+                clock,
+                artifact_license_resolver=artifact_license_resolver,
+            )
+        )
     result = SourceLock(
         registry_sha256=registry.registry_sha256,
         generated_at=_timestamp(clock),
