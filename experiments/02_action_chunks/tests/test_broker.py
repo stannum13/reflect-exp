@@ -24,7 +24,7 @@ def _tick(machine: object, tick: int, *, request: tuple[str, int, int] | None = 
             source_observation_time_ns=request[1] * 2_000_000,
         )
     if proposal is not None: machine.deliver(proposal)
-    machine.issue(measured_q=np.zeros(3, dtype=np.float64))
+    machine.issue(measured_q=np.zeros(3, dtype=np.float64), source_observation_id=tick, source_observation_time_ns=tick * 2_000_000)
     machine.close_tick()
 
 

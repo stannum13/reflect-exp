@@ -40,7 +40,7 @@ def test_out_of_order_response_is_retained_rejection() -> None:
             machine.request("r2", 2, delivery_tick=100, stack_id="P4", skill_id="skill", expected_phase="track_target", source_observation_id=2, source_observation_time_ns=4_000_000)
         if tick == 100: assert machine.deliver(proposals[2]).event_type == "CHUNK_ACCEPTED"
         if tick == 101: rejected = machine.deliver(proposals[1])
-        machine.issue(measured_q=np.zeros(3)); machine.close_tick()
+        machine.issue(measured_q=np.zeros(3), source_observation_id=tick, source_observation_time_ns=tick * 2_000_000); machine.close_tick()
     assert rejected is not None
     assert (rejected.event_type, rejected.detail) == ("CHUNK_REJECTED", "OUT_OF_ORDER")
 

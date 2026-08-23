@@ -309,6 +309,8 @@ class TemporalBroker:
         self._last_sequence = -1
         self._last_request_observation_id = -1
         self._last_request_observation_time_ns = -1
+        self._last_issue_observation_id = -1
+        self._last_issue_observation_time_ns = -1
         self._hold: ActionChunk | None = None
         self._events: list[BrokerTransition] = []
         self._issued: list[IssuedAction] = []
@@ -484,11 +486,19 @@ class TemporalBroker:
                 "derivation_revision": revision, "derivation_parameter": parameter,
                 "output_sha256": chunk.output_sha256}
 
-    def issue(self, *, measured_q: object) -> IssuedAction:
+    def issue(self, *, measured_q: object, source_observation_id: int,
+              source_observation_time_ns: int) -> IssuedAction:
         if not self._tick_open or self._current_tick >= self._terminal_tick or self._issued_this_tick:
             raise BrokerError("exactly one issue is allowed per open execution tick")
+        if (type(source_observation_id) is not int or type(source_observation_time_ns) is not int
+                or source_observation_id <= self._last_issue_observation_id
+                or source_observation_time_ns <= self._last_issue_observation_time_ns
+                or source_observation_time_ns > self._current_tick * 2_000_000):
+            raise BrokerError("issued action requires a fresh canonical observation at or before the current tick")
         self._prepare_transition()
         self._issued_this_tick = True
+        self._last_issue_observation_id = source_observation_id
+        self._last_issue_observation_time_ns = source_observation_time_ns
         if self._active is not None:
             row = self._current_tick - self._active.coverage[0]
             if not 0 <= row < self._active.actions.shape[0]:
@@ -502,8 +512,8 @@ class TemporalBroker:
                 hold_actions = np.tile(q, (self._terminal_tick - self._current_tick, 1))
                 self._hold = ActionChunk(
                     chunk_id=f"hold-{self._current_tick}-{q_hash[:16]}", skill_id="broker-safe-hold",
-                    source_observation_id=self._current_tick,
-                    source_observation_time_ns=self._current_tick * 2_000_000,
+                    source_observation_id=source_observation_id,
+                    source_observation_time_ns=source_observation_time_ns,
                     generated_time_ns=self._current_tick * 2_000_000,
                     valid_from_ns=self._current_tick * 2_000_000,
                     expires_at_ns=self._terminal_tick * 2_000_000, dt_s=0.002,

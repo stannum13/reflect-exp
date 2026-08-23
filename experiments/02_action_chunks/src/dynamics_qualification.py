@@ -127,7 +127,7 @@ def _run_cell(cell: object, config: object) -> tuple[np.ndarray, dict[str, objec
                            "pre_fault_normalized_sha256": normalized.pre_fault_normalized_sha256})
             machine.deliver(normalized); executable = None
         q, dq = arm.state()
-        issued = machine.issue(measured_q=q)
+        issued = machine.issue(measured_q=q, source_observation_id=tick, source_observation_time_ns=tick * _DT_NS)
         if issued.origin != "broker_safe_hold":
             active = machine.active
             assert active is not None

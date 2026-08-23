@@ -26,6 +26,14 @@ def _request(machine: object, request_id: str, sequence: int, delivery_tick: int
     )
 
 
+def _issue(machine: object, tick: int, q: np.ndarray | None = None, *, observation_id: int | None = None) -> object:
+    return machine.issue(
+        measured_q=np.zeros(3, dtype=np.float64) if q is None else q,
+        source_observation_id=tick if observation_id is None else observation_id,
+        source_observation_time_ns=tick * 2_000_000,
+    )
+
+
 def test_sealed_proposal_rejects_every_public_field_forgery() -> None:
     proposal = _proposal(0, 75)
     for field, value in (("representation", "JOINT_POSITION"), ("actual_delivery_tick", 76), ("normalized_actions_sha256", "0" * 64), ("actions", np.ones((125, 2), dtype=np.float64))):
@@ -36,15 +44,15 @@ def test_sealed_proposal_rejects_every_public_field_forgery() -> None:
 def test_capacity_is_measured_before_delivery_and_ticks_are_total() -> None:
     machine = broker.TemporalBroker(protocol_id="C", capacity=1, terminal_tick=3125, proposal_verifier=adapter.verify_normalized_policy)
     for tick in range(50):
-        machine.open_tick(tick); machine.issue(measured_q=np.zeros(3)); machine.close_tick()
-    machine.open_tick(50); _request(machine, "r0", 0, 75); machine.issue(measured_q=np.zeros(3)); machine.close_tick()
+        machine.open_tick(tick); _issue(machine, tick); machine.close_tick()
+    machine.open_tick(50); _request(machine, "r0", 0, 75); _issue(machine, 50); machine.close_tick()
     for tick in range(51, 75):
-        machine.open_tick(tick); machine.issue(measured_q=np.zeros(3)); machine.close_tick()
+        machine.open_tick(tick); _issue(machine, tick); machine.close_tick()
     machine.open_tick(75)
     with pytest.raises(broker.BrokerError, match="capacity"):
         _request(machine, "r1", 1, 100)
-    machine.deliver(_proposal(0, 75)); machine.issue(measured_q=np.zeros(3)); machine.close_tick()
-    machine.open_tick(76); _request(machine, "r1", 1, 101); machine.issue(measured_q=np.zeros(3)); machine.close_tick()
+    machine.deliver(_proposal(0, 75)); _issue(machine, 75); machine.close_tick()
+    machine.open_tick(76); _request(machine, "r1", 1, 101); _issue(machine, 76); machine.close_tick()
     with pytest.raises(broker.BrokerError, match="monotonic"):
         machine.open_tick(78)
 
@@ -57,7 +65,7 @@ def test_f_derivation_binds_positive_h_and_full_new_suffix() -> None:
         if tick == 50: _request(machine, "r1", 1, 76)
         if tick == 75: machine.deliver(_proposal(0, 75))
         if tick == 76: machine.deliver(_proposal(1, 76))
-        machine.issue(measured_q=np.zeros(3)); machine.close_tick()
+        _issue(machine, tick); machine.close_tick()
     active = machine.active
     assert active is not None and active.rule == "OVERLAP_BLEND" and active.h == 2
     accepted = [event for event in machine.events if event.event_type == "CHUNK_ACCEPTED"][-1]
@@ -76,7 +84,7 @@ def test_c_orders_parents_and_recomputes_at_earliest_expiry() -> None:
         if tick == 1: _request(machine, "r1", 1, 11)
         if tick == 10: machine.deliver(_proposal(0, 10))
         if tick == 11: machine.deliver(_proposal(1, 11))
-        machine.issue(measured_q=np.zeros(3)); machine.close_tick()
+        _issue(machine, tick); machine.close_tick()
     recomputed = [event for event in machine.events if event.event_type == "DERIVATION_RECOMPUTED"]
     assert len(recomputed) == 1 and recomputed[0].tick == 135
     assert tuple(row[0] for row in recomputed[0].sidecar["parent_coverages"]) == ("p1",)
@@ -90,7 +98,7 @@ def test_terminal_rejects_unmatched_pending_request() -> None:
     for tick in range(3):
         machine.open_tick(tick)
         if tick == 0: _request(machine, "r0", 0, 4)
-        machine.issue(measured_q=np.zeros(3)); machine.close_tick()
+        _issue(machine, tick); machine.close_tick()
     machine.open_tick(3)
     with pytest.raises(broker.BrokerError, match="pending|unmatched"):
         machine.finish()
@@ -98,34 +106,34 @@ def test_terminal_rejects_unmatched_pending_request() -> None:
 
 def test_drop_has_no_pending_payload_and_pause_binds_late_generation() -> None:
     machine = broker.TemporalBroker(protocol_id="E", capacity=1, terminal_tick=400, proposal_verifier=adapter.verify_normalized_policy)
-    machine.open_tick(0); _request(machine, "drop", 0, 150, drop=True); machine.issue(measured_q=np.zeros(3)); machine.close_tick()
+    machine.open_tick(0); _request(machine, "drop", 0, 150, drop=True); _issue(machine, 0); machine.close_tick()
     assert machine.pending_count == 0 and any(event.event_type == "REQUEST_DROPPED" for event in machine.events)
     for tick in range(1, 10):
-        machine.open_tick(tick); machine.issue(measured_q=np.zeros(3)); machine.close_tick()
-    machine.open_tick(10); _request(machine, "r1", 1, 310); machine.issue(measured_q=np.zeros(3)); machine.close_tick()
+        machine.open_tick(tick); _issue(machine, tick); machine.close_tick()
+    machine.open_tick(10); _request(machine, "r1", 1, 310); _issue(machine, 10); machine.close_tick()
     for tick in range(11, 310):
-        machine.open_tick(tick); machine.issue(measured_q=np.zeros(3)); machine.close_tick()
+        machine.open_tick(tick); _issue(machine, tick); machine.close_tick()
     machine.open_tick(310); paused = _proposal(1, 310, normal=160)
     assert paused.delivery_mode == "paused" and machine.deliver(paused).event_type == "CHUNK_ACCEPTED"
-    machine.issue(measured_q=np.zeros(3)); machine.close_tick()
+    _issue(machine, 310); machine.close_tick()
 
 
 def test_missing_due_delivery_fails_before_tick_closes() -> None:
     machine = broker.TemporalBroker(protocol_id="A", capacity=1, terminal_tick=10, proposal_verifier=adapter.verify_normalized_policy)
-    machine.open_tick(0); _request(machine, "r0", 0, 0); machine.issue(measured_q=np.zeros(3))
+    machine.open_tick(0); _request(machine, "r0", 0, 0); _issue(machine, 0)
     with pytest.raises(broker.BrokerError, match="unmatched"):
         machine.close_tick()
 
 
 def test_request_owns_source_context_and_requires_fresh_observation() -> None:
     machine = broker.TemporalBroker(protocol_id="A", capacity=2, terminal_tick=200, proposal_verifier=adapter.verify_normalized_policy)
-    machine.open_tick(0); _request(machine, "r0", 0, 75); machine.issue(measured_q=np.zeros(3)); machine.close_tick()
+    machine.open_tick(0); _request(machine, "r0", 0, 75); _issue(machine, 0); machine.close_tick()
     machine.open_tick(1)
     with pytest.raises(broker.BrokerError, match="identity/timing"):
         _request(machine, "r1", 0, 76)
-    machine.issue(measured_q=np.zeros(3)); machine.close_tick()
+    _issue(machine, 1); machine.close_tick()
     for tick in range(2, 75):
-        machine.open_tick(tick); machine.issue(measured_q=np.zeros(3)); machine.close_tick()
+        machine.open_tick(tick); _issue(machine, tick); machine.close_tick()
     knots = np.column_stack((np.linspace(0.50, 0.60, 9), np.linspace(0.0, 0.10, 9))).astype(np.float64)
     swapped = adapter.normalize_policy_raw(
         adapter.PolicyRaw("p0", "P4", "skill", 9, 18_000_000, "track_target", knots), 75,
@@ -138,11 +146,27 @@ def test_request_owns_source_context_and_requires_fresh_observation() -> None:
 
 def test_safe_hold_is_active_addressable_and_replaced_by_delivery() -> None:
     machine = broker.TemporalBroker(protocol_id="A", capacity=1, terminal_tick=200, proposal_verifier=adapter.verify_normalized_policy)
-    machine.open_tick(0); issued = machine.issue(measured_q=np.array((0.1, -0.2, 0.3), dtype=np.float64))
+    machine.open_tick(0); issued = _issue(machine, 0, np.array((0.1, -0.2, 0.3), dtype=np.float64), observation_id=7)
     hold = machine.active
     assert isinstance(hold, ActionChunk) and hold.chunk_id == issued.chunk_id
-    assert (hold.source_observation_id, hold.source_observation_time_ns) == (0, 0)
+    assert (hold.source_observation_id, hold.source_observation_time_ns) == (7, 0)
     assert [event.event_type for event in machine.events[-2:]] == ["CHUNK_ACCEPTED", "SAFE_HOLD_ENTERED"]
     machine.close_tick()
     machine.open_tick(1); _request(machine, "r1", 1, 1); machine.deliver(_proposal(1, 1))
     assert any(event.event_type == "CHUNK_REPLACED" and event.chunk_id == hold.chunk_id for event in machine.events)
+
+
+def test_expiry_hold_copies_actual_observation_identity_not_tick() -> None:
+    machine = broker.TemporalBroker(protocol_id="A", capacity=1, terminal_tick=200, proposal_verifier=adapter.verify_normalized_policy)
+    for tick in range(126):
+        machine.open_tick(tick)
+        if tick == 0:
+            _request(machine, "r0", 0, 0)
+            machine.deliver(_proposal(0, 0))
+        _issue(machine, tick, observation_id=1_000 + tick)
+        machine.close_tick()
+    hold = machine.active
+    assert isinstance(hold, ActionChunk)
+    assert (hold.source_observation_id, hold.source_observation_time_ns) == (1_125, 250_000_000)
+    accepted = [event for event in machine.events if event.event_type == "CHUNK_ACCEPTED" and event.detail == "BROKER_SAFE_HOLD"]
+    assert accepted[-1].sidecar["source_observation_id"] == 1_125
