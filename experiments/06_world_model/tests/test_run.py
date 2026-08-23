@@ -29,16 +29,22 @@ def _rewrite_manifest_member(root: Path, relative: str) -> None:
     manifest_path.write_bytes(world.canonical(manifest))
 
 
+def _small_specs() -> tuple[object, ...]:
+    rows = world.scene_rows()
+    return tuple([x for x in rows if x.partition == "train"][:4] + [x for x in rows if x.partition == "tuning"][:4] + [next(x for x in rows if x.partition == "evaluation")])
+
+
 def test_small_matrix_is_create_only_complete_and_reconstructable(tmp_path: Path) -> None:
-    specs = tuple(next(x for x in world.scene_rows() if x.partition == part) for part in ("train", "tuning", "evaluation"))
+    specs = _small_specs()
     output = tmp_path / "evidence"
     result = runner.run_matrix(output, specs=specs, require_full=False)
-    assert result == {"scenes": 3, "anchors": 6, "candidates": 48, "evaluation_candidates": 16}
-    assert len((output / "raw/scenes.jsonl").read_text().splitlines()) == 3
-    assert len((output / "raw/anchors.jsonl").read_text().splitlines()) == 6
-    assert len((output / "raw/candidates.jsonl").read_text().splitlines()) == 48
+    assert result == {"scenes": 9, "anchors": 18, "candidates": 144, "evaluation_candidates": 16}
+    assert len((output / "raw/scenes.jsonl").read_text().splitlines()) == 9
+    assert len((output / "raw/anchors.jsonl").read_text().splitlines()) == 18
+    assert len((output / "raw/candidates.jsonl").read_text().splitlines()) == 144
+    assert {"models.json", "calibration.json"} <= {path.name for path in (output / "raw").iterdir()}
     manifest = json.loads((output / "manifest.json").read_text())
-    assert manifest["status"] == "VALIDITY_REPAIRED_ENGINEERING_ONLY"
+    assert manifest["status"] == "ENGINEERING_NONCONFIRMATORY"
     assert len({row["path"] for row in manifest["files"]}) == len(manifest["files"])
     with pytest.raises(FileExistsError):
         runner.run_matrix(output, specs=specs, require_full=False)
@@ -60,7 +66,7 @@ def test_small_matrix_is_create_only_complete_and_reconstructable(tmp_path: Path
 
 
 def test_reconstruction_rejects_coherently_rehashed_action_tamper(tmp_path: Path) -> None:
-    specs = tuple(next(x for x in world.scene_rows() if x.partition == part) for part in ("train", "tuning", "evaluation"))
+    specs = _small_specs()
     original = tmp_path / "original"
     runner.run_matrix(original, specs=specs, require_full=False)
     tampered = tmp_path / "tampered"
@@ -82,7 +88,7 @@ def test_reconstruction_rejects_coherently_rehashed_action_tamper(tmp_path: Path
 
 
 def test_reconstruction_rejects_coherently_rehashed_anchor_and_split_tamper(tmp_path: Path) -> None:
-    specs = tuple(next(x for x in world.scene_rows() if x.partition == part) for part in ("train", "tuning", "evaluation"))
+    specs = _small_specs()
     original = tmp_path / "original"
     runner.run_matrix(original, specs=specs, require_full=False)
 
@@ -109,7 +115,7 @@ def test_reconstruction_rejects_coherently_rehashed_anchor_and_split_tamper(tmp_
 
 
 def test_reconstruction_rejects_source_ledger_not_bound_to_recorded_git_tree(tmp_path: Path) -> None:
-    specs = tuple(next(x for x in world.scene_rows() if x.partition == part) for part in ("train", "tuning", "evaluation"))
+    specs = _small_specs()
     original = tmp_path / "original"
     runner.run_matrix(original, specs=specs, require_full=False)
     source_path = original / "raw/source-ledger.json"
@@ -122,15 +128,26 @@ def test_reconstruction_rejects_source_ledger_not_bound_to_recorded_git_tree(tmp
         runner.reconstruct(original / "raw", tmp_path / "reconstructed")
 
 
-def test_v5_run_uses_sealed_models_without_refitting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    specs = tuple(next(x for x in world.scene_rows() if x.partition == part) for part in ("train", "tuning", "evaluation"))
-    frozen = Path(world.HERE) / "results/model-quality-v4/derived/models.json"
+def test_v6_reconstruction_consumes_sealed_models_and_calibration_without_refitting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    output = tmp_path / "v6"
+    runner.run_matrix(output, specs=_small_specs(), require_full=False)
+    raw_models = (output / "raw/models.json").read_bytes()
+    raw_calibration = (output / "raw/calibration.json").read_bytes()
     monkeypatch.setattr(model, "fit_models", lambda *_: (_ for _ in ()).throw(AssertionError("refit forbidden")))
-    output = tmp_path / "v5"
-    runner.run_matrix(output, specs=specs, require_full=False, frozen_models_from=frozen)
-    provenance = json.loads((output / "raw/model-provenance.json").read_text())
-    assert provenance["disposition"] == "V4_MODELS_BYTE_FROZEN_NO_REFIT"
-    assert provenance["models_sha256"] == model.V4_MODELS_SHA256
-    reconstructed = tmp_path / "reconstructed-v5"
+    monkeypatch.setattr(model, "calibrate_w5", lambda *_: (_ for _ in ()).throw(AssertionError("retune forbidden")))
+    reconstructed = tmp_path / "reconstructed-v6"
     runner.reconstruct(output / "raw", reconstructed)
-    assert (reconstructed / "models.json").read_bytes() == frozen.read_bytes()
+    assert (reconstructed / "models.json").read_bytes() == raw_models
+    assert (reconstructed / "calibration.json").read_bytes() == raw_calibration
+
+
+def test_v6_reconstruction_rejects_coherently_rehashed_calibration_tamper(tmp_path: Path) -> None:
+    original = tmp_path / "original-v6"
+    runner.run_matrix(original, specs=_small_specs(), require_full=False)
+    calibration_path = original / "raw/calibration.json"
+    calibration = json.loads(calibration_path.read_text())
+    calibration["selected_threshold"] += 1.0
+    calibration_path.write_bytes(world.canonical(calibration))
+    _rewrite_manifest_member(original, "raw/calibration.json")
+    with pytest.raises(ValueError, match="calibration"):
+        runner.reconstruct(original / "raw", tmp_path / "calibration-reconstructed")

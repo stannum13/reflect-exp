@@ -51,19 +51,33 @@ class HybridCalibration:
 def frozen_models_sha256(models:Sequence[FittedModel])->str:
     return hashlib.sha256(world.canonical([asdict(item) for item in models])).hexdigest()
 
-def load_frozen_models(payload:bytes)->tuple[FittedModel,...]:
+def load_models(payload:bytes)->tuple[FittedModel,...]:
     value=json.loads(payload)
-    if world.canonical(value)!=payload or not isinstance(value,list):raise ValueError("frozen model bytes are not canonical")
+    if world.canonical(value)!=payload or not isinstance(value,list):raise ValueError("model bytes are not canonical")
     exact=set(FittedModel.__dataclass_fields__);models=[]
     for row in value:
-        if not isinstance(row,dict) or set(row)!=exact:raise ValueError("frozen model schema is not exact")
+        if not isinstance(row,dict) or set(row)!=exact:raise ValueError("model schema is not exact")
         converted={**row,"feature_mean":tuple(row["feature_mean"]),"feature_scale":tuple(row["feature_scale"]),"coefficient_shape":tuple(row["coefficient_shape"]),"coefficients":tuple(row["coefficients"]),"intercept":tuple(row["intercept"]),"fit_scene_ids":tuple(row["fit_scene_ids"]),"tuning_scene_ids":tuple(row["tuning_scene_ids"]),"member_alphas":tuple(row["member_alphas"])}
         item=FittedModel(**converted);wire=[item.selector_id,item.member_alphas,item.feature_mean,item.feature_scale,item.coefficient_shape,item.coefficients,item.intercept,item.fit_scene_ids,item.tuning_scene_ids]
-        if hashlib.sha256(world.canonical(wire)).hexdigest()!=item.model_sha256:raise ValueError("frozen model record hash mismatch")
+        if hashlib.sha256(world.canonical(wire)).hexdigest()!=item.model_sha256:raise ValueError("model record hash mismatch")
         models.append(item)
     result=tuple(models)
-    if tuple(x.selector_id for x in result)!=LEARNED or sum(x.selected_for_evaluation for x in result)!=1 or frozen_models_sha256(result)!=V4_MODELS_SHA256:raise ValueError("frozen v4 model set mismatch")
+    if tuple(x.selector_id for x in result)!=LEARNED or sum(x.selected_for_evaluation for x in result)!=1:raise ValueError("model set mismatch")
     return result
+
+def load_frozen_models(payload:bytes)->tuple[FittedModel,...]:
+    result=load_models(payload)
+    if frozen_models_sha256(result)!=V4_MODELS_SHA256:raise ValueError("frozen v4 model set mismatch")
+    return result
+
+def load_calibration(payload:bytes,fitted:Sequence[FittedModel])->HybridCalibration:
+    value=json.loads(payload)
+    if world.canonical(value)!=payload or not isinstance(value,dict) or set(value)!=set(HybridCalibration.__dataclass_fields__):raise ValueError("calibration schema or encoding is invalid")
+    converted={**value,"threshold_quantiles":tuple(value["threshold_quantiles"]),"candidate_thresholds":tuple(value["candidate_thresholds"]),"training_scene_ids":tuple(value["training_scene_ids"]),"tuning_scene_ids":tuple(value["tuning_scene_ids"]),"parent_model_sha256s":tuple(value["parent_model_sha256s"])};item=HybridCalibration(**converted)
+    wire=[item.selected_residual,item.threshold_quantiles,item.candidate_thresholds,item.selected_quantile,item.selected_threshold,item.training_residual_scale,item.training_scene_ids,item.tuning_scene_ids,item.parent_model_sha256s,item.tuning_residual_use_fraction,"linear"]
+    if hashlib.sha256(world.canonical(wire)).hexdigest()!=item.calibration_sha256 or item.threshold_quantiles!=W5_THRESHOLD_QUANTILES or item.parent_model_sha256s!=tuple(x.model_sha256 for x in fitted) or item.selected_residual!=next(x.selector_id for x in fitted if x.selected_for_evaluation):raise ValueError("calibration hash or parent mismatch")
+    if not .25<=item.tuning_residual_use_fraction<=.75 or item.selected_quantile not in W5_THRESHOLD_QUANTILES:raise ValueError("calibration coverage or threshold domain is invalid")
+    return item
 
 def scene_features(scene:world.Scene,anchor:world.Anchor)->tuple[float,...]:
     geometry=(1.,0.) if scene.geometry=="disk" else (0.,1.); obstacle=(0.,)*5 if scene.obstacle is None else (1.,*scene.obstacle)
@@ -121,11 +135,15 @@ def _outputs(fitted:FittedModel,row:DatasetRow)->np.ndarray:
     coef=np.asarray(fitted.coefficients).reshape(fitted.coefficient_shape);raw=((_features(row,fitted.selector_id)-np.asarray(fitted.feature_mean))/np.asarray(fitted.feature_scale))@coef;return raw.reshape(len(fitted.member_alphas),len(fitted.intercept))+np.asarray(fitted.intercept)
 
 def _prediction(fitted:FittedModel,row:DatasetRow)->Prediction:
-    outputs=_outputs(fitted,row);out=outputs.mean(0);unc=float(np.std(outputs[:,0]));s=np.asarray(row.state_features)
+    outputs=_outputs(fitted,row);out=outputs.mean(0);s=np.asarray(row.state_features)
     if fitted.selector_id in {"W3","W3R"}:
-        cost=float((_w1v2(row).predicted_cost if fitted.selector_id=="W3R" else 0.)+out[0]);pos=math.sqrt(max(0.,cost));yaw=collision=unsafe=success=0.
+        unc=float(np.std(outputs[:,0]));cost=float((_w1v2(row).predicted_cost if fitted.selector_id=="W3R" else 0.)+out[0]);pos=math.sqrt(max(0.,cost));yaw=collision=unsafe=success=0.
     else:
         base=np.zeros(3) if fitted.selector_id=="W4" else _base_terminal(row)[0];terminal=base+out[:3];pos=float(np.linalg.norm(terminal[:2]-s[5:7]));yaw=abs((terminal[2]-s[7]+math.pi)%(2*math.pi)-math.pi);collision=float(np.clip(out[3],0,1));unsafe=float(np.clip(out[4],0,1));success=float(np.clip(out[5],0,1));cost=pos**2+.1*yaw**2+2*collision+.01*_energy(row)+4*unsafe-success
+        member_costs=[]
+        for member in outputs:
+            member_terminal=base+member[:3];member_pos=float(np.linalg.norm(member_terminal[:2]-s[5:7]));member_yaw=abs((member_terminal[2]-s[7]+math.pi)%(2*math.pi)-math.pi);member_costs.append(member_pos**2+.1*member_yaw**2+2*float(np.clip(member[3],0,1))+.01*_energy(row)+4*float(np.clip(member[4],0,1))-float(np.clip(member[5],0,1)))
+        unc=float(np.std(member_costs))
     return Prediction(fitted.selector_id,row.scene_id,row.stratum,row.anchor_id,row.candidate_id,row.strategy_id,float(cost),pos,yaw,collision,unsafe,success,unc,fitted.model_sha256)
 
 def _groups(rows:Sequence[DatasetRow])->Iterable[tuple[tuple[str,str],list[DatasetRow]]]:

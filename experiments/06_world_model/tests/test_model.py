@@ -5,6 +5,7 @@ from dataclasses import replace
 
 import pytest
 from pathlib import Path
+import numpy as np
 
 world = importlib.import_module("experiments.06_world_model.world")
 model = importlib.import_module("experiments.06_world_model.model")
@@ -131,3 +132,19 @@ def test_w5_confidence_and_choice_are_truth_free(domains: tuple[tuple[object, ..
         for row in rows if row.selector_id == "W5"
     ]
     assert identity(original) == identity(altered)
+
+
+def test_w4r_ensemble_disagreement_is_measured_in_cost_units(domains: tuple[tuple[object, ...], ...]) -> None:
+    training, tuning, evaluation = domains
+    fitted = next(item for item in model.fit_models(training, tuning) if item.selector_id == "W4R")
+    row = evaluation[0]
+    outputs = model._outputs(fitted, row)
+    state = np.asarray(row.state_features)
+    base = model._base_terminal(row)[0]
+    member_costs = []
+    for output in outputs:
+        terminal = base + output[:3]
+        position = float(np.linalg.norm(terminal[:2] - state[5:7]))
+        yaw = abs((terminal[2] - state[7] + np.pi) % (2 * np.pi) - np.pi)
+        member_costs.append(position**2 + .1 * yaw**2 + 2 * float(np.clip(output[3], 0, 1)) + .01 * model._energy(row) + 4 * float(np.clip(output[4], 0, 1)) - float(np.clip(output[5], 0, 1)))
+    assert model._prediction(fitted, row).uncertainty == pytest.approx(float(np.std(member_costs)))

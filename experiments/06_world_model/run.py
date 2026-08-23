@@ -25,8 +25,6 @@ SOURCE_PATHS = (
     Path("experiments/06_world_model/model.py"),
     Path("experiments/06_world_model/run.py"),
 )
-V4_PARENT_MANIFEST_SHA256="40be9ef3b736684b89854af856462aab3ad65c8f2a9f2bfdb1463a26a7bdc8c4"
-V4_SOURCE_GIT_HEAD="0ff47efb29b30cccc7a265d8992310c6aca4be7f"
 
 
 def _write(path: Path, payload: bytes) -> None:
@@ -82,7 +80,7 @@ def _validate_source_ledger(raw: Path) -> dict[str, object]:
 
 def _validate_root_manifest(raw: Path) -> dict[str, object]:
     root=raw.parent;manifest=_load_canonical_json(root/"manifest.json")
-    if manifest.get("schema_version")!=3 or manifest.get("status")!="VALIDITY_REPAIRED_ENGINEERING_ONLY" or manifest.get("authority")!="NONE":raise ValueError("root manifest status is invalid")
+    if manifest.get("schema_version")!=3 or manifest.get("status")!="ENGINEERING_NONCONFIRMATORY" or manifest.get("authority")!="NONE":raise ValueError("root manifest status is invalid")
     files=manifest.get("files")
     if not isinstance(files,list):raise ValueError("root manifest inventory is invalid")
     declared={row.get("path"):row for row in files if isinstance(row,dict)}
@@ -114,15 +112,11 @@ def _raw_dataset(raw: Path) -> tuple[model.DatasetRow,...]:
         rows.append(model.DatasetRow(item["partition"],item["stratum"],item["scene_id"],item["anchor_id"],item["candidate_id"],item["strategy_id"],tuple(item["state_features"]),command,item["action_sha256"],tuple(outcome["terminal_state"]),outcome["position_error_m"],outcome["orientation_error_rad"],outcome["collision"],outcome["action_energy"],outcome["unsafe"],outcome["success"],outcome["terminal_failure"],outcome["actual_cost"],outcome["outcome_sha256"]))
     return tuple(rows)
 
-def _frozen_models(raw:Path)->tuple[model.FittedModel,...]|None:
-    path=raw/"frozen-models.json"
-    if not path.exists():return None
-    provenance=_load_canonical_json(raw/"model-provenance.json")
-    expected={"schema_version":1,"disposition":"V4_MODELS_BYTE_FROZEN_NO_REFIT","models_sha256":model.V4_MODELS_SHA256,"parent_manifest_sha256":V4_PARENT_MANIFEST_SHA256,"parent_source_git_head":V4_SOURCE_GIT_HEAD,"selection":"W3R","training_scenes":72,"tuning_scenes":24}
-    if provenance!=expected or hashlib.sha256(path.read_bytes()).hexdigest()!=model.V4_MODELS_SHA256:raise ValueError("frozen model provenance mismatch")
-    fitted=model.load_frozen_models(path.read_bytes());rows=world.scene_rows();train={x.scene_id for x in rows if x.partition=="train"};tune={x.scene_id for x in rows if x.partition=="tuning"};evaluation={x.scene_id for x in rows if x.partition=="evaluation"}
-    if any(set(x.fit_scene_ids)!=train or set(x.tuning_scene_ids)!=tune or set(x.fit_scene_ids)&evaluation or set(x.tuning_scene_ids)&evaluation for x in fitted):raise ValueError("frozen model ancestry does not bind the frozen split")
-    return fitted
+def _v6_artifacts(raw:Path,training:Sequence[model.DatasetRow],tuning:Sequence[model.DatasetRow])->tuple[tuple[model.FittedModel,...],model.HybridCalibration]:
+    fitted=model.load_models((raw/"models.json").read_bytes());calibration=model.load_calibration((raw/"calibration.json").read_bytes(),fitted)
+    train_ids={x.scene_id for x in training};tune_ids={x.scene_id for x in tuning}
+    if any(set(x.fit_scene_ids)!=train_ids or set(x.tuning_scene_ids)!=tune_ids for x in fitted) or set(calibration.training_scene_ids)!=train_ids or set(calibration.tuning_scene_ids)!=tune_ids or train_ids&tune_ids:raise ValueError("v6 model or calibration ancestry mismatch")
+    return fitted,calibration
 
 
 def _authenticate_and_replay(raw: Path) -> None:
@@ -157,31 +151,29 @@ def _authenticate_and_replay(raw: Path) -> None:
 def _derive(raw: Path, output: Path) -> None:
     output.mkdir(parents=True)
     rows=_raw_dataset(raw);training=tuple(x for x in rows if x.partition=="train");tuning=tuple(x for x in rows if x.partition=="tuning");evaluation=tuple(x for x in rows if x.partition=="evaluation")
-    fitted=_frozen_models(raw) or model.fit_models(training,tuning);predictions=model.predict_all(fitted,evaluation);selections=model.rank_selectors(predictions,evaluation);metrics=model.aggregate_metrics(selections,predictions,evaluation)
+    fitted,calibration=_v6_artifacts(raw,training,tuning);predictions=model.predict_all(fitted,evaluation);selections=model.rank_selectors(predictions,evaluation,fitted,calibration);metrics=model.aggregate_metrics(selections,predictions,evaluation)
     latency=_load_canonical_json(raw/"latency.json")
-    selected=next(x.selector_id for x in fitted if x.selected_for_evaluation)
-    gate=model.quality_gate(metrics,selected,latency["selectors"])
-    chosen=[x for x in selections if x.selector_id==selected]; baseline={(x.scene_id,x.anchor_id):x for x in selections if x.selector_id=="W1V2"}
+    gate=model.quality_gate(metrics,latency["selectors"])
+    chosen=[x for x in selections if x.selector_id=="W5"]; baseline={(x.scene_id,x.anchor_id):x for x in selections if x.selector_id=="W1V2"}
     examples=[]
     for kind,pool in (("WORKING",[x for x in chosen if x.regret<baseline[(x.scene_id,x.anchor_id)].regret]),("NONWORKING",[x for x in chosen if x.regret>=baseline[(x.scene_id,x.anchor_id)].regret]),("MAX_REGRET",chosen)):
         if pool:
-            item=max(pool,key=lambda x:(x.regret,x.scene_id,x.anchor_id));examples.append({"kind":kind,"selector_id":selected,"scene_id":item.scene_id,"anchor_id":item.anchor_id,"candidate_id":item.candidate_id,"stratum":item.stratum,"regret":item.regret,"selection_sha256":world.sha(world.canonical(asdict(item)))})
-    _write(output/"models.json",world.canonical([asdict(x) for x in fitted]));_write(output/"predictions.jsonl",_json_lines(asdict(x) for x in predictions));_write(output/"selections.jsonl",_json_lines(asdict(x) for x in selections));_write(output/"metrics.json",world.canonical(metrics));_write(output/"latency.json",world.canonical(latency));_write(output/"gate.json",world.canonical(gate));_write(output/"annotations.json",world.canonical(examples))
+            item=max(pool,key=lambda x:(x.regret,x.scene_id,x.anchor_id));examples.append({"kind":kind,"selector_id":"W5","source_selector":item.source_selector,"confidence_score":item.confidence_score,"scene_id":item.scene_id,"anchor_id":item.anchor_id,"candidate_id":item.candidate_id,"stratum":item.stratum,"regret":item.regret,"selection_sha256":world.sha(world.canonical(asdict(item)))})
+    _write(output/"models.json",(raw/"models.json").read_bytes());_write(output/"calibration.json",(raw/"calibration.json").read_bytes());_write(output/"predictions.jsonl",_json_lines(asdict(x) for x in predictions));_write(output/"selections.jsonl",_json_lines(asdict(x) for x in selections));_write(output/"metrics.json",world.canonical(metrics));_write(output/"latency.json",world.canonical(latency));_write(output/"gate.json",world.canonical(gate));_write(output/"annotations.json",world.canonical(examples))
     raw_hashes=[_hash_file(path) for path in sorted(raw.iterdir()) if path.is_file()]
-    recipe={"schema_version":5 if _frozen_models(raw) else 4,"renderer":"experiments.06_world_model.run:reconstruct","raw_files":raw_hashes,"fit_partition":"sealed v4 model ancestry; no refit" if _frozen_models(raw) else "train","tuning_partition":"sealed v4 selection; no retune" if _frozen_models(raw) else "tuning","untouched_prediction_partition":"evaluation","selectors":list(model.SELECTORS),"selected_residual_selector":selected,"annotation_rule":"max regret; first available working/nonworking class by maximum regret","sort":"canonical generation order","numpy":np.__version__}
+    recipe={"schema_version":6,"renderer":"experiments.06_world_model.run:reconstruct","raw_files":raw_hashes,"fit_partition":"sealed v6 train ancestry; no reconstruction refit","tuning_partition":"sealed v6 threshold calibration; no reconstruction retune","untouched_prediction_partition":"evaluation","selectors":list(model.SELECTORS),"selected_residual_selector":calibration.selected_residual,"hybrid_selector":"W5","annotation_rule":"maximum regret within relative-to-W1V2 working/nonworking classes","sort":"canonical generation order","numpy":np.__version__}
     _write(output/"recipe.json",world.canonical(recipe))
 
 
 def reconstruct(raw: Path, output: Path) -> None:
     if output.exists():raise FileExistsError(output)
-    required={"source-ledger.json","scenes.jsonl","anchors.jsonl","candidates.jsonl","actions.npy","truth.jsonl","attempts.jsonl","latency.json"}
-    if (raw/"frozen-models.json").exists():required|={"frozen-models.json","model-provenance.json"}
+    required={"source-ledger.json","scenes.jsonl","anchors.jsonl","candidates.jsonl","actions.npy","truth.jsonl","attempts.jsonl","latency.json","models.json","calibration.json"}
     if not raw.is_dir() or {x.name for x in raw.iterdir()}!=required:raise ValueError("raw evidence file set is not exact")
     _authenticate_and_replay(raw)
     _derive(raw,output)
 
 
-def run_matrix(output: Path, *, specs: Sequence[world.SceneSpec] | None = None, require_full: bool = True, frozen_models_from:Path|None=None) -> dict[str,int]:
+def run_matrix(output: Path, *, specs: Sequence[world.SceneSpec] | None = None, require_full: bool = True) -> dict[str,int]:
     if output.exists():raise FileExistsError(output)
     selected=tuple(world.scene_rows() if specs is None else specs)
     if require_full and selected!=world.scene_rows():raise ValueError("full run requires exact frozen scene manifest")
@@ -189,8 +181,6 @@ def run_matrix(output: Path, *, specs: Sequence[world.SceneSpec] | None = None, 
     source=_source_ledger();git_head=subprocess.run(("git","rev-parse","HEAD"),check=True,stdout=subprocess.PIPE).stdout.decode().strip()
     source_receipt={"schema_version":3,"git_head":git_head,"python":platform.python_version(),"numpy":np.__version__,"mujoco":mujoco.__version__,"files":source}
     output.mkdir(parents=True);raw=output/"raw";raw.mkdir();_write(raw/"source-ledger.json",world.canonical(source_receipt));_validate_source_ledger(raw)
-    if frozen_models_from is not None:
-        frozen_payload=frozen_models_from.read_bytes();model.load_frozen_models(frozen_payload);_write(raw/"frozen-models.json",frozen_payload);_write(raw/"model-provenance.json",world.canonical({"schema_version":1,"disposition":"V4_MODELS_BYTE_FROZEN_NO_REFIT","models_sha256":model.V4_MODELS_SHA256,"parent_manifest_sha256":V4_PARENT_MANIFEST_SHA256,"parent_source_git_head":V4_SOURCE_GIT_HEAD,"selection":"W3R","training_scenes":72,"tuning_scenes":24}));_frozen_models(raw)
     scenes=[];anchors=[];candidate_rows=[];truth=[];actions=[];attempts=[]
     for spec in selected:
         try:
@@ -208,26 +198,30 @@ def run_matrix(output: Path, *, specs: Sequence[world.SceneSpec] | None = None, 
     if len(scenes)!=expected_scenes or len(anchors)!=expected_scenes*2 or len(candidate_rows)!=expected_candidates or any(x["outcome"]!="VALID" for x in attempts):raise RuntimeError("Experiment 06 matrix is incomplete")
     if require_full:
         if (sum(x.partition=="train" for x in selected),sum(x.partition=="tuning" for x in selected),sum(x.partition=="evaluation" for x in selected))!=(72,24,48):raise RuntimeError("split counts drifted")
-    rows=_raw_dataset(raw);training=tuple(x for x in rows if x.partition=="train");tuning=tuple(x for x in rows if x.partition=="tuning");evaluation=tuple(x for x in rows if x.partition=="evaluation");fitted=_frozen_models(raw) or model.fit_models(training,tuning);samples={}
+    rows=_raw_dataset(raw);training=tuple(x for x in rows if x.partition=="train");tuning=tuple(x for x in rows if x.partition=="tuning");evaluation=tuple(x for x in rows if x.partition=="evaluation");fitted=model.fit_models(training,tuning);calibration=model.calibrate_w5(training,tuning,fitted);_write(raw/"models.json",world.canonical([asdict(x) for x in fitted]));_write(raw/"calibration.json",world.canonical(asdict(calibration)));samples={}
     for fitted_model in fitted:
         durations=[]
         for row in evaluation[:min(64,len(evaluation))]:
             start=time.perf_counter_ns();model._prediction(fitted_model,row);durations.append(time.perf_counter_ns()-start)
-        samples[fitted_model.selector_id]={"samples_ns":durations,"p50_ns":int(np.percentile(durations,50)),"p95_ns":int(np.percentile(durations,95))}
-    _write(raw/"latency.json",world.canonical({"clock":"time.perf_counter_ns","unit":"ns_per_candidate","selectors":samples}))
+        samples[fitted_model.selector_id]={"samples_ns":durations,"p50_ns":int(np.percentile(durations,50)),"p95_ns":int(np.percentile(durations,95)),"unit":"ns_per_candidate"}
+    w5_durations=[]
+    for _,group in list(model._groups(evaluation))[:64]:
+        start=time.perf_counter_ns();score,_=model._w5_confidence(group,fitted,calibration);source=calibration.selected_residual if score<=calibration.selected_threshold else "W1V2";predictions=model._predict_rows(fitted,group);lookup={(x.selector_id,x.candidate_id):x for x in predictions};min(group,key=lambda r:(lookup[(source,r.candidate_id)].predicted_cost,r.candidate_id));w5_durations.append(time.perf_counter_ns()-start)
+    samples["W5"]={"samples_ns":w5_durations,"p50_ns":int(np.percentile(w5_durations,50)),"p95_ns":int(np.percentile(w5_durations,95)),"unit":"ns_per_anchor_k8"}
+    _write(raw/"latency.json",world.canonical({"clock":"time.perf_counter_ns","selectors":samples}))
     derived=output/"derived";_derive(raw,derived)
     files=[]
     for path in sorted(x for x in output.rglob("*") if x.is_file()):
         relative=path.relative_to(output);row=_hash_file(path);row["path"]=relative.as_posix();files.append(row)
     counts={"scenes":len(scenes),"anchors":len(anchors),"candidates":len(candidate_rows),"evaluation_candidates":sum(x["partition"]=="evaluation" for x in candidate_rows)}
-    manifest={"schema_version":3,"status":"VALIDITY_REPAIRED_ENGINEERING_ONLY","authority":"NONE","matrix_kind":"FULL_FROZEN" if require_full else "BOUNDED_TEST_SUBSET","counts":counts,"files":files};_write(output/"manifest.json",world.canonical(manifest))
+    manifest={"schema_version":3,"status":"ENGINEERING_NONCONFIRMATORY","authority":"NONE","matrix_kind":"FULL_FROZEN" if require_full else "BOUNDED_TEST_SUBSET","counts":counts,"files":files};_write(output/"manifest.json",world.canonical(manifest))
     return counts
 
 
 def _main() -> None:
-    parser=argparse.ArgumentParser();group=parser.add_mutually_exclusive_group(required=True);group.add_argument("--output",type=Path);group.add_argument("--reconstruct-from",type=Path);parser.add_argument("--reconstructed-output",type=Path);parser.add_argument("--frozen-models-from",type=Path);args=parser.parse_args()
+    parser=argparse.ArgumentParser();group=parser.add_mutually_exclusive_group(required=True);group.add_argument("--output",type=Path);group.add_argument("--reconstruct-from",type=Path);parser.add_argument("--reconstructed-output",type=Path);args=parser.parse_args()
     if args.output is not None:
-        print(world.canonical(run_matrix(args.output,frozen_models_from=args.frozen_models_from)).decode(),end="")
+        print(world.canonical(run_matrix(args.output)).decode(),end="")
     else:
         if args.reconstructed_output is None:parser.error("--reconstructed-output is required with --reconstruct-from")
         reconstruct(args.reconstruct_from,args.reconstructed_output)
