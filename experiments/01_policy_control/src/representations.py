@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import itertools
 import math
+from dataclasses import dataclass, replace
 from typing import Sequence
 
 import numpy as np
@@ -11,7 +12,27 @@ import numpy as np
 from reflect.types import ActionChunk, ControlReference
 
 from .contracts import ClampReport, CommandStack, ExecutorState, ExperimentConfig, PolicyInput, frozen_vector
-from .kinematics import absolute_ik, differential_ik_reference, forward_kinematics, linear_knot_reference
+from .kinematics import absolute_ik, differential_ik_command, differential_ik_reference, forward_kinematics, linear_knot_reference
+
+
+@dataclass(frozen=True)
+class P4ExecutorTuning:
+    lookahead_ticks: int
+    dq_feedforward: bool
+
+    def __post_init__(self) -> None:
+        if type(self.lookahead_ticks) is not int or self.lookahead_ticks not in {1, 12, 25, 49}:
+            raise ValueError("P4 lookahead must be exactly 1, 12, 25, or 49 ticks")
+        if type(self.dq_feedforward) is not bool:
+            raise ValueError("P4 dq feedforward must be boolean")
+
+
+def with_p4_executor_tuning(chunk: ActionChunk, tuning: P4ExecutorTuning) -> ActionChunk:
+    if chunk.metadata.get("stack_id") != CommandStack.P4.value or chunk.representation != "EEF_TRAJECTORY":
+        raise ValueError("P4 executor tuning requires a P4 Cartesian trajectory")
+    if set(chunk.metadata) != {"stack_id"}:
+        raise ValueError("P4 chunk metadata is not the legacy closed schema")
+    return replace(chunk, metadata={"stack_id": "P4", "p4_lookahead_ticks": tuning.lookahead_ticks, "p4_dq_feedforward": tuning.dq_feedforward})
 
 
 def initial_executor_state(q: np.ndarray) -> ExecutorState:
@@ -109,13 +130,23 @@ def reference_for_tick(
 ) -> tuple[ControlReference, ExecutorState, ClampReport]:
     stack = CommandStack(stack)
     relative_ns = max(0, time_ns - chunk.valid_from_ns)
+    dq_reference = np.zeros(3)
     if stack is CommandStack.P1:
         candidate = chunk.actions[0]
     elif stack is CommandStack.P2:
         candidate = linear_knot_reference(chunk.actions, relative_ns, int(round(chunk.dt_s * 1e9)))
     elif stack in {CommandStack.P3, CommandStack.P4}:
-        xy = chunk.actions[0] if stack is CommandStack.P3 else linear_knot_reference(chunk.actions, relative_ns, int(round(chunk.dt_s * 1e9)))
-        candidate = differential_ik_reference(xy, np.asarray(q), config.arm.link_lengths_m, config.controller.ik_damping_candidates[0], config)
+        period_ns = int(round(chunk.dt_s * 1e9))
+        tuned = stack is CommandStack.P4 and "p4_lookahead_ticks" in chunk.metadata
+        if stack is CommandStack.P4 and ("p4_lookahead_ticks" in chunk.metadata) != ("p4_dq_feedforward" in chunk.metadata):
+            raise ValueError("P4 executor tuning metadata is incomplete")
+        xy = chunk.actions[0] if stack is CommandStack.P3 else linear_knot_reference(chunk.actions, relative_ns, period_ns)
+        if tuned:
+            candidate, qdot_candidate = differential_ik_command(xy, np.asarray(q), config.arm.link_lengths_m, config.controller.ik_damping_candidates[0], config, lookahead_ticks=int(chunk.metadata["p4_lookahead_ticks"]))
+            if chunk.metadata["p4_dq_feedforward"]:
+                dq_reference = qdot_candidate
+        else:
+            candidate = differential_ik_reference(xy, np.asarray(q), config.arm.link_lengths_m, config.controller.ik_damping_candidates[0], config)
     elif stack is CommandStack.P5:
         target = chunk.actions[0]
         planner_period_ns = int(round(config.controller.mpc_period_s * 1e9))
@@ -139,8 +170,12 @@ def reference_for_tick(
     else:
         raise NotImplementedError(stack.value)
     bounded, did_slew = _slew(candidate, state.latched_q_ref, config)
+    before_joint_clip = bounded
     bounded = np.clip(bounded, config.arm.joint_min_rad, config.arm.joint_max_rad)
-    reference = ControlReference(chunk.chunk_id, time_ns, bounded, np.zeros(3), None, None, "JOINT_PD")
+    outward = ((bounded >= config.arm.joint_max_rad) & (dq_reference > 0)) | ((bounded <= config.arm.joint_min_rad) & (dq_reference < 0))
+    if np.any(before_joint_clip != bounded):
+        dq_reference = np.where(outward, 0.0, dq_reference)
+    reference = ControlReference(chunk.chunk_id, time_ns, bounded, dq_reference, None, None, "JOINT_PD")
     next_state = ExecutorState(
         chunk.chunk_id,
         bounded,

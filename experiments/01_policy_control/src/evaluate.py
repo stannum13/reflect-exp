@@ -29,7 +29,7 @@ from .contracts import (
 )
 from .kinematics import absolute_ik, forward_kinematics
 from .arm import PlanarArm, bounded_pd
-from .representations import emit_chunk
+from .representations import P4ExecutorTuning, emit_chunk, with_p4_executor_tuning
 from . import timing
 
 
@@ -355,9 +355,13 @@ def run_episode(
     scenario_record: ScenarioRecord,
     config: ExperimentConfig,
     identity: EpisodeIdentity,
+    *,
+    p4_executor_tuning: P4ExecutorTuning | None = None,
 ) -> RolloutRecord:
     """Run one bounded episode from a preregistered immutable scenario record."""
     stack = CommandStack(stack)
+    if p4_executor_tuning is not None and stack is not CommandStack.P4:
+        raise ValueError("P4 executor tuning can only be used with stack P4")
     scenario = scenario_record.scenario
     if identity.task_config_hash != sha256_json(timing.scheduler_config(config)):
         raise ValueError("injected task config hash does not match the experiment config")
@@ -435,6 +439,8 @@ def run_episode(
             captured = PolicyInput(observation, skill, response_tick * 2_000_000, period_ticks * 2_000_000, scenario.q0, initial_q_target)
             started = time.perf_counter_ns()
             chunk = emit_chunk(stack, captured, config)
+            if p4_executor_tuning is not None:
+                chunk = with_p4_executor_tuning(chunk, p4_executor_tuning)
             policy_elapsed = time.perf_counter_ns() - started
             if not drop:
                 policy_compute_times.append(policy_elapsed)
@@ -468,6 +474,7 @@ def run_episode(
         q_ref, torque, pd_report = bounded_pd(
             q, dq, command_q, previous_for_pd,
             config.controller.pd_candidates[0][0], config.controller.pd_candidates[0][1], config,
+            desired_dq=command_dq,
         )
         controller_elapsed = time.perf_counter_ns() - controller_started
         controller_compute_times.append(controller_elapsed)

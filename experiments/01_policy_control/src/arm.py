@@ -26,6 +26,8 @@ def bounded_pd(
     kp: float,
     kd: float,
     config: ExperimentConfig,
+    *,
+    desired_dq: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, ClampReport]:
     values = [np.asarray(x, dtype=np.float64) for x in (q, dq, requested_q_ref, previous_q_ref)]
     if any(x.shape != (3,) or not np.isfinite(x).all() for x in values):
@@ -35,7 +37,10 @@ def bounded_pd(
     delta = values[2] - values[3]
     slewed = values[3] + np.clip(delta, -step, step)
     q_ref = np.clip(slewed, arm.joint_min_rad, arm.joint_max_rad)
-    raw = kp * (q_ref - values[0]) - kd * values[1]
+    dq_target = np.zeros(3) if desired_dq is None else np.asarray(desired_dq, dtype=np.float64)
+    if dq_target.shape != (3,) or not np.isfinite(dq_target).all():
+        raise ValueError("bounded_pd desired_dq must be a finite 3-vector")
+    raw = kp * (q_ref - values[0]) + kd * (dq_target - values[1])
     torque = np.clip(raw, arm.torque_min_nm, arm.torque_max_nm)
     report = ClampReport(
         reference_clamped=bool(np.any(np.abs(delta) > step)),

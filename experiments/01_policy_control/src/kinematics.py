@@ -62,6 +62,20 @@ def differential_ik_reference(
     damping: float,
     config: ExperimentConfig,
 ) -> np.ndarray:
+    return differential_ik_command(target, q, links, damping, config, lookahead_ticks=1)[0]
+
+
+def differential_ik_command(
+    target: np.ndarray,
+    q: np.ndarray,
+    links: tuple[float, float, float],
+    damping: float,
+    config: ExperimentConfig,
+    *,
+    lookahead_ticks: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    if type(lookahead_ticks) is not int or lookahead_ticks <= 0:
+        raise ValueError("lookahead_ticks must be a positive integer")
     error = np.asarray(target) - forward_kinematics(q, links)
     velocity = clip_norm(config.controller.differential_gain * error, config.controller.differential_speed_m_s)
     j = jacobian(q, links)
@@ -69,7 +83,8 @@ def differential_ik_reference(
     posture = config.kinematics.posture_q
     qdot = jh @ velocity + config.controller.null_gain * (np.eye(3) - jh @ j) @ (posture - q)
     qdot = np.clip(qdot, -config.controller.qdot_limit_rad_s, config.controller.qdot_limit_rad_s)
-    return _readonly(np.asarray(q) + qdot * config.arm.timestep_s)
+    qdot = _readonly(qdot)
+    return _readonly(np.asarray(q) + qdot * config.arm.timestep_s * lookahead_ticks), qdot
 
 
 def linear_knot_reference(knots: np.ndarray, time_ns: int, knot_period_ns: int) -> np.ndarray:
