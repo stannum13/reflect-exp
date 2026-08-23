@@ -303,6 +303,15 @@ def test_interrupted_outcome_attempt_retains_create_only_invalid_disposition_wit
     assert reconstruction["matched"] is True
     assert reconstruction["scientific_result"] == "INVALID_EXPERIMENT"
     assert json.loads((root / "derived/decision.json").read_text(encoding="ascii"))["gates"][7]["passed"] is False
+    unlisted = root / "unlisted-claim.bin"
+    unlisted.write_bytes(b"unlisted\n")
+    with pytest.raises(outcome.OutcomeAuthorizationError, match="unlisted|closed inventory"):
+        outcome.reconstruct_outcomes(
+            root, tmp_path / "unlisted-clean", qualification_root=qualification,
+            approval_binding=binding, approval_report=report,
+        )
+    assert not (tmp_path / "unlisted-clean").exists()
+    unlisted.unlink()
     integrity = {"approval": True, "inventory": False, "freeze": True, "cause": True, "replay": False, "reconstruction": True}
     assert analysis.analyze_outcomes(root, construct_integrity=integrity)["scientific_result"] == "INVALID_EXPERIMENT"
     derived_member = root / "derived/examples.json"

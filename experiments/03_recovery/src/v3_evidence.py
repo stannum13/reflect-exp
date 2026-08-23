@@ -11,6 +11,7 @@ import io
 import json
 import os
 import platform
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -835,19 +836,38 @@ def _canonical_json(path: Path) -> dict[str, object]:
     return value
 
 
-def _validate_inventory(root: Path, inventory: Sequence[Mapping[str, object]]) -> None:
+def _validate_inventory(
+    root: Path, inventory: Sequence[Mapping[str, object]], *, allowed: Sequence[str] = (),
+) -> set[str]:
     actual = []
+    declared: set[str] = set()
     for item in inventory:
-        path = root / str(item["path"])
+        relative = str(item["path"])
+        if Path(relative).is_absolute() or ".." in Path(relative).parts or relative in declared:
+            raise RuntimeError("publishable evidence inventory path is invalid")
+        declared.add(relative)
+        path = root / relative
         if path.is_symlink() or not path.is_file():
             raise RuntimeError(f"publishable evidence member missing: {path}")
         payload = path.read_bytes()
-        actual.append({"path": str(item["path"]), "bytes": len(payload), "sha256": sha256_bytes(payload)})
+        actual.append({"path": relative, "bytes": len(payload), "sha256": sha256_bytes(payload)})
     if actual != [dict(item) for item in inventory]:
         raise RuntimeError("publishable evidence inventory mismatch")
+    present = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*") if path.is_file() or path.is_symlink()
+    }
+    expected = declared | set(allowed)
+    if present != expected:
+        raise RuntimeError(
+            f"publishable evidence closed inventory has unlisted members: {sorted(present ^ expected)[:3]}",
+        )
+    return declared
 
 
-def validate_publishable_evidence(output: Path) -> dict[str, object]:
+def validate_publishable_evidence(
+    output: Path, *, require_derived: bool = True,
+) -> dict[str, object]:
     """Reject arbitrary/incomplete trees before deterministic archive publication."""
     if output.name == "hierarchical-recovery-v3-qualification":
         if not all((output / name).is_file() for name in ("qualification-freeze.json", "raw/manifest.json", "derived/manifest.json")):
@@ -860,31 +880,93 @@ def validate_publishable_evidence(output: Path) -> dict[str, object]:
         episodes = raw.get("episodes")
         if not isinstance(episodes, list) or len(episodes) != 18:
             raise RuntimeError("publishable evidence qualification inventory incomplete")
+        raw_paths = {"manifest.json", "positive-controls.json", "not-run-positive-control.json"}
+        if sha256_bytes((output / "raw/positive-controls.json").read_bytes()) != raw.get("positive_controls_sha256"):
+            raise RuntimeError("publishable evidence positive controls mismatch")
+        if sha256_bytes((output / "raw/not-run-positive-control.json").read_bytes()) != raw.get("not_run_positive_control_sha256"):
+            raise RuntimeError("publishable evidence NOT_RUN control mismatch")
         for item in episodes:
             destination = output / "raw/episodes" / str(item["episode_id"])
             manifest = _validate_episode(destination)
             if sha256_bytes(canonical_bytes(manifest)) != item.get("manifest_sha256"):
                 raise RuntimeError("publishable evidence episode manifest mismatch")
-        _validate_inventory(output / "derived", derived.get("files", ()))
+            prefix = f"episodes/{item['episode_id']}"
+            raw_paths.add(f"{prefix}/manifest.json")
+            raw_paths.update(f"{prefix}/{member['path']}" for member in manifest["files"])
+        actual_raw = {
+            path.relative_to(output / "raw").as_posix()
+            for path in (output / "raw").rglob("*") if path.is_file() or path.is_symlink()
+        }
+        if actual_raw != raw_paths:
+            raise RuntimeError("publishable evidence raw closed inventory has unlisted members")
+        derived_paths = _validate_inventory(
+            output / "derived", derived.get("files", ()), allowed=("manifest.json",),
+        ) | {"manifest.json"}
         summary = _canonical_json(output / "derived/qualification-summary.json")
         if summary.get("status") != "READY_FOR_FRESH_READ_ONLY_REVIEW" or summary.get("hard_gates_passed") != 10:
             raise RuntimeError("publishable evidence qualification disposition mismatch")
+        expected_tree = {"qualification-freeze.json"} | {
+            f"raw/{name}" for name in raw_paths
+        } | {f"derived/{name}" for name in derived_paths}
+        actual_tree = set(_tree_bytes(output))
+        if actual_tree != expected_tree:
+            raise RuntimeError("publishable qualification root has unlisted members")
         return {"kind": "QUALIFICATION", "scientific_disposition": summary["status"]}
     if output.name == "hierarchical-recovery-v3":
-        if not all((output / name).is_file() for name in ("outcome-freeze.json", "raw/manifest.json", "derived/manifest.json", "approval/approval-binding.json", "approval/approval-report.json")):
+        required = [
+            "outcome-freeze.json", "HEADERS-SEALED.json", "raw/manifest.json",
+            "approval/approval-binding.json", "approval/approval-report.json",
+        ]
+        if require_derived:
+            required.append("derived/manifest.json")
+        if not all((output / name).is_file() for name in required):
             raise RuntimeError("publishable evidence outcome headers incomplete")
+        freeze_payload = (output / "outcome-freeze.json").read_bytes()
         _canonical_json(output / "outcome-freeze.json")
+        header_members = {
+            "outcome-freeze.json": freeze_payload,
+            "approval/approval-binding.json": (output / "approval/approval-binding.json").read_bytes(),
+            "approval/approval-report.json": (output / "approval/approval-report.json").read_bytes(),
+        }
+        expected_header = canonical_bytes({"schema_version": 1, "files": _inventory(header_members)})
+        if (output / "HEADERS-SEALED.json").read_bytes() != expected_header:
+            raise RuntimeError("publishable evidence outcome header seal mismatch")
         raw = _canonical_json(output / "raw/manifest.json")
-        derived = _canonical_json(output / "derived/manifest.json")
-        _validate_inventory(output / "raw", raw.get("files", ()))
-        _validate_inventory(output / "derived", derived.get("files", ()))
         rows = [json.loads(line) for line in (output / "raw/outcome-rows.jsonl").read_text(encoding="ascii").splitlines()]
+        raw_paths = set(str(item["path"]) for item in raw.get("files", ())) | {"manifest.json"}
+        for row in rows:
+            if row.get("disposition") == "COMPLETE":
+                destination = output / "raw/episodes" / str(row["episode_id"])
+                manifest = _validate_episode(destination)
+                if sha256_bytes(canonical_bytes(manifest)) != row.get("episode_manifest_sha256"):
+                    raise RuntimeError("publishable outcome episode manifest mismatch")
+                prefix = f"episodes/{row['episode_id']}"
+                raw_paths.add(f"{prefix}/manifest.json")
+                raw_paths.update(f"{prefix}/{member['path']}" for member in manifest["files"])
+        _validate_inventory(output / "raw", raw.get("files", ()), allowed=tuple(raw_paths - {
+            str(item["path"]) for item in raw.get("files", ())
+        }))
         invalid = any(row.get("disposition") in {"INVALID", "INTERRUPTED"} for row in rows)
         if len(rows) != 360 and not invalid:
             raise RuntimeError("publishable evidence outcome disposition inventory incomplete")
-        decision = _canonical_json(output / "derived/decision.json")
-        if invalid and decision.get("scientific_result") != "INVALID_EXPERIMENT":
-            raise RuntimeError("publishable evidence invalid outcome disposition mismatch")
+        derived_paths: set[str] = set()
+        decision: dict[str, object] = {"scientific_result": "PENDING_RECONSTRUCTION"}
+        if (output / "derived/manifest.json").is_file():
+            derived = _canonical_json(output / "derived/manifest.json")
+            derived_paths = _validate_inventory(
+                output / "derived", derived.get("files", ()), allowed=("manifest.json",),
+            ) | {"manifest.json"}
+            decision = _canonical_json(output / "derived/decision.json")
+            if invalid and decision.get("scientific_result") != "INVALID_EXPERIMENT":
+                raise RuntimeError("publishable evidence invalid outcome disposition mismatch")
+        elif require_derived:
+            raise RuntimeError("publishable evidence outcome derived inventory incomplete")
+        expected_tree = set(header_members) | {"HEADERS-SEALED.json"} | {
+            f"raw/{name}" for name in raw_paths
+        } | {f"derived/{name}" for name in derived_paths}
+        actual_tree = set(_tree_bytes(output))
+        if actual_tree != expected_tree:
+            raise RuntimeError("publishable outcome root closed inventory has unlisted members")
         return {"kind": "OUTCOME", "scientific_disposition": decision.get("scientific_result")}
     raise RuntimeError("not a publishable evidence root")
 
@@ -896,22 +978,55 @@ def verify_qualification_report(output: Path, report: Path, *, archive_manifest:
     freeze = _canonical_json(output / "qualification-freeze.json")
     controllers = list(csv.DictReader((output / "derived/controller-paths.csv").read_text(encoding="ascii").splitlines()))
     controls = list(csv.DictReader((output / "derived/scorer-controls.csv").read_text(encoding="ascii").splitlines()))
-    expected = [str(freeze["source_commit"])]
-    for row in controllers:
-        expected.extend((row["trajectory_sha256"], row["q_ref_sha256"], row["torque_sha256"]))
+    visible_text = re.sub(r"<!--.*?(?:-->|$)", "", text, flags=re.DOTALL)
+
+    def one(pattern: str) -> tuple[str, ...]:
+        matches = re.findall(pattern, visible_text, flags=re.MULTILINE)
+        if len(matches) != 1:
+            raise RuntimeError("qualification report consistency mismatch: missing or duplicate field")
+        match = matches[0]
+        return (match,) if isinstance(match, str) else tuple(match)
+
+    expected_commit = str(freeze["source_commit"])
+    if one(r"^Qualified source commit: `([0-9a-f]{40})`$") != (expected_commit,):
+        raise RuntimeError("qualification report consistency mismatch: source commit")
+    controller_by_id = {row["controller_id"]: row for row in controllers}
+    p6 = one(r"^\| P6 \|.*\| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \|$")
+    p4 = one(r"^\| repaired P4 \|.*\| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \|$")
+    for actual, row in (
+        (p6, controller_by_id["P6-res0p5-slew48"]),
+        (p4, controller_by_id["P4-lookahead1-dqon"]),
+    ):
+        if actual != (row["trajectory_sha256"], row["q_ref_sha256"], row["torque_sha256"]):
+            raise RuntimeError("qualification report consistency mismatch: controller table")
     invalid = next(row for row in controls if row["control"] == "invalid_action")
-    expected.append(f"| invalid action/trajectory | {invalid['detected_count']} |")
-    for relative in ("qualification-freeze.json", "raw/manifest.json", "derived/manifest.json"):
-        expected.append(sha256_bytes((output / relative).read_bytes()))
+    if one(r"^\| invalid action/trajectory \| ([0-9]+) \|$") != (invalid["detected_count"],):
+        raise RuntimeError("qualification report consistency mismatch: invalid-action control")
+    artifact_patterns = (
+        ("qualification freeze", "qualification-freeze.json"),
+        ("raw manifest / raw reconstruction", "raw/manifest.json"),
+        ("derived manifest / derived reconstruction", "derived/manifest.json"),
+    )
+    for label, relative in artifact_patterns:
+        expected_hash = sha256_bytes((output / relative).read_bytes())
+        if one(rf"^\| {re.escape(label)} \| `([0-9a-f]{{64}})` \|$") != (expected_hash,):
+            raise RuntimeError(f"qualification report consistency mismatch: {label}")
+    fact_count = 10
     if archive_manifest is not None:
         archive = _canonical_json(archive_manifest)
         if archive.get("tree_sha256") != tree_sha256(output):
             raise RuntimeError("qualification report archive tree mismatch")
-        expected.extend((str(archive["archive_sha256"]), f"**{archive['archive_bytes']:,} bytes; {archive['member_count']} members**"))
-    missing = [value for value in expected if value not in text]
-    if missing:
-        raise RuntimeError(f"qualification report consistency mismatch: {missing[:3]}")
-    return {"matched": True, "authenticated_fact_count": len(expected)}
+        archived = one(
+            r"^The ignored working bundle is durably retained as the tracked, deterministic, content-addressed archive "
+            r"`reports/evidence/hierarchical-recovery-v3-qualification/([0-9a-f]{64})\.tar\.gz` "
+            r"\(\*\*([0-9,]+) bytes; ([0-9]+) members\*\*\) with a tracked manifest and byte-exact extraction test\.$",
+        )
+        if archived != (
+            str(archive["archive_sha256"]), f"{archive['archive_bytes']:,}", str(archive["member_count"]),
+        ):
+            raise RuntimeError("qualification report consistency mismatch: archive")
+        fact_count += 3
+    return {"matched": True, "authenticated_fact_count": fact_count}
 
 
 def publish_durable_archive(output: Path, destination: Path) -> dict[str, object]:

@@ -141,6 +141,21 @@ def test_durable_archive_rejects_arbitrary_incomplete_tree(tmp_path: Path) -> No
         evidence.publish_durable_archive(arbitrary, tmp_path / "archive")
 
 
+def test_manifest_inventory_rejects_unlisted_recursive_member(tmp_path: Path) -> None:
+    root = tmp_path / "derived"
+    root.mkdir()
+    payload = b"declared\n"
+    (root / "declared.bin").write_bytes(payload)
+    inventory = [{
+        "path": "declared.bin", "bytes": len(payload),
+        "sha256": hashlib.sha256(payload).hexdigest(),
+    }]
+    evidence._validate_inventory(root, inventory)
+    (root / "unlisted.bin").write_bytes(b"unlisted\n")
+    with pytest.raises(RuntimeError, match="unlisted|closed inventory"):
+        evidence._validate_inventory(root, inventory)
+
+
 def test_qualification_report_facts_are_authenticated_from_derived_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     output = tmp_path / "hierarchical-recovery-v3-qualification"
     (output / "derived").mkdir(parents=True)
@@ -152,17 +167,45 @@ def test_qualification_report_facts_are_authenticated_from_derived_data(tmp_path
     hashes = [hashlib.sha256(f"controller-{index}".encode()).hexdigest() for index in range(6)]
     (output / "derived/controller-paths.csv").write_text(
         "controller_id,trajectory_sha256,q_ref_sha256,torque_sha256\n"
-        f"P4,{hashes[0]},{hashes[1]},{hashes[2]}\nP6,{hashes[3]},{hashes[4]},{hashes[5]}\n", encoding="ascii",
+        f"P4-lookahead1-dqon,{hashes[0]},{hashes[1]},{hashes[2]}\n"
+        f"P6-res0p5-slew48,{hashes[3]},{hashes[4]},{hashes[5]}\n", encoding="ascii",
     )
     (output / "derived/scorer-controls.csv").write_text("control,terminal,detected_count\ninvalid_action,FAILURE,17\n", encoding="ascii")
     report = tmp_path / "report.md"
-    report.write_text("\n".join([commit, *hashes, "| invalid action/trajectory | 17 |", *[
+    freeze_hash, raw_hash, derived_hash = [
         hashlib.sha256((output / name).read_bytes()).hexdigest()
         for name in ("qualification-freeze.json", "raw/manifest.json", "derived/manifest.json")
-    ]]), encoding="utf-8")
+    ]
+    report.write_text("\n".join((
+        f"Qualified source commit: `{commit}`",
+        "| Controller | Call path | Trajectory SHA-256 | q_ref SHA-256 | torque SHA-256 |",
+        "|---|---|---|---|---|",
+        f"| P6 | `p6` | `{hashes[3]}` | `{hashes[4]}` | `{hashes[5]}` |",
+        f"| repaired P4 | `p4` | `{hashes[0]}` | `{hashes[1]}` | `{hashes[2]}` |",
+        "| Control | Detected count |", "|---|---:|",
+        "| invalid action/trajectory | 17 |",
+        "| Artifact | SHA-256 |", "|---|---|",
+        f"| qualification freeze | `{freeze_hash}` |",
+        f"| raw manifest / raw reconstruction | `{raw_hash}` |",
+        f"| derived manifest / derived reconstruction | `{derived_hash}` |",
+    )), encoding="utf-8")
     monkeypatch.setattr(evidence, "validate_publishable_evidence", lambda root: {"kind": "QUALIFICATION"})
     assert evidence.verify_qualification_report(output, report)["matched"] is True
-    report.write_text(report.read_text(encoding="utf-8").replace(hashes[3], "stale-p6-hash"), encoding="utf-8")
+    original = report.read_text(encoding="utf-8")
+    report.write_text(
+        original.replace(f"Qualified source commit: `{commit}`", "Qualified source commit: `stale`")
+        + f"\n<!--\nQualified source commit: `{commit}`\n-->\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match="report consistency"):
+        evidence.verify_qualification_report(output, report)
+    report.write_text(
+        original
+        .replace(hashes[3], "stale-p6-hash", 1)
+        .replace("| invalid action/trajectory | 17 |", "| invalid action/trajectory | 1 |", 1)
+        + f"\n<!-- orphan tokens {hashes[3]} | invalid action/trajectory | 17 | -->\n",
+        encoding="utf-8",
+    )
     with pytest.raises(RuntimeError, match="report consistency"):
         evidence.verify_qualification_report(output, report)
 

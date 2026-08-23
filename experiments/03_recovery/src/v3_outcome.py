@@ -22,7 +22,7 @@ from .v3_contracts import (
     canonical_bytes,
     sha256_bytes,
 )
-from .v3_evidence import _assert_trees_equal, _freeze_record, _inventory, _tree_bytes, _validate_episode, episode_payloads, publish_durable_archive, qualification_specs, source_closure
+from .v3_evidence import _assert_trees_equal, _freeze_record, _inventory, _tree_bytes, _validate_episode, episode_payloads, publish_durable_archive, qualification_specs, source_closure, validate_publishable_evidence
 from .v3_runtime import V3EpisodeSpec, precheck, run_episode
 from .v3_scorer import score_episode
 from .v3_outcome_analysis import analyze_outcomes
@@ -479,6 +479,10 @@ def reconstruct_outcomes(
     if (output / "approval/approval-binding.json").read_bytes() != approval_binding.read_bytes() or (output / "approval/approval-report.json").read_bytes() != approval_report.read_bytes():
         raise OutcomeAuthorizationError("retained approval provenance drifted before reconstruction")
     rows = _seal_dispositions(output)
+    try:
+        validate_publishable_evidence(output, require_derived=False)
+    except RuntimeError as exc:
+        raise OutcomeAuthorizationError(str(exc)) from exc
     invalid = any(row.get("disposition") in {"INVALID", "INTERRUPTED"} for row in rows)
     if invalid or len(rows) != 360:
         replay = clean / OUTCOME_ROOT_NAME
