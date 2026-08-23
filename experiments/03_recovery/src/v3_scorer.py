@@ -168,6 +168,40 @@ def _memory_integrity_violations(
         "observed_tick", "confidence", "provenance", "stale", "unknown",
     }
     violations = 0
+    reconstructed: dict[str, dict[str, object]] = {}
+    reconstructed_by_tick: dict[int, list[dict[str, object]]] = {}
+    seen_event_ids: set[str] = set()
+    event_tick = -1
+    for event in memory_events:
+        try:
+            tick = int(event["tick"])
+            event_id = str(event["event_id"])
+            violations += int(tick < event_tick or event_id in seen_event_ids)
+            event_tick = tick
+            seen_event_ids.add(event_id)
+            kind = str(event["event"])
+            object_id = str(event["object_id"])
+            if kind == "OBSERVED_OBJECT":
+                reconstructed[object_id] = deepcopy(dict(event["fact"]))
+            else:
+                fact = reconstructed[object_id]
+                if kind == "OBSERVED_POSE":
+                    fact["pose_xy"] = list(event["pose_xy"])
+                elif kind in {"OBSERVED_AVAILABILITY", "OBSERVED_RESTRICTION"}:
+                    fact["available"] = bool(event["available"])
+                    fact["restrictions"] = list(event["restrictions"])
+                else:
+                    violations += 1
+                fact.update({
+                    "observed_tick": tick,
+                    "confidence": float(event["confidence"]),
+                    "provenance": str(event["provenance"]),
+                    "stale": False,
+                    "unknown": False,
+                })
+            reconstructed_by_tick[tick] = [deepcopy(reconstructed[key]) for key in sorted(reconstructed)]
+        except (KeyError, TypeError, ValueError):
+            violations += 1
     prior_version = 0
     prior_tick = -1
     for row in memory_ledger:
@@ -185,6 +219,11 @@ def _memory_integrity_violations(
             violations += int(snapshot["evidence_ledger_sha256"] != evidence_sha)
             violations += int(row["snapshot_sha256"] != sha256_bytes(canonical_bytes(snapshot)))
             facts = list(snapshot["facts"])
+            expected_facts = next(
+                (reconstructed_by_tick[event_tick] for event_tick in sorted(reconstructed_by_tick, reverse=True) if event_tick <= tick),
+                [],
+            )
+            violations += int(canonical_bytes(facts) != canonical_bytes(expected_facts))
             violations += int(not facts or len({str(item["object_id"]) for item in facts}) != len(facts))
             for fact in facts:
                 violations += int(set(fact) != fact_keys)

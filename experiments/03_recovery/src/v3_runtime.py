@@ -13,7 +13,7 @@ import json
 import math
 from pathlib import Path
 from types import MappingProxyType
-from typing import Mapping
+from typing import Mapping, Sequence
 
 import mujoco
 import numpy as np
@@ -82,6 +82,7 @@ class PrecheckReceipt:
     disposition: str
     reason: str
     architecture_independent: bool
+    precheck_input: Mapping[str, object]
     realization_sha256: str
     geometry_sha256: str
     straight_path_blocked: bool
@@ -232,6 +233,11 @@ def precheck(spec: V3EpisodeSpec | PrecheckControlSpec) -> PrecheckReceipt:
         obstacle_xy = realization.obstacle_xy
         radius = realization.obstacle_radius_m
         input_sha256 = realization.parameter_sha256
+        input_record = {
+            "episode_id": spec.episode_id, "scenario_id": spec.scenario_id, "seed": spec.seed, "stage": spec.stage.value,
+            "q0": q0_tuple, "target_a_xy": target_a_xy, "target_b_xy": target_b_xy,
+            "obstacle_xy": obstacle_xy, "obstacle_radius_m": radius,
+        }
     elif isinstance(spec, PrecheckControlSpec):
         q0_tuple = spec.q0
         target_a_xy = spec.target_a_xy
@@ -239,6 +245,10 @@ def precheck(spec: V3EpisodeSpec | PrecheckControlSpec) -> PrecheckReceipt:
         obstacle_xy = spec.obstacle_xy
         radius = spec.obstacle_radius_m
         input_sha256 = sha256_bytes(canonical_bytes(spec))
+        input_record = {
+            "control_id": spec.control_id, "q0": q0_tuple, "target_a_xy": target_a_xy,
+            "target_b_xy": target_b_xy, "obstacle_xy": obstacle_xy, "obstacle_radius_m": radius,
+        }
     else:
         raise TypeError("precheck requires an episode or geometric-control specification")
     _, _, kinematics, _ = _modules()
@@ -283,6 +293,7 @@ def precheck(spec: V3EpisodeSpec | PrecheckControlSpec) -> PrecheckReceipt:
         "READY" if feasible else "NOT_RUN",
         reason,
         True,
+        MappingProxyType(input_record),
         input_sha256,
         sha256_bytes(canonical_bytes(geometry)),
         straight_blocked,
@@ -330,6 +341,15 @@ class _World:
         self.model.geom_pos[self.obstacle_id] = (realization.obstacle_xy[0], realization.obstacle_xy[1], 0.0)
         self.model.geom_size[self.obstacle_id, 0] = realization.obstacle_radius_m
         mujoco.mj_forward(self.model, self.data)
+
+    def observed_obstacle(self) -> Mapping[str, object]:
+        center = np.array(self.model.geom_pos[self.obstacle_id, :2], copy=True)
+        radius = float(self.model.geom_size[self.obstacle_id, 0])
+        return MappingProxyType({
+            "present": bool(np.linalg.norm(center) < 2.0),
+            "center_xy": center.tolist(),
+            "radius_m": radius,
+        })
 
     def contacts(self) -> tuple[Mapping[str, object], ...]:
         contacts: list[Mapping[str, object]] = []
@@ -530,13 +550,22 @@ def _generate_command(
     return active, trajectory
 
 
-def _path_clear(active: _ActiveCommand | None, obstacle_active: bool, realization: V3Realization, eef: np.ndarray) -> bool:
-    if active is None or not obstacle_active:
+def _path_clear_from_observation(active: _ActiveCommand | None, obstacle: Mapping[str, object], eef: np.ndarray) -> bool:
+    if active is None or not bool(obstacle["present"]):
         return True
-    center = np.asarray(realization.obstacle_xy)
-    radius = realization.obstacle_radius_m
+    center = np.asarray(obstacle["center_xy"], dtype=np.float64)
+    radius = float(obstacle["radius_m"])
     points = (tuple(float(item) for item in eef),) + active.path[active.segment_index:]
     return all(not _blocked(np.asarray(start), np.asarray(end), center, radius) for start, end in zip(points, points[1:]))
+
+
+def _command_gap_from_action_history(action_envelopes: Sequence[Mapping[str, object]]) -> int:
+    gap = 0
+    for envelope in reversed(action_envelopes):
+        if envelope.get("hold_reason") != "COMMAND_WITHHELD":
+            break
+        gap += 1
+    return gap if gap > VALID_COMMAND_GAP_TICKS else 0
 
 
 def _observable(
@@ -928,12 +957,12 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
             gap_ticks = 0
 
         action_valid_now = command_is_valid()
-        geometry_now = _path_clear(active, obstacle_active, realization, world.site_xy())
+        geometry_now = _path_clear_from_observation(active, world.observed_obstacle(), world.site_xy())
         semantic_now = semantic_valid()
 
         # Policy calls are driven by observable contract failures, never taxonomy.
         if mission_started and attempt is None and not aborted:
-            observable_gap = gap_ticks if gap_ticks > VALID_COMMAND_GAP_TICKS else 0
+            observable_gap = _command_gap_from_action_history(action_envelopes)
             observable = _observable(
                 tick=tick,
                 trace_rows=trace_rows,
@@ -1013,7 +1042,7 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
         eef = world.site_xy()
         target = current_target()
         world_authorized = object_for_action is None or _fact_authorized(memory[object_for_action])
-        geometry_for_envelope = _path_clear(active, obstacle_active, realization, world.site_xy())
+        geometry_for_envelope = _path_clear_from_observation(active, world.observed_obstacle(), world.site_xy())
         valid_envelope = mode == "HOLD" or (command_is_valid() and geometry_for_envelope and world_authorized)
         if attempt is not None and mode == "EXECUTE" and valid_envelope and not obstacle_contact:
             attempt.executed_valid_ticks += 1
@@ -1083,12 +1112,12 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
                 tick=tick + 1,
                 trace_rows=trace_rows,
                 action_valid=command_is_valid(),
-                geometry_feasible=_path_clear(active, obstacle_active, realization, world.site_xy()),
+                geometry_feasible=_path_clear_from_observation(active, world.observed_obstacle(), world.site_xy()),
                 semantic_preconditions_valid=semantic_valid(),
                 memory_version=memory_version,
                 command_content_sha256=ZERO_SHA256 if active is None else str(active.record["content_sha256"]),
                 successful_execution_content_sha256=successful_sha,
-                command_gap_ticks=gap_ticks if gap_ticks > VALID_COMMAND_GAP_TICKS else 0,
+                command_gap_ticks=_command_gap_from_action_history(action_envelopes),
                 reobserve_index=reobserve_index + 1,
             )
             attempt = None

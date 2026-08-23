@@ -117,6 +117,17 @@ def test_t3_snapshot_provenance_and_evidence_hash_are_authoritative() -> None:
     assert scorer.score_episode(tampered).terminal == "FAILURE"
 
 
+def test_t3_facts_are_reconstructed_from_append_only_events_not_self_hashed_snapshot() -> None:
+    raw = episode("anchor-nominal")
+    ledger = [deepcopy(dict(item)) for item in raw.memory_ledger]
+    ledger[0]["snapshot"]["facts"][0]["semantic_label"] = "forged-but-self-hashed"
+    ledger[0]["snapshot_sha256"] = contracts.sha256_bytes(contracts.canonical_bytes(ledger[0]["snapshot"]))
+    tampered = replace(raw, memory_ledger=tuple(ledger))
+    result = scorer.score_episode(tampered)
+    assert result.terminal == "FAILURE"
+    assert result.violation_counts["stale"] > 0
+
+
 def test_all_positive_controls_independently_force_terminal_failure() -> None:
     raw = episode("semantic-object-unavailable")
     audit = scorer.positive_control_audit(raw)

@@ -5,6 +5,7 @@ import importlib
 import json
 from pathlib import Path
 import tarfile
+from dataclasses import replace
 
 import pytest
 
@@ -62,6 +63,8 @@ def test_structural_cause_boundary_audit_closes_observable_and_policy_call_sites
     assert audit["forbidden_identifiers"] == []
     assert audit["observable_call_count"] >= 2
     assert audit["policy_call_count"] >= 1
+    assert {"_observable", "_path_clear_from_observation", "_command_gap_from_action_history", "retained_load_estimate_nm"} <= set(audit["dependency_closure"])
+    assert audit["transitive_forbidden_identifiers"] == []
 
 
 def test_full_qualification_publication_and_raw_reconstruction_are_byte_exact(tmp_path: Path) -> None:
@@ -88,7 +91,7 @@ def test_full_qualification_publication_and_raw_reconstruction_are_byte_exact(tm
         assert (output / f"derived/{stem}.svg").is_file()
         assert (output / f"derived/{stem}.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     gate_audits = json.loads((output / "derived/gate-audits.json").read_text(encoding="ascii"))
-    assert set(gate_audits) == {"disturbance", "budgets", "cause_boundary", "not_run"}
+    assert set(gate_audits) == {"injection", "disturbance", "budgets", "cause_boundary", "not_run"}
     assert all(item["passed"] is True for item in gate_audits.values())
     freeze = json.loads((output / "qualification-freeze.json").read_text(encoding="ascii"))
     assert set(freeze["environment"]) >= {
@@ -127,3 +130,46 @@ def test_publication_is_create_only(tmp_path: Path) -> None:
     output.mkdir()
     with pytest.raises(FileExistsError):
         evidence.run_qualification(output)
+
+
+def test_budget_audit_rejects_tampered_before_after_transition() -> None:
+    spec = evidence.V3EpisodeSpec(contracts.Architecture.R0, "semantic-object-unavailable", 20261893, contracts.PRIMARY_CONTROLLER_ID)
+    raw = evidence.run_episode(spec)
+    first = raw.decisions[0]
+    forged_after = replace(first.budget_after, control_remaining=first.budget_before.control_remaining)
+    forged = replace(raw, decisions=(replace(first, budget_after=forged_after), *raw.decisions[1:]))
+    score = evidence.score_episode(forged)
+    audit = evidence._budget_audit({spec.episode_id: forged}, {spec.episode_id: score})
+    assert audit["passed"] is False
+
+
+@pytest.mark.parametrize("scenario", contracts.SCENARIO_IDS[1:])
+def test_disturbance_audit_rejects_matched_anchor_domain_substitution(scenario: str) -> None:
+    anchor_spec = evidence.V3EpisodeSpec(contracts.Architecture.R3, "anchor-nominal", 20261891, contracts.PRIMARY_CONTROLLER_ID)
+    disturbed_spec = evidence.V3EpisodeSpec(contracts.Architecture.R3, scenario, 20261891, contracts.PRIMARY_CONTROLLER_ID)
+    anchor = evidence.run_episode(anchor_spec)
+    disturbed = evidence.run_episode(disturbed_spec)
+    forged = replace(
+        disturbed,
+        trace=anchor.trace,
+        action_envelopes=anchor.action_envelopes,
+        commands=anchor.commands,
+        trajectory_bytes=anchor.trajectory_bytes,
+        memory_events=anchor.memory_events,
+        memory_ledger=anchor.memory_ledger,
+    )
+    audit = evidence._disturbance_audit({anchor_spec.episode_id: anchor, disturbed_spec.episode_id: forged})
+    assert audit["passed"] is False
+
+
+def test_precheck_audit_rejects_missing_and_tampered_qualification_receipts() -> None:
+    spec = evidence.V3EpisodeSpec(contracts.Architecture.R3, "anchor-nominal", 20261891, contracts.PRIMARY_CONTROLLER_ID)
+    raw = evidence.run_episode(spec)
+    not_run = evidence._not_run_control()
+    complete = {f"identity-{index}": raw for index in range(18)}
+    assert evidence._precheck_audit(complete, not_run)["passed"] is True
+    assert evidence._precheck_audit(dict(list(complete.items())[:-1]), not_run)["passed"] is False
+    forged = replace(raw, precheck=replace(raw.precheck, geometry_sha256="f" * 64))
+    tampered = dict(complete)
+    tampered["identity-0"] = forged
+    assert evidence._precheck_audit(tampered, not_run)["passed"] is False
