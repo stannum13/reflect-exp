@@ -109,11 +109,11 @@ class Outcome:
 
 def scene_rows() -> tuple[SceneSpec, ...]:
     layout: list[tuple[str, str, int]] = []
-    layout.extend(("train", "ID", index) for index in range(48))
-    layout.extend(("tuning", "ID", index) for index in range(16))
-    layout.extend(("evaluation", "ID", index) for index in range(8))
+    layout.extend(("train", "ID", index) for index in range(72))
+    layout.extend(("tuning", "ID", index) for index in range(24))
+    layout.extend(("evaluation", "ID", index) for index in range(16))
     for stratum in STRATA[1:]:
-        layout.extend(("evaluation", stratum, index) for index in range(4))
+        layout.extend(("evaluation", stratum, index) for index in range(8))
     rows = []
     for partition, stratum, ordinal in layout:
         seed = _seed("scene", partition, stratum, ordinal)

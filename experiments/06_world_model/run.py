@@ -10,6 +10,7 @@ from pathlib import Path
 import platform
 import re
 import subprocess
+import time
 from typing import Iterable, Sequence
 
 import mujoco
@@ -145,15 +146,23 @@ def _derive(raw: Path, output: Path) -> None:
     output.mkdir(parents=True)
     rows=_raw_dataset(raw);training=tuple(x for x in rows if x.partition=="train");tuning=tuple(x for x in rows if x.partition=="tuning");evaluation=tuple(x for x in rows if x.partition=="evaluation")
     fitted=model.fit_models(training,tuning);predictions=model.predict_all(fitted,evaluation);selections=model.rank_selectors(predictions,evaluation);metrics=model.aggregate_metrics(selections,predictions,evaluation)
-    _write(output/"models.json",world.canonical([asdict(x) for x in fitted]));_write(output/"predictions.jsonl",_json_lines(asdict(x) for x in predictions));_write(output/"selections.jsonl",_json_lines(asdict(x) for x in selections));_write(output/"metrics.json",world.canonical(metrics))
+    latency=_load_canonical_json(raw/"latency.json")
+    selected=next(x.selector_id for x in fitted if x.selected_for_evaluation)
+    gate=model.quality_gate(metrics,selected,latency["selectors"])
+    chosen=[x for x in selections if x.selector_id==selected]; baseline={(x.scene_id,x.anchor_id):x for x in selections if x.selector_id=="W1V2"}
+    examples=[]
+    for kind,pool in (("WORKING",[x for x in chosen if x.regret<baseline[(x.scene_id,x.anchor_id)].regret]),("NONWORKING",[x for x in chosen if x.regret>=baseline[(x.scene_id,x.anchor_id)].regret]),("MAX_REGRET",chosen)):
+        if pool:
+            item=max(pool,key=lambda x:(x.regret,x.scene_id,x.anchor_id));examples.append({"kind":kind,"selector_id":selected,"scene_id":item.scene_id,"anchor_id":item.anchor_id,"candidate_id":item.candidate_id,"stratum":item.stratum,"regret":item.regret,"selection_sha256":world.sha(world.canonical(asdict(item)))})
+    _write(output/"models.json",world.canonical([asdict(x) for x in fitted]));_write(output/"predictions.jsonl",_json_lines(asdict(x) for x in predictions));_write(output/"selections.jsonl",_json_lines(asdict(x) for x in selections));_write(output/"metrics.json",world.canonical(metrics));_write(output/"latency.json",world.canonical(latency));_write(output/"gate.json",world.canonical(gate));_write(output/"annotations.json",world.canonical(examples))
     raw_hashes=[_hash_file(path) for path in sorted(raw.iterdir()) if path.is_file()]
-    recipe={"schema_version":1,"renderer":"experiments.06_world_model.run:reconstruct","raw_files":raw_hashes,"fit_partitions":["train","tuning"],"prediction_partition":"evaluation","selectors":["DIRECT","W0","W1","W2","W3","W4"],"sort":"canonical generation order","numpy":np.__version__}
+    recipe={"schema_version":4,"renderer":"experiments.06_world_model.run:reconstruct","raw_files":raw_hashes,"fit_partition":"train","tuning_partition":"tuning","untouched_prediction_partition":"evaluation","selectors":list(model.SELECTORS),"selected_residual_selector":selected,"annotation_rule":"max regret; first available working/nonworking class by maximum regret","sort":"canonical generation order","numpy":np.__version__}
     _write(output/"recipe.json",world.canonical(recipe))
 
 
 def reconstruct(raw: Path, output: Path) -> None:
     if output.exists():raise FileExistsError(output)
-    required={"source-ledger.json","scenes.jsonl","anchors.jsonl","candidates.jsonl","actions.npy","truth.jsonl","attempts.jsonl"}
+    required={"source-ledger.json","scenes.jsonl","anchors.jsonl","candidates.jsonl","actions.npy","truth.jsonl","attempts.jsonl","latency.json"}
     if not raw.is_dir() or {x.name for x in raw.iterdir()}!=required:raise ValueError("raw evidence file set is not exact")
     _authenticate_and_replay(raw)
     _derive(raw,output)
@@ -183,7 +192,14 @@ def run_matrix(output: Path, *, specs: Sequence[world.SceneSpec] | None = None, 
     expected_scenes=len(selected);expected_candidates=expected_scenes*16
     if len(scenes)!=expected_scenes or len(anchors)!=expected_scenes*2 or len(candidate_rows)!=expected_candidates or any(x["outcome"]!="VALID" for x in attempts):raise RuntimeError("Experiment 06 matrix is incomplete")
     if require_full:
-        if (sum(x.partition=="train" for x in selected),sum(x.partition=="tuning" for x in selected),sum(x.partition=="evaluation" for x in selected))!=(48,16,24):raise RuntimeError("split counts drifted")
+        if (sum(x.partition=="train" for x in selected),sum(x.partition=="tuning" for x in selected),sum(x.partition=="evaluation" for x in selected))!=(72,24,48):raise RuntimeError("split counts drifted")
+    rows=_raw_dataset(raw);training=tuple(x for x in rows if x.partition=="train");tuning=tuple(x for x in rows if x.partition=="tuning");evaluation=tuple(x for x in rows if x.partition=="evaluation");fitted=model.fit_models(training,tuning);samples={}
+    for fitted_model in fitted:
+        durations=[]
+        for row in evaluation[:min(64,len(evaluation))]:
+            start=time.perf_counter_ns();model._prediction(fitted_model,row);durations.append(time.perf_counter_ns()-start)
+        samples[fitted_model.selector_id]={"samples_ns":durations,"p50_ns":int(np.percentile(durations,50)),"p95_ns":int(np.percentile(durations,95))}
+    _write(raw/"latency.json",world.canonical({"clock":"time.perf_counter_ns","unit":"ns_per_candidate","selectors":samples}))
     derived=output/"derived";_derive(raw,derived)
     files=[]
     for path in sorted(x for x in output.rglob("*") if x.is_file()):

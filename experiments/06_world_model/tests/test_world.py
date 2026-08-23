@@ -15,18 +15,18 @@ def _action_preimage(commands: np.ndarray) -> bytes:
 
 def test_split_domain_is_exact_and_disjoint() -> None:
     rows = world.scene_rows()
-    assert len(rows) == 88
-    assert [sum(row.partition == name for row in rows) for name in ("train", "tuning", "evaluation")] == [48, 16, 24]
+    assert len(rows) == 144
+    assert [sum(row.partition == name for row in rows) for name in ("train", "tuning", "evaluation")] == [72, 24, 48]
     evaluation = [row for row in rows if row.partition == "evaluation"]
     assert {name: sum(row.stratum == name for row in evaluation) for name in world.STRATA} == {
-        "ID": 8,
-        "MASS_OOD": 4,
-        "FRICTION_OOD": 4,
-        "GEOMETRY_OOD": 4,
-        "OBSTACLE_OOD": 4,
+        "ID": 16,
+        "MASS_OOD": 8,
+        "FRICTION_OOD": 8,
+        "GEOMETRY_OOD": 8,
+        "OBSTACLE_OOD": 8,
     }
-    assert len({row.seed for row in rows}) == 88
-    assert len({row.scene_id for row in rows}) == 88
+    assert len({row.seed for row in rows}) == 144
+    assert len({row.scene_id for row in rows}) == 144
 
 
 def test_candidate_compiler_is_deterministic_distinct_and_has_hold() -> None:

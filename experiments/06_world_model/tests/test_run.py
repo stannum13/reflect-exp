@@ -29,13 +29,13 @@ def _rewrite_manifest_member(root: Path, relative: str) -> None:
 
 
 def test_small_matrix_is_create_only_complete_and_reconstructable(tmp_path: Path) -> None:
-    specs = (*world.scene_rows()[:3], *world.scene_rows()[48:50], *world.scene_rows()[64:66])
+    specs = tuple(next(x for x in world.scene_rows() if x.partition == part) for part in ("train", "tuning", "evaluation"))
     output = tmp_path / "evidence"
     result = runner.run_matrix(output, specs=specs, require_full=False)
-    assert result == {"scenes": 7, "anchors": 14, "candidates": 112, "evaluation_candidates": 32}
-    assert len((output / "raw/scenes.jsonl").read_text().splitlines()) == 7
-    assert len((output / "raw/anchors.jsonl").read_text().splitlines()) == 14
-    assert len((output / "raw/candidates.jsonl").read_text().splitlines()) == 112
+    assert result == {"scenes": 3, "anchors": 6, "candidates": 48, "evaluation_candidates": 16}
+    assert len((output / "raw/scenes.jsonl").read_text().splitlines()) == 3
+    assert len((output / "raw/anchors.jsonl").read_text().splitlines()) == 6
+    assert len((output / "raw/candidates.jsonl").read_text().splitlines()) == 48
     manifest = json.loads((output / "manifest.json").read_text())
     assert manifest["status"] == "VALIDITY_REPAIRED_ENGINEERING_ONLY"
     assert len({row["path"] for row in manifest["files"]}) == len(manifest["files"])
@@ -53,10 +53,13 @@ def test_small_matrix_is_create_only_complete_and_reconstructable(tmp_path: Path
     truth = json.loads((output / "raw/truth.jsonl").read_text().splitlines()[0])
     assert {"generation_counter", "perturbation_magnitude", "pre_perturbation_sha256"} <= candidate.keys()
     assert truth["action_sha256"] == candidate["action_sha256"]
+    annotations = json.loads((output / "derived/annotations.json").read_text())
+    assert {row["kind"] for row in annotations} >= {"MAX_REGRET"}
+    assert json.loads((output / "derived/gate.json").read_text())["authority"] == "ENGINEERING_NONCONFIRMATORY"
 
 
 def test_reconstruction_rejects_coherently_rehashed_action_tamper(tmp_path: Path) -> None:
-    specs = (*world.scene_rows()[:1], *world.scene_rows()[48:49], *world.scene_rows()[64:65])
+    specs = tuple(next(x for x in world.scene_rows() if x.partition == part) for part in ("train", "tuning", "evaluation"))
     original = tmp_path / "original"
     runner.run_matrix(original, specs=specs, require_full=False)
     tampered = tmp_path / "tampered"
@@ -78,7 +81,7 @@ def test_reconstruction_rejects_coherently_rehashed_action_tamper(tmp_path: Path
 
 
 def test_reconstruction_rejects_coherently_rehashed_anchor_and_split_tamper(tmp_path: Path) -> None:
-    specs = (*world.scene_rows()[:1], *world.scene_rows()[48:49], *world.scene_rows()[64:65])
+    specs = tuple(next(x for x in world.scene_rows() if x.partition == part) for part in ("train", "tuning", "evaluation"))
     original = tmp_path / "original"
     runner.run_matrix(original, specs=specs, require_full=False)
 
@@ -105,7 +108,7 @@ def test_reconstruction_rejects_coherently_rehashed_anchor_and_split_tamper(tmp_
 
 
 def test_reconstruction_rejects_source_ledger_not_bound_to_recorded_git_tree(tmp_path: Path) -> None:
-    specs = (*world.scene_rows()[:1], *world.scene_rows()[48:49], *world.scene_rows()[64:65])
+    specs = tuple(next(x for x in world.scene_rows() if x.partition == part) for part in ("train", "tuning", "evaluation"))
     original = tmp_path / "original"
     runner.run_matrix(original, specs=specs, require_full=False)
     source_path = original / "raw/source-ledger.json"
