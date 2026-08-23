@@ -227,6 +227,63 @@ def test_protocol_loader_requires_p1_ordered_subset_then_preserves_survivors(
         artifacts.load_protocol_manifest(changed)
 
 
+def test_resource_evidence_loads_actual_protocol_completion_and_ledger_bytes(
+    tmp_path: Path,
+) -> None:
+    config = Path(__file__).parents[1] / "configs/base.yaml"
+    gate = tmp_path / "p3-gate.yaml"
+    gate.write_text("schema_version: 1\n", encoding="utf-8")
+    revision = tmp_path / "protocol" / "revision-manifest.json"
+    manifest_path = revision.with_name("base-manifest.json")
+    artifacts.prepare_manifest("revision", None, revision, config, gate, implementation_sha=G40)
+    artifacts.prepare_manifest("base", revision, manifest_path, config, gate, implementation_sha=G40)
+    manifest = artifacts.load_protocol_manifest(manifest_path)
+    shard = manifest["shards"][0]
+    results = tmp_path / "results"
+    directory = results / artifacts._shard_directory_name(shard["shard_id"])
+    directory.mkdir(parents=True)
+    rollout_hashes = []
+    retained = 0
+    for identity in shard["output_identities"]:
+        payload = _canonical({"output_identity": identity})
+        (directory / f"{identity}.rollout.json").write_bytes(payload)
+        rollout_hashes.append(hashlib.sha256(payload).hexdigest())
+        retained += len(payload)
+    ledger = {
+        "schema_version": 1, "study_id": artifacts.STUDY_ID, "phase": "pilot",
+        "revision": 1, "shard_id": shard["shard_id"], "command_sha256": H64,
+        "started_at_utc": "2026-08-23T00:00:00Z",
+        "finished_at_utc": "2026-08-23T00:00:01Z", "wall_ns": 1, "cpu_ns": 1,
+        "retained_bytes": retained, "temp_peak_bytes": 0, "quarantine_bytes": 0,
+        "free_bytes_after": 20 * 1024 * 1024 * 1024, "disposition": "COMPLETE",
+    }
+    ledger_bytes = _canonical(ledger)
+    (directory / "resource-ledger.jsonl").write_bytes(ledger_bytes)
+    completion = {
+        "schema_version": 1, "study_id": artifacts.STUDY_ID, "phase": "pilot",
+        "revision": 1, "shard_id": shard["shard_id"], "implementation_sha": G40,
+        "preregistration_git_sha": None,
+        "protocol_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+        "configuration_hash": shard["configuration_hash"], "seed": shard["seed"],
+        "expected_output_identities": shard["output_identities"],
+        "completed_output_identities": shard["output_identities"],
+        "rollout_sha256s": rollout_hashes, "failure_disposition_sha256": None,
+        "resource_ledger_sha256": hashlib.sha256(ledger_bytes).hexdigest(),
+        "state": "COMPLETE",
+    }
+    (directory / "completion.json").write_bytes(_canonical(completion))
+    evidence = artifacts.load_resource_completion_evidence(manifest_path, results)
+    assert evidence.completed_shard_ids == (shard["shard_id"],)
+    assert evidence.retained_bytes == retained and not evidence.complete
+    with pytest.raises(TypeError):
+        replace(evidence, disposition_sha256="0" * 64)
+
+    changed = dict(ledger) | {"retained_bytes": retained + 1}
+    (directory / "resource-ledger.jsonl").write_bytes(_canonical(changed))
+    with pytest.raises(artifacts.ArtifactError, match="bind.*ledger|retained bytes"):
+        artifacts.load_resource_completion_evidence(manifest_path, results)
+
+
 def test_publish_rollout_is_create_only_and_replay_validated(tmp_path: Path) -> None:
     cfg = contracts.load_config(Path(__file__).parents[1] / "configs/base.yaml")
     scenario_record = evaluate.generate_scenario(17, cfg)

@@ -6,7 +6,7 @@ import importlib
 import numpy as np
 import pytest
 
-from .helpers import config
+from .helpers import config, resource_evidence
 
 
 evaluate = importlib.import_module("experiments.01_policy_control.src.evaluate")
@@ -32,13 +32,8 @@ PILOT_PROTOCOL_SHA256 = "9" * 64
 
 
 def _resource(*, phase="confirmation", complete=True):
-    expected = ("shard-000",)
-    completed = expected if complete else ()
-    return evaluate.ResourceCompletionEvidence(
-        phase, 1, PILOT_PROTOCOL_SHA256 if phase == "pilot" else "8" * 64,
-        None if phase == "pilot" else PILOT_PROTOCOL_SHA256, "f" * 64,
-        expected, completed, ("e" * 64,) if complete else (),
-    )
+    predecessor = resource_evidence(phase="pilot", complete=True).protocol_sha256 if phase == "confirmation" else None
+    return resource_evidence(phase=phase, complete=complete, predecessor=predecessor)
 
 
 def _pilot_reproduction():

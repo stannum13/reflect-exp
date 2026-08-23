@@ -707,6 +707,312 @@ def preflight_resources(
     )
 
 
+_COMPLETION_KEYS = frozenset({
+    "schema_version", "study_id", "phase", "revision", "shard_id",
+    "implementation_sha", "preregistration_git_sha", "protocol_sha256",
+    "configuration_hash", "seed", "expected_output_identities",
+    "completed_output_identities", "rollout_sha256s", "failure_disposition_sha256",
+    "resource_ledger_sha256", "state",
+})
+_RESOURCE_LEDGER_ROW_KEYS = frozenset({
+    "schema_version", "study_id", "phase", "revision", "shard_id",
+    "command_sha256", "started_at_utc", "finished_at_utc", "wall_ns", "cpu_ns",
+    "retained_bytes", "temp_peak_bytes", "quarantine_bytes", "free_bytes_after",
+    "disposition",
+})
+_RESOURCE_TERMINAL_KEYS = frozenset({
+    "schema_version", "study_id", "phase", "revision", "source", "shard_id",
+    "resource_ledger_sha256", "preflight_sha256", "reasons", "lifecycle_state",
+    "scientific_result",
+})
+
+
+def _canonical_json_at(directory_descriptor: int, name: str, keys: frozenset[str]) -> tuple[dict[str, Any], bytes]:
+    raw = _read_regular_at(directory_descriptor, name)
+    try:
+        value = json.loads(
+            raw.decode("utf-8"), object_pairs_hook=_duplicates,
+            parse_constant=_reject_constant,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ArtifactError(f"invalid canonical JSON artifact {name}") from exc
+    if not isinstance(value, dict) or set(value) != keys or raw != canonical_json_bytes(value):
+        raise ArtifactError(f"{name} schema or canonical bytes differ")
+    return value, raw
+
+
+def _canonical_jsonl_at(directory_descriptor: int, name: str) -> tuple[tuple[dict[str, Any], ...], bytes]:
+    raw = _read_regular_at(directory_descriptor, name)
+    if not raw or not raw.endswith(b"\n"):
+        raise ArtifactError(f"{name} must be nonempty canonical JSONL")
+    rows: list[dict[str, Any]] = []
+    for line in raw.splitlines(keepends=True):
+        try:
+            value = json.loads(
+                line.decode("utf-8"), object_pairs_hook=_duplicates,
+                parse_constant=_reject_constant,
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ArtifactError(f"invalid JSONL row in {name}") from exc
+        if not isinstance(value, dict) or line != canonical_json_bytes(value):
+            raise ArtifactError(f"noncanonical JSONL row in {name}")
+        rows.append(value)
+    return tuple(rows), raw
+
+
+def _protocol_manifest_chain(path: Path) -> tuple[tuple[Path, dict[str, Any]], ...]:
+    current_path = Path(path)
+    current = load_protocol_manifest(current_path)
+    if current["phase"] == "confirmation":
+        return ((current_path, current),)
+    reverse: list[tuple[Path, dict[str, Any]]] = []
+    while current["stage"] != "revision":
+        reverse.append((current_path, current))
+        digest = current["predecessor_sha256"]
+        matches = tuple(
+            candidate for candidate in current_path.parent.iterdir()
+            if candidate != current_path and candidate.is_file() and not candidate.is_symlink()
+            and hashlib.sha256(candidate.read_bytes()).hexdigest() == digest
+        )
+        if len(matches) != 1:
+            raise ArtifactError("resource protocol predecessor does not resolve uniquely")
+        current_path = matches[0]
+        current = load_protocol_manifest(current_path)
+    return tuple(reversed(reverse))
+
+
+def _shard_directory_name(shard_id: str) -> str:
+    if not isinstance(shard_id, str) or re.fullmatch(r"P[1-6]:[a-z0-9_]+:[0-9]+", shard_id) is None:
+        raise ArtifactError("shard id cannot map to a publication directory")
+    return shard_id.replace(":", "--")
+
+
+def load_resource_completion_evidence(
+    protocol_path: Path,
+    results_root: Path,
+) -> object:
+    """Load exact shard markers/ledgers and derive sealed inference evidence."""
+    chain = _protocol_manifest_chain(Path(protocol_path))
+    if not chain:
+        raise ArtifactError("resource evidence requires a runnable protocol manifest")
+    phase = chain[-1][1]["phase"]
+    revision = chain[-1][1]["revision"]
+    expected_rows = tuple(
+        (row["shard_id"], row, hashlib.sha256(path.read_bytes()).hexdigest())
+        for path, manifest in chain for row in manifest["shards"]
+    )
+    expected_ids = tuple(item[0] for item in expected_rows)
+    if not expected_ids or len(set(expected_ids)) != len(expected_ids):
+        raise ArtifactError("resource protocol shard inventory is empty or duplicated")
+    expected_by_directory = {
+        _shard_directory_name(shard_id): (shard_id, row, protocol_sha)
+        for shard_id, row, protocol_sha in expected_rows
+    }
+    root = Path(results_root)
+    try:
+        root_descriptor = os.open(
+            root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+        )
+    except OSError as exc:
+        raise ArtifactError("resource results root is unavailable or unsafe") from exc
+    completion_hashes: list[str] = []
+    ledger_hashes: list[str] = []
+    completed_ids: list[str] = []
+    retained_bytes = temp_peak_bytes = quarantine_bytes = 0
+    commands: set[tuple[str, str]] = set()
+    try:
+        names = tuple(sorted(os.listdir(root_descriptor)))
+        allowed_files = {"resource-terminal.json", "preflight.json"}
+        unknown = set(names) - set(expected_by_directory) - allowed_files
+        if unknown:
+            raise ArtifactError(f"resource results contain unlisted entries: {sorted(unknown)}")
+        present_directories = tuple(name for name in expected_by_directory if name in names)
+        expected_prefix = tuple(expected_by_directory)[:len(present_directories)]
+        if present_directories != expected_prefix:
+            raise ArtifactError("resource shard publications are not the exact manifest prefix")
+        for directory_name in present_directories:
+            shard_id, shard, stage_protocol_sha = expected_by_directory[directory_name]
+            descriptor = os.open(
+                directory_name,
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=root_descriptor,
+            )
+            try:
+                completion, completion_raw = _canonical_json_at(descriptor, "completion.json", _COMPLETION_KEYS)
+                expected_outputs = tuple(shard["output_identities"])
+                completed_outputs = _sorted_unique_strings(
+                    completion["completed_output_identities"], "completed output identities",
+                )
+                declared_outputs = _sorted_unique_strings(
+                    completion["expected_output_identities"], "expected output identities",
+                )
+                rollout_hashes = tuple(completion["rollout_sha256s"]) if isinstance(completion["rollout_sha256s"], list) else ()
+                if (
+                    completion["schema_version"] != 1 or completion["study_id"] != STUDY_ID
+                    or completion["phase"] != phase or completion["revision"] != revision
+                    or completion["shard_id"] != shard_id
+                    or completion["implementation_sha"] != chain[-1][1]["implementation_sha"]
+                    or completion["protocol_sha256"] != stage_protocol_sha
+                    or completion["configuration_hash"] != shard["configuration_hash"]
+                    or completion["seed"] != shard["seed"] or declared_outputs != expected_outputs
+                    or completion["state"] not in {"COMPLETE", "DECLARED_INVALID"}
+                    or not all(isinstance(item, str) and _SHA256.fullmatch(item) for item in rollout_hashes)
+                ):
+                    raise ArtifactError("shard completion does not bind its exact protocol row")
+                if phase == "pilot" and completion["preregistration_git_sha"] is not None:
+                    raise ArtifactError("pilot completion cannot claim preregistration")
+                if phase == "confirmation":
+                    _hash(completion["preregistration_git_sha"], "preregistration_git_sha", _GIT_SHA)
+                shard_names = set(os.listdir(descriptor))
+                rollout_names = tuple(f"{identity}.rollout.json" for identity in completed_outputs)
+                allowed_shard_names = {
+                    "completion.json", "resource-ledger.jsonl", "stdout-output.bin", "stderr-output.bin",
+                    *rollout_names,
+                }
+                failure_hash = completion["failure_disposition_sha256"]
+                if completion["state"] == "COMPLETE":
+                    if completed_outputs != expected_outputs or len(rollout_hashes) != len(expected_outputs) or failure_hash is not None:
+                        raise ArtifactError("complete shard output/failure inventory is inconsistent")
+                    if "failure-disposition.jsonl" in os.listdir(descriptor):
+                        raise ArtifactError("complete shard cannot contain a failure disposition")
+                else:
+                    allowed_shard_names.add("failure-disposition.jsonl")
+                    if not set(completed_outputs) <= set(expected_outputs) or len(rollout_hashes) != len(completed_outputs):
+                        raise ArtifactError("declared-invalid shard output inventory is inconsistent")
+                    failure_rows, failure_raw = _canonical_jsonl_at(descriptor, "failure-disposition.jsonl")
+                    if hashlib.sha256(failure_raw).hexdigest() != failure_hash or not failure_rows:
+                        raise ArtifactError("failure disposition hash/content is invalid")
+                    validated_failures = tuple(_failure_row(row) for row in failure_rows)
+                    failure_conditions = tuple(row["condition_id"] for row in validated_failures)
+                    if (
+                        tuple(sorted(set(failure_conditions))) != failure_conditions
+                        or any(
+                            row["phase"] != phase or row["revision"] != revision
+                            or row["shard_id"] != shard_id or row["stack_id"] != shard["stack_id"]
+                            or row["seed"] != shard["seed"]
+                            for row in validated_failures
+                        )
+                        or set(failure_conditions) != {
+                            condition for condition, output in zip(
+                                shard["condition_ids"], expected_outputs, strict=True,
+                            ) if output not in completed_outputs
+                        }
+                    ):
+                        raise ArtifactError("failure dispositions do not equal the missing output inventory")
+                if shard_names - allowed_shard_names:
+                    raise ArtifactError("shard publication contains an unlisted artifact")
+                if any(name not in shard_names for name in rollout_names):
+                    raise ArtifactError("shard completion names a missing rollout artifact")
+                actual_rollout_hashes = tuple(
+                    hashlib.sha256(_read_regular_at(descriptor, name)).hexdigest()
+                    for name in rollout_names
+                )
+                if actual_rollout_hashes != rollout_hashes:
+                    raise ArtifactError("rollout hashes do not bind the retained rollout artifacts")
+                if any(len(_read_regular_at(descriptor, name)) > ROLLOUT_RESERVATION_BYTES for name in rollout_names):
+                    raise ArtifactError("retained rollout exceeds its frozen 2 MiB reservation")
+                ledger_rows, ledger_raw = _canonical_jsonl_at(descriptor, "resource-ledger.jsonl")
+                ledger_sha = hashlib.sha256(ledger_raw).hexdigest()
+                if completion["resource_ledger_sha256"] != ledger_sha:
+                    raise ArtifactError("completion does not bind its exact resource ledger")
+                previous_start = ""
+                shard_retained_bytes = 0
+                for row in ledger_rows:
+                    if set(row) != _RESOURCE_LEDGER_ROW_KEYS:
+                        raise ArtifactError("resource ledger row schema is not closed")
+                    if (
+                        row["schema_version"] != 1 or row["study_id"] != STUDY_ID
+                        or row["phase"] != phase or row["revision"] != revision
+                        or row["shard_id"] != shard_id or row["disposition"] not in {
+                            "COMPLETE", "DECLARED_INVALID", "REFUSED",
+                        }
+                    ):
+                        raise ArtifactError("resource ledger row identity/disposition is invalid")
+                    command = _hash(row["command_sha256"], "resource command hash")
+                    identity = (shard_id, command)
+                    if identity in commands:
+                        raise ArtifactError("resource ledger duplicates a shard/command identity")
+                    commands.add(identity)
+                    started = _text(row["started_at_utc"], "resource start time")
+                    finished = _text(row["finished_at_utc"], "resource finish time")
+                    if not _UTC_SECONDS.fullmatch(started) or not _UTC_SECONDS.fullmatch(finished) or started > finished or started < previous_start:
+                        raise ArtifactError("resource ledger times are invalid or unsorted")
+                    previous_start = started
+                    for key in (
+                        "wall_ns", "cpu_ns", "retained_bytes", "temp_peak_bytes",
+                        "quarantine_bytes", "free_bytes_after",
+                    ):
+                        _exact_int(row[key], key)
+                    retained_bytes += row["retained_bytes"]
+                    shard_retained_bytes += row["retained_bytes"]
+                    temp_peak_bytes += row["temp_peak_bytes"]
+                    quarantine_bytes += row["quarantine_bytes"]
+                expected_ledger_disposition = completion["state"]
+                if not ledger_rows or ledger_rows[-1]["disposition"] != expected_ledger_disposition:
+                    raise ArtifactError("resource ledger terminal row differs from shard completion state")
+                measured_retained = sum(
+                    len(_read_regular_at(descriptor, name))
+                    for name in shard_names - {"completion.json", "resource-ledger.jsonl"}
+                )
+                if shard_retained_bytes != measured_retained:
+                    raise ArtifactError("resource ledger retained bytes do not equal retained shard artifacts")
+                completed_ids.append(shard_id)
+                completion_hashes.append(hashlib.sha256(completion_raw).hexdigest())
+                ledger_hashes.append(ledger_sha)
+            finally:
+                os.close(descriptor)
+        phase_cap = PILOT_REVISION_LIMIT_BYTES if phase == "pilot" else CONFIRMATION_LIMIT_BYTES
+        if retained_bytes > phase_cap or temp_peak_bytes > 32 * MIB or quarantine_bytes > 64 * MIB:
+            raise ArtifactError("validated resource ledgers exceed the frozen disjoint bucket ceilings")
+        terminal_hash_payload: object = {
+            "resource_terminal": None,
+            "completed_shard_ids": completed_ids,
+            "completion_sha256s": completion_hashes,
+            "ledger_sha256s": ledger_hashes,
+        }
+        if "preflight.json" in names and "resource-terminal.json" not in names:
+            raise ArtifactError("orphan preflight disposition lacks its resource terminal marker")
+        if "resource-terminal.json" in names:
+            terminal, terminal_raw = _canonical_json_at(root_descriptor, "resource-terminal.json", _RESOURCE_TERMINAL_KEYS)
+            reasons = _sorted_unique_strings(terminal["reasons"], "resource terminal reasons")
+            if (
+                terminal["schema_version"] != 1 or terminal["study_id"] != STUDY_ID
+                or terminal["phase"] != phase or terminal["revision"] != revision
+                or terminal["source"] not in {"PREFLIGHT", "SHARD"}
+                or not reasons or not set(reasons) <= _RESOURCE_REASONS
+                or terminal["lifecycle_state"] != "STOPPED"
+                or terminal["scientific_result"] != "INCONCLUSIVE"
+            ):
+                raise ArtifactError("resource terminal disposition is invalid")
+            if terminal["source"] == "SHARD":
+                if terminal["shard_id"] not in completed_ids or terminal["preflight_sha256"] is not None or terminal["resource_ledger_sha256"] not in ledger_hashes:
+                    raise ArtifactError("shard resource terminal does not bind a completed ledger")
+            else:
+                if terminal["shard_id"] is not None or terminal["resource_ledger_sha256"] is not None or "preflight.json" not in names:
+                    raise ArtifactError("preflight resource terminal fields are inconsistent")
+                preflight_raw = _read_regular_at(root_descriptor, "preflight.json")
+                if hashlib.sha256(preflight_raw).hexdigest() != terminal["preflight_sha256"]:
+                    raise ArtifactError("resource terminal does not bind the preflight disposition")
+            terminal_hash_payload = hashlib.sha256(terminal_raw).hexdigest()
+        disposition_sha = (
+            terminal_hash_payload if isinstance(terminal_hash_payload, str)
+            else hashlib.sha256(canonical_json_bytes(terminal_hash_payload)).hexdigest()
+        )
+    finally:
+        os.close(root_descriptor)
+    from . import evaluate
+    predecessor = None if phase == "pilot" else chain[-1][1]["predecessor_sha256"]
+    return evaluate._resource_completion_from_validated_artifacts(
+        phase=phase, revision=revision,
+        protocol_sha256=hashlib.sha256(Path(protocol_path).read_bytes()).hexdigest(),
+        predecessor_protocol_sha256=predecessor, disposition_sha256=disposition_sha,
+        expected_shard_ids=expected_ids, completed_shard_ids=tuple(completed_ids),
+        ledger_sha256s=tuple(ledger_hashes), completion_sha256s=tuple(completion_hashes),
+        retained_bytes=retained_bytes, temporary_peak_bytes=temp_peak_bytes,
+        quarantine_bytes=quarantine_bytes,
+    )
+
+
 def _git(root: Path, *arguments: str) -> bytes:
     environment = {
         "PATH": os.environ.get("PATH", ""), "LANG": "C", "LC_ALL": "C",

@@ -36,56 +36,88 @@ def _candidate(stage, survivors, score, tie_rank, *, feasible=True, reuse=()):
 
 def _selection_evidence(*, p5_all_infeasible=False):
     survivors = ("P1", "P2", "P3", "P4", "P5", "P6")
-    outcomes = tuple(evaluate.BaseStackOutcome(stack, 12, False) for stack in survivors)
-    pd = (
-        _candidate(PilotStage.BASE, survivors, 0.5, 1),
-        _candidate(PilotStage.PD_60_6, survivors, 0.6, 2),
-        _candidate(PilotStage.PD_100_10, survivors, 0.7, 3),
-    )
-    ik = (
-        _candidate(PilotStage.IK_0_001, survivors, 0.6, 4),
-        _candidate(PilotStage.IK_0_05, survivors, 0.7, 5),
-    )
-    reused_p5_hashes = tuple(
-        digest for score in pd[0].stack_seed_scores if score.stack_id == "P5"
-        for digest in score.condition_bundle_sha256s
-    )
-    p5 = (
-        _candidate(PilotStage.BASE, ("P5",), 0.5, 1, feasible=not p5_all_infeasible, reuse=reused_p5_hashes),
-        _candidate(PilotStage.P5_0_01, ("P5",), 0.6, 6, feasible=not p5_all_infeasible),
-        _candidate(PilotStage.P5_0_04, ("P5",), 0.7, 7, feasible=not p5_all_infeasible),
-    )
-    return evaluate.derive_pilot_selection(outcomes, pd, ik, p5)
+    def raw(stage, domain, score, *, feasible=True, vector=None):
+        chosen = vector or dict(next(item.parameter_vector for item in evaluate.pilot_candidates() if item.stage is stage))
+        episodes = tuple(
+            evaluate.PilotEpisodeScore(
+                stack, seed, condition,
+                f"{10_000 + evaluate.pilot_stage_order().index(stage) * 1000 + int(stack[1:]) * 100 + seed * 3 + index:064x}",
+                score if feasible else None, feasible, None if feasible else "NONFINITE",
+            )
+            for stack in domain for seed in range(4)
+            for index, condition in enumerate(("tune-05-700-2", "tune-10-300-2", "tune-20-000-1"))
+        )
+        return evaluate.CandidateReproductionInput(stage, chosen, tuple(domain), episodes)
+    pd = tuple(raw(stage, survivors, score) for stage, score in (
+        (PilotStage.BASE, 0.5), (PilotStage.PD_60_6, 0.6), (PilotStage.PD_100_10, 0.7),
+    ))
+    selected_vector = {"pd": [80.0, 8.0], "ik": 0.01, "p5_smoothness": 0.02}
+    ik = tuple(raw(stage, survivors, score, vector={**selected_vector, "ik": scalar}) for stage, scalar, score in (
+        (PilotStage.IK_0_001, 0.001, 0.6), (PilotStage.IK_0_05, 0.05, 0.7),
+    ))
+    p5 = tuple(raw(
+        stage, ("P5",), score, feasible=not p5_all_infeasible,
+        vector={**selected_vector, "p5_smoothness": scalar},
+    ) for stage, scalar, score in (
+        (PilotStage.BASE, 0.02, 0.5), (PilotStage.P5_0_01, 0.01, 0.6),
+        (PilotStage.P5_0_04, 0.04, 0.7),
+    ))
+    return evaluate.derive_pilot_selection(pd, ik, p5)
 
 
-def _p1_manifest(stage, shard_count, episodes_per_shard, predecessor_sha="1" * 64):
+def _stage_vector(selection, stage):
+    vector = dict(next(item.parameter_vector for item in evaluate.pilot_candidates() if item.stage is stage))
+    if stage in {PilotStage.IK_0_001, PilotStage.IK_0_05, PilotStage.P5_0_01, PilotStage.P5_0_04, PilotStage.FINAL_FOUR}:
+        vector["pd"] = list(selection.selected_pd.parameter_vector["pd"])
+    if stage in {PilotStage.P5_0_01, PilotStage.P5_0_04, PilotStage.FINAL_FOUR}:
+        vector["ik"] = selection.selected_ik.parameter_vector["ik"]
+    if stage is PilotStage.FINAL_FOUR:
+        vector["p5_smoothness"] = selection.selected_p5.parameter_vector["p5_smoothness"] if selection.selected_p5 else 0.02
+    return vector
+
+
+def _stage_reuse(selection, stage):
+    if stage in {PilotStage.IK_0_001, PilotStage.IK_0_05}:
+        scores = selection.selected_pd.stack_seed_scores
+    elif stage in {PilotStage.P5_0_01, PilotStage.P5_0_04}:
+        scores = tuple(item for item in selection.selected_ik.stack_seed_scores if item.stack_id == "P5")
+    elif stage is PilotStage.FINAL_FOUR:
+        scores = (selection.selected_p5 or selection.selected_ik).stack_seed_scores
+    else:
+        return ()
+    return tuple(digest for score in scores for digest in score.condition_bundle_sha256s)
+
+
+def _p1_manifest(stage, shard_count, episodes_per_shard, predecessor_sha="1" * 64, selection=None):
     assert shard_count == 4
     expected_count = 26 if stage is PilotStage.FINAL_FOUR else 3
     assert episodes_per_shard == expected_count
     return evaluate.build_pilot_manifest(
         stage, revision=1, predecessor_sha256=predecessor_sha,
         config_sha256="2" * 64, implementation_sha="3" * 40,
-        parameter_sha256="4" * 64,
+        parameter_sha256=sha256_json(_stage_vector(selection, stage) if selection else dict(evaluate.pilot_candidates()[0].parameter_vector)),
         survivors=("P1", "P2", "P3", "P4", "P5", "P6"),
         seeds=(20, 21, 22, 23) if stage is PilotStage.FINAL_FOUR else (10, 11, 12, 13),
+        reuse_hashes=_stage_reuse(selection, stage) if selection else (),
     )
 
 
 def _completions(manifests, *, final_count=None, terminal_failure=False):
-    shards = [(manifest.stage, shard) for manifest in manifests for shard in manifest.shards]
+    shards = [(manifest, index, shard) for manifest in manifests for index, shard in enumerate(manifest.shards)]
     if final_count is not None:
         shards = shards[:final_count]
     result = []
-    for index, (stage, shard) in enumerate(shards):
+    for index, (manifest, shard_index, shard) in enumerate(shards):
         failure = terminal_failure and index == len(shards) - 1
         result.append(evaluate.PilotShardCompletion(
-            stage, shard.shard_id, shard.episode_ids, f"{8000 + index:064x}",
-            failure, ("EASIEST_RECOVERY_FAILURE",) if failure else (), (),
+            manifest.stage, shard.shard_id, shard.episode_ids, f"{8000 + index:064x}",
+            failure, ("EASIEST_RECOVERY_FAILURE",) if failure else (),
+            manifest.reuse_hashes if shard_index == 0 else (),
         ))
     return tuple(result)
 
 
-def _complete_tuning_prefix():
+def _complete_tuning_prefix(selection):
     survivors = ("P1", "P2", "P3", "P4", "P5", "P6")
     result = []
     predecessor = "1" * 64
@@ -96,9 +128,10 @@ def _complete_tuning_prefix():
             predecessor_sha256=predecessor,
             config_sha256="2" * 64,
             implementation_sha="3" * 40,
-            parameter_sha256=f"{10 + len(result):064x}",
+            parameter_sha256=sha256_json(_stage_vector(selection, stage)),
             survivors=survivors,
             seeds=(10, 11, 12, 13),
+            reuse_hashes=_stage_reuse(selection, stage),
         )
         result.append(manifest)
         predecessor = __import__("hashlib").sha256(evaluate.pilot_manifest_bytes(manifest)).hexdigest()
@@ -148,8 +181,9 @@ def test_p1_shard_failure_stops_without_later_commands() -> None:
 
 
 def test_final_four_p1_failure_stops_before_other_stack_shards() -> None:
-    prefix, predecessor = _complete_tuning_prefix()
-    manifest = _p1_manifest(PilotStage.FINAL_FOUR, 4, 26, predecessor)
+    selection = _selection_evidence()
+    prefix, predecessor = _complete_tuning_prefix(selection)
+    manifest = _p1_manifest(PilotStage.FINAL_FOUR, 4, 26, predecessor, selection)
     prefix_completions = _completions(prefix)
     for completed_shards, final_four_count in enumerate((26, 52, 78, 104), start=1):
         final_completions = _completions((manifest,), final_count=completed_shards, terminal_failure=True)
@@ -160,7 +194,7 @@ def test_final_four_p1_failure_stops_before_other_stack_shards() -> None:
         terminal = evaluate.StageTerminalDisposition(PilotStage.FINAL_FOUR, completions[-1].shard_id, "EASIEST_RECOVERY_FAILURE", completions[-1].completion_sha256)
         disposition = evaluate.pilot_disposition(
             manifest, prior_manifests=prefix, completions=completions,
-            terminal_disposition=terminal, selection_evidence=_selection_evidence(),
+            terminal_disposition=terminal, selection_evidence=selection,
         )
         assert disposition.scientific_result == "INCONCLUSIVE" and disposition.lifecycle_state == "STOPPED"
         assert disposition.final_four_episode_count == final_four_count
@@ -191,6 +225,17 @@ def test_selection_ties_use_frozen_order_and_shared_vector() -> None:
     assert all(candidate.parameter_vector["pd"] == [60.0, 6.0] for candidate in propagated[3:])
     assert all(candidate.parameter_vector["ik"] == 0.001 for candidate in propagated[5:])
     assert propagated[-1].parameter_vector["p5_smoothness"] == 0.04
+
+
+def test_selection_rejects_caller_scored_candidates() -> None:
+    survivors = ("P1", "P2", "P3", "P4", "P5", "P6")
+    materialized = (
+        _candidate(PilotStage.BASE, survivors, 0.5, 1),
+        _candidate(PilotStage.PD_60_6, survivors, 0.6, 2),
+        _candidate(PilotStage.PD_100_10, survivors, 0.7, 3),
+    )
+    with pytest.raises(ValueError, match="raw episode-bearing"):
+        evaluate.derive_pilot_selection(materialized, (), ())
 
 
 def test_candidate_evaluator_uses_three_condition_then_seed_then_stack_means() -> None:
@@ -237,7 +282,8 @@ def test_manifest_rejects_unbound_or_unsorted_episode_inventory() -> None:
 
 def test_stage_builders_bind_hashes_sort_episodes_and_final_four_runs_once() -> None:
     survivors = ("P1", "P2", "P3", "P4", "P5", "P6")
-    prefix, predecessor = _complete_tuning_prefix()
+    selection = _selection_evidence()
+    prefix, predecessor = _complete_tuning_prefix(selection)
     tuning = prefix[0]
     assert len(tuning.shards) == 24 and sum(len(item.episode_ids) for item in tuning.shards) == 72
     final = evaluate.build_pilot_manifest(
@@ -246,27 +292,38 @@ def test_stage_builders_bind_hashes_sort_episodes_and_final_four_runs_once() -> 
         predecessor_sha256=predecessor,
         config_sha256="2" * 64,
         implementation_sha="3" * 40,
-        parameter_sha256="5" * 64,
+        parameter_sha256=sha256_json(_stage_vector(selection, PilotStage.FINAL_FOUR)),
         survivors=survivors,
         seeds=(20, 21, 22, 23),
+        reuse_hashes=_stage_reuse(selection, PilotStage.FINAL_FOUR),
     )
     assert len(final.shards) == 24 and sum(len(item.episode_ids) for item in final.shards) == 624
     disposition = evaluate.pilot_disposition(
         final, prior_manifests=prefix, completions=_completions((*prefix, final)),
-        selection_evidence=_selection_evidence(),
+        selection_evidence=selection,
     )
     assert disposition.total_episode_count == 1008 and disposition.final_four_episode_count == 624
+    corrupted = evaluate.PilotManifest(
+        final.revision, final.stage, final.predecessor_sha256, final.config_sha256,
+        final.implementation_sha, "f" * 64, final.shards, final.reuse_hashes,
+    )
+    with pytest.raises(ValueError, match="parameter hash"):
+        evaluate.pilot_disposition(
+            corrupted, prior_manifests=prefix,
+            completions=_completions((*prefix, corrupted)), selection_evidence=selection,
+        )
 
 
 def test_final_four_inventory_is_derived_from_all_p5_candidates() -> None:
-    prefix, predecessor = _complete_tuning_prefix()
     selection = _selection_evidence(p5_all_infeasible=True)
+    prefix, predecessor = _complete_tuning_prefix(selection)
     assert selection.survivors == ("P1", "P2", "P3", "P4", "P6")
     invalid = evaluate.build_pilot_manifest(
         PilotStage.FINAL_FOUR, revision=1, predecessor_sha256=predecessor,
         config_sha256="2" * 64, implementation_sha="3" * 40,
-        parameter_sha256="5" * 64,
+        parameter_sha256=sha256_json(_stage_vector(selection, PilotStage.FINAL_FOUR)),
         survivors=("P1", "P2", "P3", "P4", "P5", "P6"), seeds=(20, 21, 22, 23),
+        reuse_hashes=_stage_reuse(selection, PilotStage.FINAL_FOUR),
     )
     with pytest.raises(ValueError, match="selection-derived"):
         evaluate.pilot_disposition(

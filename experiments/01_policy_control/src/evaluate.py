@@ -935,52 +935,84 @@ class PilotSelectionEvidence:
 
 
 def derive_pilot_selection(
-    base_outcomes: Sequence[BaseStackOutcome],
-    pd_candidates: Sequence[PilotCandidate],
-    ik_candidates: Sequence[PilotCandidate],
-    p5_candidates: Sequence[PilotCandidate],
+    pd_inputs: Sequence["CandidateReproductionInput"],
+    ik_inputs: Sequence["CandidateReproductionInput"],
+    p5_inputs: Sequence["CandidateReproductionInput"],
 ) -> PilotSelectionEvidence:
+    pd_raw = tuple(pd_inputs)
+    if not all(isinstance(item, CandidateReproductionInput) for item in pd_raw):
+        raise ValueError("pilot selection accepts only raw episode-bearing candidate inputs")
+    if tuple(item.stage for item in pd_raw) != (
+        PilotStage.BASE, PilotStage.PD_60_6, PilotStage.PD_100_10,
+    ) or any(item.predecessor_candidate is not None for item in pd_raw):
+        raise ValueError("PD selection requires exact raw candidate inputs without caller predecessors")
+    base_rows = tuple(pd_raw[0].episodes)
+    base_outcomes = tuple(BaseStackOutcome(
+        stack,
+        sum(item.stack_id == stack for item in base_rows),
+        any(item.stack_id == stack and not item.valid for item in base_rows),
+        tuple(item.reason for item in base_rows if item.stack_id == stack and item.reason is not None),
+    ) for stack in _STACK_ORDER)
     qualification = qualify_base(base_outcomes)
     if qualification.lifecycle_state != "RUNNING":
         raise ValueError("terminal base qualification cannot produce adaptive selection")
-    pd = tuple(pd_candidates)
-    if tuple(item.stage for item in pd) != (
-        PilotStage.BASE, PilotStage.PD_60_6, PilotStage.PD_100_10,
-    ):
-        raise ValueError("PD selection requires the exact frozen candidate order")
+    pd = tuple(evaluate_candidate(
+        item.stage,
+        item.parameter_vector,
+        qualification.survivors,
+        tuple(row for row in item.episodes if row.stack_id in qualification.survivors),
+    ) for item in pd_raw)
     selected_pd = select_global_candidate(pd, qualification.survivors)
-    ik = tuple(ik_candidates)
-    if len(ik) != 2 or tuple(item.stage for item in ik) != (PilotStage.IK_0_001, PilotStage.IK_0_05):
-        raise ValueError("IK selection requires the exact frozen alternative order")
-    selected_pd_vector = dict(selected_pd.parameter_vector)
-    for item in ik:
-        vector = dict(item.parameter_vector)
-        if item.fixed_survivors != qualification.survivors or vector["pd"] != selected_pd_vector["pd"]:
-            raise ValueError("IK candidates do not bind the selected PD/survivor domain")
+    ik_raw = tuple(ik_inputs)
+    if not all(isinstance(item, CandidateReproductionInput) for item in ik_raw):
+        raise ValueError("IK selection accepts only raw episode-bearing candidate inputs")
+    if tuple(item.stage for item in ik_raw) != (PilotStage.IK_0_001, PilotStage.IK_0_05) or any(
+        item.predecessor_candidate is not None or item.survivors != qualification.survivors
+        for item in ik_raw
+    ):
+        raise ValueError("IK selection requires exact raw alternatives without caller predecessors")
+    ik = tuple(evaluate_candidate(
+        item.stage, item.parameter_vector, qualification.survivors, item.episodes,
+        predecessor_candidate=selected_pd,
+    ) for item in ik_raw)
     selected_ik = select_global_candidate((selected_pd, *ik), qualification.survivors)
-    p5 = tuple(p5_candidates)
+    p5_raw = tuple(p5_inputs)
     selected_ik_vector = dict(selected_ik.parameter_vector)
-    p5_scores = tuple(item for item in selected_ik.stack_seed_scores if item.stack_id == "P5")
     if "P5" in qualification.survivors:
-        if len(p5) != 3 or tuple(item.stage for item in p5) != (
+        if not all(isinstance(item, CandidateReproductionInput) for item in p5_raw):
+            raise ValueError("P5 selection accepts only raw episode-bearing candidate inputs")
+        if tuple(item.stage for item in p5_raw) != (
             PilotStage.BASE, PilotStage.P5_0_01, PilotStage.P5_0_04,
+        ) or any(item.predecessor_candidate is not None or item.survivors != ("P5",) for item in p5_raw):
+            raise ValueError("P5 selection requires exact raw candidates without caller predecessors")
+        if any(
+            dict(item.parameter_vector)["pd"] != selected_ik_vector["pd"]
+            or dict(item.parameter_vector)["ik"] != selected_ik_vector["ik"]
+            for item in p5_raw
         ):
-            raise ValueError("P5 selection requires the exact frozen candidate order")
-        reuse = tuple(digest for score in p5_scores for digest in score.condition_bundle_sha256s)
-        for index, item in enumerate(p5):
-            vector = dict(item.parameter_vector)
-            if (
-                item.fixed_survivors != ("P5",)
-                or vector["pd"] != selected_ik_vector["pd"]
-                or vector["ik"] != selected_ik_vector["ik"]
-            ):
-                raise ValueError("P5 candidates do not bind selected PD/IK and the P5-only domain")
-            if index == 0 and (vector["p5_smoothness"] != 0.02 or item.reuse_hashes != reuse):
-                raise ValueError("reused P5 baseline does not bind selected predecessor bundles")
+            raise ValueError("P5 raw candidates do not bind the mechanically selected PD/IK")
+        baseline_raw = p5_raw[0]
+        if dict(baseline_raw.parameter_vector)["p5_smoothness"] != 0.02:
+            raise ValueError("P5 baseline raw input must use the frozen 0.02 scalar")
+        baseline_eval = evaluate_candidate(
+            PilotStage.FINAL_FOUR, baseline_raw.parameter_vector, ("P5",),
+            baseline_raw.episodes, predecessor_candidate=selected_ik,
+        )
+        p5_baseline = PilotCandidate(
+            PilotStage.BASE, baseline_eval.parameter_vector, baseline_eval.parameter_hash,
+            baseline_eval.fixed_survivors, baseline_eval.feasible,
+            baseline_eval.reuse_hashes, baseline_eval.stack_seed_scores,
+            baseline_eval.global_score, 1, baseline_eval.reasons,
+        )
+        p5 = (p5_baseline,) + tuple(evaluate_candidate(
+            item.stage, item.parameter_vector, ("P5",), item.episodes,
+            predecessor_candidate=selected_ik,
+        ) for item in p5_raw[1:])
         selected_p5 = select_p5_smoothness(p5)
     else:
-        if p5:
+        if p5_raw:
             raise ValueError("base-killed P5 cannot have smoothness candidates")
+        p5 = ()
         selected_p5 = None
     recorded_candidates = (*pd, *ik, *p5[1:])
     digest = hashlib.sha256(candidate_evaluations_bytes(recorded_candidates)).hexdigest()
@@ -1224,6 +1256,52 @@ def pilot_disposition(
     for predecessor, current in zip(manifests, manifests[1:]):
         if current.predecessor_sha256 != hashlib.sha256(pilot_manifest_bytes(predecessor)).hexdigest():
             raise ValueError("pilot manifest predecessor hash chain is broken")
+    selected_vector = (
+        None if selection_evidence is None else {
+            "pd": list(selection_evidence.selected_pd.parameter_vector["pd"]),
+            "ik": selection_evidence.selected_ik.parameter_vector["ik"],
+            "p5_smoothness": (
+                selection_evidence.selected_p5.parameter_vector["p5_smoothness"]
+                if selection_evidence.selected_p5 is not None else 0.02
+            ),
+        }
+    )
+    for manifest in manifests:
+        vector = _candidate_vector(manifest.stage)
+        if manifest.stage in {
+            PilotStage.IK_0_001, PilotStage.IK_0_05,
+            PilotStage.P5_0_01, PilotStage.P5_0_04, PilotStage.FINAL_FOUR,
+        }:
+            if selected_vector is None:
+                raise ValueError("adaptive manifest parameter hashes require selection evidence")
+            vector["pd"] = list(selected_vector["pd"])
+        if manifest.stage in {PilotStage.P5_0_01, PilotStage.P5_0_04, PilotStage.FINAL_FOUR}:
+            assert selected_vector is not None
+            vector["ik"] = selected_vector["ik"]
+        if manifest.stage is PilotStage.FINAL_FOUR:
+            assert selected_vector is not None
+            vector["p5_smoothness"] = selected_vector["p5_smoothness"]
+        if manifest.parameter_sha256 != sha256_json(vector):
+            raise ValueError("pilot manifest parameter hash does not bind the exact selected stage vector")
+        expected_reuse: tuple[str, ...] = ()
+        if selection_evidence is not None and manifest.stage in {PilotStage.IK_0_001, PilotStage.IK_0_05}:
+            expected_reuse = tuple(
+                digest for score in selection_evidence.selected_pd.stack_seed_scores
+                for digest in score.condition_bundle_sha256s
+            )
+        elif selection_evidence is not None and manifest.stage in {PilotStage.P5_0_01, PilotStage.P5_0_04}:
+            expected_reuse = tuple(
+                digest for score in selection_evidence.selected_ik.stack_seed_scores
+                if score.stack_id == "P5" for digest in score.condition_bundle_sha256s
+            )
+        elif selection_evidence is not None and manifest.stage is PilotStage.FINAL_FOUR:
+            predecessor_selection = selection_evidence.selected_p5 or selection_evidence.selected_ik
+            expected_reuse = tuple(
+                digest for score in predecessor_selection.stack_seed_scores
+                for digest in score.condition_bundle_sha256s
+            )
+        if manifest.reuse_hashes != expected_reuse:
+            raise ValueError("pilot manifest reuse hashes do not bind the selected predecessor bundles")
     declared = tuple((manifest.stage, shard) for manifest in manifests for shard in manifest.shards)
     completed = tuple(completions)
     if len({item.completion_sha256 for item in completed}) != len(completed):
@@ -1581,7 +1659,10 @@ _WIRE_BY_STACK = {
 }
 
 
-@dataclass(frozen=True)
+_RESOURCE_COMPLETION_SEAL = object()
+
+
+@dataclass(frozen=True, init=False)
 class ResourceCompletionEvidence:
     phase: str
     revision: int
@@ -1591,33 +1672,77 @@ class ResourceCompletionEvidence:
     expected_shard_ids: tuple[str, ...]
     completed_shard_ids: tuple[str, ...]
     ledger_sha256s: tuple[str, ...]
+    completion_sha256s: tuple[str, ...]
+    retained_bytes: int
+    temporary_peak_bytes: int
+    quarantine_bytes: int
 
-    def __post_init__(self) -> None:
-        if self.phase not in {"pilot", "confirmation"} or type(self.revision) is not int or self.revision <= 0:
+    def __init__(
+        self, phase: str, revision: int, protocol_sha256: str,
+        predecessor_protocol_sha256: str | None, disposition_sha256: str,
+        expected_shard_ids: tuple[str, ...], completed_shard_ids: tuple[str, ...],
+        ledger_sha256s: tuple[str, ...], completion_sha256s: tuple[str, ...],
+        retained_bytes: int, temporary_peak_bytes: int, quarantine_bytes: int,
+        *, _seal: object,
+    ) -> None:
+        if _seal is not _RESOURCE_COMPLETION_SEAL:
+            raise ValueError("resource completion evidence must be derived from canonical artifacts")
+        if phase not in {"pilot", "confirmation"} or type(revision) is not int or revision <= 0:
             raise ValueError("resource evidence phase/revision is invalid")
-        _hash(self.protocol_sha256, "resource protocol hash")
-        if self.phase == "pilot":
-            if self.predecessor_protocol_sha256 is not None:
+        object.__setattr__(self, "phase", phase)
+        object.__setattr__(self, "revision", revision)
+        object.__setattr__(self, "protocol_sha256", _hash(protocol_sha256, "resource protocol hash"))
+        if phase == "pilot":
+            if predecessor_protocol_sha256 is not None:
                 raise ValueError("pilot resource evidence cannot name a predecessor protocol")
         else:
-            _hash(self.predecessor_protocol_sha256, "confirmation predecessor protocol hash")
-        _hash(self.disposition_sha256, "resource disposition hash")
-        expected = tuple(self.expected_shard_ids)
-        completed = tuple(self.completed_shard_ids)
-        if not expected or expected != tuple(sorted(set(expected))):
-            raise ValueError("resource expected shard domain must be nonempty sorted and unique")
-        if completed != tuple(sorted(set(completed))) or not set(completed) <= set(expected):
-            raise ValueError("resource completed shard domain must be sorted, unique, and declared")
-        ledgers = tuple(_hash(item, "resource ledger hash") for item in self.ledger_sha256s)
-        if len(ledgers) != len(completed):
-            raise ValueError("resource ledger hashes must bind every completed shard")
+            _hash(predecessor_protocol_sha256, "confirmation predecessor protocol hash")
+        object.__setattr__(self, "predecessor_protocol_sha256", predecessor_protocol_sha256)
+        object.__setattr__(self, "disposition_sha256", _hash(disposition_sha256, "resource disposition hash"))
+        expected = tuple(expected_shard_ids)
+        completed = tuple(completed_shard_ids)
+        if not expected or len(set(expected)) != len(expected):
+            raise ValueError("resource expected shard domain must be nonempty and unique")
+        if completed != expected[:len(completed)]:
+            raise ValueError("resource completed shard domain must be the exact declared prefix")
+        ledgers = tuple(_hash(item, "resource ledger hash") for item in ledger_sha256s)
+        completions = tuple(_hash(item, "resource completion hash") for item in completion_sha256s)
+        if len(ledgers) != len(completed) or len(completions) != len(completed):
+            raise ValueError("resource hashes must bind every completed shard")
+        for name, value in (
+            ("retained_bytes", retained_bytes), ("temporary_peak_bytes", temporary_peak_bytes),
+            ("quarantine_bytes", quarantine_bytes),
+        ):
+            if type(value) is not int or value < 0:
+                raise ValueError(f"resource {name} must be a nonnegative exact integer")
         object.__setattr__(self, "expected_shard_ids", expected)
         object.__setattr__(self, "completed_shard_ids", completed)
         object.__setattr__(self, "ledger_sha256s", ledgers)
+        object.__setattr__(self, "completion_sha256s", completions)
+        object.__setattr__(self, "retained_bytes", retained_bytes)
+        object.__setattr__(self, "temporary_peak_bytes", temporary_peak_bytes)
+        object.__setattr__(self, "quarantine_bytes", quarantine_bytes)
 
     @property
     def complete(self) -> bool:
         return self.completed_shard_ids == self.expected_shard_ids
+
+
+def _resource_completion_from_validated_artifacts(
+    *, phase: str, revision: int, protocol_sha256: str,
+    predecessor_protocol_sha256: str | None, disposition_sha256: str,
+    expected_shard_ids: tuple[str, ...], completed_shard_ids: tuple[str, ...],
+    ledger_sha256s: tuple[str, ...], completion_sha256s: tuple[str, ...],
+    retained_bytes: int, temporary_peak_bytes: int, quarantine_bytes: int,
+) -> ResourceCompletionEvidence:
+    """Private artifact-layer handoff after descriptor-relative validation."""
+    return ResourceCompletionEvidence(
+        phase, revision, protocol_sha256, predecessor_protocol_sha256,
+        disposition_sha256, expected_shard_ids, completed_shard_ids,
+        ledger_sha256s, completion_sha256s, retained_bytes,
+        temporary_peak_bytes, quarantine_bytes,
+        _seal=_RESOURCE_COMPLETION_SEAL,
+    )
 
 
 _PILOT_REPRODUCTION_SEAL = object()

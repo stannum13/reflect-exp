@@ -6,28 +6,24 @@ import pytest
 
 from reflect.rollout import sha256_json
 
-from .helpers import config
+from .helpers import config, resource_evidence
 
 
 evaluate = importlib.import_module("experiments.01_policy_control.src.evaluate")
 PILOT_PROTOCOL_SHA256 = "8" * 64
 
 
-def _resource(*, phase="pilot", complete=True):
-    expected = ("shard-000",)
-    completed = expected if complete else ()
-    return evaluate.ResourceCompletionEvidence(
-        phase, 1, PILOT_PROTOCOL_SHA256 if phase == "pilot" else "7" * 64,
-        None if phase == "pilot" else PILOT_PROTOCOL_SHA256, "f" * 64,
-        expected, completed, ("e" * 64,) if complete else (),
-    )
+def _resource(*, phase="pilot", complete=True, predecessor=None):
+    if phase == "confirmation" and predecessor is None:
+        predecessor = _resource(phase="pilot").protocol_sha256
+    return resource_evidence(phase=phase, complete=complete, predecessor=predecessor)
 
 
 def _base_manifest(predecessor="1" * 64):
     return evaluate.build_pilot_manifest(
         evaluate.PilotStage.BASE, revision=1, predecessor_sha256=predecessor,
         config_sha256="2" * 64, implementation_sha="3" * 40,
-        parameter_sha256="4" * 64,
+        parameter_sha256=sha256_json({"pd": [80.0, 8.0], "ik": 0.01, "p5_smoothness": 0.02}),
         survivors=("P1", "P2", "P3", "P4", "P5", "P6"), seeds=(10, 11, 12, 13),
     )
 
@@ -65,7 +61,7 @@ def test_pilot_disposition_counts_only_strict_completed_prefix_and_seals_trigger
         evaluate.pilot_disposition(manifest, completions=(bad,))
     reuse_manifest = evaluate.PilotManifest(
         1, evaluate.PilotStage.BASE, "1" * 64, "2" * 64, "3" * 40,
-        "4" * 64, manifest.shards, ("c" * 64,),
+        manifest.parameter_sha256, manifest.shards, ("c" * 64,),
     )
     with pytest.raises(ValueError, match="reuse"):
         evaluate.pilot_disposition(
@@ -119,6 +115,8 @@ def test_reproduction_requires_raw_inputs_frozen_rank_reuse_and_resource_evidenc
     smoothness = _smoothness_rows()
     baseline = evaluate.compute_p1_smoothness_baseline(smoothness)
     resource = _resource()
+    with pytest.raises(TypeError):
+        __import__("dataclasses").replace(resource, disposition_sha256="0" * 64)
     evaluate.verify_pilot_reproduction(
         (raw,), evaluate.candidate_evaluations_bytes((candidate,)), smoothness,
         baseline, resource_evidence=resource,
@@ -196,10 +194,7 @@ def test_anchor_is_always_ranked_with_zero_upper_before_take_two() -> None:
         pilot_reproduction=pilot_proof,
     )
     assert result.promoted_stacks == ("P2", "P1")
-    unbound_confirmation = evaluate.ResourceCompletionEvidence(
-        "confirmation", 1, "7" * 64, "6" * 64, "f" * 64,
-        ("shard-000",), ("shard-000",), ("e" * 64,),
-    )
+    unbound_confirmation = _resource(phase="confirmation", predecessor="6" * 64)
     with pytest.raises(ValueError, match="revision/protocol"):
         evaluate.promotion_decision(
             bootstrap, gates, p1_valid=True, negative_control_valid=True,
