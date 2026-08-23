@@ -31,6 +31,7 @@ BASE_CLOSURE = (
     "experiments/11_trigger_robustness/src/scorer.py", "experiments/11_trigger_robustness/src/experiment.py",
     "experiments/11_trigger_robustness/configs/trigger-robustness-v1.json",
     "experiments/11_trigger_robustness/configs/seeds-v1.json", "pyproject.toml", "uv.lock", ".python-version",
+    "experiments/11_trigger_robustness/configs/retired-seed-namespaces.json",
     "docs/superpowers/plans/2026-08-24-trigger-robustness-dose-response.md",
 )
 

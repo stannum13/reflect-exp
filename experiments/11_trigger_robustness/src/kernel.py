@@ -62,16 +62,19 @@ def apply_event(world: dict[str, Any], event: Mapping[str, Any]) -> None:
 
 def message_schedule(cell: Mapping[str, Any], event: Mapping[str, Any], quality: Mapping[str, Any], final_tick: int) -> list[dict[str, Any]]:
     seed = int(cell["seed"]); source = int(event["source_tick"]); rows: list[dict[str, Any]] = []
-    if unit(seed, cell["episode_id"], "recall") < float(quality["recall"]):
+    realization_key=(cell["disturbance_family"],cell["severity"],cell["horizon"],seed)
+    if unit(seed, *realization_key, "recall") < float(quality["recall"]):
         count = 1 + int(quality["duplicate"])
         for duplicate in range(count):
             delay = int(quality["delay"])
             if int(quality["out_of_order"]) and duplicate == 0: delay += 1
             delivery = min(final_tick, source + delay)
-            rows.append({**event, "delivery_tick":delivery, "message_id":f"true-{source}-{duplicate}", "duplicate_index":duplicate})
+            rows.append({**event, "delivery_tick":delivery, "message_id":f"true-{source}-{duplicate}", "duplicate_index":duplicate,
+                         "prompt_bytes":48 if cell["prompt_envelope"]=="COMPACT_TYPED" else 192})
     for burst in range(int(quality["false_burst"])):
         delivery = min(final_tick, source + burst % 2)
         rows.append({"delivery_tick":delivery,"duplicate_index":0,"kind":"POSE","message_id":f"false-{source}-{burst}","source_tick":source,
+                     "prompt_bytes":48 if cell["prompt_envelope"]=="COMPACT_TYPED" else 192,
                      "subject":f"valve_{chr(97 + (burst + 1) % 3)}","truth":False,"value":[99,99,99]})
     return sorted(rows, key=lambda row: (row["delivery_tick"], -int(row["source_tick"]), row["message_id"]))
 
@@ -147,4 +150,5 @@ def simulate(cell: Mapping[str, Any], config: Mapping[str, Any], quality: Mappin
                 "false_wakes":fp,"late_wakes":int(latency is None or latency>2),"progress":progress,"retries":retries,"storage_age":max(0,final_tick-last_write),"storage_bytes":stored_bytes,
                 "storage_reads":store_reads,"storage_writes":store_writes,"terminal_tick":final_tick+1,"thrash":target_switches,"trigger_fn":1-tp,"trigger_latency":latency,
                 "trigger_precision":tp/max(1,tp+fp),"trigger_recall":float(tp),"wakes":len(wakes),"wasted_wakes":sum(1 for r in wakes if r["plan_before"]==r["plan_after"])}
+    terminal["cost_proxy"] += sum(int(m["prompt_bytes"])/48 for r in ticks for m in r["delivered_messages"])
     return start, ticks, terminal

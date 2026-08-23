@@ -14,7 +14,7 @@ def test_frozen_matrix_is_exact_rich_paired_design():
     rows = exp.frozen_matrix()
     assert len(rows) == 46_080
     assert len({r["episode_id"] for r in rows}) == len(rows)
-    assert {r["seed"] for r in rows} == set(range(20266101, 20266113))
+    assert {r["seed"] for r in rows} == set(range(20266201, 20266213))
     assert {r["quality_id"] for r in rows} == {f"Q{i:02d}_{name}" for i, name in enumerate(("CLEAN","RECALL75","RECALL50","RECALL25","DELAY1","DELAY3","FALSE3","DUP_OOO","GUARDED","HOSTILE"))}
 
 
@@ -26,6 +26,16 @@ def test_transport_is_deterministic_and_quality_changes_receipts():
     hostile["episode_id"] = exp.episode_id(hostile)
     assert exp.run_episode(clean) == exp.run_episode(clean)
     assert exp.run_episode(clean)[1] != exp.run_episode(hostile)[1]
+
+
+def test_transport_realization_is_paired_across_policy_storage_and_prompt():
+    base = dict(exp.frozen_matrix()[0], quality_id="Q02_RECALL50")
+    variants=[]
+    for storage,policy,prompt in (("LIVE_BELIEF","EVENT_DRIVEN","COMPACT_TYPED"),("LIVE_EPISODIC","HYBRID","VERBOSE_TYPED")):
+        cell=dict(base,storage_variant=storage,trigger_policy=policy,prompt_envelope=prompt); cell["episode_id"]=exp.episode_id(cell)
+        _,ticks,_=exp.run_episode(cell)
+        variants.append([(m["kind"],m["source_tick"],m["delivery_tick"],m["truth"]) for row in ticks for m in row["delivered_messages"]])
+    assert variants[0] == variants[1]
 
 
 def test_exact_tick_and_terminal_domain_rejects_truncation_and_duplication():
@@ -56,6 +66,7 @@ def test_source_closure_is_transitive_and_covers_loaded_inputs(tmp_path):
     closure = exp.source_closure()
     assert "experiments/11_trigger_robustness/configs/trigger-robustness-v1.json" in closure
     assert "experiments/11_trigger_robustness/configs/seeds-v1.json" in closure
+    assert "experiments/11_trigger_robustness/configs/retired-seed-namespaces.json" in closure
     assert "experiments/11_trigger_robustness/src/scorer.py" in closure
     assert "pyproject.toml" in closure and "uv.lock" in closure and ".python-version" in closure
     assert not any("10_storage_trigger" in p or "04_memory" in p for p in closure)
