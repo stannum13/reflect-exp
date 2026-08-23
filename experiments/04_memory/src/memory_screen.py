@@ -17,7 +17,7 @@ import numpy as np
 
 
 VARIANTS = ("M0", "M1", "M2", "M3", "M4", "M5", "M6", "H0", "V0")
-SEEDS = (20260871, 20260872, 20260873, 20260874)
+SEEDS = (20260891, 20260892, 20260893, 20260894)
 QUERY_IDS = (
     "LOCATION", "LAST_OBSERVED", "POSE_USABLE", "PRIOR_ATTEMPT",
     "LAST_FAILURE_REASON", "REACHABLE_VALVE", "CHANGES_SINCE",
@@ -74,6 +74,22 @@ class Fact:
         }
 
 
+@dataclass(frozen=True)
+class SeedWorld:
+    seed: int
+    primary_valve_id: str
+    alternate_valve_id: str
+    restricted_room_id: str
+    pose_age_ticks: int
+    failure_reason: str
+    blocker_id: str
+    changed_tool_id: str
+    changed_asset_id: str
+    duplicate_reverse_order: bool
+    operational_confidence: float
+    failed_confidence: float
+
+
 def _canonical(value: object) -> bytes:
     return (json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode("ascii")
 
@@ -90,57 +106,111 @@ def _fact(case: int, suffix: str, subject: str, predicate: str, value: str, obse
     return Fact(f"{case:02d}-{suffix}", subject, predicate, value, observed, received, confidence, status).row()
 
 
-def generate_seed(seed: int) -> tuple[tuple[dict[str, object], ...], tuple[dict[str, object], ...]]:
-    """Return observation rows and isolated scorer truth for one engineering seed."""
+def _world_for_seed(seed: int) -> SeedWorld:
     if type(seed) is not int or seed < 0:
         raise ScreenError("seed must be a nonnegative integer")
     rng = np.random.Generator(np.random.PCG64(seed))
-    jitter = rng.choice(np.array((-0.05, 0.0, 0.05)), size=10, p=(0.2, 0.6, 0.2))
-    delays = rng.choice(np.array((0, 1)), size=10, p=(0.75, 0.25))
+    identities = rng.choice(np.arange(100, 999), size=6, replace=False)
+    slot = SEEDS.index(seed) if seed in SEEDS else seed % 4
+    confidence_pairs = ((.84, .81), (.84, .56), (.56, .84), (.56, .54))
+    operational, failed = confidence_pairs[slot]
+    return SeedWorld(
+        seed=seed,
+        primary_valve_id=f"valve/{int(identities[0]):04d}",
+        alternate_valve_id=f"valve/{int(identities[1]):04d}",
+        restricted_room_id="room/0003" if slot % 2 == 0 else "room/0004",
+        pose_age_ticks=(1, 2, 3, 1)[slot],
+        failure_reason=("BLOCKED", "JAMMED", "OBSTRUCTED", "LOCKED")[slot],
+        blocker_id=f"door/{int(identities[2]):04d}",
+        changed_tool_id=f"tool/{int(identities[3]):04d}",
+        changed_asset_id=f"asset/{int(identities[4]):04d}",
+        duplicate_reverse_order=bool(slot % 2),
+        operational_confidence=operational,
+        failed_confidence=failed,
+    )
+
+
+def _truth_for_world(world: SeedWorld) -> dict[str, tuple[str, str]]:
+    reachable = world.alternate_valve_id if world.restricted_room_id == "room/0003" else world.primary_valve_id
+    if world.pose_age_ticks >= 2:
+        pose = ("STALE", "RESCAN")
+    else:
+        pose = ("USABLE", "ACT")
+    operational = world.operational_confidence >= float(BASE_CONFIG["confidence_threshold"])
+    failed = world.failed_confidence >= float(BASE_CONFIG["confidence_threshold"])
+    if operational and failed:
+        conflict = ("CONTRADICTED", "REPORT_UNKNOWN")
+    elif operational:
+        conflict = ("OPERATIONAL", "ACT")
+    elif failed:
+        conflict = ("FAILED", "ACT")
+    else:
+        conflict = ("UNKNOWN", "REPORT_UNKNOWN")
+    return {
+        "LOCATION": ("UNKNOWN", "RESCAN"),
+        "LAST_OBSERVED": (f"tick/{world.seed % 17}", "REPORT"),
+        "POSE_USABLE": pose,
+        "PRIOR_ATTEMPT": ("YES", "REPORT"),
+        "LAST_FAILURE_REASON": (world.failure_reason, "REPORT"),
+        "REACHABLE_VALVE": (reachable, "CHOOSE_ALTERNATIVE"),
+        "CHANGES_SINCE": (f"{world.changed_tool_id}:ON:{world.changed_asset_id}", "REPORT"),
+        "ROUTE_BLOCKER": (world.blocker_id, "CHOOSE_ALTERNATIVE"),
+        "DUPLICATE_IDENTITY": ("AMBIGUOUS", "REIDENTIFY"),
+        "CONFLICTS_UNKNOWN": conflict,
+    }
+
+
+def generate_seed(seed: int) -> tuple[tuple[dict[str, object], ...], tuple[dict[str, object], ...]]:
+    """Derive observations and isolated scorer truth independently from one seed world."""
+    world = _world_for_seed(seed)
+    rng = np.random.Generator(np.random.PCG64(seed ^ 0x04A11CE))
+    delays = rng.choice(np.array((0, 1)), size=10, p=(0.5, 0.5))
+    last_seen = f"tick/{world.seed % 17}"
+    aliases = [
+        _fact(8, f"{world.seed}-a", world.primary_valve_id, "ALIAS", "service valve", 1, 2, .90),
+        _fact(8, f"{world.seed}-b", world.alternate_valve_id, "ALIAS", "service valve", 1, 2, .90),
+    ]
+    if world.duplicate_reverse_order:
+        aliases.reverse()
     definitions = (
         ("LOCATION", [_fact(0, "base", "tool/0001", "IN", "room/0001", 0, 0, .90)], [], "UNKNOWN", "RESCAN"),
-        ("LAST_OBSERVED", [_fact(1, "seen", "valve/0001", "OBSERVED_AT", "tick/0", 0, 0, .90)], [_fact(1, "occ", "valve/0001", "VISIBILITY", "OCCLUDED", 1, 2, .95)], "tick/0", "REPORT"),
-        ("POSE_USABLE", [_fact(2, "pose", "asset/0002", "POSE", "10.0,0.0,0.0", 0, 0, .90)], [], "STALE", "RESCAN"),
-        ("PRIOR_ATTEMPT", [], [_fact(3, "attempt", "door/0003", "ATTEMPT_OUTCOME", "OPEN_DOOR:FAILED:BLOCKED", 1, 2, .90)], "YES", "REPORT"),
-        ("LAST_FAILURE_REASON", [], [_fact(4, "failure", "door/0003", "ATTEMPT_OUTCOME", "OPEN_DOOR:FAILED:BLOCKED", 1, 2, .90)], "BLOCKED", "REPORT"),
+        ("LAST_OBSERVED", [_fact(1, "seen", world.primary_valve_id, "OBSERVED_AT", last_seen, 0, 0, .90)], [_fact(1, "occ", world.primary_valve_id, "VISIBILITY", "OCCLUDED", 1, 2, .95)], last_seen, "REPORT"),
+        ("POSE_USABLE", [_fact(2, "pose", "asset/0002", "POSE", "10.0,0.0,0.0", 0, 0, .90)], [], "", ""),
+        ("PRIOR_ATTEMPT", [], [_fact(3, "attempt", world.blocker_id, "ATTEMPT_OUTCOME", f"OPEN_DOOR:FAILED:{world.failure_reason}", 1, 2, .90)], "", ""),
+        ("LAST_FAILURE_REASON", [], [_fact(4, "failure", world.blocker_id, "ATTEMPT_OUTCOME", f"OPEN_DOOR:FAILED:{world.failure_reason}", 1, 2, .90)], "", ""),
         ("REACHABLE_VALVE", [
-            _fact(5, "v3", "valve/0001", "IN", "room/0003", 0, 0, .90),
-            _fact(5, "v7", "valve/0002", "IN", "room/0004", 0, 0, .90),
-        ], [_fact(5, "restrict", "room/0003", "RESTRICTED_BY", "restriction/0001", 1, 2, .90)], "valve/0002", "CHOOSE_ALTERNATIVE"),
-        ("CHANGES_SINCE", [], [_fact(6, "placed", "tool/0002", "ON", "asset/0003", 1, 2, .90)], "tool/0002:ON:asset/0003", "REPORT"),
-        ("ROUTE_BLOCKER", [_fact(7, "edge", "door/0002", "CONNECTS", "room/0002|room/0003", 0, 0, .90)], [_fact(7, "blocked", "door/0002", "DOOR_STATE", "BLOCKED", 1, 2, .90)], "door/0002", "CHOOSE_ALTERNATIVE"),
-        ("DUPLICATE_IDENTITY", [], [
-            _fact(8, "a", "valve/0001", "ALIAS", "service valve", 1, 2, .90),
-            _fact(8, "b", "valve/0002", "ALIAS", "service valve", 1, 2, .90),
-        ], "AMBIGUOUS", "REIDENTIFY"),
+            _fact(5, "v3", world.primary_valve_id, "IN", "room/0003", 0, 0, .90),
+            _fact(5, "v7", world.alternate_valve_id, "IN", "room/0004", 0, 0, .90),
+        ], [_fact(5, "restrict", world.restricted_room_id, "RESTRICTED_BY", "restriction/0001", 1, 2, .90)], "", ""),
+        ("CHANGES_SINCE", [], [_fact(6, "placed", world.changed_tool_id, "ON", world.changed_asset_id, 1, 2, .90)], "", ""),
+        ("ROUTE_BLOCKER", [_fact(7, "edge", world.blocker_id, "CONNECTS", "room/0002|room/0003", 0, 0, .90)], [_fact(7, "blocked", world.blocker_id, "DOOR_STATE", "BLOCKED", 1, 2, .90)], "", ""),
+        ("DUPLICATE_IDENTITY", [], aliases, "", ""),
         ("CONFLICTS_UNKNOWN", [], [
-            _fact(9, "ok", "asset/0001", "OPERATIONAL_STATE", "OPERATIONAL", 1, 2, .55, "asserted"),
-            _fact(9, "bad", "asset/0001", "OPERATIONAL_STATE", "FAILED", 1, 2, .55, "contradicted"),
-        ], "CONTRADICTED", "REPORT_UNKNOWN"),
+            _fact(9, "ok", "asset/0001", "OPERATIONAL_STATE", "OPERATIONAL", 1, 2, world.operational_confidence, "asserted"),
+            _fact(9, "bad", "asset/0001", "OPERATIONAL_STATE", "FAILED", 1, 2, world.failed_confidence, "contradicted"),
+        ], "", ""),
     )
+    truth_map = _truth_for_world(world)
     observations: list[dict[str, object]] = []
     truths: list[dict[str, object]] = []
-    for index, (query, baseline, delivered, answer, decision) in enumerate(definitions):
+    for index, (query, baseline, delivered, _, _) in enumerate(definitions):
         received_tick = 2 + int(delays[index])
-        adjusted = []
-        for row in delivered:
-            copy = dict(row); copy["confidence"] = float(min(1.0, max(0.0, float(copy["confidence"]) + float(jitter[index])))); copy["received_tick"] = received_tick
-            adjusted.append(copy)
+        adjusted = [dict(row, received_tick=received_tick) for row in delivered]
+        query_tick = world.pose_age_ticks if query == "POSE_USABLE" else received_tick
         observations.append({
             "baseline_facts": baseline,
             "case_id": f"case/{index:02d}",
             "delivered_facts": adjusted,
             "delivery_delay_ticks": int(delays[index]),
             "query_id": query,
-            "query_tick": received_tick,
-            "schema_version": "exp04-engineering-observation-v1",
+            "query_tick": query_tick,
+            "schema_version": "exp04-engineering-observation-v2",
             "seed": seed,
         })
-        truths.append({
-            "case_id": f"case/{index:02d}", "expected_answer": answer,
-            "expected_decision": decision, "query_id": query,
-            "schema_version": "exp04-engineering-scorer-truth-v1", "seed": seed,
-        })
+        answer, decision = truth_map[query]
+        truths.append({"case_id": f"case/{index:02d}", "expected_answer": answer,
+                       "expected_decision": decision, "query_id": query,
+                       "schema_version": "exp04-engineering-scorer-truth-v2", "seed": seed})
     return tuple(observations), tuple(truths)
 
 
@@ -167,8 +237,8 @@ def _tokens(value: str) -> tuple[str, ...]:
     return tuple(token for token in normalized.split() if token)
 
 
-def _hashed_retrieve(query_id: str, facts: Sequence[Mapping[str, object]]) -> tuple[dict[str, object], ...]:
-    """Frozen local signed-hash BM25/cosine retrieval used only by M6/V0."""
+def _vector_retrieve(query_id: str, facts: Sequence[Mapping[str, object]]) -> tuple[dict[str, object], ...]:
+    """Frozen local signed-hash vector retrieval used by M6/V0."""
     if not facts:
         return ()
     documents = [
@@ -207,14 +277,49 @@ def _hashed_retrieve(query_id: str, facts: Sequence[Mapping[str, object]]) -> tu
     return tuple(item[3] for item in ranked[: int(BASE_CONFIG["retrieval_r"])])
 
 
+_QUERY_PREDICATES = {
+    "LOCATION": ("IN",), "LAST_OBSERVED": ("OBSERVED_AT", "VISIBILITY"),
+    "POSE_USABLE": ("POSE",), "PRIOR_ATTEMPT": ("ATTEMPT_OUTCOME",),
+    "LAST_FAILURE_REASON": ("ATTEMPT_OUTCOME",),
+    "REACHABLE_VALVE": ("IN", "RESTRICTED_BY"), "CHANGES_SINCE": ("ON",),
+    "ROUTE_BLOCKER": ("CONNECTS", "DOOR_STATE"), "DUPLICATE_IDENTITY": ("ALIAS",),
+    "CONFLICTS_UNKNOWN": ("OPERATIONAL_STATE",),
+}
+
+
+def _typed_retrieve(query_id: str, facts: Sequence[Mapping[str, object]]) -> tuple[dict[str, object], ...]:
+    predicates = set(_QUERY_PREDICATES[query_id])
+    return tuple(dict(row) for row in facts if row["predicate"] in predicates)
+
+
+def _lexical_retrieve(query_id: str, facts: Sequence[Mapping[str, object]]) -> tuple[dict[str, object], ...]:
+    query = set(_tokens(QUERY_RETRIEVAL_TEXT[query_id]))
+    ranked = []
+    for row in facts:
+        tokens = set(_tokens(f"{row['subject_id']} {row['predicate']} {row['value']}"))
+        overlap = len(query & tokens)
+        if overlap:
+            ranked.append((-overlap, -int(row["received_tick"]), str(row["fact_id"]), dict(row)))
+    ranked.sort(key=lambda item: item[:3])
+    return tuple(item[3] for item in ranked[: int(BASE_CONFIG["retrieval_r"])])
+
+
+def _retrieval_union(query_id: str, facts: Sequence[Mapping[str, object]]) -> tuple[dict[str, object], ...]:
+    by_id: dict[str, dict[str, object]] = {}
+    for channel in (_typed_retrieve, _lexical_retrieve, _vector_retrieve):
+        for row in channel(query_id, facts):
+            by_id.setdefault(str(row["fact_id"]), row)
+    return tuple(by_id[key] for key in sorted(by_id))
+
+
 def _answer(variant: str, query: str, facts: Sequence[Mapping[str, object]], now: int) -> tuple[str, str, tuple[str, ...]]:
     predicates: dict[str, list[Mapping[str, object]]] = {}
     for row in facts:
         predicates.setdefault(str(row["predicate"]), []).append(row)
     cited: list[Mapping[str, object]] = []
     answer, decision = "UNKNOWN", "REPORT_UNKNOWN"
-    structured = variant in {"M3", "M4", "M5", "M6", "H0"}
-    episodic = variant in {"M1", "M2", "M4", "M5", "M6", "H0"}
+    structured = variant in {"M3", "M4", "M5", "M6", "V0"}
+    episodic = variant in {"M1", "M2", "M4", "M5", "M6", "V0"}
     confidence_aware = variant in {"M5", "M6"}
     if query == "LOCATION":
         cited = predicates.get("IN", [])
@@ -255,19 +360,86 @@ def _answer(variant: str, query: str, facts: Sequence[Mapping[str, object]], now
     elif query == "CONFLICTS_UNKNOWN":
         states = predicates.get("OPERATIONAL_STATE", [])
         cited = states
-        if confidence_aware and {row["status"] for row in states} == {"asserted", "contradicted"}:
+        usable = [row for row in states if float(row["confidence"]) >= float(BASE_CONFIG["confidence_threshold"])]
+        if confidence_aware and {row["status"] for row in usable} == {"asserted", "contradicted"}:
             answer, decision = "CONTRADICTED", "REPORT_UNKNOWN"
+        elif confidence_aware and usable:
+            answer, decision = str(usable[-1]["value"]), "ACT"
+        elif confidence_aware:
+            answer, decision = "UNKNOWN", "REPORT_UNKNOWN"
         elif states:
             answer, decision = str(states[-1]["value"]), "ACT"
-    if variant == "V0" and query != "DUPLICATE_IDENTITY":
-        return "UNKNOWN", "REPORT_UNKNOWN", ()
     return answer, decision, tuple(str(row["fact_id"]) for row in cited)
+
+
+def _run_flat_history(seed: int, observations: Sequence[Mapping[str, object]]) -> tuple[tuple[dict[str, object], ...], tuple[dict[str, object], ...]]:
+    """Independent append-only event comparator; it shares inputs, not graph code."""
+    compiled: list[dict[str, object]] = []
+    decisions: list[dict[str, object]] = []
+    for observation in observations:
+        events = []
+        for phase in ("baseline_facts", "delivered_facts"):
+            for fact in observation[phase]:  # type: ignore[union-attr]
+                event = {
+                    "case_id": observation["case_id"], "confidence": fact["confidence"],
+                    "event_id": fact["fact_id"], "observed_tick": fact["observed_tick"],
+                    "payload_predicate": fact["predicate"], "payload_subject_id": fact["subject_id"],
+                    "payload_value": fact["value"], "received_tick": fact["received_tick"],
+                    "record_kind": "FLAT_EVENT", "status": fact["status"], "variant_id": "H0",
+                }
+                events.append(event); compiled.append(event)
+        query = str(observation["query_id"]); now = int(observation["query_tick"])
+        matches = lambda predicate: [row for row in events if row["payload_predicate"] == predicate]
+        answer, decision, cited = "UNKNOWN", "REPORT_UNKNOWN", []
+        if query == "LOCATION":
+            cited = matches("IN")
+            if cited: answer, decision = str(cited[-1]["payload_value"]), "ACT"
+            else: decision = "RESCAN"
+        elif query == "LAST_OBSERVED":
+            cited = matches("OBSERVED_AT")
+            if cited: answer, decision = str(cited[-1]["payload_value"]), "REPORT"
+        elif query == "POSE_USABLE":
+            cited = matches("POSE")
+            if cited: answer, decision = "USABLE", "ACT"
+            else: decision = "RESCAN"
+        elif query in {"PRIOR_ATTEMPT", "LAST_FAILURE_REASON"}:
+            cited = matches("ATTEMPT_OUTCOME")
+            if cited:
+                answer = "YES" if query == "PRIOR_ATTEMPT" else str(cited[-1]["payload_value"]).split(":")[-1]
+                decision = "REPORT"
+        elif query == "REACHABLE_VALVE":
+            locations = matches("IN"); restrictions = {str(row["payload_subject_id"]) for row in matches("RESTRICTED_BY")}
+            candidates = [row for row in locations if str(row["payload_subject_id"]).startswith("valve/") and str(row["payload_value"]) not in restrictions]
+            cited = candidates + matches("RESTRICTED_BY")
+            if candidates: answer, decision = str(candidates[0]["payload_subject_id"]), "CHOOSE_ALTERNATIVE"
+        elif query == "CHANGES_SINCE":
+            cited = matches("ON")
+            if cited: answer, decision = f"{cited[-1]['payload_subject_id']}:ON:{cited[-1]['payload_value']}", "REPORT"
+        elif query == "ROUTE_BLOCKER":
+            cited = matches("DOOR_STATE")
+            if cited: answer, decision = str(cited[-1]["payload_subject_id"]), "CHOOSE_ALTERNATIVE"
+        elif query == "DUPLICATE_IDENTITY":
+            cited = matches("ALIAS")
+            if len({row["payload_subject_id"] for row in cited}) > 1: answer, decision = "AMBIGUOUS", "REIDENTIFY"
+        elif query == "CONFLICTS_UNKNOWN":
+            cited = matches("OPERATIONAL_STATE")
+            if cited: answer, decision = str(cited[-1]["payload_value"]), "ACT"
+        decisions.append({
+            "answer": answer, "case_id": observation["case_id"],
+            "cited_fact_ids": tuple(str(row["event_id"]) for row in cited),
+            "context_bytes": len(_canonical(cited)), "decision": decision, "query_id": query,
+            "retrieval_channel": None, "retrieval_channels": (), "retrieval_fact_ids": (),
+            "schema_version": "exp04-engineering-query-decision-v2", "seed": seed, "variant_id": "H0",
+        })
+    return tuple(compiled), tuple(decisions)
 
 
 def run_variant(variant_id: str, seed: int, observations: Sequence[Mapping[str, object]]) -> tuple[tuple[dict[str, object], ...], tuple[dict[str, object], ...]]:
     """Execute one architecture without accepting scorer truth."""
     if variant_id not in VARIANTS or type(seed) is not int or len(observations) != 10:
         raise ScreenError("invalid variant execution input")
+    if variant_id == "H0":
+        return _run_flat_history(seed, observations)
     compiled: list[dict[str, object]] = []
     decisions: list[dict[str, object]] = []
     for observation in observations:
@@ -276,16 +448,17 @@ def run_variant(variant_id: str, seed: int, observations: Sequence[Mapping[str, 
         facts = _facts_for(variant_id, observation)
         compiled.extend({"case_id": observation["case_id"], "variant_id": variant_id, **row} for row in facts)
         query_id = str(observation["query_id"])
-        retrieved = _hashed_retrieve(query_id, facts) if variant_id in {"M6", "V0"} else ()
-        answer_facts = retrieved if variant_id == "V0" else facts
+        retrieved = _retrieval_union(query_id, facts) if variant_id == "M6" else (_vector_retrieve(query_id, facts) if variant_id == "V0" else ())
+        answer_facts = retrieved if variant_id in {"M6", "V0"} else facts
         answer, decision, cited = _answer(variant_id, query_id, answer_facts, int(observation["query_tick"]))
         context_bytes = len(_canonical([row for row in facts if str(row["fact_id"]) in cited]))
         decisions.append({
             "answer": answer, "case_id": observation["case_id"], "cited_fact_ids": cited,
             "context_bytes": context_bytes, "decision": decision, "query_id": observation["query_id"],
-            "retrieval_channel": "HASHED_BM25_V1" if variant_id in {"M6", "V0"} else None,
+            "retrieval_channel": "TYPED_LEXICAL_VECTOR_UNION_V2" if variant_id == "M6" else ("SIGNED_HASH_VECTOR_V2" if variant_id == "V0" else None),
+            "retrieval_channels": ("TYPED", "LEXICAL", "VECTOR") if variant_id == "M6" else (("VECTOR",) if variant_id == "V0" else ()),
             "retrieval_fact_ids": tuple(str(row["fact_id"]) for row in retrieved),
-            "schema_version": "exp04-engineering-query-decision-v1", "seed": seed,
+            "schema_version": "exp04-engineering-query-decision-v2", "seed": seed,
             "variant_id": variant_id,
         })
     return tuple(compiled), tuple(decisions)
@@ -308,7 +481,7 @@ def _score(decisions: Sequence[Mapping[str, object]], truths: Sequence[Mapping[s
     return {
         "ambiguous_retrieval_rate": float(bool(ambiguous["correct"])), "correct_count": correct,
         "correct_rate": correct / 10.0, "disposition": "COMPLETE", "input_fact_count": len(facts),
-        "repeated_scan_count": scans, "schema_version": "exp04-engineering-metrics-v1",
+        "repeated_scan_count": scans, "schema_version": "exp04-engineering-metrics-v2",
         "stale_action_rate": stale / 4.0, "stale_wrong_composite": 0.5 * stale / 4.0 + 0.5 * wrong / 2.0,
         "wrong_identity_rate": wrong / 2.0,
     }
@@ -332,7 +505,7 @@ def _bundle_files(variant: str, seed: int, observations: Sequence[Mapping[str, o
         "claim_status": "ENGINEERING_NONCONFIRMATORY", "disposition": "COMPLETE", "files": inventory,
         "implementation_git_sha": implementation_git_sha, "implementation_source_sha256": implementation_source_sha256,
         "observation_trace_sha256": _sha(files["observation-trace.jsonl"]), "replay_sha256": replay,
-        "protocol_config_sha256": protocol_config_sha256, "schema_version": "exp04-engineering-bundle-manifest-v1",
+        "protocol_config_sha256": protocol_config_sha256, "schema_version": "exp04-engineering-bundle-manifest-v2",
         "seed": seed, "variant_id": variant,
     }
     files["bundle-manifest.json"] = _canonical(manifest)
@@ -401,17 +574,17 @@ def _derive(raw: Path) -> dict[str, bytes]:
         for label in ("WORKING", "NONWORKING"):
             match = next((row for row in candidates if row["class"] == label), None)
             selected.append(match if match is not None else {"class": "CLASS_NOT_OBSERVED", "denominator": len(candidates), "requested_class": label, "variant_id": variant})
-    aggregate = {"bundle_count": len(metric_rows), "case_answer_count": len(samples), "claim_status": "ENGINEERING_NONCONFIRMATORY", "schema_version": "exp04-engineering-aggregate-v1", "variants": variants}
-    annotations = {"samples": selected, "schema_version": "exp04-engineering-annotations-v1", "selection_rule": "FIRST_CANONICAL_WORKING_AND_NONWORKING_PER_VARIANT_WHEN_OBSERVED"}
+    aggregate = {"bundle_count": len(metric_rows), "case_answer_count": len(samples), "claim_status": "ENGINEERING_NONCONFIRMATORY", "schema_version": "exp04-engineering-aggregate-v2", "variants": variants}
+    annotations = {"samples": selected, "schema_version": "exp04-engineering-annotations-v2", "selection_rule": "FIRST_CANONICAL_WORKING_AND_NONWORKING_PER_VARIANT_WHEN_OBSERVED"}
     recipe = {
         "code_sha256": root_manifest["implementation_source_sha256"],
         "inputs": {"raw_manifest_sha256": _sha(root_manifest_bytes)},
-        "operation": "validate every bundle hash; replay run_variant from observation-trace without scorer truth; join scorer truth; recompute metrics, aggregate, annotations, and report",
-        "schema_version": "exp04-engineering-recipe-v1", "seeds": list(SEEDS), "variants": list(VARIANTS),
+        "operation": "validate every bundle hash; replay independent graph, flat-log, and retrieval comparators from observation-trace without scorer truth; join independently derived scorer truth; recompute metrics, aggregate, annotations, and report",
+        "schema_version": "exp04-engineering-recipe-v2", "seeds": list(SEEDS), "variants": list(VARIANTS),
     }
     by = {row["variant_id"]: row for row in variants}
     report = (
-        "# Experiment 04 Engineering Memory Screen\n\n"
+        "# Experiment 04 Engineering Memory Screen v2\n\n"
         "Status: ENGINEERING_NONCONFIRMATORY\n\n"
         f"The BASE-only screen completed {len(metric_rows)} bundles and {len(samples)} case answers. "
         f"M4 correctness was {by['M4']['correct_rate']:.3f} versus M0 {by['M0']['correct_rate']:.3f}, "
@@ -440,7 +613,7 @@ def run_screen(output: Path, *, seeds: Sequence[int], implementation_git_sha: st
             files = _bundle_files(variant, seed, observations, truths, implementation_git_sha=implementation_git_sha, implementation_source_sha256=source_sha256, protocol_config_sha256=config_sha256)
             for name, content in files.items(): _write(destination / name, content)
             inventory.append({"bundle_id": bundle_id, "manifest_sha256": _sha(files["bundle-manifest.json"])})
-    raw_manifest = {"bundles": inventory, "claim_status": "ENGINEERING_NONCONFIRMATORY", "implementation_git_sha": implementation_git_sha, "implementation_source_sha256": source_sha256, "protocol_config_sha256": config_sha256, "schema_version": "exp04-engineering-raw-manifest-v1"}
+    raw_manifest = {"bundles": inventory, "claim_status": "ENGINEERING_NONCONFIRMATORY", "implementation_git_sha": implementation_git_sha, "implementation_source_sha256": source_sha256, "protocol_config_sha256": config_sha256, "schema_version": "exp04-engineering-raw-manifest-v2"}
     _write(output / "raw" / "raw-manifest.json", _canonical(raw_manifest))
     for name, content in _derive(output / "raw").items(): _write(derived / name, content)
 

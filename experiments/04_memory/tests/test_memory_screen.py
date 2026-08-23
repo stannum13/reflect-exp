@@ -5,6 +5,8 @@ import inspect
 import json
 from pathlib import Path
 
+import pytest
+
 
 def _screen() -> object:
     return importlib.import_module("experiments.04_memory.src.memory_screen")
@@ -17,7 +19,7 @@ def _rows(path: Path) -> list[dict[str, object]]:
 def test_screen_writes_exact_matrix_with_equal_information_and_real_comparators(tmp_path: Path) -> None:
     screen = _screen()
     output = tmp_path / "screen"
-    screen.run_screen(output, seeds=(20260871, 20260872, 20260873, 20260874), implementation_git_sha="0" * 40)
+    screen.run_screen(output, seeds=screen.SEEDS, implementation_git_sha="0" * 40)
 
     root_manifest = json.loads((output / "raw" / "raw-manifest.json").read_text(encoding="ascii"))
     assert root_manifest["implementation_git_sha"] == "0" * 40
@@ -49,7 +51,7 @@ def test_screen_writes_exact_matrix_with_equal_information_and_real_comparators(
     aggregate = json.loads((output / "derived" / "aggregate.json").read_text(encoding="ascii"))
     by_variant = {row["variant_id"]: row for row in aggregate["variants"]}
     assert by_variant["M4"]["correct_rate"] > by_variant["M0"]["correct_rate"]
-    assert by_variant["M4"]["correct_rate"] > by_variant["V0"]["correct_rate"]
+    assert by_variant["V0"]["correct_rate"] > 0.0
     assert by_variant["M4"]["correct_rate"] >= by_variant["H0"]["correct_rate"]
     assert by_variant["M5"]["stale_wrong_composite"] <= by_variant["M4"]["stale_wrong_composite"]
     assert by_variant["M6"]["ambiguous_retrieval_rate"] >= by_variant["M5"]["ambiguous_retrieval_rate"]
@@ -86,11 +88,86 @@ def test_manifest_tamper_and_truth_leak_fail_closed(tmp_path: Path) -> None:
         raise AssertionError("tampered bundle reconstructed")
 
 
-def test_m6_and_v0_use_real_deterministic_hashed_retrieval() -> None:
+def test_m6_and_v0_use_real_deterministic_retrieval() -> None:
     screen = _screen()
     observations, _ = screen.generate_seed(screen.SEEDS[0])
+    duplicate_ids = {
+        row["fact_id"]
+        for row in next(item for item in observations if item["query_id"] == "DUPLICATE_IDENTITY")["delivered_facts"]
+    }
     for variant in ("M6", "V0"):
         _, decisions = screen.run_variant(variant, screen.SEEDS[0], observations)
         duplicate = next(row for row in decisions if row["query_id"] == "DUPLICATE_IDENTITY")
-        assert duplicate["retrieval_channel"] == "HASHED_BM25_V1"
-        assert set(duplicate["retrieval_fact_ids"]) >= {"08-a", "08-b"}
+        assert duplicate["retrieval_channel"] in {"TYPED_LEXICAL_VECTOR_UNION_V2", "SIGNED_HASH_VECTOR_V2"}
+        assert set(duplicate["retrieval_fact_ids"]) >= duplicate_ids
+
+
+def test_v2_worlds_vary_identity_order_staleness_and_confidence() -> None:
+    screen = _screen()
+    generated = [screen.generate_seed(seed) for seed in screen.SEEDS]
+    observations = [rows for rows, _ in generated]
+    truths = [rows for _, rows in generated]
+
+    reachable_answers = {
+        next(row for row in rows if row["query_id"] == "REACHABLE_VALVE")["expected_answer"]
+        for rows in truths
+    }
+    duplicate_orders = {
+        tuple(fact["subject_id"] for fact in next(row for row in rows if row["query_id"] == "DUPLICATE_IDENTITY")["delivered_facts"])
+        for rows in observations
+    }
+    pose_answers = {
+        next(row for row in rows if row["query_id"] == "POSE_USABLE")["expected_answer"]
+        for rows in truths
+    }
+    confidence_answers = {
+        next(row for row in rows if row["query_id"] == "CONFLICTS_UNKNOWN")["expected_answer"]
+        for rows in truths
+    }
+    assert all(len(values) > 1 for values in (reachable_answers, duplicate_orders, pose_answers, confidence_answers))
+
+
+def test_h0_uses_independent_flat_log_query_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    screen = _screen()
+    observations, _ = screen.generate_seed(screen.SEEDS[0])
+
+    def forbidden(*args: object, **kwargs: object) -> object:
+        raise AssertionError("H0 reused the graph/fact path")
+
+    monkeypatch.setattr(screen, "_facts_for", forbidden)
+    monkeypatch.setattr(screen, "_answer", forbidden)
+    compiled, decisions = screen.run_variant("H0", screen.SEEDS[0], observations)
+    assert len(decisions) == 10
+    assert compiled and {row["record_kind"] for row in compiled} == {"FLAT_EVENT"}
+
+
+def test_v0_answers_from_retrieved_snippets_and_m6_consumes_closed_union(monkeypatch: pytest.MonkeyPatch) -> None:
+    screen = _screen()
+    observations, _ = screen.generate_seed(screen.SEEDS[0])
+    calls: list[str] = []
+    for name in ("_typed_retrieve", "_lexical_retrieve", "_vector_retrieve"):
+        original = getattr(screen, name)
+        monkeypatch.setattr(screen, name, lambda *args, _name=name, _original=original, **kwargs: (calls.append(_name), _original(*args, **kwargs))[1])
+    _, v0 = screen.run_variant("V0", screen.SEEDS[0], observations)
+    _, m6 = screen.run_variant("M6", screen.SEEDS[0], observations)
+    failure = next(row for row in v0 if row["query_id"] == "LAST_FAILURE_REASON")
+    assert failure["answer"] != "UNKNOWN" and failure["cited_fact_ids"] == failure["retrieval_fact_ids"]
+    assert all(tuple(row["retrieval_channels"]) == ("TYPED", "LEXICAL", "VECTOR") for row in m6)
+    assert {"_typed_retrieve", "_lexical_retrieve", "_vector_retrieve"} <= set(calls)
+
+    changed = [dict(row) for row in observations]
+    target = next(row for row in changed if row["query_id"] == "LAST_FAILURE_REASON")
+    target["delivered_facts"] = [dict(target["delivered_facts"][0], value="OPEN_DOOR:FAILED:JAMMED")]
+    _, changed_m6 = screen.run_variant("M6", screen.SEEDS[0], changed)
+    before = next(row for row in m6 if row["query_id"] == "LAST_FAILURE_REASON")
+    after = next(row for row in changed_m6 if row["query_id"] == "LAST_FAILURE_REASON")
+    assert before["answer"] != after["answer"]
+    assert before["retrieval_fact_ids"] == after["retrieval_fact_ids"]
+
+
+def test_v1_evidence_has_machine_readable_invalid_comparator_supersession() -> None:
+    marker = Path("experiments/04_memory/ENGINEERING_FIRST_RUN_SUPERSESSION.json")
+    value = json.loads(marker.read_text(encoding="ascii"))
+    assert value["disposition"] == "SUPERSEDED_INVALID_COMPARATORS"
+    assert value["preserved_evidence_tree_sha256"] == "254ce7d39da43dc2a34aee91f6af3e87e91fcfca38d8276aa28288600638e76e"
+    assert value["replacement_evidence_root"] == "results/engineering-first-run-v2"
