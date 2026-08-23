@@ -126,7 +126,8 @@ T3 case using deterministic first-canonical selection:
 Reconstruction reloads and hashes the raw files, regenerates all cases and all
 five plans/outcomes per case, and then regenerates the metrics, recipe, and
 sample index byte-for-byte. It rejects a changed input, plan, event, outcome,
-or derived byte.
+or raw byte. Changes to sealed derived bytes are detected by the recorded hashes
+and the required clean-reconstruction diff.
 
 ## Limits and next empirical question
 
