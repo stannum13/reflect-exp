@@ -29,6 +29,9 @@ def resource_evidence(*, phase: str, complete: bool, predecessor: str | None = N
         ledger_sha256s=tuple(f"{100 + index:064x}" for index in range(len(completed))),
         completion_sha256s=tuple(f"{200 + index:064x}" for index in range(len(completed))),
         retained_bytes=1024 * len(completed), temporary_peak_bytes=0, quarantine_bytes=0,
+        wall_ns=1, cpu_ns=1, lifecycle_bytes=128 * 1024 * 1024,
+        preflight_sha256="e" * 64,
+        resource_state="COMPLETE" if complete else "INCOMPLETE",
     )
 
 

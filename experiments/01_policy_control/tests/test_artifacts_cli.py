@@ -228,7 +228,7 @@ def test_protocol_loader_requires_p1_ordered_subset_then_preserves_survivors(
 
 
 def test_resource_evidence_loads_actual_protocol_completion_and_ledger_bytes(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = Path(__file__).parents[1] / "configs/base.yaml"
     gate = tmp_path / "p3-gate.yaml"
@@ -242,6 +242,10 @@ def test_resource_evidence_loads_actual_protocol_completion_and_ledger_bytes(
     results = tmp_path / "results"
     directory = results / artifacts._shard_directory_name(shard["shard_id"])
     directory.mkdir(parents=True)
+    (results / "preflight.json").write_bytes(artifacts.preflight_resources(
+        "pilot", 0, 0, 0, 20 * 1024 * 1024 * 1024, 0, 0,
+        rollout_count=sum(item["episode_count"] for item in manifest["shards"]), revision=1,
+    ).canonical_bytes())
     cfg = contracts.load_config(config)
     scenario = evaluate.generate_scenario(shard["seed"], cfg)
     identity = evaluate.EpisodeIdentity(
@@ -302,9 +306,62 @@ def test_resource_evidence_loads_actual_protocol_completion_and_ledger_bytes(
     with pytest.raises(TypeError):
         replace(evidence, disposition_sha256="0" * 64)
 
+    terminal = {
+        "schema_version": 1, "study_id": artifacts.STUDY_ID, "phase": "pilot",
+        "revision": 1, "source": "SHARD", "shard_id": shard["shard_id"],
+        "resource_ledger_sha256": completion["resource_ledger_sha256"],
+        "preflight_sha256": None, "reasons": ["WALL_TIME_EXCEEDED"],
+        "lifecycle_state": "STOPPED", "scientific_result": "INCONCLUSIVE",
+    }
+    (results / "resource-terminal.json").write_bytes(_canonical(terminal))
+    with pytest.raises(artifacts.ArtifactError, match="bind a completed ledger"):
+        artifacts.load_resource_completion_evidence(manifest_path, results)
+    (results / "resource-terminal.json").unlink()
+
+    refused = artifacts.preflight_resources(
+        "pilot", 0, 0, 0, 0, 0, 0,
+        rollout_count=sum(item["episode_count"] for item in manifest["shards"]), revision=1,
+    )
+    refusal_root = tmp_path / "refusal-results"
+    refusal_root.mkdir()
+    refusal_bytes = refused.canonical_bytes()
+    (refusal_root / "preflight.json").write_bytes(refusal_bytes)
+    (refusal_root / "resource-terminal.json").write_bytes(_canonical({
+        **terminal, "source": "PREFLIGHT", "shard_id": None,
+        "resource_ledger_sha256": None,
+        "preflight_sha256": hashlib.sha256(refusal_bytes).hexdigest(),
+        "reasons": list(refused.reasons),
+    }))
+    refused_evidence = artifacts.load_resource_completion_evidence(manifest_path, refusal_root)
+    assert refused_evidence.resource_state == "STOPPED" and not refused_evidence.complete
+
     changed = dict(ledger) | {"retained_bytes": retained + 1}
     (directory / "resource-ledger.jsonl").write_bytes(_canonical(changed))
     with pytest.raises(artifacts.ArtifactError, match="bind.*ledger|retained bytes"):
+        artifacts.load_resource_completion_evidence(manifest_path, results)
+    over_time = dict(ledger) | {"wall_ns": 3_600 * 1_000_000_000 + 1}
+    over_time_bytes = _canonical(over_time)
+    (directory / "resource-ledger.jsonl").write_bytes(over_time_bytes)
+    completion["resource_ledger_sha256"] = hashlib.sha256(over_time_bytes).hexdigest()
+    (directory / "completion.json").write_bytes(_canonical(completion))
+    with pytest.raises(artifacts.ArtifactError, match="60-minute|bucket ceilings"):
+        artifacts.load_resource_completion_evidence(manifest_path, results)
+
+    (directory / "resource-ledger.jsonl").write_bytes(ledger_bytes)
+    completion["resource_ledger_sha256"] = hashlib.sha256(ledger_bytes).hexdigest()
+    (directory / "completion.json").write_bytes(_canonical(completion))
+    original_bundle = artifacts._rollout_bundle_sha256
+    mutated = False
+
+    def mutate_protocol(path: Path) -> str:
+        nonlocal mutated
+        result = original_bundle(path)
+        if not mutated:
+            mutated = True
+            manifest_path.write_bytes(manifest_path.read_bytes() + b" ")
+        return result
+    monkeypatch.setattr(artifacts, "_rollout_bundle_sha256", mutate_protocol)
+    with pytest.raises(artifacts.ArtifactError, match="snapshot.*changed"):
         artifacts.load_resource_completion_evidence(manifest_path, results)
 
 

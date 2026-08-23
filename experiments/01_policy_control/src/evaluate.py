@@ -1676,6 +1676,11 @@ class ResourceCompletionEvidence:
     retained_bytes: int
     temporary_peak_bytes: int
     quarantine_bytes: int
+    wall_ns: int
+    cpu_ns: int
+    lifecycle_bytes: int
+    preflight_sha256: str
+    resource_state: str
 
     def __init__(
         self, phase: str, revision: int, protocol_sha256: str,
@@ -1683,6 +1688,8 @@ class ResourceCompletionEvidence:
         expected_shard_ids: tuple[str, ...], completed_shard_ids: tuple[str, ...],
         ledger_sha256s: tuple[str, ...], completion_sha256s: tuple[str, ...],
         retained_bytes: int, temporary_peak_bytes: int, quarantine_bytes: int,
+        wall_ns: int, cpu_ns: int, lifecycle_bytes: int,
+        preflight_sha256: str, resource_state: str,
         *, _seal: object,
     ) -> None:
         if _seal is not _RESOURCE_COMPLETION_SEAL:
@@ -1712,9 +1719,21 @@ class ResourceCompletionEvidence:
         for name, value in (
             ("retained_bytes", retained_bytes), ("temporary_peak_bytes", temporary_peak_bytes),
             ("quarantine_bytes", quarantine_bytes),
+            ("wall_ns", wall_ns), ("cpu_ns", cpu_ns),
+            ("lifecycle_bytes", lifecycle_bytes),
         ):
             if type(value) is not int or value < 0:
                 raise ValueError(f"resource {name} must be a nonnegative exact integer")
+        mib = 1024 * 1024
+        phase_bytes_cap = (2_016 + 128) * mib if phase == "pilot" else (10_032 + 256) * mib
+        wall_cap = (8 if phase == "pilot" else 24) * 3_600 * 1_000_000_000
+        cpu_cap = (80 if phase == "pilot" else 240) * 3_600 * 1_000_000_000
+        if (
+            retained_bytes > phase_bytes_cap or temporary_peak_bytes > 32 * mib
+            or quarantine_bytes > 64 * mib or wall_ns > wall_cap or cpu_ns > cpu_cap
+            or lifecycle_bytes <= 0 or lifecycle_bytes > 14_576 * mib
+        ):
+            raise ValueError("resource evidence exceeds a frozen phase/lifecycle ceiling")
         object.__setattr__(self, "expected_shard_ids", expected)
         object.__setattr__(self, "completed_shard_ids", completed)
         object.__setattr__(self, "ledger_sha256s", ledgers)
@@ -1722,10 +1741,17 @@ class ResourceCompletionEvidence:
         object.__setattr__(self, "retained_bytes", retained_bytes)
         object.__setattr__(self, "temporary_peak_bytes", temporary_peak_bytes)
         object.__setattr__(self, "quarantine_bytes", quarantine_bytes)
+        object.__setattr__(self, "wall_ns", wall_ns)
+        object.__setattr__(self, "cpu_ns", cpu_ns)
+        object.__setattr__(self, "lifecycle_bytes", lifecycle_bytes)
+        object.__setattr__(self, "preflight_sha256", _hash(preflight_sha256, "resource preflight hash"))
+        if resource_state not in {"COMPLETE", "INCOMPLETE", "STOPPED"}:
+            raise ValueError("resource evidence state is invalid")
+        object.__setattr__(self, "resource_state", resource_state)
 
     @property
     def complete(self) -> bool:
-        return self.completed_shard_ids == self.expected_shard_ids
+        return self.resource_state == "COMPLETE" and self.completed_shard_ids == self.expected_shard_ids
 
 
 def _resource_completion_from_validated_artifacts(
@@ -1734,6 +1760,8 @@ def _resource_completion_from_validated_artifacts(
     expected_shard_ids: tuple[str, ...], completed_shard_ids: tuple[str, ...],
     ledger_sha256s: tuple[str, ...], completion_sha256s: tuple[str, ...],
     retained_bytes: int, temporary_peak_bytes: int, quarantine_bytes: int,
+    wall_ns: int, cpu_ns: int, lifecycle_bytes: int,
+    preflight_sha256: str, resource_state: str,
 ) -> ResourceCompletionEvidence:
     """Private artifact-layer handoff after descriptor-relative validation."""
     return ResourceCompletionEvidence(
@@ -1741,6 +1769,7 @@ def _resource_completion_from_validated_artifacts(
         disposition_sha256, expected_shard_ids, completed_shard_ids,
         ledger_sha256s, completion_sha256s, retained_bytes,
         temporary_peak_bytes, quarantine_bytes,
+        wall_ns, cpu_ns, lifecycle_bytes, preflight_sha256, resource_state,
         _seal=_RESOURCE_COMPLETION_SEAL,
     )
 

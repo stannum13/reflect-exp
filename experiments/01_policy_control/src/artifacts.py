@@ -732,6 +732,7 @@ _RESOURCE_TERMINAL_KEYS = frozenset({
     "resource_ledger_sha256", "preflight_sha256", "reasons", "lifecycle_state",
     "scientific_result",
 })
+_PREFLIGHT_KEYS = frozenset(field.name for field in fields(ResourceDisposition))
 
 
 def _canonical_json_at(directory_descriptor: int, name: str, keys: frozenset[str]) -> tuple[dict[str, Any], bytes]:
@@ -788,6 +789,116 @@ def _protocol_manifest_chain(path: Path) -> tuple[tuple[Path, dict[str, Any]], .
     return tuple(reversed(reverse))
 
 
+def _read_held_regular(path: Path) -> tuple[int, tuple[int, int], bytes]:
+    try:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        state = os.fstat(descriptor)
+        if not stat.S_ISREG(state.st_mode):
+            raise ArtifactError("protocol snapshot input is not a regular file")
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return descriptor, (state.st_dev, state.st_ino), b"".join(chunks)
+    except BaseException:
+        if "descriptor" in locals():
+            os.close(descriptor)
+        raise
+
+
+def _stable_protocol_manifest_chain(
+    path: Path,
+) -> tuple[tuple[tuple[Path, dict[str, Any], bytes], ...], tuple[tuple[Path, int, tuple[int, int], bytes], ...]]:
+    path = Path(path)
+    candidates = tuple(sorted(
+        candidate for candidate in path.parent.iterdir()
+        if candidate.suffix == ".json" and "manifest" in candidate.name
+    ))
+    held: list[tuple[Path, int, tuple[int, int], bytes]] = []
+    try:
+        for candidate in candidates:
+            descriptor, identity, raw = _read_held_regular(candidate)
+            held.append((candidate, descriptor, identity, raw))
+        by_path = {item[0]: item for item in held}
+        if path not in by_path:
+            raise ArtifactError("requested protocol manifest is not a stable regular sibling")
+        reverse: list[tuple[Path, bytes]] = []
+        revision_support: tuple[Path, bytes] | None = None
+        current_path, current_raw = path, by_path[path][3]
+        while True:
+            try:
+                current_value = json.loads(
+                    current_raw.decode("utf-8"), object_pairs_hook=_duplicates,
+                    parse_constant=_reject_constant,
+                )
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ArtifactError("protocol snapshot is not canonical JSON") from exc
+            if not isinstance(current_value, dict) or current_raw != canonical_json_bytes(current_value):
+                raise ArtifactError("protocol snapshot bytes are noncanonical")
+            if current_value.get("phase") == "confirmation":
+                reverse.append((current_path, current_raw))
+                break
+            if current_value.get("stage") == "revision":
+                revision_support = (current_path, current_raw)
+                break
+            reverse.append((current_path, current_raw))
+            digest = current_value.get("predecessor_sha256")
+            matches = tuple(item for item in held if hashlib.sha256(item[3]).hexdigest() == digest)
+            if len(matches) != 1:
+                raise ArtifactError("stable protocol predecessor does not resolve uniquely")
+            current_path, current_raw = matches[0][0], matches[0][3]
+        ordered_raw = tuple(reversed(reverse))
+        with tempfile.TemporaryDirectory(prefix="exp01-protocol-snapshot-") as temporary:
+            snapshot_root = Path(temporary)
+            for original, raw in ordered_raw:
+                (snapshot_root / original.name).write_bytes(raw)
+            if revision_support is not None:
+                (snapshot_root / revision_support[0].name).write_bytes(revision_support[1])
+            seed_path = path.parent / "pilot-seeds.json"
+            if any(json.loads(raw)["phase"] == "pilot" for _, raw in ordered_raw):
+                seed_descriptor, seed_identity, seed_raw = _read_held_regular(seed_path)
+                held.append((seed_path, seed_descriptor, seed_identity, seed_raw))
+                (snapshot_root / seed_path.name).write_bytes(seed_raw)
+            validated = _protocol_manifest_chain(snapshot_root / path.name)
+            validated_by_name = {snapshot.name: value for snapshot, value in validated}
+            if tuple(original.name for original, _ in ordered_raw) != tuple(snapshot.name for snapshot, _ in validated):
+                raise ArtifactError("validated protocol snapshot chain differs from held chain")
+            chain = tuple(
+                (original, validated_by_name[original.name], raw) for original, raw in ordered_raw
+            )
+        return chain, tuple(held)
+    except BaseException:
+        for _, descriptor, _, _ in held:
+            os.close(descriptor)
+        raise
+
+
+def _close_stable_protocol_files(
+    held: Sequence[tuple[Path, int, tuple[int, int], bytes]],
+) -> None:
+    error: ArtifactError | None = None
+    for path, descriptor, identity, original in held:
+        try:
+            state = os.stat(path, follow_symlinks=False)
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            chunks = []
+            while True:
+                chunk = os.read(descriptor, 1024 * 1024)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            if (state.st_dev, state.st_ino) != identity or b"".join(chunks) != original:
+                error = ArtifactError("protocol snapshot identity/bytes changed during resource validation")
+        except OSError:
+            error = ArtifactError("protocol snapshot disappeared during resource validation")
+        finally:
+            os.close(descriptor)
+    if error is not None:
+        raise error
+
+
 def _shard_directory_name(shard_id: str) -> str:
     if not isinstance(shard_id, str) or re.fullmatch(r"P[1-6]:[a-z0-9_]+:[0-9]+", shard_id) is None:
         raise ArtifactError("shard id cannot map to a publication directory")
@@ -797,16 +908,18 @@ def _shard_directory_name(shard_id: str) -> str:
 def load_resource_completion_evidence(
     protocol_path: Path,
     results_root: Path,
+    *,
+    prior_evidence: Sequence[object] = (),
 ) -> object:
     """Load exact shard markers/ledgers and derive sealed inference evidence."""
-    chain = _protocol_manifest_chain(Path(protocol_path))
+    chain, protocol_handles = _stable_protocol_manifest_chain(Path(protocol_path))
     if not chain:
         raise ArtifactError("resource evidence requires a runnable protocol manifest")
     phase = chain[-1][1]["phase"]
     revision = chain[-1][1]["revision"]
     expected_rows = tuple(
-        (row["shard_id"], row, hashlib.sha256(path.read_bytes()).hexdigest())
-        for path, manifest in chain for row in manifest["shards"]
+        (row["shard_id"], row, hashlib.sha256(raw).hexdigest())
+        for _, manifest, raw in chain for row in manifest["shards"]
     )
     expected_ids = tuple(item[0] for item in expected_rows)
     if not expected_ids or len(set(expected_ids)) != len(expected_ids):
@@ -821,18 +934,34 @@ def load_resource_completion_evidence(
             root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
         )
     except OSError as exc:
+        _close_stable_protocol_files(protocol_handles)
         raise ArtifactError("resource results root is unavailable or unsafe") from exc
     completion_hashes: list[str] = []
     ledger_hashes: list[str] = []
     completed_ids: list[str] = []
     retained_bytes = temp_peak_bytes = quarantine_bytes = 0
+    wall_ns = cpu_ns = 0
     commands: set[tuple[str, str]] = set()
+    ledger_terminal_by_sha: dict[str, tuple[str, str]] = {}
     try:
         names = tuple(sorted(os.listdir(root_descriptor)))
         allowed_files = {"resource-terminal.json", "preflight.json"}
         unknown = set(names) - set(expected_by_directory) - allowed_files
         if unknown:
             raise ArtifactError(f"resource results contain unlisted entries: {sorted(unknown)}")
+        if "preflight.json" not in names:
+            raise ArtifactError("resource results lack the mandatory preflight disposition")
+        preflight, preflight_raw = _canonical_json_at(root_descriptor, "preflight.json", _PREFLIGHT_KEYS)
+        rollout_count = sum(int(row[1]["episode_count"]) for row in expected_rows)
+        reproduced_preflight = preflight_resources(
+            phase, preflight["retained_bytes"], preflight["temp_bytes"],
+            preflight["quarantine_bytes"], preflight["free_bytes"],
+            preflight["wall_seconds"], preflight["cpu_seconds"],
+            rollout_count=rollout_count, revision=revision,
+        )
+        if preflight_raw != reproduced_preflight.canonical_bytes():
+            raise ArtifactError("preflight disposition does not reproduce frozen resource arithmetic")
+        preflight_sha = hashlib.sha256(preflight_raw).hexdigest()
         present_directories = tuple(name for name in expected_by_directory if name in names)
         expected_prefix = tuple(expected_by_directory)[:len(present_directories)]
         if present_directories != expected_prefix:
@@ -922,6 +1051,7 @@ def load_resource_completion_evidence(
                     raise ArtifactError("completion does not bind its exact resource ledger")
                 previous_start = ""
                 shard_retained_bytes = 0
+                shard_wall_ns = 0
                 for row in ledger_rows:
                     if set(row) != _RESOURCE_LEDGER_ROW_KEYS:
                         raise ArtifactError("resource ledger row schema is not closed")
@@ -952,9 +1082,18 @@ def load_resource_completion_evidence(
                     shard_retained_bytes += row["retained_bytes"]
                     temp_peak_bytes += row["temp_peak_bytes"]
                     quarantine_bytes += row["quarantine_bytes"]
-                expected_ledger_disposition = completion["state"]
-                if not ledger_rows or ledger_rows[-1]["disposition"] != expected_ledger_disposition:
+                    wall_ns += row["wall_ns"]
+                    cpu_ns += row["cpu_ns"]
+                    shard_wall_ns += row["wall_ns"]
+                if shard_wall_ns > 3_600 * 1_000_000_000:
+                    raise ArtifactError("resource ledger exceeds the frozen 60-minute shard limit")
+                allowed_terminal_dispositions = (
+                    {"COMPLETE"} if completion["state"] == "COMPLETE"
+                    else {"DECLARED_INVALID", "REFUSED"}
+                )
+                if not ledger_rows or ledger_rows[-1]["disposition"] not in allowed_terminal_dispositions:
                     raise ArtifactError("resource ledger terminal row differs from shard completion state")
+                ledger_terminal_by_sha[ledger_sha] = (shard_id, ledger_rows[-1]["disposition"])
                 measured_retained = sum(_directory_bytes(path) for path in rollout_paths) + sum(
                     len(_read_regular_at(descriptor, name))
                     for name in shard_names - {
@@ -969,7 +1108,12 @@ def load_resource_completion_evidence(
             finally:
                 os.close(descriptor)
         phase_cap = PILOT_REVISION_LIMIT_BYTES if phase == "pilot" else CONFIRMATION_LIMIT_BYTES
-        if retained_bytes > phase_cap or temp_peak_bytes > 32 * MIB or quarantine_bytes > 64 * MIB:
+        wall_cap_ns = (8 if phase == "pilot" else 24) * 3_600 * 1_000_000_000
+        cpu_cap_ns = (80 if phase == "pilot" else 240) * 3_600 * 1_000_000_000
+        if (
+            retained_bytes > phase_cap or temp_peak_bytes > 32 * MIB
+            or quarantine_bytes > 64 * MIB or wall_ns > wall_cap_ns or cpu_ns > cpu_cap_ns
+        ):
             raise ArtifactError("validated resource ledgers exceed the frozen disjoint bucket ceilings")
         terminal_hash_payload: object = {
             "resource_terminal": None,
@@ -977,8 +1121,7 @@ def load_resource_completion_evidence(
             "completion_sha256s": completion_hashes,
             "ledger_sha256s": ledger_hashes,
         }
-        if "preflight.json" in names and "resource-terminal.json" not in names:
-            raise ArtifactError("orphan preflight disposition lacks its resource terminal marker")
+        stopped = False
         if "resource-terminal.json" in names:
             terminal, terminal_raw = _canonical_json_at(root_descriptor, "resource-terminal.json", _RESOURCE_TERMINAL_KEYS)
             reasons = _sorted_unique_strings(terminal["reasons"], "resource terminal reasons")
@@ -992,7 +1135,11 @@ def load_resource_completion_evidence(
             ):
                 raise ArtifactError("resource terminal disposition is invalid")
             if terminal["source"] == "SHARD":
-                if terminal["shard_id"] not in completed_ids or terminal["preflight_sha256"] is not None or terminal["resource_ledger_sha256"] not in ledger_hashes:
+                linked = ledger_terminal_by_sha.get(terminal["resource_ledger_sha256"])
+                if (
+                    terminal["shard_id"] not in completed_ids or terminal["preflight_sha256"] is not None
+                    or linked != (terminal["shard_id"], "REFUSED")
+                ):
                     raise ArtifactError("shard resource terminal does not bind a completed ledger")
             else:
                 if terminal["shard_id"] is not None or terminal["resource_ledger_sha256"] is not None or "preflight.json" not in names:
@@ -1001,22 +1148,60 @@ def load_resource_completion_evidence(
                 if hashlib.sha256(preflight_raw).hexdigest() != terminal["preflight_sha256"]:
                     raise ArtifactError("resource terminal does not bind the preflight disposition")
             terminal_hash_payload = hashlib.sha256(terminal_raw).hexdigest()
+            stopped = True
+        if reproduced_preflight.disposition == "REFUSE" and not stopped:
+            raise ArtifactError("preflight refusal lacks its terminal STOPPED disposition")
+        if reproduced_preflight.disposition == "ALLOW" and stopped and terminal["source"] == "PREFLIGHT":
+            raise ArtifactError("preflight terminal contradicts an ALLOW disposition")
+        current_capacity = (
+            PILOT_REVISION_LIMIT_BYTES if phase == "pilot"
+            else CONFIRMATION_WAVE_ROLLOUTS * ROLLOUT_RESERVATION_BYTES + PHASE_ALLOWANCE_BYTES
+        )
+        if phase == "confirmation" and rollout_count > CONFIRMATION_WAVE_ROLLOUTS:
+            raise ArtifactError("confirmation evidence merges distinct 128 MiB wave buckets")
+        prior = tuple(prior_evidence)
+        if any(
+            getattr(item, "resource_state", None) != "COMPLETE"
+            or type(getattr(item, "lifecycle_bytes", None)) is not int
+            for item in prior
+        ):
+            raise ArtifactError("lifecycle predecessors must be complete validated resource evidence")
+        prior_keys = tuple((item.phase, item.revision) for item in prior)
+        current_key = (phase, revision)
+        order = {"pilot": 0, "confirmation": 1}
+        ordered_keys = tuple(sorted(
+            (*prior_keys, current_key), key=lambda item: (order[item[0]], item[1]),
+        ))
+        if (*prior_keys, current_key) != ordered_keys or len(set((*prior_keys, current_key))) != len((*prior_keys, current_key)):
+            raise ArtifactError("resource lifecycle phase/revision sequence is invalid")
+        lifecycle_bytes = (prior[-1].lifecycle_bytes if prior else 0) + current_capacity
+        if lifecycle_bytes > LIFECYCLE_LIMIT_BYTES:
+            raise ArtifactError("resource evidence exceeds the exact 14,576 MiB lifecycle ceiling")
         disposition_sha = (
             terminal_hash_payload if isinstance(terminal_hash_payload, str)
             else hashlib.sha256(canonical_json_bytes(terminal_hash_payload)).hexdigest()
         )
     finally:
         os.close(root_descriptor)
+        _close_stable_protocol_files(protocol_handles)
     from . import evaluate
     predecessor = None if phase == "pilot" else chain[-1][1]["predecessor_sha256"]
     return evaluate._resource_completion_from_validated_artifacts(
         phase=phase, revision=revision,
-        protocol_sha256=hashlib.sha256(Path(protocol_path).read_bytes()).hexdigest(),
+        protocol_sha256=hashlib.sha256(chain[-1][2]).hexdigest(),
         predecessor_protocol_sha256=predecessor, disposition_sha256=disposition_sha,
         expected_shard_ids=expected_ids, completed_shard_ids=tuple(completed_ids),
         ledger_sha256s=tuple(ledger_hashes), completion_sha256s=tuple(completion_hashes),
         retained_bytes=retained_bytes, temporary_peak_bytes=temp_peak_bytes,
         quarantine_bytes=quarantine_bytes,
+        wall_ns=wall_ns, cpu_ns=cpu_ns, lifecycle_bytes=lifecycle_bytes,
+        preflight_sha256=preflight_sha,
+        resource_state=(
+            "STOPPED" if stopped else (
+                "COMPLETE" if tuple(completed_ids) == expected_ids
+                and reproduced_preflight.disposition == "ALLOW" else "INCOMPLETE"
+            )
+        ),
     )
 
 
@@ -2612,6 +2797,20 @@ def run_supervised_shard(
         raise ArtifactError("supervisor deadlines must be finite and positive")
     output_dir = Path(output_dir)
     parent_descriptor = open_directory_chain(output_dir, create=True)
+    try:
+        os.stat("preflight.json", dir_fd=parent_descriptor, follow_symlinks=False)
+    except FileNotFoundError:
+        phase_rollouts = sum(
+            int(row["episode_count"])
+            for _, stage_manifest in _protocol_manifest_chain(manifest_path)
+            for row in stage_manifest["shards"]
+        )
+        preflight = preflight_resources(
+            manifest["phase"], 0, 0, 0, shutil.disk_usage(output_dir).free, 0, 0,
+            rollout_count=phase_rollouts, revision=manifest["revision"],
+        )
+        _write_at_create_only(parent_descriptor, "preflight.json", preflight.canonical_bytes())
+        os.fsync(parent_descriptor)
     final_name = _shard_directory_name(shard_id)
     held = create_temporary_directory(parent_descriptor, f".{final_name}.shard-stage-")
     stage_path = output_dir / held.name
