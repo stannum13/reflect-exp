@@ -1,0 +1,58 @@
+schema_version: 1
+record_type: P3_OPERATION_CONTRACT_REVISION
+revision: 3
+classification: ENGINEERING_NONCONFIRMATORY
+operation_id: LEROBOT_CHECKOUT
+reason: >-
+  Independent audit found that revision 2 validated each declared link but did not
+  prove the absence of an undeclared fourth link. Revision 3 exhaustively inventories
+  every Git object beneath the selected paths and records the link and target modes.
+implementation_commit: 3cc5d180dde9b2a4f2682a3c3c92daf3e9619d91
+registry_sha256: eb72b501a177ee9dcf93a77444536e07dd532d9ac92950c61a063b8a8d1a4a3d
+lock_sha256: ce46f15903be44af121d8d2e2430d4bff78d94b978a09c48820dd31190f4e449
+locked_commit_sha: 7427f31801f944f5ec9ce53cda02862ce7d1638b
+locked_recursive_tree_sha: bc9686e9b1fcb89a4b3bef398655150675f14406
+policy: CONTAINED_GIT_SYMLINKS_V1
+contract:
+  path: experiments/00_source_audit/configs/lerobot-contained-symlinks-v1.json
+  sha256: 4ce69394bc36198ec39372b250804f341453a96b1778377fc2a2c8a23292b02f
+scope:
+  checkout: EXACT_LOCKED_LEROBOT_ARTIFACT_ONLY
+  source_copy_authority: false
+  adapter_authority: false
+  symlink_chain_following: false
+  filesystem_symlink_output: false
+validation:
+  git_object_modes: ["120000", "120000", "120000"]
+  regular_target_modes: ["100644", "100644", "100644"]
+  materialization: CORE_SYMLINKS_FALSE_REGULAR_DESCRIPTOR
+  target_rule: RELATIVE_CONTAINED_DECLARED_REGULAR_BLOB
+  selected_tree_inventory: EXHAUSTIVE_LS_TREE_RECURSIVE
+  declared_link_count: 3
+  observed_link_count: 3
+revision_1_failure:
+  path: experiments/00_source_audit/results/attempts/lerobot-checkout-v1-fail.json
+  file_sha256: edcbb60b2a4d640fdae4affb3451977e2eabb6ef7fb83d9b65a7ac6cd25693fe
+  evidence_sha256: a0ef33b8795081cc6f83b370c5b698f1f9019a7b9d5884a3cfc75b97ecbba39f
+  outcome: FAIL
+revision_2_receipt:
+  path: experiments/00_source_audit/results/attempts/lerobot-checkout-v2-pass.json
+  file_sha256: 62cfdfac96ccf89c6de3e3ad8075293636fa4c223149939135e0d01a94805f32
+  evidence_sha256: a09e4903e28301ff9c767fb0695c45cb74b16bd97a0120bc241858b82eec3b14
+  outcome: PASS
+  limitation: declared-link query did not establish absence of undeclared links
+revision_3_receipt:
+  path: experiments/00_source_audit/results/fragments/lerobot-checkout.json
+  file_sha256: 4bb7e2bf8697809e213c1635f030be9ab91c460ea87fe2901fb202315420bb44
+  evidence_sha256: e0169ff80eb878e5b849c234f01b1b36ea8b4c3edc9465ce2eaf307dc9be2cd7
+  outcome: PASS
+  download_bytes: 0
+  disk_bytes: 745472
+  retained_file_count: 33
+result:
+  prior_attempts_preserved: true
+  operational_gate: PASS
+  confirmation_eligible: false
+  limitation: >-
+    This post-freeze engineering repair closes only the operational source gate; it
+    does not convert the amended P3 evidence into confirmatory evidence.
