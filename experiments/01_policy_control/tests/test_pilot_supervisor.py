@@ -160,6 +160,89 @@ def test_supervisor_refuses_before_spawn_and_publishes_resource_terminal(
     assert tuple(output.glob("P*")) == ()
 
 
+def test_supervisor_reproduces_existing_preflight_before_spawn(
+    base_pilot: tuple[Path, Path, Path, str], tmp_path: Path,
+) -> None:
+    manifest, _, _, _ = base_pilot
+    protocol = artifacts.load_protocol_manifest(manifest)
+    output = tmp_path / "stale-preflight-results"
+    output.mkdir()
+    disposition = artifacts.preflight_resources(
+        "pilot", 0, 0, 0, 20 * 1024 * 1024 * 1024, 0, 0,
+        rollout_count=sum(row["episode_count"] for row in protocol["shards"]),
+        revision=1,
+    )
+    stale = json.loads(disposition.to_json())
+    stale["revision"] = 2
+    (output / "preflight.json").write_text(
+        json.dumps(stale, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    sentinel = tmp_path / "stale-preflight-worker-ran"
+    with pytest.raises(artifacts.ArtifactError, match="preflight.*reproduce|revision"):
+        _supervise(
+            base_pilot, output,
+            worker_argv=(sys.executable, "-c", f"open({str(sentinel)!r},'w').write('ran')"),
+        )
+    assert not sentinel.exists()
+
+
+def test_worker_exit_three_requires_exact_reproducible_refusal_receipt(
+    base_pilot: tuple[Path, Path, Path, str], tmp_path: Path,
+) -> None:
+    output = tmp_path / "missing-refusal-receipt"
+    with pytest.raises(artifacts.ArtifactError, match="refusal receipt"):
+        _supervise(
+            base_pilot, output,
+            worker_argv=(sys.executable, "-c", "raise SystemExit(3)"),
+        )
+    assert tuple(output.rglob("completion.json")) == ()
+
+    exact_output = tmp_path / "exact-refusal-receipt"
+    script = (
+        "import json,pathlib,sys;"
+        "p=pathlib.Path(sys.argv[1]);"
+        "r={'schema_version':1,'study_id':'reflect-lite-policy-control',"
+        "'phase':'pilot','revision':1,'shard_id':'P1:base:000',"
+        "'retained_bytes':0,'temp_bytes':0,'quarantine_bytes':0,'free_bytes':0,"
+        "'wall_seconds':0,'cpu_seconds':0,'reserved_bytes':140509184,"
+        "'shard_wall_limit_seconds':3600,'disposition':'REFUSE',"
+        "'reasons':['INSUFFICIENT_FREE_BYTES']};"
+        "(p/'resource-refusal.json').write_text(json.dumps(r,sort_keys=True,separators=(',',':'))+'\\n');"
+        "raise SystemExit(3)"
+    )
+    assert _supervise(
+        base_pilot, exact_output,
+        worker_argv=(sys.executable, "-c", script, "{stage_dir}"),
+    ) == "resource-exhausted"
+    terminal = _json(exact_output / "resource-terminal.json")
+    assert terminal["reasons"] == ["INSUFFICIENT_FREE_BYTES"]
+
+
+def test_worker_refusal_receipt_rejects_invented_reason(
+    base_pilot: tuple[Path, Path, Path, str], tmp_path: Path,
+) -> None:
+    output = tmp_path / "invented-refusal-receipt"
+    script = (
+        "import json,pathlib,sys;"
+        "p=pathlib.Path(sys.argv[1]);"
+        "r={'schema_version':1,'study_id':'reflect-lite-policy-control',"
+        "'phase':'pilot','revision':1,'shard_id':'P1:base:000',"
+        "'retained_bytes':0,'temp_bytes':0,'quarantine_bytes':0,'free_bytes':0,"
+        "'wall_seconds':0,'cpu_seconds':0,'reserved_bytes':140509184,"
+        "'shard_wall_limit_seconds':3600,'disposition':'REFUSE',"
+        "'reasons':['PHASE_BYTES_EXCEEDED']};"
+        "(p/'resource-refusal.json').write_text(json.dumps(r,sort_keys=True,separators=(',',':'))+'\\n');"
+        "raise SystemExit(3)"
+    )
+    with pytest.raises(artifacts.ArtifactError, match="refusal receipt"):
+        _supervise(
+            base_pilot, output,
+            worker_argv=(sys.executable, "-c", script, "{stage_dir}"),
+        )
+    assert tuple(output.rglob("completion.json")) == ()
+
+
 def test_supervisor_exact_reissue_validates_and_skips_without_spawn(
     base_pilot: tuple[Path, Path, Path, str], tmp_path: Path,
 ) -> None:

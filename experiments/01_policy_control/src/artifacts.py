@@ -800,6 +800,7 @@ _RESOURCE_TERMINAL_KEYS = frozenset({
     "scientific_result",
 })
 _PREFLIGHT_KEYS = frozenset(field.name for field in fields(ResourceDisposition))
+_WORKER_REFUSAL_KEYS = _PREFLIGHT_KEYS | frozenset({"shard_id"})
 
 
 def _canonical_json_at(directory_descriptor: int, name: str, keys: frozenset[str]) -> tuple[dict[str, Any], bytes]:
@@ -833,6 +834,43 @@ def _canonical_jsonl_at(directory_descriptor: int, name: str) -> tuple[tuple[dic
             raise ArtifactError(f"noncanonical JSONL row in {name}")
         rows.append(value)
     return tuple(rows), raw
+
+
+def _load_worker_refusal(
+    directory_descriptor: int,
+    *,
+    manifest: Mapping[str, object],
+    shard: Mapping[str, object],
+) -> tuple[ResourceDisposition, str]:
+    """Authenticate an exit-3 worker refusal against frozen resource arithmetic."""
+    try:
+        row, raw = _canonical_json_at(
+            directory_descriptor, "resource-refusal.json", _WORKER_REFUSAL_KEYS,
+        )
+    except ArtifactError as exc:
+        raise ArtifactError("worker exit 3 lacks an exact canonical refusal receipt") from exc
+    if (
+        row["study_id"] != STUDY_ID
+        or row["phase"] != manifest["phase"]
+        or row["revision"] != manifest["revision"]
+        or row["shard_id"] != shard["shard_id"]
+    ):
+        raise ArtifactError("worker refusal receipt identity differs from the shard")
+    reproduced = preflight_resources(
+        str(row["phase"]), row["retained_bytes"], row["temp_bytes"],
+        row["quarantine_bytes"], row["free_bytes"], row["wall_seconds"],
+        row["cpu_seconds"], rollout_count=shard["episode_count"],
+        revision=row["revision"],
+    )
+    expected = asdict(reproduced) | {"reasons": list(reproduced.reasons), "shard_id": shard["shard_id"]}
+    if raw != canonical_json_bytes(expected) or reproduced.disposition != "REFUSE":
+        raise ArtifactError("worker refusal receipt does not reproduce frozen resource arithmetic")
+    try:
+        os.unlink("resource-refusal.json", dir_fd=directory_descriptor)
+    except OSError as exc:
+        raise ArtifactError("validated worker refusal receipt cannot be consumed safely") from exc
+    os.fsync(directory_descriptor)
+    return reproduced, hashlib.sha256(raw).hexdigest()
 
 
 def _protocol_manifest_chain(path: Path) -> tuple[tuple[Path, dict[str, Any]], ...]:
@@ -2938,14 +2976,14 @@ def run_supervised_shard(
             return "validated-and-skipped"
         finally:
             os.close(parent_descriptor)
+    phase_rollouts = sum(
+        int(row["episode_count"])
+        for _, stage_manifest in _protocol_manifest_chain(manifest_path)
+        for row in stage_manifest["shards"]
+    )
     try:
         os.stat("preflight.json", dir_fd=parent_descriptor, follow_symlinks=False)
     except FileNotFoundError:
-        phase_rollouts = sum(
-            int(row["episode_count"])
-            for _, stage_manifest in _protocol_manifest_chain(manifest_path)
-            for row in stage_manifest["shards"]
-        )
         preflight = preflight_resources(
             manifest["phase"], 0, 0, 0, shutil.disk_usage(output_dir).free, 0, 0,
             rollout_count=phase_rollouts, revision=manifest["revision"],
@@ -2966,6 +3004,16 @@ def run_supervised_shard(
             raw_preflight["cpu_seconds"], raw_preflight["shard_wall_limit_seconds"],
             raw_preflight["disposition"], tuple(raw_preflight["reasons"]),
         )
+        reproduced_preflight = preflight_resources(
+            manifest["phase"], raw_preflight["retained_bytes"],
+            raw_preflight["temp_bytes"], raw_preflight["quarantine_bytes"],
+            raw_preflight["free_bytes"], raw_preflight["wall_seconds"],
+            raw_preflight["cpu_seconds"], rollout_count=phase_rollouts,
+            revision=manifest["revision"],
+        )
+        if preflight_bytes != reproduced_preflight.canonical_bytes():
+            raise ArtifactError("existing preflight does not reproduce the current revision/wave")
+        preflight = reproduced_preflight
     if preflight.disposition == "REFUSE":
         _publish_preflight_terminal(
             parent_descriptor, manifest["phase"], manifest["revision"],
@@ -3036,6 +3084,12 @@ def run_supervised_shard(
             _write_at_create_only(held.descriptor, "stderr-output.bin", stderr)
         success = not timed_out and return_code == 0
         resource_exhausted = not timed_out and return_code == 3
+        refusal: ResourceDisposition | None = None
+        refusal_sha: str | None = None
+        if resource_exhausted:
+            refusal, refusal_sha = _load_worker_refusal(
+                held.descriptor, manifest=manifest, shard=shard,
+            )
         if not success and not timed_out and not resource_exhausted:
             if return_code == 2:
                 raise ImplementationDriftError("unsafe or implementation-drift worker failure")
@@ -3054,6 +3108,7 @@ def run_supervised_shard(
                 "readable_output_sha256": hashlib.sha256(readable).hexdigest() if readable else None,
                 "details_sha256": hashlib.sha256(canonical_json_bytes({
                     "return_code": return_code, "timed_out": timed_out,
+                    "resource_refusal_sha256": refusal_sha,
                 })).hexdigest(),
             } for condition_id in shard["condition_ids"])
             publish_failure_disposition(rows, stage_path / "failure-disposition.jsonl")
@@ -3102,7 +3157,7 @@ def run_supervised_shard(
                 "revision": manifest["revision"], "source": "SHARD",
                 "shard_id": shard_id,
                 "resource_ledger_sha256": hashlib.sha256(ledger_bytes).hexdigest(),
-                "preflight_sha256": None, "reasons": ["PHASE_BYTES_EXCEEDED"],
+                "preflight_sha256": None, "reasons": list(refusal.reasons),
                 "lifecycle_state": "STOPPED", "scientific_result": "INCONCLUSIVE",
             }
             _write_at_create_only(
