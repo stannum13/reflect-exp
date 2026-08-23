@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import fcntl
+import os
 from pathlib import Path
 import stat
 import subprocess
@@ -165,52 +167,41 @@ def test_gate_rejects_duplicate_yaml_and_symlink_destination(tmp_path: Path) -> 
         gate.write_p3_gate(repository, destination)
 
 
-def test_create_only_publication_rejects_temporary_inode_swap(
+def test_create_only_publication_does_not_use_swappable_temporary_link(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    real_link = gate.os.link
-    attacked = False
+    def forbidden_link(*args: object, **kwargs: object) -> None:
+        raise AssertionError("direct create-only publication must not link a temp path")
 
-    def swap_before_link(source: str, target: str, **kwargs: object) -> None:
-        nonlocal attacked
-        attacked = True
-        directory_fd = kwargs["src_dir_fd"]
-        gate.os.unlink(source, dir_fd=directory_fd)
-        descriptor = gate.os.open(
-            source,
-            gate.os.O_WRONLY | gate.os.O_CREAT | gate.os.O_EXCL,
-            0o600,
-            dir_fd=directory_fd,
-        )
-        gate.os.write(descriptor, b"attacker\n")
-        gate.os.close(descriptor)
-        real_link(source, target, **kwargs)
-
-    monkeypatch.setattr(gate.os, "link", swap_before_link)
-    with pytest.raises(gate.P3GateError, match="inode|publication|temporary"):
-        gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
-    assert attacked
-    assert (tmp_path / "gate.yaml").read_bytes() == b"attacker\n"
+    monkeypatch.setattr(gate.os, "link", forbidden_link)
+    gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
+    assert (tmp_path / "gate.yaml").read_bytes() == b"authentic\n"
 
 
-def test_create_only_publication_rejects_post_link_destination_swap(
+def test_create_only_publication_lock_is_bounded_and_fail_closed(tmp_path: Path) -> None:
+    directory_fd = gate._open_directory_path_no_follow(tmp_path)
+    try:
+        fcntl.flock(directory_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(gate.P3GateError, match="locked"):
+            gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
+        assert not (tmp_path / "gate.yaml").exists()
+    finally:
+        fcntl.flock(directory_fd, fcntl.LOCK_UN)
+        gate.os.close(directory_fd)
+
+
+def test_create_only_publication_rejects_post_create_destination_swap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    real_link = gate.os.link
     real_open = gate.os.open
-    linked = False
+    created = False
     attacked = False
-
-    def mark_linked(source: str, target: str, **kwargs: object) -> None:
-        nonlocal linked
-        real_link(source, target, **kwargs)
-        linked = True
 
     def swap_before_destination_open(
         path: str, flags: int, mode: int = 0o777, *, dir_fd: int | None = None
     ) -> int:
-        nonlocal attacked
-        if linked and not attacked and path == "gate.yaml" and dir_fd is not None:
+        nonlocal attacked, created
+        if created and not attacked and path == "gate.yaml" and dir_fd is not None:
             attacked = True
             gate.os.unlink(path, dir_fd=dir_fd)
             attacker = real_open(
@@ -221,9 +212,11 @@ def test_create_only_publication_rejects_post_link_destination_swap(
             )
             gate.os.write(attacker, b"attacker\n")
             gate.os.close(attacker)
-        return real_open(path, flags, mode, dir_fd=dir_fd)
+        descriptor = real_open(path, flags, mode, dir_fd=dir_fd)
+        if path == "gate.yaml" and flags & gate.os.O_CREAT:
+            created = True
+        return descriptor
 
-    monkeypatch.setattr(gate.os, "link", mark_linked)
     monkeypatch.setattr(gate.os, "open", swap_before_destination_open)
     with pytest.raises(gate.P3GateError, match="publication|destination|inode"):
         gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
@@ -257,6 +250,84 @@ def test_create_only_publication_preserves_unowned_post_verification_conflict(
         gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
     assert attacked
     assert (tmp_path / "gate.yaml").read_bytes() == b"unowned\n"
+
+
+def test_create_only_publication_has_no_final_stat_to_return_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_stat = gate.os.stat
+    real_unlink = gate.os.unlink
+    real_open = gate.os.open
+    attacked = False
+
+    def swap_after_path_stat(path: str, **kwargs: object) -> os.stat_result:
+        nonlocal attacked
+        result = real_stat(path, **kwargs)
+        if not attacked and path == "gate.yaml" and kwargs.get("dir_fd") is not None:
+            attacked = True
+            directory_fd = kwargs["dir_fd"]
+            real_unlink(path, dir_fd=directory_fd)
+            attacker = real_open(
+                path,
+                gate.os.O_WRONLY | gate.os.O_CREAT | gate.os.O_EXCL,
+                0o600,
+                dir_fd=directory_fd,
+            )
+            gate.os.write(attacker, b"after-stat\n")
+            gate.os.close(attacker)
+        return result
+
+    monkeypatch.setattr(gate.os, "stat", swap_after_path_stat)
+    gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
+    assert not attacked
+    assert (tmp_path / "gate.yaml").read_bytes() == b"authentic\n"
+
+
+def test_create_only_failure_never_enters_cleanup_stat_unlink_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_fsync = gate.os.fsync
+    real_stat = gate.os.stat
+    real_unlink = gate.os.unlink
+    real_open = gate.os.open
+    cleanup_started = False
+    attacked = False
+
+    def fail_directory_fsync(descriptor: int) -> None:
+        nonlocal cleanup_started
+        if stat.S_ISDIR(gate.os.fstat(descriptor).st_mode):
+            cleanup_started = True
+            raise OSError("forced directory fsync failure")
+        real_fsync(descriptor)
+
+    def swap_during_cleanup_stat(path: str, **kwargs: object) -> os.stat_result:
+        nonlocal attacked
+        result = real_stat(path, **kwargs)
+        if (
+            cleanup_started
+            and not attacked
+            and path == "gate.yaml"
+            and kwargs.get("dir_fd") is not None
+        ):
+            attacked = True
+            directory_fd = kwargs["dir_fd"]
+            real_unlink(path, dir_fd=directory_fd)
+            attacker = real_open(
+                path,
+                gate.os.O_WRONLY | gate.os.O_CREAT | gate.os.O_EXCL,
+                0o600,
+                dir_fd=directory_fd,
+            )
+            gate.os.write(attacker, b"cleanup-race\n")
+            gate.os.close(attacker)
+        return result
+
+    monkeypatch.setattr(gate.os, "fsync", fail_directory_fsync)
+    monkeypatch.setattr(gate.os, "stat", swap_during_cleanup_stat)
+    with pytest.raises(gate.P3GateError, match="fsync|publication"):
+        gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
+    assert not attacked
+    assert (tmp_path / "gate.yaml").read_bytes() == b"authentic\n"
 
 
 def test_state_index_search_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

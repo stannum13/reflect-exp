@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
-import secrets
 import stat
 import subprocess
 from typing import Any, Mapping, Sequence
@@ -570,10 +570,19 @@ def _destination(root: Path, destination: Path) -> tuple[Path, str]:
 
 def _publish_create_only(parent: Path, name: str, content: bytes) -> None:
     directory_fd = _open_directory_path_no_follow(parent)
-    temporary = f".{name}.p3-gate-{secrets.token_hex(8)}"
     descriptor = -1
-    identity: tuple[int, int] | None = None
+    verification_descriptor = -1
+    locked = False
     try:
+        # Cooperative publishers serialize on the directory without creating a
+        # second pathname that would itself need unsafe cleanup.  The direct
+        # O_EXCL create below is the transaction's publication linearization
+        # point; any later failure retains that pathname for fail-closed reuse.
+        try:
+            fcntl.flock(directory_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            locked = True
+        except OSError as exc:
+            raise P3GateError("P3 gate publication directory is locked") from exc
         try:
             existing = _read_file_at(directory_fd, name)
         except ValueError as exc:
@@ -582,29 +591,21 @@ def _publish_create_only(parent: Path, name: str, content: bytes) -> None:
         else:
             if existing != content:
                 raise P3GateError("existing P3 gate conflicts with reconstructed evidence")
+            try:
+                os.fsync(directory_fd)
+            except OSError as exc:
+                raise P3GateError("existing P3 gate durability check failed") from exc
             return
-        descriptor = os.open(
-            temporary,
-            os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
-            0o600,
-            dir_fd=directory_fd,
-        )
-        state = os.fstat(descriptor)
-        identity = (state.st_dev, state.st_ino)
-        offset = 0
-        while offset < len(content):
-            count = os.write(descriptor, content[offset:])
-            if count <= 0:
-                raise OSError("short P3 gate write")
-            offset += count
-        os.fsync(descriptor)
         try:
-            os.link(
-                temporary,
+            descriptor = os.open(
                 name,
-                src_dir_fd=directory_fd,
-                dst_dir_fd=directory_fd,
-                follow_symlinks=False,
+                os.O_RDWR
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_CLOEXEC", 0),
+                0o600,
+                dir_fd=directory_fd,
             )
         except FileExistsError:
             try:
@@ -613,33 +614,21 @@ def _publish_create_only(parent: Path, name: str, content: bytes) -> None:
                 raise P3GateError("concurrent P3 gate destination is unsafe") from exc
             if existing != content:
                 raise P3GateError("concurrent P3 gate publication conflict")
-            os.fsync(directory_fd)
-            return
-        try:
-            destination_descriptor = os.open(
-                name,
-                os.O_RDONLY
-                | getattr(os, "O_NOFOLLOW", 0)
-                | getattr(os, "O_CLOEXEC", 0),
-                dir_fd=directory_fd,
-            )
             try:
-                destination_state = os.fstat(destination_descriptor)
-                destination_content = b""
-                while len(destination_content) < destination_state.st_size:
-                    chunk = os.pread(
-                        destination_descriptor,
-                        destination_state.st_size - len(destination_content),
-                        len(destination_content),
-                    )
-                    if not chunk:
-                        break
-                    destination_content += chunk
-            finally:
-                os.close(destination_descriptor)
-            temporary_state = os.stat(
-                temporary, dir_fd=directory_fd, follow_symlinks=False
-            )
+                os.fsync(directory_fd)
+            except OSError as exc:
+                raise P3GateError("concurrent P3 gate durability check failed") from exc
+            return
+        state = os.fstat(descriptor)
+        identity = (state.st_dev, state.st_ino)
+        offset = 0
+        try:
+            while offset < len(content):
+                count = os.write(descriptor, content[offset:])
+                if count <= 0:
+                    raise OSError("short P3 gate write")
+                offset += count
+            os.fsync(descriptor)
             descriptor_state = os.fstat(descriptor)
             held_content = b""
             while len(held_content) < descriptor_state.st_size:
@@ -652,44 +641,52 @@ def _publish_create_only(parent: Path, name: str, content: bytes) -> None:
                     break
                 held_content += chunk
             if (
-                (destination_state.st_dev, destination_state.st_ino) != identity
-                or (temporary_state.st_dev, temporary_state.st_ino) != identity
-                or not stat.S_ISREG(destination_state.st_mode)
-                or not stat.S_ISREG(descriptor_state.st_mode)
+                not stat.S_ISREG(descriptor_state.st_mode)
                 or stat.S_IMODE(descriptor_state.st_mode) != 0o600
-                or destination_state.st_size != len(content)
                 or descriptor_state.st_size != len(content)
-                or destination_content != content
                 or held_content != content
             ):
-                raise P3GateError(
-                    "P3 gate publication did not retain the held temporary inode"
-                )
+                raise P3GateError("P3 gate direct publication inode is invalid")
             os.fsync(directory_fd)
-            final_state = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
-            if (final_state.st_dev, final_state.st_ino) != identity:
+            verification_descriptor = os.open(
+                name,
+                os.O_RDONLY
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_CLOEXEC", 0),
+                dir_fd=directory_fd,
+            )
+            destination_state = os.fstat(verification_descriptor)
+            destination_content = b""
+            while len(destination_content) < destination_state.st_size:
+                chunk = os.pread(
+                    verification_descriptor,
+                    destination_state.st_size - len(destination_content),
+                    len(destination_content),
+                )
+                if not chunk:
+                    break
+                destination_content += chunk
+            if (
+                (destination_state.st_dev, destination_state.st_ino) != identity
+                or not stat.S_ISREG(destination_state.st_mode)
+                or stat.S_IMODE(destination_state.st_mode) != 0o600
+                or destination_state.st_size != len(content)
+                or destination_content != content
+            ):
                 raise P3GateError(
-                    "P3 gate destination identity drifted after publication fsync"
+                    "P3 gate destination does not name the held direct publication inode"
                 )
         except (OSError, P3GateError) as exc:
-            try:
-                latest = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
-            except FileNotFoundError:
-                latest = None
-            if latest is not None and identity == (latest.st_dev, latest.st_ino):
-                os.unlink(name, dir_fd=directory_fd)
             if isinstance(exc, P3GateError):
                 raise
             raise P3GateError(f"P3 gate destination publication failed: {exc}") from exc
     finally:
+        if verification_descriptor >= 0:
+            os.close(verification_descriptor)
         if descriptor >= 0:
             os.close(descriptor)
-        try:
-            current = os.stat(temporary, dir_fd=directory_fd, follow_symlinks=False)
-        except FileNotFoundError:
-            current = None
-        if current is not None and identity == (current.st_dev, current.st_ino):
-            os.unlink(temporary, dir_fd=directory_fd)
+        if locked:
+            fcntl.flock(directory_fd, fcntl.LOCK_UN)
         os.close(directory_fd)
 
 
