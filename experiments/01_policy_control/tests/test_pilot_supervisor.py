@@ -304,3 +304,33 @@ def test_real_p1_base_shard_runs_all_three_declared_conditions(
     ) == "CONTINUE"
     with pytest.raises(artifacts.ArtifactError, match="incomplete"):
         artifacts.publish_stage_disposition(base_pilot[0], output)
+
+
+def test_terminal_base_vertical_slice_analyzes_freezes_and_reports_without_confirmation_claim(
+    base_pilot: tuple[Path, Path, Path, str], tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest, config, _, shard_id = base_pilot
+    output = tmp_path / "terminal-results"
+    assert _supervise(base_pilot, output) == "published"
+    monkeypatch.setattr(
+        artifacts, "_p1_scientific_failure",
+        lambda *_args, **_kwargs: "UNSTABLE_DIVERGENCE",
+    )
+    assert artifacts.publish_shard_disposition(manifest, shard_id, output) == "TERMINAL_STOPPED"
+    assert artifacts.analyze_phase(manifest, output) == 0
+    decision = _json(manifest.parent / "pilot-decision.json")
+    assert decision["lifecycle_state"] == "STOPPED"
+    assert decision["scientific_result"] == "INCONCLUSIVE"
+    assert decision["total_episode_count"] == 3
+    assert decision["reasons"] == ["UNSTABLE_DIVERGENCE"]
+
+    assert artifacts.freeze_protocol(manifest, output, config) == 0
+    frozen = _json(manifest.parents[1] / "configs" / "frozen.yaml")
+    assert frozen["confirmation_protocol"]["enabled"] is False
+    assert frozen["gates"] is None
+    assert artifacts.write_report(manifest, output) == 0
+    assert (output / "artifact-digests.json").is_file()
+    results = (output / "RESULTS.md").read_text(encoding="utf-8")
+    assert "INCONCLUSIVE" in results and "no confirmation" in results.lower()
+    assert "physical" in results.lower() and "not validated" in results.lower()

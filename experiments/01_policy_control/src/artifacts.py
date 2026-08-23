@@ -32,6 +32,7 @@ import time
 from typing import Any
 
 import numpy as np
+import yaml
 
 from reflect.replay import ReplayResult, replay_rollout
 from reflect.rollout import RolloutArtifact, RolloutRecord, RolloutWriter, validate_rollout
@@ -1146,6 +1147,245 @@ def publish_stage_disposition(
     return "ADVANCE"
 
 
+_STAGE_DIGEST_KEYS = frozenset({
+    "schema_version", "study_id", "revision", "implementation_sha",
+    "stage_digests", "total_episode_count",
+})
+_PILOT_DECISION_KEYS = frozenset({
+    "schema_version", "study_id", "revision", "lifecycle_state",
+    "scientific_result", "terminal_stage", "survivors", "killed_stacks",
+    "selected_pd", "selected_ik", "selected_p5_smoothness",
+    "candidate_evaluations", "p1_pilot_smoothness_baseline",
+    "stage_digests_sha256", "expected_episode_counts", "total_episode_count",
+    "reasons",
+})
+
+
+def _terminal_resource_context(
+    manifest_path: Path, output_dir: Path,
+) -> tuple[Path, tuple[ResourceArtifactPath, ...], int | None]:
+    direct = Path(output_dir)
+    if (direct / "preflight.json").is_file():
+        manifest = load_protocol_manifest(manifest_path)
+        _validate_resource_chain_keys((), manifest["phase"], manifest["revision"], None)
+        return direct, (), None
+    return resource_execution_context(manifest_path, output_dir)
+
+
+def analyze_phase(manifest_path: Path, output_dir: Path) -> int:
+    """Seal a base-terminal pilot decision from validated immutable shard evidence."""
+    manifest_path = Path(manifest_path)
+    manifest = load_protocol_manifest(manifest_path)
+    if manifest["phase"] != "pilot" or manifest["stage"] != "base":
+        raise ArtifactError("the bounded terminal analyzer accepts only a base-terminal pilot")
+    terminal = _load_stage_terminal(manifest_path, manifest)
+    if terminal is None:
+        raise ArtifactError("advancing pilot analysis requires the complete adaptive adapter")
+    resource_root, prior, wave = _terminal_resource_context(manifest_path, output_dir)
+    evidence = load_resource_completion_evidence(
+        manifest_path, resource_root, prior_artifacts=prior, confirmation_wave=wave,
+    )
+    if terminal["trigger_shard_id"] not in evidence.completed_shard_ids:
+        raise ArtifactError("terminal pilot trigger is absent from authenticated resource evidence")
+    completed_rows = []
+    counts = {stack: 0 for stack in _STACK_ORDER}
+    completion_hashes = []
+    for shard_id in evidence.completed_shard_ids:
+        matches = tuple(row for row in manifest["shards"] if row["shard_id"] == shard_id)
+        if len(matches) != 1:
+            raise ArtifactError("resource completion does not resolve to one current-stage shard")
+        row = matches[0]
+        completion_path = resource_root / _shard_directory_name(shard_id) / "completion.json"
+        digest = hashlib.sha256(completion_path.read_bytes()).hexdigest()
+        completion_hashes.append(digest)
+        counts[row["stack_id"]] += int(row["episode_count"])
+        completed_rows.append(row)
+    total = sum(counts.values())
+    if total <= 0 or completed_rows[-1]["shard_id"] != terminal["trigger_shard_id"]:
+        raise ArtifactError("terminal pilot completion inventory is not the exact trigger prefix")
+    stage_row = {
+        "stage": "base", "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+        "completion_sha256": hashlib.sha256(canonical_json_bytes(completion_hashes)).hexdigest(),
+        "terminal_disposition_sha256": hashlib.sha256(
+            _stage_terminal_path(manifest_path, "base").read_bytes(),
+        ).hexdigest(),
+        "episode_count": total, "reuse_hashes": [],
+    }
+    stage_digests = {
+        "schema_version": 1, "study_id": STUDY_ID, "revision": manifest["revision"],
+        "implementation_sha": manifest["implementation_sha"],
+        "stage_digests": [stage_row], "total_episode_count": total,
+    }
+    stage_bytes = canonical_json_bytes(stage_digests)
+    decision = {
+        "schema_version": 1, "study_id": STUDY_ID, "revision": manifest["revision"],
+        "lifecycle_state": "STOPPED", "scientific_result": "INCONCLUSIVE",
+        "terminal_stage": "base", "survivors": [], "killed_stacks": [],
+        "selected_pd": None, "selected_ik": None, "selected_p5_smoothness": None,
+        "candidate_evaluations": [], "p1_pilot_smoothness_baseline": None,
+        "stage_digests_sha256": hashlib.sha256(stage_bytes).hexdigest(),
+        "expected_episode_counts": {"by_stack": counts, "total": total},
+        "total_episode_count": total, "reasons": [terminal["reason"]],
+    }
+    stage_path = manifest_path.parent / "stage-digests.json"
+    decision_path = manifest_path.parent / "pilot-decision.json"
+    _publish_identical_or_create(stage_path, stage_bytes)
+    _publish_identical_or_create(decision_path, canonical_json_bytes(decision))
+    load_canonical_json(stage_path, _STAGE_DIGEST_KEYS)
+    load_canonical_json(decision_path, _PILOT_DECISION_KEYS)
+    return 0
+
+
+_FROZEN_KEYS = frozenset({
+    "schema_version", "study_id", "implementation_sha", "pilot_evidence_commit",
+    "clean_tree", "p2_p3_hashes", "mujoco_identity", "model_hashes",
+    "scenario_protocol", "stack_protocols", "timing_protocol", "metric_protocol",
+    "plot_protocol", "pilot_decision", "pilot_decision_sha256", "surviving_stacks",
+    "confirmation_protocol", "bootstrap_protocol", "gates", "resource_limits",
+})
+
+
+def freeze_protocol(
+    manifest_path: Path, output_dir: Path, config_path: Path,
+) -> int:
+    """Freeze a truthful no-confirmation record for an authenticated terminal pilot."""
+    del output_dir
+    manifest_path = Path(manifest_path)
+    manifest = load_protocol_manifest(manifest_path)
+    decision_path = manifest_path.parent / "pilot-decision.json"
+    decision = load_canonical_json(decision_path, _PILOT_DECISION_KEYS)
+    if decision["lifecycle_state"] != "STOPPED" or decision["scientific_result"] != "INCONCLUSIVE":
+        raise ArtifactError("bounded freeze accepts only an INCONCLUSIVE/STOPPED pilot")
+    from .contracts import _UniqueLoader, load_config
+
+    load_config(Path(config_path))
+    raw_config = yaml.load(Path(config_path).read_text(encoding="utf-8"), Loader=_UniqueLoader)
+    if not isinstance(raw_config, dict):
+        raise ArtifactError("base configuration is not a mapping")
+    frozen = {
+        "schema_version": 1, "study_id": STUDY_ID,
+        "implementation_sha": manifest["implementation_sha"],
+        "pilot_evidence_commit": None, "clean_tree": False,
+        "p2_p3_hashes": {"p3_gate_sha256": manifest["p3_gate_sha256"]},
+        "mujoco_identity": None, "model_hashes": None,
+        "scenario_protocol": {
+            "seed_manifest_sha256": manifest["seed_manifest_sha256"],
+            "scenario_generator_hash": manifest["scenario_generator_hash"],
+        },
+        "stack_protocols": raw_config["stacks"],
+        "timing_protocol": raw_config["timing"],
+        "metric_protocol": {"metrics": raw_config["metrics"], "thresholds": raw_config["thresholds"]},
+        "plot_protocol": {"renderer": "EXP01_DEPENDENCY_FREE_SVG_V1", "plots": list(_PLOT_NAMES)},
+        "pilot_decision": decision,
+        "pilot_decision_sha256": hashlib.sha256(decision_path.read_bytes()).hexdigest(),
+        "surviving_stacks": [],
+        "confirmation_protocol": {
+            "enabled": False, "reason": "P1_TERMINAL_PILOT",
+            "scenario_count": 0,
+        },
+        "bootstrap_protocol": {"enabled": False, "resamples": raw_config["confirmation"]["bootstrap_resamples"]},
+        "gates": None, "resource_limits": raw_config["resources"],
+    }
+    protocol_root = next(
+        (parent for parent in manifest_path.parents if parent.name == "protocol"),
+        manifest_path.parent,
+    )
+    config_root = protocol_root.parent / "configs"
+    frozen_path = config_root / "frozen.yaml"
+    frozen_bytes = canonical_json_bytes(frozen)
+    _publish_identical_or_create(frozen_path, frozen_bytes)
+    load_canonical_json(frozen_path, _FROZEN_KEYS)
+    digest_path = protocol_root / "frozen-config.sha256"
+    relative = "experiments/01_policy_control/configs/frozen.yaml"
+    _publish_identical_or_create(
+        digest_path, f"{hashlib.sha256(frozen_bytes).hexdigest()}  {relative}\n".encode("ascii"),
+    )
+    return 0
+
+
+def _terminal_raw_rows(
+    manifest_path: Path, resource_root: Path, evidence: object,
+) -> tuple[dict[str, object], ...]:
+    manifest = load_protocol_manifest(manifest_path)
+    rows = []
+    for shard_id in evidence.completed_shard_ids:
+        shard = next(row for row in manifest["shards"] if row["shard_id"] == shard_id)
+        directory = resource_root / _shard_directory_name(shard_id)
+        for output, condition in zip(
+            shard["output_identities"], shard["condition_ids"], strict=True,
+        ):
+            policy_hz, latency_ms, move_count, fault = _condition_metadata(condition)
+            rows.append(raw_evidence_from_rollout(
+                directory / output, revision=manifest["revision"],
+                variant_id=str(manifest["stage"]), anchor_id="P1",
+                candidate_id=str(manifest["parameter_hash"]),
+                rng_namespace=f"pilot-r{manifest['revision']}", policy_hz=policy_hz,
+                latency_ms=latency_ms, move_count=move_count, fault=fault,
+            ))
+    return tuple(rows)
+
+
+def write_report(manifest_path: Path, output_dir: Path) -> int:
+    """Publish reconstructable terminal evidence and a bounded no-confirmation report."""
+    manifest_path = Path(manifest_path)
+    manifest = load_protocol_manifest(manifest_path)
+    decision = load_canonical_json(manifest_path.parent / "pilot-decision.json", _PILOT_DECISION_KEYS)
+    if decision["lifecycle_state"] != "STOPPED":
+        raise ArtifactError("bounded report accepts only a terminal pilot")
+    resource_root, prior, wave = _terminal_resource_context(manifest_path, output_dir)
+    evidence = load_resource_completion_evidence(
+        manifest_path, resource_root, prior_artifacts=prior, confirmation_wave=wave,
+    )
+    raw_rows = _terminal_raw_rows(manifest_path, resource_root, evidence)
+    annotations = build_annotated_samples(raw_rows)
+    recipes = build_plot_recipes(raw_rows, ())
+    analysis_dir = Path(output_dir) / "analysis"
+    analysis_manifest = reconstruct_evidence(
+        analysis_dir, raw_rows, annotations, recipes,
+        protocol_sha256=hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+    )
+    results = (
+        "# Experiment 01 results\n\n"
+        "Status: `INCONCLUSIVE` / `STOPPED`\n\n"
+        f"Pilot evidence contains {decision['total_episode_count']} retained episodes and stopped because "
+        f"`{decision['reasons'][0]}`. No confirmation was run, so no promotion or comparative claim is made.\n\n"
+        f"Raw reconstruction is bound by `{hashlib.sha256(canonical_json_bytes(analysis_manifest)).hexdigest()}`. "
+        "Physical R1 behavior is not validated; this evidence is simulation-only.\n"
+    ).encode("utf-8")
+    interfaces = (
+        "# Experiment 01 interface findings\n\n"
+        "Status: `INCONCLUSIVE` / `STOPPED`\n\n"
+        "No command-stack interface is reported as supported. The terminal P1 case is retained as a "
+        "nonworking simulation sample with raw event and 500 Hz reconstruction evidence. "
+        "Transfer to physical hardware is not validated.\n"
+    ).encode("utf-8")
+    output_dir = Path(output_dir)
+    _publish_identical_or_create(output_dir / "RESULTS.md", results)
+    _publish_identical_or_create(output_dir / "INTERFACE_FINDINGS.md", interfaces)
+    payload_paths = tuple(sorted(
+        (path for path in output_dir.rglob("*") if path.is_file() and path.name != "artifact-digests.json"),
+        key=lambda path: path.relative_to(output_dir).as_posix(),
+    ))
+    files = []
+    for path in payload_paths:
+        payload = path.read_bytes()
+        relative = path.relative_to(output_dir).as_posix()
+        media = "text/markdown" if path.suffix == ".md" else _media_type(path.name)
+        files.append({
+            "path": relative, "media_type": media, "bytes": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        })
+    marker = {
+        "schema_version": 1, "study_id": STUDY_ID, "phase": "report",
+        "protocol_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+        "files": files, "total_bytes": sum(row["bytes"] for row in files),
+    }
+    _publish_identical_or_create(
+        output_dir / "artifact-digests.json", canonical_json_bytes(marker),
+    )
+    return 0
+
+
 def _load_worker_refusal(
     directory_descriptor: int,
     *,
@@ -2067,7 +2307,7 @@ def _rollout_wire(artifact: RolloutArtifact, replay: ReplayResult) -> dict[str, 
 
 
 def _condition_metadata(condition_id: str) -> tuple[int, int, int, str]:
-    match = re.fullmatch(r"core-(05|10|20)-(000|100|300|700)-([12])", condition_id)
+    match = re.fullmatch(r"(?:core|tune)-(05|10|20)-(000|100|300|700)-([12])", condition_id)
     if match is not None:
         return int(match.group(1)), int(match.group(2)), int(match.group(3)), "NONE"
     special = {
@@ -2381,7 +2621,12 @@ def _render_task11_plots(
         (_PLOT_NAMES[3], "Action age", "latency (ms)", "age (s)", lambda row: (float(row["latency_ms"]), float(row["age_p95_s"]))),
     )
     rendered = {name: _task11_svg(title, x_label, y_label, tuple((stack, tuple(transform(row) for row in ordered if row["stack_id"] == stack)) for stack in stacks)) for name, title, x_label, y_label, transform in specs}
-    timeline = [row for row in ordered if row["condition_id"] == "core-10-300-2" and row["policy_hz"] == 10 and row["latency_ms"] == 300 and row["move_count"] == 2 and row["fault"] == "NONE" and row["timeline"]]
+    timeline = [
+        row for row in ordered
+        if row["condition_id"] in {"core-10-300-2", "tune-10-300-2"}
+        and row["policy_hz"] == 10 and row["latency_ms"] == 300
+        and row["move_count"] == 2 and row["fault"] == "NONE" and row["timeline"]
+    ]
     keys = sorted({(row["seed"], row["condition_id"]) for row in timeline})
     chosen = next((key for key in keys if all(any(row["stack_id"] == stack and (row["seed"], row["condition_id"]) == key for row in timeline) for stack in stacks)), None)
     if chosen is None:
@@ -3518,7 +3763,9 @@ __all__ = [
     "ResourceArtifactPath", "ResourceDisposition", "RolloutSpec", "ShardSpec", "canonical_json_bytes",
     "canonical_state_bytes", "iter_manifest", "load_artifact_manifest",
     "load_canonical_json", "load_protocol_manifest", "load_seed_manifest",
-    "prepare_manifest", "preflight_resources", "raw_evidence_from_rollout",
+    "prepare_manifest", "preflight_resources", "resource_execution_context",
+    "bind_preregistration", "publish_shard_disposition", "publish_stage_disposition",
+    "analyze_phase", "freeze_protocol", "write_report", "raw_evidence_from_rollout",
     "raw_evidence_from_failure_disposition",
     "build_annotated_samples", "build_plot_recipes",
     "publish_failure_disposition", "publish_or_validate_skip", "reconstruct_evidence",
