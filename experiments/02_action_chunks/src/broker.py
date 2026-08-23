@@ -9,6 +9,7 @@ from types import MappingProxyType
 from typing import Callable, Mapping
 
 import numpy as np
+from reflect.types import ActionChunk
 
 
 class BrokerError(ValueError):
@@ -184,6 +185,15 @@ class SealedProposal:
         object.__setattr__(self, "raw_actions", raw); object.__setattr__(self, "actions", actions)
         if _array_sha(raw) != self.policy_actions_sha256 or _array_sha(actions) != self.normalized_actions_sha256:
             raise BrokerError("proposal byte/hash binding is invalid")
+        fault_fields = (self.fault_revision, self.fault_step_index, self.fault_amplitude,
+                        self.fault_direction, self.fault_sign, self.pre_fault_normalized_sha256)
+        if self.fault_id is None and any(value is not None for value in fault_fields):
+            raise BrokerError("no-fault metadata must be entirely null")
+        if self.fault_id is not None and (self.fault_id not in {"ALTERNATIVE", "DISCONTINUITY"}
+                                          or any(value is None for index, value in enumerate(fault_fields) if index != 1)
+                                          or (self.fault_id == "ALTERNATIVE" and self.fault_step_index is not None)
+                                          or (self.fault_id == "DISCONTINUITY" and self.fault_step_index != 2)):
+            raise BrokerError("fault metadata is incomplete")
         if self._signature != _proposal_signature(self):
             raise BrokerError("proposal seal is invalid")
 
@@ -275,6 +285,11 @@ class PendingRequest:
     request_sequence: int
     request_tick: int
     delivery_tick: int
+    stack_id: str
+    skill_id: str
+    expected_phase: str
+    source_observation_id: int
+    source_observation_time_ns: int
 
 
 class TemporalBroker:
@@ -292,8 +307,9 @@ class TemporalBroker:
         self._contributors: list[SealedProposal] = []
         self._pending: dict[str, PendingRequest] = {}
         self._last_sequence = -1
-        self._hold_id: str | None = None
-        self._hold_action: np.ndarray | None = None
+        self._last_request_observation_id = -1
+        self._last_request_observation_time_ns = -1
+        self._hold: ActionChunk | None = None
         self._events: list[BrokerTransition] = []
         self._issued: list[IssuedAction] = []
         self._hold_ticks: list[int] = []
@@ -314,11 +330,12 @@ class TemporalBroker:
 
     @property
     def active_chunk_id(self) -> str | None:
-        return None if self._active is None else self._active.chunk_id
+        active = self.active
+        return None if active is None else active.chunk_id
 
     @property
-    def active(self) -> ExecutableChunk | None:
-        return self._active
+    def active(self) -> ExecutableChunk | ActionChunk | None:
+        return self._active if self._active is not None else self._hold
 
     @property
     def pending_count(self) -> int:
@@ -341,21 +358,41 @@ class TemporalBroker:
                 self._active = self._derive_c()
                 self._events.append(BrokerTransition(self._current_tick, "DERIVATION_RECOMPUTED", self._active.chunk_id, "CONTRIBUTOR_EXPIRY", self._sidecar(self._active)))
                 self._events.append(BrokerTransition(self._current_tick, "CHUNK_ACCEPTED", self._active.chunk_id, self._active.rule, self._sidecar(self._active)))
+        if self._hold is not None and self._current_tick * 2_000_000 >= self._hold.expires_at_ns:
+            expired_hold = self._hold
+            self._hold = None
+            self._events.append(BrokerTransition(self._current_tick, "CHUNK_EXPIRED", expired_hold.chunk_id, "HOLD_TERMINAL_EXPIRY"))
 
-    def request(self, request_id: str, request_sequence: int, *, delivery_tick: int, drop: bool = False) -> BrokerTransition:
+    def request(self, request_id: str, request_sequence: int, *, delivery_tick: int, stack_id: str,
+                skill_id: str, expected_phase: str, source_observation_id: int,
+                source_observation_time_ns: int, drop: bool = False) -> BrokerTransition:
         if not self._tick_open or self._requested_this_tick:
             raise BrokerError("at most one request is allowed per open nonterminal tick")
         if self._current_tick > self._request_cutoff_tick:
             raise BrokerError("request is after the sealed cutoff")
-        if not isinstance(request_id, str) or not request_id or request_id in self._pending or type(request_sequence) is not int or request_sequence < 0 or type(delivery_tick) is not int or delivery_tick < self._current_tick:
+        if (not isinstance(request_id, str) or not request_id or request_id in self._pending
+                or type(request_sequence) is not int or request_sequence < 0
+                or type(delivery_tick) is not int or delivery_tick < self._current_tick
+                or stack_id not in {"P2", "P4"}
+                or not isinstance(skill_id, str) or not skill_id
+                or not isinstance(expected_phase, str) or not expected_phase
+                or type(source_observation_id) is not int
+                or type(source_observation_time_ns) is not int
+                or source_observation_id <= self._last_request_observation_id
+                or source_observation_time_ns <= self._last_request_observation_time_ns):
             raise BrokerError("request identity/timing is invalid")
         if self._pending_at_start >= self.capacity or len(self._pending) >= self.capacity:
             raise BrokerError("request exceeds capacity measured at tick start")
         self._requested_this_tick = True
+        self._last_request_observation_id = source_observation_id
+        self._last_request_observation_time_ns = source_observation_time_ns
         if drop:
             event = BrokerTransition(self._current_tick, "REQUEST_DROPPED", request_id, "NO_RESPONSE_OR_WRAPPER")
         else:
-            self._pending[request_id] = PendingRequest(request_id, request_sequence, self._current_tick, delivery_tick)
+            self._pending[request_id] = PendingRequest(
+                request_id, request_sequence, self._current_tick, delivery_tick, stack_id, skill_id,
+                expected_phase, source_observation_id, source_observation_time_ns,
+            )
             event = BrokerTransition(self._current_tick, "POLICY_REQUESTED", request_id, "PENDING")
         self._events.append(event); return event
 
@@ -364,7 +401,12 @@ class TemporalBroker:
             raise BrokerError("delivery requires an inverse-verified sealed proposal in an open tick")
         self._prepare_transition()
         pending = self._pending.get(proposal.request_id)
-        if pending is None or pending.request_sequence != proposal.request_sequence or pending.delivery_tick != self._current_tick or proposal.actual_delivery_tick != self._current_tick:
+        if (pending is None or pending.request_sequence != proposal.request_sequence
+                or pending.delivery_tick != self._current_tick or proposal.actual_delivery_tick != self._current_tick
+                or pending.stack_id != proposal.stack_id or pending.skill_id != proposal.skill_id
+                or pending.expected_phase != proposal.expected_phase
+                or pending.source_observation_id != proposal.source_observation_id
+                or pending.source_observation_time_ns != proposal.source_observation_time_ns):
             raise BrokerError("delivery does not match a pending request")
         order = (proposal.actual_delivery_tick, proposal.request_sequence)
         if self._last_delivery_order is not None and order <= self._last_delivery_order:
@@ -380,17 +422,19 @@ class TemporalBroker:
             event = BrokerTransition(self._current_tick, "CHUNK_REJECTED", proposal.proposal_id, "OUT_OF_ORDER")
             self._events.append(event); return event
         self._last_sequence = proposal.request_sequence
-        previous = self._active
+        previous: ExecutableChunk | ActionChunk | None = self.active
         if self.protocol_id == "C":
             self._contributors.append(proposal); self._contributors.sort(key=lambda item: (item.actual_delivery_tick, item.request_sequence, item.proposal_id)); self._active = self._derive_c()
         elif self.protocol_id in {"F", "G"}:
             self._active = self._derive_overlap(proposal)
         else:
             self._active = self._direct(proposal)
-        self._hold_id = None
-        self._hold_action = None
+        self._hold = None
         self._events.append(BrokerTransition(self._current_tick, "POLICY_RESPONDED", self._active.chunk_id, "EXECUTABLE_RESPONSE", self._sidecar(self._active)))
-        if previous is not None and previous.coverage[0] <= self._current_tick < previous.coverage[1] and previous.chunk_id != self._active.chunk_id:
+        previous_valid = (previous.coverage[0] <= self._current_tick < previous.coverage[1]
+                          if isinstance(previous, ExecutableChunk)
+                          else previous is not None and previous.valid_from_ns <= self._current_tick * 2_000_000 < previous.expires_at_ns)
+        if previous is not None and previous_valid and previous.chunk_id != self._active.chunk_id:
             self._events.append(BrokerTransition(self._current_tick, "CHUNK_REPLACED", previous.chunk_id, "UNISSUED_FUTURE_REPLACED", {"replacement_chunk_id": self._active.chunk_id}))
         event = BrokerTransition(self._current_tick, "CHUNK_ACCEPTED", self._active.chunk_id, self._active.rule, self._sidecar(self._active))
         self._events.append(event); return event
@@ -451,14 +495,29 @@ class TemporalBroker:
                 raise BrokerError("active proposal lacks the requested absolute tick")
             record = IssuedAction(self._current_tick, self._active.chunk_id, "executable", self._active.actions[row])
         else:
-            if self._hold_id is None:
+            if self._hold is None:
                 q = _readonly_float64(measured_q, ndim=1)
                 if q.shape != (3,): raise BrokerError("safe hold requires measured joint position")
-                self._hold_id = f"hold-{self._current_tick}"
-                self._hold_action = q
-                self._events.append(BrokerTransition(self._current_tick, "SAFE_HOLD_ENTERED", self._hold_id, "LATCHED_CURRENT_Q_ZERO_DQ"))
-            assert self._hold_action is not None
-            record = IssuedAction(self._current_tick, self._hold_id, "broker_safe_hold", self._hold_action)
+                q_hash = hashlib.sha256(q.astype("<f8", copy=False).tobytes(order="C")).hexdigest()
+                hold_actions = np.tile(q, (self._terminal_tick - self._current_tick, 1))
+                self._hold = ActionChunk(
+                    chunk_id=f"hold-{self._current_tick}-{q_hash[:16]}", skill_id="broker-safe-hold",
+                    source_observation_id=self._current_tick,
+                    source_observation_time_ns=self._current_tick * 2_000_000,
+                    generated_time_ns=self._current_tick * 2_000_000,
+                    valid_from_ns=self._current_tick * 2_000_000,
+                    expires_at_ns=self._terminal_tick * 2_000_000, dt_s=0.002,
+                    actions=hold_actions, representation="JOINT_POSITION", expected_phase="track_target",
+                    metadata={"origin": "broker_safe_hold", "hold_adapter": "p5_joint_pd_latch_v1",
+                              "hold_latched_tick": self._current_tick, "measured_q_sha256": q_hash},
+                )
+                sidecar = {"source_observation_id": self._hold.source_observation_id,
+                           "source_observation_time_ns": self._hold.source_observation_time_ns,
+                           "q_sha256": q_hash, "dq_ref": (0.0, 0.0, 0.0)}
+                self._events.append(BrokerTransition(self._current_tick, "CHUNK_ACCEPTED", self._hold.chunk_id, "BROKER_SAFE_HOLD", sidecar))
+                self._events.append(BrokerTransition(self._current_tick, "SAFE_HOLD_ENTERED", self._hold.chunk_id, "LATCHED_CURRENT_Q_ZERO_DQ", sidecar))
+            row = self._current_tick - self._hold.valid_from_ns // 2_000_000
+            record = IssuedAction(self._current_tick, self._hold.chunk_id, "broker_safe_hold", self._hold.actions[row])
             self._hold_ticks.append(self._current_tick)
         self._issued.append(record); return record
 
@@ -473,10 +532,8 @@ class TemporalBroker:
         if self._finished or not self._tick_open or self._current_tick != self._terminal_tick:
             raise BrokerError("finish requires the open terminal tick")
         self._prepare_transition()
-        if self._active is not None or self._pending:
+        if self._active is not None or self._hold is not None or self._pending:
             raise BrokerError("terminal has active or unmatched pending state")
-        self._hold_id = None
-        self._hold_action = None
         self._finished = True; self._tick_open = False
         event = BrokerTransition(self._current_tick, "TERMINAL_EMPTY", None, "NO_ACTIVE_OR_PENDING")
         self._events.append(event); return event

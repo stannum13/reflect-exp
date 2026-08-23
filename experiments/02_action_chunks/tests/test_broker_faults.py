@@ -29,13 +29,15 @@ def test_out_of_order_response_is_retained_rejection() -> None:
     machine = broker.TemporalBroker(protocol_id="D", capacity=2, terminal_tick=500, proposal_verifier=adapter.verify_normalized_policy)
     proposals = {}
     for sequence, actual in ((2, 100), (1, 101)):
-        raw = adapter.PolicyRaw(f"p{sequence}", "P4", "skill", sequence, 0, "track_target", np.column_stack((np.linspace(0.5, 0.6, 9), np.linspace(0.0, 0.1, 9))).astype(np.float64))
+        raw = adapter.PolicyRaw(f"p{sequence}", "P4", "skill", sequence, sequence * 2_000_000, "track_target", np.column_stack((np.linspace(0.5, 0.6, 9), np.linspace(0.0, 0.1, 9))).astype(np.float64))
         proposals[sequence] = adapter.normalize_policy_raw(raw, actual, request_id=f"r{sequence}", request_sequence=sequence)
     rejected = None
     for tick in range(102):
         machine.open_tick(tick)
-        if tick == 0: machine.request("r2", 2, delivery_tick=100)
-        if tick == 1: machine.request("r1", 1, delivery_tick=101)
+        if tick == 0:
+            machine.request("r1", 1, delivery_tick=101, stack_id="P4", skill_id="skill", expected_phase="track_target", source_observation_id=1, source_observation_time_ns=2_000_000)
+        if tick == 1:
+            machine.request("r2", 2, delivery_tick=100, stack_id="P4", skill_id="skill", expected_phase="track_target", source_observation_id=2, source_observation_time_ns=4_000_000)
         if tick == 100: assert machine.deliver(proposals[2]).event_type == "CHUNK_ACCEPTED"
         if tick == 101: rejected = machine.deliver(proposals[1])
         machine.issue(measured_q=np.zeros(3)); machine.close_tick()

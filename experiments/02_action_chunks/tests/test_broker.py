@@ -17,7 +17,12 @@ def _proposal(sequence: int, actual: int, *, normal: int | None = None) -> objec
 
 def _tick(machine: object, tick: int, *, request: tuple[str, int, int] | None = None, proposal: object | None = None) -> None:
     machine.open_tick(tick)
-    if request is not None: machine.request(request[0], request[1], delivery_tick=request[2])
+    if request is not None:
+        machine.request(
+            request[0], request[1], delivery_tick=request[2], stack_id="P4", skill_id="skill",
+            expected_phase="track_target", source_observation_id=request[1],
+            source_observation_time_ns=request[1] * 2_000_000,
+        )
     if proposal is not None: machine.deliver(proposal)
     machine.issue(measured_q=np.zeros(3, dtype=np.float64))
     machine.close_tick()

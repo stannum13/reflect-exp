@@ -12,7 +12,7 @@ import numpy as np
 
 from reflect.types import ActionChunk
 
-from .adapter import PolicyRaw, dispatch_executable, inject_fault, make_safe_hold, normalize_policy_raw, verify_normalized_policy
+from .adapter import PolicyRaw, dispatch_executable, inject_fault, normalize_policy_raw, verify_normalized_policy
 from .broker import TemporalBroker
 from .contracts import FaultId, ProtocolId, VECTOR_VALUES, VectorId
 from .schedule import iter_cells, iter_request_ticks
@@ -83,7 +83,7 @@ def _run_cell(cell: object, config: object) -> tuple[np.ndarray, dict[str, objec
     overlap = 1 if vector is None else (vector[3] if cell.protocol_id is ProtocolId.F else vector[4] if cell.protocol_id is ProtocolId.G else 1)
     ensemble_lambda = 0.0 if vector is None else float(vector[2])
     machine = TemporalBroker(protocol_id=cell.protocol_id.value, capacity=capacity, terminal_tick=3125, proposal_verifier=verify_normalized_policy, overlap_rows=overlap, ensemble_lambda=ensemble_lambda)
-    hold: ActionChunk | None = None; hold_broker_id: str | None = None; executable: ActionChunk | None = None
+    executable: ActionChunk | None = None
     executor = representations.initial_executor_state(q0)
     previous_q_ref = np.array(q0, copy=True)
     events: list[dict[str, object]] = []
@@ -98,7 +98,13 @@ def _run_cell(cell: object, config: object) -> tuple[np.ndarray, dict[str, objec
         if tick in request_at:
             plan = request_at[tick]
             captures[plan.request_sequence] = (np.array(q, copy=True), np.array(target, copy=True), tick * _DT_NS)
-            machine.request(f"r{plan.request_sequence}", plan.request_sequence, delivery_tick=plan.nominal_delivery_tick if plan.actual_delivery_tick is None else plan.actual_delivery_tick, drop=plan.disposition == "DROP")
+            machine.request(
+                f"r{plan.request_sequence}", plan.request_sequence,
+                delivery_tick=plan.nominal_delivery_tick if plan.actual_delivery_tick is None else plan.actual_delivery_tick,
+                stack_id="P4", skill_id="qualification-skill", expected_phase="track_target",
+                source_observation_id=plan.request_sequence, source_observation_time_ns=tick * _DT_NS,
+                drop=plan.disposition == "DROP",
+            )
         if tick in delivery_at:
             plan = delivery_at[tick]
             q_request, target_request, source_time = captures[plan.request_sequence]
@@ -119,7 +125,7 @@ def _run_cell(cell: object, config: object) -> tuple[np.ndarray, dict[str, objec
                            "fault_step_index": normalized.fault_step_index, "fault_amplitude": normalized.fault_amplitude,
                            "fault_direction": normalized.fault_direction, "fault_sign": normalized.fault_sign,
                            "pre_fault_normalized_sha256": normalized.pre_fault_normalized_sha256})
-            machine.deliver(normalized); hold = None; hold_broker_id = None; executable = None
+            machine.deliver(normalized); executable = None
         q, dq = arm.state()
         issued = machine.issue(measured_q=q)
         if issued.origin != "broker_safe_hold":
@@ -138,9 +144,8 @@ def _run_cell(cell: object, config: object) -> tuple[np.ndarray, dict[str, objec
             reference, executor, _ = representations.reference_for_tick(contracts.CommandStack.P4, executable, q, dq, tick * _DT_NS, executor, config)
             command_q = reference.q_ref; is_hold = False
         else:
-            if hold is None or hold_broker_id != issued.chunk_id:
-                hold = make_safe_hold(issued.action, source_observation_id=max(captures, default=0), source_observation_time_ns=tick * _DT_NS, skill_id="qualification-skill", expected_phase="track_target", start_tick=tick, terminal_tick=3125)
-                hold_broker_id = issued.chunk_id
+            hold = machine.active
+            assert isinstance(hold, ActionChunk) and hold.chunk_id == issued.chunk_id
             reference = dispatch_executable(hold, tick=tick)
             assert reference is not None and not isinstance(reference, ActionChunk)
             command_q = reference.q_ref; is_hold = True
@@ -218,6 +223,20 @@ def run_dynamics_qualification(output: Path, *, seeds: Sequence[int], implementa
 def reconstruct_dynamics(raw: Path, clean: Path) -> None:
     if clean.exists() or not raw.is_dir() or raw.is_symlink():
         raise DynamicsQualificationError("raw must be regular and clean output absent")
+    invalidation_path = raw.parent / "INVALIDATION.json"
+    if invalidation_path.exists():
+        invalidation_bytes = invalidation_path.read_bytes()
+        invalidation = json.loads(invalidation_bytes)
+        expected_reasons = ["PREFX_BROKER_BYPASS", "PREFX_DERIVATION_INCOMPLETE", "PREFX_EVENT_LINK_INCOMPLETE", "PREFX_UNSEALED_PROPOSAL"]
+        if (_canonical(invalidation) != invalidation_bytes
+                or invalidation.get("schema_version") != "exp02-invalid-evidence-v1"
+                or invalidation.get("effective_disposition") != "INVALID_PRE_FIX"
+                or invalidation.get("reason_ids") != expected_reasons
+                or invalidation.get("raw_manifest_sha256") != _sha((raw / "manifest.json").read_bytes())
+                or invalidation.get("trials_sha256") != _sha((raw / "trials.jsonl").read_bytes())
+                or invalidation.get("events_sha256") != _sha((raw / "events.jsonl").read_bytes())):
+            raise DynamicsQualificationError("invalid evidence record is malformed")
+        raise DynamicsQualificationError("INVALID_PRE_FIX evidence is not consumable")
     manifest_bytes = (raw / "manifest.json").read_bytes(); manifest = json.loads(manifest_bytes)
     if _canonical(manifest) != manifest_bytes or manifest.get("qualification_only") is not True or manifest.get("sealed_pilot") is not False:
         raise DynamicsQualificationError("manifest is invalid")
@@ -230,6 +249,15 @@ def reconstruct_dynamics(raw: Path, clean: Path) -> None:
     by_cell = {row["cell_id"]: row for row in event_rows}
     if len(by_cell) != len(event_rows):
         raise DynamicsQualificationError("duplicate event identity")
+    expected_ids = {
+        cell.cell_id
+        for seed in sorted({trial["seed"] for trial in trials})
+        for cell in _selected_cells(seed)
+    }
+    if {trial["cell_id"] for trial in trials} != expected_ids or set(by_cell) != expected_ids:
+        raise DynamicsQualificationError("trial/event inventory is incomplete")
+    config = contracts.load_config(Path("experiments/01_policy_control/configs/base.yaml"))
+    cells = {cell.cell_id: cell for seed in sorted({trial["seed"] for trial in trials}) for cell in _selected_cells(seed)}
     for trial in trials:
         event_row = by_cell.get(trial["cell_id"])
         telemetry_path = raw / "telemetry" / trial["telemetry_file"]
@@ -237,14 +265,15 @@ def reconstruct_dynamics(raw: Path, clean: Path) -> None:
             raise DynamicsQualificationError("trial event/telemetry link is invalid")
         if [event.get("sequence_id") for event in event_row["events"]] != list(range(len(event_row["events"]))) or any(event_row["events"][index]["tick"] > event_row["events"][index + 1]["tick"] for index in range(len(event_row["events"]) - 1)):
             raise DynamicsQualificationError("canonical event order is invalid")
-        proposals = {event["normalized_actions_sha256"]: event for event in event_row["events"] if event["event_type"] == "PROPOSAL_BYTES"}
-        for event in event_row["events"]:
-            sidecar = event.get("sidecar")
-            if event["event_type"] in {"CHUNK_ACCEPTED", "DERIVATION_RECOMPUTED"} and sidecar is not None:
-                if any(parent not in proposals for parent in sidecar["parent_sha256s"]):
-                    raise DynamicsQualificationError("derived parent hash is absent")
-                if sidecar["rule"] in {"OVERLAP_BLEND", "RTC_APPROXIMATION"} and (type(sidecar["h"]) is not int or sidecar["h"] <= 0):
-                    raise DynamicsQualificationError("derived overlap h is invalid")
+        replay_telemetry, replay_metrics, replay_events = _run_cell(cells[trial["cell_id"]], config)
+        stored_telemetry = np.load(telemetry_path, allow_pickle=False)
+        if (stored_telemetry.dtype != replay_telemetry.dtype or stored_telemetry.shape != replay_telemetry.shape
+                or stored_telemetry.tobytes(order="C") != replay_telemetry.tobytes(order="C")):
+            raise DynamicsQualificationError("telemetry does not match deterministic broker/dynamics replay")
+        if _canonical(replay_events) != _canonical(event_row["events"]):
+            raise DynamicsQualificationError("events do not match exact proposal/broker/issue replay")
+        if any(trial.get(key) != value for key, value in replay_metrics.items()):
+            raise DynamicsQualificationError("trial metrics do not match telemetry replay")
     clean.mkdir(parents=True)
     for name, content in _derived_files(trials, _sha(manifest_bytes)).items():
         (clean / name).write_bytes(content)

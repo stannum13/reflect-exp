@@ -17,6 +17,7 @@ _kinematics = importlib.import_module("experiments.01_policy_control.src.kinemat
 _TICK_NS = 2_000_000
 _KNOT_NS = 100_000_000
 _ROWS = 125
+_FAULT_ENVELOPES = {"P2": (-2.70, 2.70), "P4": (-1.0, 1.0)}
 
 
 class AdapterError(ValueError):
@@ -126,19 +127,18 @@ def verify_normalized_policy(normalized: SealedProposal) -> bool:
         if normalized.fault_id is not None:
             if normalized.fault_revision != "exp02-fault-payload-v1" or normalized.fault_id not in {"ALTERNATIVE", "DISCONTINUITY"}:
                 return False
-            direction = np.asarray(normalized.fault_direction, dtype=np.float64)
-            if direction.shape != (expected.shape[1],) or normalized.fault_sign not in {-1, 1}:
+            fault = apply_fault_payload(
+                base.actions, stack_id=normalized.stack_id, fault_id=normalized.fault_id,
+                envelope=_FAULT_ENVELOPES[normalized.stack_id],
+            )
+            if (normalized.fault_amplitude != fault.amplitude
+                    or normalized.fault_step_index != fault.step_index
+                    or normalized.fault_direction != tuple(float(value) for value in fault.direction)
+                    or normalized.fault_sign != fault.sign
+                    or normalized.pre_fault_normalized_sha256 != fault.pre_sha256
+                    or normalized.normalized_actions_sha256 != fault.post_sha256):
                 return False
-            expected_amplitude = {("P2", "ALTERNATIVE"): 0.05, ("P2", "DISCONTINUITY"): 0.10, ("P4", "ALTERNATIVE"): 0.02, ("P4", "DISCONTINUITY"): 0.03}[(normalized.stack_id, normalized.fault_id)]
-            if normalized.fault_amplitude != expected_amplitude or normalized.pre_fault_normalized_sha256 != _sha(base.actions):
-                return False
-            if normalized.fault_id == "ALTERNATIVE":
-                weights = np.sin(np.pi * np.arange(125, dtype=np.float64) / 124.0); weights[[0, -1]] = 0.0
-                if normalized.fault_step_index is not None: return False
-            else:
-                weights = np.zeros(125); weights[2:] = 1.0
-                if normalized.fault_step_index != 2: return False
-            expected = base.actions + normalized.fault_sign * expected_amplitude * weights[:, None] * direction[None, :]
+            expected = fault.actions
         return _sha(expected) == normalized.normalized_actions_sha256 and expected.astype("<f8").tobytes(order="C") == normalized.actions.tobytes(order="C")
     except (AdapterError, KeyError, TypeError, ValueError):
         return False
@@ -147,6 +147,8 @@ def verify_normalized_policy(normalized: SealedProposal) -> bool:
 def inject_fault(normalized: SealedProposal, *, fault_id: str, envelope: tuple[float, float]) -> SealedProposal:
     if not verify_normalized_policy(normalized) or normalized.fault_id is not None:
         raise AdapterError("fault injection requires an unfaulted inverse-verified proposal")
+    if envelope != _FAULT_ENVELOPES[normalized.stack_id]:
+        raise AdapterError("fault injection requires the frozen envelope")
     fault = apply_fault_payload(normalized.actions, stack_id=normalized.stack_id, fault_id=fault_id, envelope=envelope)
     return _seal_proposal(
         proposal_id=normalized.proposal_id, request_id=normalized.request_id, request_sequence=normalized.request_sequence,

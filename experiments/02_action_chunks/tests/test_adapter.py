@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from dataclasses import fields
 from pathlib import Path
 
 import numpy as np
@@ -67,3 +68,29 @@ def test_policy_raw_is_strict_immutable_nine_knot_little_endian() -> None:
     raw = adapter.PolicyRaw("raw", "P2", "skill", 1, 0, "track_target", source)
     source[0, 0] = 99
     assert raw.actions[0, 0] == 0 and not raw.actions.flags.writeable
+
+
+def test_fault_dispatch_recomputes_canonical_direction_and_envelope() -> None:
+    knots = np.column_stack((np.linspace(0.45, 0.55, 9), np.linspace(0.0, 0.10, 9))).astype(np.float64)
+    raw = adapter.PolicyRaw("fault", "P4", "skill", 1, 0, "track_target", knots)
+    base = adapter.normalize_policy_raw(raw, 100)
+    canonical = adapter.inject_fault(base, fault_id="ALTERNATIVE", envelope=(-1.0, 1.0))
+    assert adapter.verify_normalized_policy(canonical)
+    with pytest.raises(adapter.AdapterError, match="frozen envelope"):
+        adapter.inject_fault(base, fault_id="ALTERNATIVE", envelope=(-2.0, 2.0))
+
+    values = {field.name: getattr(canonical, field.name) for field in fields(canonical) if field.name != "_signature"}
+    forged_direction = tuple(reversed(canonical.fault_direction))
+    weights = np.sin(np.pi * np.arange(125, dtype=np.float64) / 124.0)
+    forged_actions = base.actions + canonical.fault_sign * canonical.fault_amplitude * weights[:, None] * np.asarray(forged_direction)[None, :]
+    values.update(
+        actions=forged_actions,
+        normalized_actions_sha256=adapter._sha(forged_actions),
+        fault_direction=forged_direction,
+    )
+    forged = adapter._seal_proposal(**values)
+    assert not adapter.verify_normalized_policy(forged)
+    no_fault_values = {field.name: getattr(base, field.name) for field in fields(base) if field.name != "_signature"}
+    no_fault_values["fault_revision"] = "unexpected"
+    with pytest.raises(ValueError, match="no-fault metadata"):
+        adapter._seal_proposal(**no_fault_values)
