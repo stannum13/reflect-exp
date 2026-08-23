@@ -68,7 +68,11 @@ class Anchor:
     object_state: tuple[float, float, float]
     qpos: tuple[float, ...]
     qvel: tuple[float, ...]
+    state_spec: int
+    state_size: int
+    integration_state: tuple[float, ...]
     mocap_pos: tuple[float, ...]
+    mocap_quat: tuple[float, ...]
     restore_sha256: str
 
 
@@ -190,9 +194,27 @@ def _advance(model: mujoco.MjModel, data: mujoco.MjData, velocity: np.ndarray) -
 
 
 def _anchor(scene: Scene, index: int, data: mujoco.MjData) -> Anchor:
-    qpos=tuple(float(x) for x in data.qpos);qvel=tuple(float(x) for x in data.qvel);mocap=tuple(float(x) for x in data.mocap_pos.ravel());aid=f"{scene.spec.scene_id}/anchor/{index:02d}"
-    restore=sha(canonical([aid,qpos,qvel,mocap]))
-    return Anchor(aid,index,(mocap[0],mocap[1]),(qpos[0],qpos[1],qpos[2]),qpos,qvel,mocap,restore)
+    spec=int(mujoco.mjtState.mjSTATE_INTEGRATION);size=mujoco.mj_stateSize(data.model,spec);state=np.empty(size,dtype=np.float64);mujoco.mj_getState(data.model,data,state,spec)
+    qpos=tuple(float(x) for x in data.qpos);qvel=tuple(float(x) for x in data.qvel);mocap=tuple(float(x) for x in data.mocap_pos.ravel());mocap_quat=tuple(float(x) for x in data.mocap_quat.ravel());aid=f"{scene.spec.scene_id}/anchor/{index:02d}"
+    integration=tuple(float(x) for x in state);restore=sha(canonical([aid,mujoco.__version__,spec,size,integration,mocap,mocap_quat]))
+    return Anchor(aid,index,(mocap[0],mocap[1]),(qpos[0],qpos[1],qpos[2]),qpos,qvel,spec,size,integration,mocap,mocap_quat,restore)
+
+
+def _apply_anchor(model: mujoco.MjModel, data: mujoco.MjData, anchor: Anchor) -> str:
+    expected_spec=int(mujoco.mjtState.mjSTATE_INTEGRATION)
+    if anchor.state_spec!=expected_spec or anchor.state_size!=mujoco.mj_stateSize(model,expected_spec) or len(anchor.integration_state)!=anchor.state_size:
+        raise ValueError("anchor integration state specification is invalid")
+    state=np.asarray(anchor.integration_state,dtype=np.float64)
+    mujoco.mj_setState(model,data,state,expected_spec)
+    data.mocap_pos[:]=np.asarray(anchor.mocap_pos,dtype=np.float64).reshape(data.mocap_pos.shape)
+    data.mocap_quat[:]=np.asarray(anchor.mocap_quat,dtype=np.float64).reshape(data.mocap_quat.shape)
+    mujoco.mj_forward(model,data)
+    restored=np.empty(anchor.state_size,dtype=np.float64);mujoco.mj_getState(model,data,restored,expected_spec)
+    if not np.array_equal(restored,state) or not np.array_equal(data.mocap_pos.ravel(),np.asarray(anchor.mocap_pos)) or not np.array_equal(data.mocap_quat.ravel(),np.asarray(anchor.mocap_quat)):
+        raise ValueError("anchor integration state did not restore exactly")
+    digest=sha(canonical([anchor.anchor_id,mujoco.__version__,expected_spec,anchor.state_size,tuple(float(x) for x in restored),tuple(float(x) for x in data.mocap_pos.ravel()),tuple(float(x) for x in data.mocap_quat.ravel())]))
+    if digest!=anchor.restore_sha256:raise ValueError("anchor restore hash mismatch")
+    return digest
 
 
 def probe_anchors(scene: Scene) -> tuple[Anchor, Anchor]:
@@ -284,8 +306,7 @@ def actual_cost(position_error: float,orientation_error: float,collision: bool,e
 
 
 def run_candidate(scene: Scene,anchor: Anchor,candidate: Candidate)->Outcome:
-    model,data=_new_data(scene);data.qpos[:]=anchor.qpos;data.qvel[:]=anchor.qvel;data.mocap_pos[:]=np.asarray(anchor.mocap_pos).reshape(data.mocap_pos.shape);mujoco.mj_forward(model,data)
-    restore=sha(canonical([anchor.anchor_id,tuple(float(x) for x in data.qpos),tuple(float(x) for x in data.qvel),tuple(float(x) for x in data.mocap_pos.ravel())]));collision=False
+    model,data=_new_data(scene);restore=_apply_anchor(model,data,anchor);collision=False
     for command in candidate.commands:collision|=_advance(model,data,command)
     terminal=tuple(float(x) for x in (*data.qpos,*data.qvel,*data.mocap_pos[0,:2]));pos=float(np.linalg.norm(data.qpos[:2]-scene.target_xy));yaw=abs(_wrap(float(data.qpos[2]-scene.target_yaw)));energy=float(np.sum(candidate.commands**2)*COMMAND_DT);unsafe=bool(not np.isfinite(terminal).all() if isinstance(terminal,np.ndarray) else not all(math.isfinite(x) for x in terminal)) or bool(np.any(np.abs(data.qpos[:2])>.5));success=bool(pos<=CONFIG["success_position_m"] and yaw<=CONFIG["success_yaw_rad"] and not unsafe);failure=not success;cost=actual_cost(pos,yaw,collision,energy,failure,success)
     wire=[scene.spec.scene_id,anchor.anchor_id,candidate.candidate_id,terminal,pos,yaw,collision,energy,unsafe,success,failure,cost,restore]
