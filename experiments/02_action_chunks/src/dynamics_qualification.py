@@ -173,6 +173,16 @@ def _summary(trials: list[dict[str, object]]) -> bytes:
     return _canonical({"schema_version": "exp02-unsealed-dynamics-summary-v1", "qualification_only": True, "sealed_pilot": False, "trial_count": len(trials), "counts": [{"identity": key, "count": counts[key]} for key in sorted(counts)]})
 
 
+def _derived_files(trials: list[dict[str, object]], manifest_sha256: str) -> dict[str, bytes]:
+    ordered = sorted(trials, key=lambda row: str(row["cell_id"]))
+    samples = []
+    for label in ("WORKING", "NONWORKING"):
+        row = next(item for item in ordered if item["disposition"] == label)
+        samples.append({"label": label, "cell_id": row["cell_id"], "telemetry_file": row["telemetry_file"], "telemetry_sha256": row["telemetry_sha256"], "events_sha256": row["events_sha256"], "selection": "FIRST_CANONICAL_ID"})
+    recipe = {"schema_version": "exp02-unsealed-dynamics-recipe-v1", "renderer": "dynamics_qualification.py", "manifest_sha256": manifest_sha256, "sort": ["cell_id"], "time_axis": {"column": "tick", "scale_s": 0.002}, "series": [{"column": "error", "units": "m"}, {"column": "q", "units": "rad"}, {"column": "torque", "units": "N*m"}], "sample_rule": "first canonical WORKING and NONWORKING"}
+    return {"summary.json": _summary(trials), "sample-index.json": _canonical({"schema_version": "exp02-unsealed-dynamics-samples-v1", "samples": samples}), "recipe.json": _canonical(recipe)}
+
+
 def run_dynamics_qualification(output: Path, *, seeds: Sequence[int], implementation_git_sha: str) -> None:
     if output.exists() or not seeds or any(type(seed) is not int or seed < 0 for seed in seeds):
         raise DynamicsQualificationError("output must be absent and seeds explicit")
@@ -195,7 +205,9 @@ def run_dynamics_qualification(output: Path, *, seeds: Sequence[int], implementa
     (raw / "trials.jsonl").write_bytes(trials_bytes); (raw / "events.jsonl").write_bytes(events_bytes)
     members = [raw / "events.jsonl", raw / "trials.jsonl", *sorted(telemetry_dir.iterdir())]
     manifest = {"schema_version": "exp02-unsealed-dynamics-manifest-v1", "qualification_only": True, "sealed_pilot": False, "implementation_git_sha": implementation_git_sha, "mujoco_version": "3.12.0", "model_sha256": _sha(arm_module.MJCF_BYTES), "config_sha256": _sha(Path("experiments/01_policy_control/configs/base.yaml").read_bytes()), "files": [{"path": path.relative_to(raw).as_posix(), "bytes": path.stat().st_size, "sha256": _sha(path.read_bytes())} for path in members]}
-    (raw / "manifest.json").write_bytes(_canonical(manifest)); (derived / "summary.json").write_bytes(_summary(trials))
+    manifest_bytes = _canonical(manifest); (raw / "manifest.json").write_bytes(manifest_bytes)
+    for name, content in _derived_files(trials, _sha(manifest_bytes)).items():
+        (derived / name).write_bytes(content)
 
 
 def reconstruct_dynamics(raw: Path, clean: Path) -> None:
@@ -209,4 +221,6 @@ def reconstruct_dynamics(raw: Path, clean: Path) -> None:
         if path.is_symlink() or not path.is_file() or path.stat().st_size != row["bytes"] or _sha(path.read_bytes()) != row["sha256"]:
             raise DynamicsQualificationError("raw member hash mismatch")
     trials = [json.loads(line) for line in (raw / "trials.jsonl").read_text(encoding="ascii").splitlines()]
-    clean.mkdir(parents=True); (clean / "summary.json").write_bytes(_summary(trials))
+    clean.mkdir(parents=True)
+    for name, content in _derived_files(trials, _sha(manifest_bytes)).items():
+        (clean / name).write_bytes(content)

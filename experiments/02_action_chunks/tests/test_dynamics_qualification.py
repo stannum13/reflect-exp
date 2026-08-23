@@ -27,7 +27,7 @@ def test_unsealed_matrix_runs_all_protocols_and_retains_raw_dynamics(tmp_path: P
         assert data["torque"].shape == (3125, 3)
         assert np.isfinite(data["q"]).all()
     dynamics.reconstruct_dynamics(output / "raw", clean)
-    assert (output / "derived/summary.json").read_bytes() == (clean / "summary.json").read_bytes()
+    assert {p.name: p.read_bytes() for p in (output / "derived").iterdir()} == {p.name: p.read_bytes() for p in clean.iterdir()}
 
 
 def test_two_fresh_dynamic_runs_are_byte_deterministic(tmp_path: Path) -> None:
