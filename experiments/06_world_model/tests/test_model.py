@@ -53,4 +53,8 @@ def test_all_selectors_are_total_and_oracle_has_zero_regret(domains: tuple[tuple
     metrics = model.aggregate_metrics(selections, predictions, evaluation)
     assert set(metrics["overall"]) == {"DIRECT", "W0", "W1", "W2", "W3", "W4"}
     assert metrics["overall"]["W2"]["mean_regret"] == 0.0
+    assert "collision_fraction" not in metrics["overall"]["W2"]
+    assert "selected_collision_fraction" in metrics["overall"]["W2"]
+    assert metrics["candidate_set"]["overall"]["candidate_collision_prevalence"] == sum(row.collision for row in evaluation) / len(evaluation)
+    assert 0.0 <= metrics["candidate_set"]["overall"]["mixed_collision_anchor_fraction"] <= 1.0
     assert all(-1.0 <= item.spearman <= 1.0 for item in selections if item.spearman is not None)

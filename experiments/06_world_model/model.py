@@ -211,13 +211,17 @@ def rank_selectors(predictions:Sequence[Prediction],rows:Sequence[DatasetRow])->
 
 
 def aggregate_metrics(selections:Sequence[Selection],predictions:Sequence[Prediction],rows:Sequence[DatasetRow])->dict[str,object]:
-    del predictions,rows
+    del predictions
     def aggregate(domain:Sequence[Selection])->dict[str,dict[str,float]]:
         output={}
         for selector in ("DIRECT","W0","W1","W2","W3","W4"):
             selected=[x for x in domain if x.selector_id==selector];scene_ids=sorted({x.scene_id for x in selected})
             scene_regret=[np.mean([x.regret for x in selected if x.scene_id==sid]) for sid in scene_ids];rank=[x.spearman for x in selected if x.spearman is not None]
-            output[selector]={"mean_regret":float(np.mean(scene_regret)),"mean_spearman":float(np.mean(rank)) if rank else 0.0,"top1_accuracy":float(np.mean([x.regret<=1e-12 for x in selected])),"success_fraction":float(np.mean([x.success for x in selected])),"collision_fraction":float(np.mean([x.collision for x in selected]))}
+            output[selector]={"mean_regret":float(np.mean(scene_regret)),"mean_spearman":float(np.mean(rank)) if rank else 0.0,"top1_accuracy":float(np.mean([x.regret<=1e-12 for x in selected])),"success_fraction":float(np.mean([x.success for x in selected])),"selected_collision_fraction":float(np.mean([x.collision for x in selected]))}
         return output
+    def candidate_set(domain:Sequence[DatasetRow])->dict[str,float]:
+        groups=[group for _,group in _groups(domain)]
+        return {"candidate_collision_prevalence":float(np.mean([x.collision for x in domain])),"mixed_collision_anchor_fraction":float(np.mean([len({x.collision for x in group})>1 for group in groups])),"all_collision_anchor_fraction":float(np.mean([all(x.collision for x in group) for group in groups]))}
     strata = {stratum: [x for x in selections if x.stratum == stratum] for stratum in world.STRATA}
-    return {"overall":aggregate(selections),"strata":{stratum:aggregate(domain) for stratum,domain in strata.items() if domain}}
+    row_strata={stratum:[x for x in rows if x.stratum==stratum] for stratum in world.STRATA}
+    return {"overall":aggregate(selections),"strata":{stratum:aggregate(domain) for stratum,domain in strata.items() if domain},"candidate_set":{"overall":candidate_set(rows),"strata":{stratum:candidate_set(domain) for stratum,domain in row_strata.items() if domain}}}
