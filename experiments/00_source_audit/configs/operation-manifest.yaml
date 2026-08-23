@@ -1,103 +1,655 @@
 schema_version: 1
-registry_sha256: d1598b83070b5c8578e79a64142ee24941a59743cdf9420efa8b3b9d588fb8af
-lock_sha256: 0000000000000000000000000000000000000000000000000000000000000000
+registry_sha256: eb72b501a177ee9dcf93a77444536e07dd532d9ac92950c61a063b8a8d1a4a3d
+lock_sha256: ce46f15903be44af121d8d2e2430d4bff78d94b978a09c48820dd31190f4e449
 repositories:
-  - repository: mujoco
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: mujoco_mpc
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: mujoco_menagerie
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: mink
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: mjctrl
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: hydrax
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: curobo
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: moveit2
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: ros2_control
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: ros2_controllers
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: mujoco_ros2_control
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: act
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: lerobot
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: openpi
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: diffusion_policy
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: behaviortree_cpp
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: navigation2
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: spark_dsg
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: hydra_scene_graph
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: kimera
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: conceptgraphs
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: rerun
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: openusd
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: ifcopenshell
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: ifcopenshell_test_files
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: tdmpc2
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: dino_wm
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: vjepa2
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: lawam
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: libero
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: unitree_rl_mjlab
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: unitree_mujoco
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: unitree_sdk2
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: unifolm_vla
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: unifolm_wma
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: isaac_sim
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: isaac_lab
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: isaac_launchable
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: isaac_lab_arena
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: uv
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: hatchling
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: pyyaml
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: numpy
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: pyarrow
-    commit_sha: 0000000000000000000000000000000000000000
-  - repository: pytest
-    commit_sha: 0000000000000000000000000000000000000000
+- repository: mujoco
+  commit_sha: a7255075b003506ff5f34b512d88e02df12a73c6
+  paths:
+  - path: model
+    status: EXISTS
+  - path: python
+    status: EXISTS
+  - path: sample
+    status: EXISTS
+  - path: test
+    status: EXISTS
+- repository: mujoco_mpc
+  commit_sha: ff572a21e7c2bf9fda62e1862a758da7e9a8719b
+  paths:
+  - path: mjpc/planners
+    status: EXISTS
+  - path: mjpc/tasks
+    status: EXISTS
+  - path: python/mujoco_mpc
+    status: EXISTS
+  - path: python/mujoco_mpc/demos/predictive_sampling
+    status: EXISTS
+- repository: mujoco_menagerie
+  commit_sha: da76818e269b82289eba39808e2fb91d679d6994
+  paths:
+  - path: README.md
+    status: EXISTS
+  - path: franka_emika_panda
+    status: EXISTS
+  - path: panda
+    status: MISSING
+  - path: universal_robots_ur5e
+    status: EXISTS
+- repository: mink
+  commit_sha: ab45779fea46933832dee1c240f94103633347a1
+  paths:
+  - path: examples
+    status: EXISTS
+  - path: mink
+    status: MISSING
+  - path: tests
+    status: EXISTS
+- repository: mjctrl
+  commit_sha: f1c82c257248e2e52b0e6c1beaf23c6a2026e4f2
+  paths:
+  - path: '*.py'
+    status: EXISTS
+  - path: README.md
+    status: EXISTS
+- repository: hydrax
+  commit_sha: bd53d43d414e19557d38ee6c72613bf2e39fe834
+  paths:
+  - path: examples
+    status: EXISTS
+  - path: hydrax
+    status: EXISTS
+  - path: tests
+    status: EXISTS
+- repository: curobo
+  commit_sha: 8e734f3ced1df898990bcd92de40abce475907db
+  paths:
+  - path: docs
+    status: EXISTS
+  - path: examples
+    status: MISSING
+  - path: src/curobo
+    status: MISSING
+- repository: moveit2
+  commit_sha: 8fcb5d2327767af3c764b1348a69a9b74c5efd18
+  paths:
+  - path: moveit_core
+    status: EXISTS
+  - path: moveit_planners
+    status: EXISTS
+  - path: moveit_ros/moveit_servo
+    status: EXISTS
+- repository: ros2_control
+  commit_sha: 45dc561a2bfedc562119e4c5ce0542135bd0267b
+  paths:
+  - path: controller_interface
+    status: EXISTS
+  - path: controller_manager
+    status: EXISTS
+  - path: hardware_interface
+    status: EXISTS
+- repository: ros2_controllers
+  commit_sha: 94e74de35f9d04f313aca8f29df66c3a76004aa7
+  paths:
+  - path: admittance_controller
+    status: EXISTS
+  - path: joint_trajectory_controller
+    status: EXISTS
+  - path: pid_controller
+    status: EXISTS
+- repository: mujoco_ros2_control
+  commit_sha: c811dcca2039cf6a88af3077e3f3dbbbd9c37a66
+  paths:
+  - path: README.md
+    status: EXISTS
+  - path: mujoco_ros2_control
+    status: EXISTS
+- repository: act
+  commit_sha: 742c753c0d4a5d87076c8f69e5628c79a8cc5488
+  paths:
+  - path: detr
+    status: EXISTS
+  - path: imitate_episodes.py
+    status: EXISTS
+  - path: policy.py
+    status: EXISTS
+  - path: sim_env.py
+    status: EXISTS
+- repository: lerobot
+  commit_sha: 7427f31801f944f5ec9ce53cda02862ce7d1638b
+  paths:
+  - path: docs/source/async.mdx
+    status: EXISTS
+  - path: docs/source/inference.mdx
+    status: EXISTS
+  - path: docs/source/rtc.mdx
+    status: EXISTS
+  - path: src/lerobot/async_inference
+    status: EXISTS
+  - path: src/lerobot/policies/act
+    status: EXISTS
+  - path: src/lerobot/policies/rtc
+    status: EXISTS
+  - path: src/lerobot/policies/smolvla
+    status: EXISTS
+- repository: openpi
+  commit_sha: 15a9616a00943ada6c20a0f158e3adb39df2ccac
+  paths:
+  - path: examples
+    status: EXISTS
+  - path: packages/openpi-client
+    status: EXISTS
+  - path: packages/openpi-client/src/openpi_client/action_chunk_broker.py
+    status: EXISTS
+  - path: scripts/serve_policy.py
+    status: EXISTS
+  - path: src/openpi/policies
+    status: EXISTS
+- repository: diffusion_policy
+  commit_sha: 5ba07ac6661db573af695b419a7947ecb704690f
+  paths:
+  - path: diffusion_policy/config/task/pusht_image.yaml
+    status: EXISTS
+  - path: diffusion_policy/dataset/pusht_image_dataset.py
+    status: EXISTS
+  - path: diffusion_policy/env/pusht
+    status: EXISTS
+  - path: diffusion_policy/env_runner/pusht_image_runner.py
+    status: EXISTS
+- repository: behaviortree_cpp
+  commit_sha: c88a9f429a421b312599a07fa8902524b09bf90a
+  paths:
+  - path: examples
+    status: EXISTS
+  - path: include/behaviortree_cpp
+    status: EXISTS
+  - path: tests
+    status: EXISTS
+- repository: navigation2
+  commit_sha: a3a97043ee93d92fe8d70ec56d183933169beb1c
+  paths:
+  - path: nav2_behavior_tree
+    status: EXISTS
+  - path: nav2_behaviors
+    status: EXISTS
+  - path: nav2_bt_navigator
+    status: EXISTS
+- repository: spark_dsg
+  commit_sha: 3c40997e4ae739c56ed3cdd6ef5e882d403d8b64
+  paths:
+  - path: python
+    status: EXISTS
+  - path: spark_dsg
+    status: MISSING
+  - path: tests
+    status: EXISTS
+- repository: hydra_scene_graph
+  commit_sha: 2e58a35baea629eee8838409771876acff015daf
+  paths:
+  - path: config
+    status: EXISTS
+  - path: include
+    status: EXISTS
+  - path: python
+    status: EXISTS
+  - path: src
+    status: EXISTS
+- repository: kimera
+  commit_sha: fc33760636068ea0b2dca5e9d7958ee9a03888b1
+  paths:
+  - path: README.md
+    status: EXISTS
+- repository: conceptgraphs
+  commit_sha: 93277a02bd89171f8121e84203121cf7af9ebb5d
+  paths:
+  - path: README.md
+    status: EXISTS
+  - path: conceptgraph/scenegraph
+    status: EXISTS
+  - path: conceptgraph/slam
+    status: EXISTS
+  - path: scripts
+    status: MISSING
+- repository: rerun
+  commit_sha: b5dbd319a7c99b81607d7320a9b50cb806a8a1c0
+  paths:
+  - path: examples/python
+    status: EXISTS
+  - path: rerun_py
+    status: EXISTS
+- repository: openusd
+  commit_sha: 6792941c5d5b42778e6875c5ed5a3279e6936981
+  paths:
+  - path: docs
+    status: EXISTS
+  - path: extras
+    status: EXISTS
+  - path: pxr/usd
+    status: EXISTS
+- repository: ifcopenshell
+  commit_sha: 9089a20ce3f25040baac4f1f303336c70026cb67
+  paths:
+  - path: docs
+    status: EXISTS
+  - path: examples
+    status: MISSING
+  - path: src/ifcopenshell-python
+    status: EXISTS
+- repository: ifcopenshell_test_files
+  commit_sha: 9fc2267d7f1ff35284c5b0fc28cc97bff7ace8e7
+  paths:
+  - path: ifc
+    status: MISSING
+- repository: tdmpc2
+  commit_sha: e9f59321933cbc8e11a002b842adc7d4ffae8ff1
+  paths:
+  - path: cfgs
+    status: MISSING
+  - path: datasets
+    status: EXISTS
+  - path: tdmpc2
+    status: EXISTS
+- repository: dino_wm
+  commit_sha: 0a9492fa12044b852ae9e001cc74604b79c8bb0c
+  paths:
+  - path: conf
+    status: EXISTS
+  - path: env
+    status: EXISTS
+  - path: models
+    status: EXISTS
+  - path: plan.py
+    status: EXISTS
+  - path: planning
+    status: EXISTS
+- repository: vjepa2
+  commit_sha: 204698b45b3712590f06245fbfba32d3be539812
+  paths:
+  - path: app/vjepa_droid
+    status: EXISTS
+  - path: configs
+    status: EXISTS
+  - path: notebooks
+    status: EXISTS
+  - path: src
+    status: EXISTS
+- repository: lawam
+  commit_sha: 4ea6fdadce6c9b8746028307a246b79ee2c4fd55
+  paths:
+  - path: deployment
+    status: EXISTS
+  - path: examples/LIBERO
+    status: EXISTS
+  - path: examples/Robotwin
+    status: EXISTS
+  - path: latent_action_model
+    status: EXISTS
+  - path: starVLA
+    status: EXISTS
+- repository: libero
+  commit_sha: 8f1084e3132a39270c3a13ebe37270a43ece2a01
+  paths:
+  - path: benchmark_scripts
+    status: EXISTS
+  - path: libero
+    status: EXISTS
+- repository: unitree_rl_mjlab
+  commit_sha: 1425b15f73bd4095f0df53709d7c389c3eb9e790
+  paths:
+  - path: README.md
+    status: EXISTS
+  - path: deploy
+    status: EXISTS
+  - path: doc
+    status: EXISTS
+  - path: scripts
+    status: EXISTS
+  - path: simulate
+    status: EXISTS
+  - path: src
+    status: EXISTS
+- repository: unitree_mujoco
+  commit_sha: ae6a8403e272733e9996ef59990880330496177f
+  paths:
+  - path: example
+    status: EXISTS
+  - path: simulate
+    status: EXISTS
+  - path: simulate_python
+    status: EXISTS
+  - path: unitree_robots
+    status: EXISTS
+- repository: unitree_sdk2
+  commit_sha: 9754cd153af3da471b0fe5f3aa535e426fb11db3
+  paths:
+  - path: example
+    status: EXISTS
+  - path: include
+    status: EXISTS
+  - path: thirdparty
+    status: EXISTS
+- repository: unifolm_vla
+  commit_sha: ff6c39aeb0454cfb95418c66aef40ca777f935c1
+  paths:
+  - path: deployment/model_server
+    status: EXISTS
+  - path: experiments
+    status: EXISTS
+  - path: prepare_data
+    status: EXISTS
+  - path: src/unifolm_vla
+    status: EXISTS
+- repository: unifolm_wma
+  commit_sha: 3e198de68de55f93f24b3ad623dd499390aaee45
+  paths:
+  - path: configs
+    status: EXISTS
+  - path: examples
+    status: EXISTS
+  - path: external
+    status: EXISTS
+  - path: prepare_data
+    status: EXISTS
+  - path: scripts
+    status: EXISTS
+  - path: src/unifolm_wma
+    status: EXISTS
+  - path: unitree_deploy
+    status: EXISTS
+- repository: isaac_sim
+  commit_sha: 987015050efebfd0cd5d3736ae47fffe5adee308
+  paths:
+  - path: README.md
+    status: EXISTS
+  - path: apps
+    status: MISSING
+  - path: source
+    status: EXISTS
+  - path: tools
+    status: EXISTS
+- repository: isaac_lab
+  commit_sha: 8436eae13aaabd3a42c33c78435b3de44e6a36b2
+  paths:
+  - path: apps
+    status: EXISTS
+  - path: docs
+    status: EXISTS
+  - path: scripts
+    status: EXISTS
+  - path: source
+    status: EXISTS
+- repository: isaac_launchable
+  commit_sha: d884909d03d27bdb52d27d516790a4c3a8f82354
+  paths:
+  - path: README.md
+    status: EXISTS
+  - path: docker
+    status: MISSING
+  - path: scripts
+    status: MISSING
+- repository: isaac_lab_arena
+  commit_sha: 8039fbdb9afd5e99784808fd907c29467a956688
+  paths:
+  - path: docs
+    status: EXISTS
+  - path: scripts
+    status: MISSING
+  - path: source
+    status: MISSING
+- repository: uv
+  commit_sha: 26a9dd4b2125bc271b47855e1fa0c49af3365db5
+  paths: []
+- repository: hatchling
+  commit_sha: ed8e30bebf98f2fe4d70c18a32a50a8160c391cb
+  paths: []
+- repository: pyyaml
+  commit_sha: 34a9bf82357f4952d8f194a5a31f1c39743652d0
+  paths: []
+- repository: numpy
+  commit_sha: 1f90bbb55e65e7de68921bc3f1a2d94492fdf689
+  paths: []
+- repository: pyarrow
+  commit_sha: 515410b2a14ac766258e00b07eab9e5ee2692a62
+  paths: []
+- repository: pytest
+  commit_sha: df87db7b0462fb764ef73fa00561adf8ad047572
+  paths: []
 operations:
-  - operation_id: MUJOCO_PACKAGE_SMOKE
-    repository: mujoco
-    operation: PACKAGE_RUNTIME
-    runtime_subject: package
-    relative_output: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json
+- operation_id: MUJOCO_MPC_CHECKOUT
+  repository: mujoco_mpc
+  operation: CHECKOUT
+  runtime_subject: source_checkout
+  experiment: 01_policy_control
+  selected_path: ''
+  command:
+  - fetch_reference
+  - --name
+  - mujoco_mpc
+  - --sparse-checkout
+  relative_output: experiments/00_source_audit/results/fragments/mujoco-mpc-checkout.json
+  platform: macos-arm64
+  python_requirement: '>=3.11'
+  compiler_or_runtime: git
+  timeout_seconds: 3600
+  download_ceiling_bytes: 536870912
+  disk_ceiling_bytes: 536870912
+  no_copy: true
+  no_models: true
+  package_name: null
+  file_ceiling_bytes: 2097152
+  file_count_ceiling: 512
+  depth_ceiling: 8
+- operation_id: MUJOCO_MENAGERIE_CHECKOUT
+  repository: mujoco_menagerie
+  operation: CHECKOUT
+  runtime_subject: source_checkout
+  experiment: 01_policy_control
+  selected_path: ''
+  command:
+  - fetch_reference
+  - --name
+  - mujoco_menagerie
+  - --sparse-checkout
+  relative_output: experiments/00_source_audit/results/fragments/mujoco-menagerie-checkout.json
+  platform: macos-arm64
+  python_requirement: '>=3.11'
+  compiler_or_runtime: git
+  timeout_seconds: 3600
+  download_ceiling_bytes: 536870912
+  disk_ceiling_bytes: 536870912
+  no_copy: true
+  no_models: true
+  package_name: null
+  file_ceiling_bytes: 2097152
+  file_count_ceiling: 512
+  depth_ceiling: 8
+- operation_id: MJCTRL_CHECKOUT
+  repository: mjctrl
+  operation: CHECKOUT
+  runtime_subject: source_checkout
+  experiment: 01_policy_control
+  selected_path: ''
+  command:
+  - fetch_reference
+  - --name
+  - mjctrl
+  - --sparse-checkout
+  relative_output: experiments/00_source_audit/results/fragments/mjctrl-checkout.json
+  platform: macos-arm64
+  python_requirement: '>=3.11'
+  compiler_or_runtime: git
+  timeout_seconds: 3600
+  download_ceiling_bytes: 536870912
+  disk_ceiling_bytes: 536870912
+  no_copy: true
+  no_models: true
+  package_name: null
+  file_ceiling_bytes: 2097152
+  file_count_ceiling: 512
+  depth_ceiling: 8
+- operation_id: ACT_CHECKOUT
+  repository: act
+  operation: CHECKOUT
+  runtime_subject: source_checkout
+  experiment: 02_action_chunks
+  selected_path: ''
+  command:
+  - fetch_reference
+  - --name
+  - act
+  - --sparse-checkout
+  relative_output: experiments/00_source_audit/results/fragments/act-checkout.json
+  platform: macos-arm64
+  python_requirement: '>=3.11'
+  compiler_or_runtime: git
+  timeout_seconds: 3600
+  download_ceiling_bytes: 536870912
+  disk_ceiling_bytes: 536870912
+  no_copy: true
+  no_models: true
+  package_name: null
+  file_ceiling_bytes: 2097152
+  file_count_ceiling: 512
+  depth_ceiling: 8
+- operation_id: LEROBOT_CHECKOUT
+  repository: lerobot
+  operation: CHECKOUT
+  runtime_subject: source_checkout
+  experiment: 02_action_chunks
+  selected_path: ''
+  command:
+  - fetch_reference
+  - --name
+  - lerobot
+  - --sparse-checkout
+  relative_output: experiments/00_source_audit/results/fragments/lerobot-checkout.json
+  platform: macos-arm64
+  python_requirement: '>=3.11'
+  compiler_or_runtime: git
+  timeout_seconds: 3600
+  download_ceiling_bytes: 536870912
+  disk_ceiling_bytes: 536870912
+  no_copy: true
+  no_models: true
+  package_name: null
+  file_ceiling_bytes: 2097152
+  file_count_ceiling: 512
+  depth_ceiling: 8
+- operation_id: OPENPI_CHECKOUT
+  repository: openpi
+  operation: CHECKOUT
+  runtime_subject: source_checkout
+  experiment: 02_action_chunks
+  selected_path: ''
+  command:
+  - fetch_reference
+  - --name
+  - openpi
+  - --sparse-checkout
+  relative_output: experiments/00_source_audit/results/fragments/openpi-checkout.json
+  platform: macos-arm64
+  python_requirement: '>=3.11'
+  compiler_or_runtime: git
+  timeout_seconds: 3600
+  download_ceiling_bytes: 536870912
+  disk_ceiling_bytes: 536870912
+  no_copy: true
+  no_models: true
+  package_name: null
+  file_ceiling_bytes: 2097152
+  file_count_ceiling: 512
+  depth_ceiling: 8
+- operation_id: BEHAVIORTREE_CPP_CHECKOUT
+  repository: behaviortree_cpp
+  operation: CHECKOUT
+  runtime_subject: source_checkout
+  experiment: 03_recovery
+  selected_path: ''
+  command:
+  - fetch_reference
+  - --name
+  - behaviortree_cpp
+  - --sparse-checkout
+  relative_output: experiments/00_source_audit/results/fragments/behaviortree-cpp-checkout.json
+  platform: macos-arm64
+  python_requirement: '>=3.11'
+  compiler_or_runtime: git
+  timeout_seconds: 3600
+  download_ceiling_bytes: 536870912
+  disk_ceiling_bytes: 536870912
+  no_copy: true
+  no_models: true
+  package_name: null
+  file_ceiling_bytes: 2097152
+  file_count_ceiling: 512
+  depth_ceiling: 8
+- operation_id: NAVIGATION2_CHECKOUT
+  repository: navigation2
+  operation: CHECKOUT
+  runtime_subject: source_checkout
+  experiment: 03_recovery
+  selected_path: ''
+  command:
+  - fetch_reference
+  - --name
+  - navigation2
+  - --sparse-checkout
+  relative_output: experiments/00_source_audit/results/fragments/navigation2-checkout.json
+  platform: macos-arm64
+  python_requirement: '>=3.11'
+  compiler_or_runtime: git
+  timeout_seconds: 3600
+  download_ceiling_bytes: 536870912
+  disk_ceiling_bytes: 536870912
+  no_copy: true
+  no_models: true
+  package_name: null
+  file_ceiling_bytes: 2097152
+  file_count_ceiling: 512
+  depth_ceiling: 8
+- operation_id: MJCTRL_AST_PARSE
+  repository: mjctrl
+  operation: AST_PARSE
+  runtime_subject: source_checkout
+  experiment: 01_policy_control
+  selected_path: '*.py'
+  command:
+  - ast_parse
+  - '*.py'
+  relative_output: experiments/00_source_audit/results/fragments/mjctrl-ast.json
+  platform: macos-arm64
+  python_requirement: '>=3.11'
+  compiler_or_runtime: python-3.11
+  timeout_seconds: 60
+  download_ceiling_bytes: 0
+  disk_ceiling_bytes: 16777216
+  no_copy: true
+  no_models: true
+  package_name: null
+  file_ceiling_bytes: 2097152
+  file_count_ceiling: 512
+  depth_ceiling: 8
+- operation_id: MUJOCO_PACKAGE_SMOKE
+  repository: mujoco
+  operation: PACKAGE_RUNTIME
+  runtime_subject: package
+  experiment: 01_policy_control
+  selected_path: python
+  command:
+  - mujoco
+  - headless-one-step
+  relative_output: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json
+  platform: macos-arm64
+  python_requirement: '>=3.11'
+  compiler_or_runtime: mujoco-3.12.0;python-3.11
+  timeout_seconds: 60
+  download_ceiling_bytes: 0
+  disk_ceiling_bytes: 536870912
+  no_copy: true
+  no_models: true
+  package_name: mujoco
+  file_ceiling_bytes: 2097152
+  file_count_ceiling: 512
+  depth_ceiling: 8
 requirement_observations: []
 mujoco_smoke_output:
   operation_id: MUJOCO_PACKAGE_SMOKE
