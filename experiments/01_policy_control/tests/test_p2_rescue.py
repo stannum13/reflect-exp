@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import importlib
+import hashlib
+import json
+from pathlib import Path
 
 
 probe = importlib.import_module("experiments.01_policy_control.engineering_p2_rescue")
@@ -33,3 +36,17 @@ def test_paired_interval_is_deterministic_and_uses_complete_pairs() -> None:
     try:probe.paired_interval(bad,seed=71)
     except ValueError as exc:assert "rectangular" in str(exc)
     else:raise AssertionError("incomplete paired domain accepted")
+
+
+def test_committed_evidence_receipt_binds_reconstructable_raw_when_present() -> None:
+    root=Path(probe.__file__).resolve().parent
+    receipt=json.loads((root/"ENGINEERING_P2_RESCUE_EVIDENCE.json").read_text())
+    evidence=Path(probe.ROOT)/receipt["evidence"]["relative_path"]
+    assert receipt["disposition"].endswith("NOT_READY_FOR_FORMAL_P4_PILOT")
+    if evidence.is_dir():
+        rows=[]
+        for path in sorted(x for x in evidence.rglob("*") if x.is_file()):
+            payload=path.read_bytes();rows.append({"path":path.relative_to(evidence).as_posix(),"bytes":len(payload),"sha256":hashlib.sha256(payload).hexdigest()})
+        assert len(rows)==receipt["evidence"]["files"]
+        assert sum(row["bytes"] for row in rows)==receipt["evidence"]["bytes"]
+        assert hashlib.sha256(probe.canonical(rows)).hexdigest()==receipt["evidence"]["inventory_sha256"]
