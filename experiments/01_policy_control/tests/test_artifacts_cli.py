@@ -7,6 +7,7 @@ import importlib
 import json
 from pathlib import Path
 import subprocess
+import sys
 import threading
 
 import pytest
@@ -184,6 +185,46 @@ def test_protocol_loader_rejects_unbound_stage_parameter_resource_and_seed_data(
     seed_path.write_bytes(_canonical(seed))
     with pytest.raises(artifacts.ArtifactError, match="scenario"):
         artifacts.load_protocol_manifest(base)
+
+
+def test_protocol_loader_requires_p1_ordered_subset_then_preserves_survivors(
+    tmp_path: Path,
+) -> None:
+    config = Path(__file__).parents[1] / "configs/base.yaml"
+    gate = tmp_path / "p3-gate.yaml"
+    gate.write_text("schema_version: 1\n", encoding="utf-8")
+    revision = tmp_path / "protocol" / "pilot-r1" / "revision-manifest.json"
+    artifacts.prepare_manifest("revision", None, revision, config, gate, implementation_sha=G40)
+    base = revision.with_name("base-manifest.json")
+    artifacts.prepare_manifest("base", revision, base, config, gate, implementation_sha=G40)
+    base_row = json.loads(base.read_text(encoding="utf-8"))
+
+    def stage_row(stage: str, predecessor: Path, stacks: tuple[str, ...], pd: list[float]) -> dict[str, object]:
+        row = json.loads(json.dumps(base_row))
+        row["stage"] = stage
+        row["predecessor_sha256"] = hashlib.sha256(predecessor.read_bytes()).hexdigest()
+        row["parameter_vector"]["pd"] = pd
+        row["parameter_hash"] = hashlib.sha256(
+            json.dumps(row["parameter_vector"], sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        row["shards"] = [item for item in row["shards"] if item["stack_id"] in stacks]
+        return row
+
+    no_anchor = base.with_name("pd-60-no-anchor-manifest.json")
+    no_anchor.write_bytes(_canonical(stage_row("pd_60_6", base, ("P2", "P3"), [60.0, 6.0])))
+    with pytest.raises(artifacts.ArtifactError, match="P1.*ordered subset|survivor domain"):
+        artifacts.load_protocol_manifest(no_anchor)
+
+    pd_60 = base.with_name("pd-60-manifest.json")
+    pd_60.write_bytes(_canonical(stage_row("pd_60_6", base, ("P1", "P3", "P6"), [60.0, 6.0])))
+    assert tuple(dict.fromkeys(row["stack_id"] for row in artifacts.load_protocol_manifest(pd_60)["shards"])) == (
+        "P1", "P3", "P6",
+    )
+
+    changed = base.with_name("pd-100-changed-survivors.json")
+    changed.write_bytes(_canonical(stage_row("pd_100_10", pd_60, ("P1", "P2", "P3", "P6"), [100.0, 10.0])))
+    with pytest.raises(artifacts.ArtifactError, match="survivor domain"):
+        artifacts.load_protocol_manifest(changed)
 
 
 def test_publish_rollout_is_create_only_and_replay_validated(tmp_path: Path) -> None:
@@ -420,10 +461,41 @@ def test_rollout_derived_reconstruction_joins_annotations_renders_task11_and_res
             "finished_at_utc": "2026-08-23T00:00:01Z", "command_sha256": H64,
             "readable_output_sha256": None, "details_sha256": H64,
         }, variant_id="base", anchor_id="P1", candidate_id=stack,
-            rng_namespace="confirmation"))
+            rng_namespace="confirmation", protocol_sha256=H64,
+            source_sha256="b" * 64, scenario_sha256=scenario_record.identity_sha256,
+            config_sha256="c" * 64, code_sha256="d" * 64,
+            dependency_sha256="e" * 64))
+    assert all(
+        all(row[name] is not None for name in (
+            "protocol_sha256", "source_sha256", "scenario_sha256",
+            "config_sha256", "code_sha256", "dependency_sha256", "input_sha256",
+        ))
+        for row in invalid_rows
+    )
+    changed_attempt = artifacts.raw_evidence_from_failure_disposition(
+        invalid_rows[0]["failure"], variant_id="base", anchor_id="P1", candidate_id="P1",
+        rng_namespace="confirmation", protocol_sha256="f" * 64,
+        source_sha256="b" * 64, scenario_sha256=scenario_record.identity_sha256,
+        config_sha256="c" * 64, code_sha256="d" * 64, dependency_sha256="e" * 64,
+    )
+    assert changed_attempt["input_sha256"] != invalid_rows[0]["input_sha256"]
     mixed_rows = (*raw_rows, *invalid_rows)
     mixed_annotations = artifacts.build_annotated_samples(mixed_rows)
     mixed_recipes = artifacts.build_plot_recipes(mixed_rows, ("P2",))
+    null_attempt = json.loads(json.dumps(invalid_rows[0]))
+    null_attempt["config_sha256"] = None
+    null_rows = (raw_rows[0], null_attempt)
+    with pytest.raises(artifacts.ArtifactError, match="retained evidence|invalid episode"):
+        artifacts.reconstruct_evidence(
+            tmp_path / "null-attempt-input", null_rows,
+            artifacts.build_annotated_samples(null_rows),
+            artifacts.build_plot_recipes(null_rows, ()), protocol_sha256=H64,
+        )
+    with pytest.raises(artifacts.ArtifactError, match="protocol"):
+        artifacts.reconstruct_evidence(
+            tmp_path / "wrong-protocol", mixed_rows, mixed_annotations, mixed_recipes,
+            protocol_sha256="f" * 64,
+        )
     mixed = tmp_path / "mixed-valid-invalid"
     artifacts.reconstruct_evidence(
         mixed, mixed_rows, mixed_annotations, mixed_recipes, protocol_sha256=H64,
@@ -534,3 +606,36 @@ def test_rollout_derived_reconstruction_joins_annotations_renders_task11_and_res
     assert artifacts.validate_evidence_publication(interrupted) == manifest
     for row in manifest["files"]:
         assert (interrupted / row["path"]).read_bytes() == (clean / row["path"]).read_bytes()
+
+    process_interrupted = tmp_path / "interrupted-process"
+    child_inputs = tmp_path / "child-inputs.json"
+    child_inputs.write_bytes(_canonical({
+        "raw": raw_rows, "annotations": annotations, "recipes": recipes,
+    }))
+    child = subprocess.run(
+        [
+            sys.executable, "-c",
+            "import importlib,json,os,sys; "
+            "a=importlib.import_module('experiments.01_policy_control.src.artifacts'); "
+            "v=json.loads(open(sys.argv[1],encoding='utf-8').read()); "
+            "a._publication_boundary=lambda name: os._exit(91) if name.startswith('file:') else None; "
+            "a.reconstruct_evidence(sys.argv[2],v['raw'],v['annotations'],v['recipes'],protocol_sha256=sys.argv[3])",
+            str(child_inputs), str(process_interrupted), H64,
+        ],
+        cwd=Path(__file__).parents[3], check=False,
+    )
+    assert child.returncode == 91
+    assert len(tuple(tmp_path.glob(".interrupted-process.analysis-stage-*"))) == 1
+    resumed_after_process_death = artifacts.reconstruct_evidence(
+        process_interrupted, raw_rows, annotations, recipes, protocol_sha256=H64,
+    )
+    assert resumed_after_process_death == manifest
+    stale_quarantine = tmp_path / ".interrupted-process.analysis-quarantine"
+    quarantined_stages = tuple(stale_quarantine.iterdir())
+    assert len(quarantined_stages) == 1 and quarantined_stages[0].is_dir()
+    quarantined_bytes = sum(
+        entry.stat().st_size for stage in quarantined_stages for entry in stage.iterdir()
+    )
+    assert 0 < quarantined_bytes <= 64 * 1024 * 1024
+    assert not tuple(tmp_path.glob(".interrupted-process.analysis-stage-*"))
+    assert artifacts.validate_evidence_publication(process_interrupted) == manifest

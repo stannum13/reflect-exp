@@ -379,6 +379,14 @@ def load_protocol_manifest(path: Path) -> dict[str, Any]:
                 row["stack_id"] for row in predecessor["shards"]
             ))
             current_stacks = tuple(by_stack)
+            if stage == "pd_60_6" and (
+                not current_stacks or current_stacks[0] != "P1"
+                or any(stack not in predecessor_stacks for stack in current_stacks)
+                or current_stacks != tuple(
+                    stack for stack in predecessor_stacks if stack in current_stacks
+                )
+            ):
+                raise ArtifactError("PD survivor domain must be a P1-led ordered subset of base")
             if stage in {"pd_100_10", "ik_0_001", "ik_0_05"} and current_stacks != predecessor_stacks:
                 raise ArtifactError("adaptive survivor domain changed after base qualification")
             if stage == "p5_0_01" and current_stacks != (("P5",) if "P5" in predecessor_stacks else ()):
@@ -1172,6 +1180,8 @@ def raw_evidence_from_rollout(
     scenario_record = metrics.get("scenario_record")
     scenario_hash = metrics.get("scenario_identity_sha256")
     _hash(scenario_hash, "scenario_identity_sha256")
+    protocol_hash = _hash(metrics.get("protocol_sha256"), "protocol_sha256")
+    source_hash = _hash(metrics.get("source_sha256"), "source_sha256")
     output_value = {
         key: rollout[key]
         for key in ("metrics", "events", "observations", "actions", "control_references", "summary")
@@ -1187,6 +1197,8 @@ def raw_evidence_from_rollout(
         "units": {"position": "m", "time": "ns"},
         "frames": {"target": "world"}, "validity": "VALID", "missingness": None,
         "terminal_state": "COMPLETE",
+        "protocol_sha256": protocol_hash, "source_sha256": source_hash,
+        "scenario_sha256": scenario_hash,
         "config_sha256": _digest_state(artifact.config),
         "code_sha256": hashlib.sha256(artifact.metadata.git_sha.encode("ascii")).hexdigest(),
         "dependency_sha256": _digest_state(artifact.metadata.dependency_versions),
@@ -1211,9 +1223,25 @@ def raw_evidence_from_rollout(
     return row
 
 
+def _failed_attempt_input_sha256(
+    failure: Mapping[str, object], *, protocol_sha256: str, source_sha256: str,
+    scenario_sha256: str, config_sha256: str, code_sha256: str,
+    dependency_sha256: str,
+) -> str:
+    return _digest_state({
+        "protocol_sha256": protocol_sha256, "source_sha256": source_sha256,
+        "scenario_sha256": scenario_sha256, "config_sha256": config_sha256,
+        "code_sha256": code_sha256, "dependency_sha256": dependency_sha256,
+        "command_sha256": failure["command_sha256"],
+        "details_sha256": failure["details_sha256"],
+    })
+
+
 def raw_evidence_from_failure_disposition(
     value: Mapping[str, object], *, variant_id: str, anchor_id: str,
-    candidate_id: str, rng_namespace: str,
+    candidate_id: str, rng_namespace: str, protocol_sha256: str,
+    source_sha256: str, scenario_sha256: str, config_sha256: str,
+    code_sha256: str, dependency_sha256: str,
 ) -> dict[str, object]:
     """Retain one typed absent-output disposition without fabricating a rollout."""
     failure = _failure_row(dict(value))
@@ -1224,6 +1252,14 @@ def raw_evidence_from_failure_disposition(
         (candidate_id, "candidate_id"), (rng_namespace, "rng_namespace"),
     ):
         _text(item, name)
+    identities = {
+        name: _hash(item, name) for name, item in (
+            ("protocol_sha256", protocol_sha256), ("source_sha256", source_sha256),
+            ("scenario_sha256", scenario_sha256), ("config_sha256", config_sha256),
+            ("code_sha256", code_sha256), ("dependency_sha256", dependency_sha256),
+        )
+    }
+    input_sha256 = _failed_attempt_input_sha256(failure, **identities)
     disposition = {
         "PROCESS_TIMEOUT": "TIMED_OUT", "CORRUPT_OUTPUT": "CRASHED",
         "MISSING_OUTPUT": "DECLARED_MISSING", "RESOURCE_EXHAUSTION": "EXCLUDED",
@@ -1238,8 +1274,8 @@ def raw_evidence_from_failure_disposition(
         "rng_namespace": rng_namespace, "tick_start": 0, "tick_end": 0,
         "units": {"position": "m", "time": "ns"}, "frames": {"target": "world"},
         "validity": "DECLARED_INVALID", "missingness": str(failure["reason"]),
-        "terminal_state": disposition, "config_sha256": None, "code_sha256": None,
-        "dependency_sha256": None, "input_sha256": None, "output_sha256": None,
+        "terminal_state": disposition, **identities,
+        "input_sha256": input_sha256, "output_sha256": None,
         "replay_sha256": None, "bundle_sha256": None, "disposition": disposition,
         "reason": str(failure["reason"]), "analysis_included": False,
         "failure": failure, "rollout": None, "plot": None,
@@ -1410,7 +1446,8 @@ def _publication_payloads(
         "scene_id", "episode_id", "anchor_id", "candidate_id", "seed",
         "rng_namespace", "tick_start", "tick_end", "units", "frames", "validity",
         "missingness", "terminal_state", "config_sha256", "code_sha256",
-        "dependency_sha256", "input_sha256", "output_sha256", "replay_sha256",
+        "dependency_sha256", "protocol_sha256", "source_sha256", "scenario_sha256",
+        "input_sha256", "output_sha256", "replay_sha256",
         "bundle_sha256", "disposition", "reason", "analysis_included",
         "failure", "rollout", "plot",
     })
@@ -1449,6 +1486,8 @@ def _publication_payloads(
             raise ArtifactError("analysis_included must be boolean")
         if row["missingness"] is not None:
             _text(row["missingness"], "missingness")
+        for key in ("protocol_sha256", "source_sha256", "scenario_sha256"):
+            _hash(row[key], key)
         for key in (
             "config_sha256", "code_sha256", "dependency_sha256", "input_sha256",
             "output_sha256", "replay_sha256", "bundle_sha256",
@@ -1467,12 +1506,13 @@ def _publication_payloads(
             raise ArtifactError("complete episode disposition contradicts validity or retained evidence")
         if disposition in {"TIMED_OUT", "CRASHED", "DECLARED_MISSING"} and (
             row["validity"] != "DECLARED_INVALID" or row["missingness"] is None
-            or row["analysis_included"] or any(
-                row[key] is not None for key in (
-                    "config_sha256", "code_sha256", "dependency_sha256", "input_sha256",
-                    "output_sha256", "replay_sha256", "bundle_sha256",
-                )
-            )
+            or row["analysis_included"]
+            or any(row[key] is None for key in (
+                "config_sha256", "code_sha256", "dependency_sha256", "input_sha256",
+            ))
+            or any(row[key] is not None for key in (
+                "output_sha256", "replay_sha256", "bundle_sha256",
+            ))
         ):
             raise ArtifactError("invalid episode disposition contradicts missingness or analysis inclusion")
         if disposition == "EXCLUDED" and (row["analysis_included"] or row["missingness"] is None):
@@ -1491,6 +1531,15 @@ def _publication_payloads(
                 or failure["seed"] != row["seed"]
                 or failure["condition_id"] != row["condition_id"]
                 or disposition != expected_disposition
+                or row["input_sha256"] != _failed_attempt_input_sha256(
+                    failure,
+                    protocol_sha256=row["protocol_sha256"],
+                    source_sha256=row["source_sha256"],
+                    scenario_sha256=row["scenario_sha256"],
+                    config_sha256=row["config_sha256"],
+                    code_sha256=row["code_sha256"],
+                    dependency_sha256=row["dependency_sha256"],
+                )
             ):
                 raise ArtifactError("declared-invalid raw row differs from its retained failure")
             normalized_raw.append(row)
@@ -1532,6 +1581,9 @@ def _publication_payloads(
             raise ArtifactError("plot row numeric fields are not finite")
         output_value = {key: rollout[key] for key in ("metrics", "events", "observations", "actions", "control_references", "summary")}
         expected_hashes = {
+            "protocol_sha256": metrics.get("protocol_sha256"),
+            "source_sha256": metrics.get("source_sha256"),
+            "scenario_sha256": metrics.get("scenario_identity_sha256"),
             "config_sha256": _digest_state(rollout["config"]),
             "code_sha256": hashlib.sha256(str(metadata.get("git_sha", "")).encode("ascii")).hexdigest(),
             "dependency_sha256": _digest_state(metadata.get("dependency_versions")),
@@ -1774,6 +1826,112 @@ def _quarantine_partial_publication(
         os.close(quarantine_descriptor)
 
 
+def _flat_directory_inventory(
+    directory_descriptor: int, expected_payloads: Mapping[str, bytes] | None,
+) -> tuple[int, tuple[str, ...]]:
+    names = tuple(sorted(os.listdir(directory_descriptor)))
+    total = 0
+    for name in names:
+        if Path(name).name != name:
+            raise ArtifactError("stale analysis stage contains an invalid name")
+        payload = _read_regular_at(directory_descriptor, name)
+        if expected_payloads is not None and (
+            name not in expected_payloads or payload != expected_payloads[name]
+        ):
+            raise ArtifactError("stale analysis stage contains ambiguous bytes")
+        total += len(payload)
+    return total, names
+
+
+def _quarantine_stale_analysis_stages(
+    parent_descriptor: int, output_name: str, expected_payloads: Mapping[str, bytes],
+) -> None:
+    prefix = f".{output_name}.analysis-stage-"
+    quarantine_name = f".{output_name}.analysis-quarantine"
+    stale_names = tuple(sorted(
+        name for name in os.listdir(parent_descriptor) if name.startswith(prefix)
+    ))
+    try:
+        quarantine_state = os.stat(
+            quarantine_name, dir_fd=parent_descriptor, follow_symlinks=False,
+        )
+    except FileNotFoundError:
+        quarantine_state = None
+    if quarantine_state is not None and not stat.S_ISDIR(quarantine_state.st_mode):
+        raise ArtifactError("analysis-stage quarantine is not a directory")
+    if not stale_names and quarantine_state is None:
+        return
+    if quarantine_state is None:
+        os.mkdir(quarantine_name, 0o700, dir_fd=parent_descriptor)
+    quarantine_descriptor = os.open(
+        quarantine_name,
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+        dir_fd=parent_descriptor,
+    )
+    staged_descriptors: list[tuple[str, int, tuple[int, int], int]] = []
+    try:
+        quarantine_total = 0
+        for name in sorted(os.listdir(quarantine_descriptor)):
+            if not name.startswith(prefix):
+                raise ArtifactError("analysis-stage quarantine contains an unknown entry")
+            state = os.stat(name, dir_fd=quarantine_descriptor, follow_symlinks=False)
+            if not stat.S_ISDIR(state.st_mode):
+                raise ArtifactError("analysis-stage quarantine contains a non-directory")
+            descriptor = os.open(
+                name,
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=quarantine_descriptor,
+            )
+            try:
+                size, _ = _flat_directory_inventory(descriptor, expected_payloads)
+                quarantine_total += size
+            finally:
+                os.close(descriptor)
+        for name in stale_names:
+            before = os.stat(name, dir_fd=parent_descriptor, follow_symlinks=False)
+            if not stat.S_ISDIR(before.st_mode):
+                raise ArtifactError("stale analysis stage is not a directory")
+            descriptor = os.open(
+                name,
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=parent_descriptor,
+            )
+            held = os.fstat(descriptor)
+            identity = (held.st_dev, held.st_ino)
+            if identity != (before.st_dev, before.st_ino):
+                os.close(descriptor)
+                raise ArtifactError("stale analysis stage identity changed during inventory")
+            try:
+                size, _ = _flat_directory_inventory(descriptor, expected_payloads)
+            except BaseException:
+                os.close(descriptor)
+                raise
+            if size > 32 * MIB:
+                os.close(descriptor)
+                raise ArtifactError("stale analysis stage exceeds its frozen temp ceiling")
+            staged_descriptors.append((name, descriptor, identity, size))
+            quarantine_total += size
+        if quarantine_total > 64 * MIB:
+            raise ArtifactError("analysis-stage quarantine exceeds its frozen byte ceiling")
+        for name, descriptor, identity, _ in staged_descriptors:
+            _renameat_directory_noreplace(
+                parent_descriptor, name, quarantine_descriptor, name,
+            )
+            after = os.stat(name, dir_fd=quarantine_descriptor, follow_symlinks=False)
+            held = os.fstat(descriptor)
+            if (
+                (after.st_dev, after.st_ino) != identity
+                or (held.st_dev, held.st_ino) != identity
+            ):
+                raise ArtifactError("quarantined analysis stage identity differs")
+        os.fsync(quarantine_descriptor)
+        os.fsync(parent_descriptor)
+    finally:
+        for _, descriptor, _, _ in staged_descriptors:
+            os.close(descriptor)
+        os.close(quarantine_descriptor)
+
+
 def reconstruct_evidence(
     output_dir: Path,
     raw_rows: Sequence[Mapping[str, object]],
@@ -1783,6 +1941,9 @@ def reconstruct_evidence(
     protocol_sha256: str,
 ) -> dict[str, object]:
     output_dir = Path(output_dir)
+    protocol_sha256 = _hash(protocol_sha256, "protocol_sha256")
+    if any(row.get("protocol_sha256") != protocol_sha256 for row in raw_rows):
+        raise ArtifactError("raw evidence protocol identity differs from the publication")
     payloads = _publication_payloads(raw_rows, annotated_index, plot_recipes)
     manifest = _artifact_manifest(payloads, protocol_sha256)
     marker = canonical_json_bytes(manifest)
@@ -1793,6 +1954,10 @@ def reconstruct_evidence(
     published = False
     try:
         fcntl.flock(parent_descriptor, fcntl.LOCK_EX)
+        _quarantine_stale_analysis_stages(
+            parent_descriptor, output_dir.name,
+            dict(payloads) | {"artifact-manifest.json": marker},
+        )
         try:
             final_state = os.stat(
                 output_dir.name, dir_fd=parent_descriptor, follow_symlinks=False,
