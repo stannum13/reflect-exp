@@ -68,6 +68,8 @@ Second-review RED/GREEN evidence includes: rejected-report acceptance (**2 RED â
 
 Final second-review V3 selection: **60 passed, 60 deselected in 481.01s**.
 
+Final complete Experiment 03 regression: **120 passed in 531.63s**.
+
 ## Qualification episodes
 
 The retained matrix contains exactly **18 executed episodes**, all using calibration seeds. Independent scoring reconstructed **17 SUCCESS** and **1 expected FAILURE**. The failure is the deliberately nonworking R0 semantic case, which exhausts its two control retries and safely aborts without executing a forbidden action.
