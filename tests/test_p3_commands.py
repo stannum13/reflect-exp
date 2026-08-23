@@ -183,7 +183,7 @@ def _write_repository(root: Path) -> str:
         passed_operation_ids=frozenset({"MUJOCO_PACKAGE_SMOKE"}),
     )
     (root / "docs").mkdir(exist_ok=True)
-    (root / "docs/ASSUMPTIONS.md").write_text("# Assumptions\n\nP3 evidence is simulation-only.\n")
+    (root / "docs/ASSUMPTIONS.md").write_text("# Recorded Assumptions\n\nP3 evidence is simulation-only.\n")
     (root / "docs/RUN_MANIFEST.yaml").write_text(yaml.safe_dump({
         "schema_version": 1, "safety": {"physical_deployment_allowed": False, "remote_enabled": False},
         "stages": {"p2": "complete", "p3": "complete"}, "phase_records": {},
