@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -25,16 +26,20 @@ def test_reconstruction_is_deterministic(tmp_path: Path) -> None:
         capture_output=True,
     )
     expected = [
+        "data/canonical_graph_data.json",
+        "data/case_outcomes.csv",
+        "data/cases.csv",
         "data/variant_summary.csv",
         "data/paired_differences.csv",
+        "data/paired_case_differences.csv",
         "data/mission_summary.csv",
         "data/event_stratum_summary.csv",
         "data/examples.json",
         "graphs/variant_success.svg",
         "graphs/paired_effects.svg",
-        "graphs/variant_success.png",
-        "graphs/paired_effects.png",
+        "RESULTS.md",
         "evidence_manifest.json",
+        "SHA256SUMS",
     ]
     for relative in expected:
         assert (output / relative).is_file(), relative
@@ -46,8 +51,12 @@ def test_reconstruction_is_deterministic(tmp_path: Path) -> None:
         text=True,
         capture_output=True,
     )
-    # SVG/CSV/JSON are intentionally byte-stable. PNGs carry normalized metadata.
+    # Canonical data, SVG, report, and evidence are byte-stable reconstruction outputs.
+    # The publication PNGs are frozen non-authoritative companions and are intentionally
+    # excluded from a clean reconstruction because their original rasterizer is undeclared.
     for relative in expected:
-        if relative.endswith(".png"):
-            continue
         assert digest(output / relative) == digest(second / relative), relative
+    assert not (output / "graphs" / "variant_success.png").exists()
+    assert not (output / "graphs" / "paired_effects.png").exists()
+    manifest = json.loads((output / "evidence_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["non_authoritative_png_companions"] == []

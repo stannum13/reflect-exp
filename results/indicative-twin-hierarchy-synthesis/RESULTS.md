@@ -8,6 +8,8 @@ Two independently completed, frozen 400-case runs (A and B) compare T0–T4 vari
 
 Success fractions are exact counts over 400 cases per run; uncertainty bars use Wilson 95% intervals. T3−T2 and T4−T3 are paired case-level success differences. Each run uses a deterministic 10,000-draw paired-case bootstrap. The pooled interval samples the two runs as clusters, then 400 matched cases within each selected run; with only two clusters it is transparent descriptive sensitivity analysis, not robust population inference.
 
+Canonical CSV/JSON data and SVG figures are authoritative, byte-stable raw-to-output reconstruction artifacts. The two published PNG figures are frozen, non-authoritative raster companions: their original Pillow rasterizer was not a declared project dependency, so clean reconstruction intentionally does not generate or claim to reproduce them. When the companion files are present in this publication directory, their existing bytes are recorded in `evidence_manifest.json` and `SHA256SUMS`.
+
 ## Objective
 
 Assess whether the progressively richer representation, live-belief/history, and reactive-replanning layers coincide with better mission execution in these fixed scenarios.

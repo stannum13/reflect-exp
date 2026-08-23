@@ -441,75 +441,6 @@ def write_effect_svg(path: Path, rows: list[dict[str, Any]]) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_pngs(graph_dir: Path, variant_rows: list[dict[str, Any]], paired_rows: list[dict[str, Any]]) -> None:
-    """Raster companion figures using Pillow; output is deterministic and metadata-free."""
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-    except ImportError as exc:  # pragma: no cover - environment guard
-        raise RuntimeError("Pillow is required for PNG companion figures") from exc
-    regular = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial.ttf", 24)
-    small = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial.ttf", 18)
-    bold = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", 36)
-    # Rasterize the same two graph-data views with spacious, publication-ready canvas.
-    image = Image.new("RGB", (1600, 950), "white")
-    draw = ImageDraw.Draw(image)
-    draw.text((100, 45), "Mission success by hierarchy variant", font=bold, fill="#172033")
-    draw.text((100, 95), "Bars: exact success fraction; whiskers: Wilson 95% interval; 400 matched cases per run/variant.", font=small, fill="#172033")
-    left, top, right, bottom = 125, 160, 90, 175
-    pw, ph = 1600-left-right, 950-top-bottom
-    for tick in range(0, 11, 2):
-        y = top + ph * (1-tick/10)
-        draw.line((left, y, 1600-right, y), fill="#d7dde7", width=2)
-        draw.text((55, y-11), f"{tick*10}%", font=small, fill="#172033")
-    draw.line((left, top, left, 950-bottom), fill="#526077", width=3)
-    draw.line((left, 950-bottom, 1600-right, 950-bottom), fill="#526077", width=3)
-    colors = {"T0": "#9aa5b5", "T1": "#6fa8dc", "T2": "#7ec8b5", "T3": "#405cf5", "T4": "#e18d38"}
-    group_width, bar_width = pw/2, 84
-    for run_i, run in enumerate(RUNS):
-        center = left + group_width*(run_i+.5)
-        draw.text((center-115, 950-bottom+55), f"Run {run.upper()}", font=regular, fill="#172033")
-        for i, variant in enumerate(VARIANTS):
-            row = next(item for item in variant_rows if item["run"] == run and item["variant"] == variant)
-            rate, low, high = (float(row[key]) for key in ("mission_success_fraction", "success_wilson95_low", "success_wilson95_high"))
-            x = center + (i-2)*(bar_width+18)-bar_width/2
-            y = top+ph*(1-rate)
-            draw.rounded_rectangle((x, y, x+bar_width, 950-bottom), radius=4, fill=colors[variant])
-            mid, errt, errb = x+bar_width/2, top+ph*(1-high), top+ph*(1-low)
-            draw.line((mid, errt, mid, errb), fill="#172033", width=3)
-            draw.line((mid-9, errt, mid+9, errt), fill="#172033", width=3)
-            draw.line((mid-9, errb, mid+9, errb), fill="#172033", width=3)
-            draw.text((mid-25, y-28), f"{rate*100:.1f}%", font=small, fill="#172033")
-            draw.text((mid-15, 950-bottom+20), variant, font=small, fill="#172033")
-    draw.text((125, 900), "Source: frozen raw outcomes from runs A and B. Indicative architectural parallel only; not three-level recovery evidence.", font=small, fill="#172033")
-    image.save(graph_dir / "variant_success.png", format="PNG", optimize=False)
-
-    image = Image.new("RGB", (1600, 850), "white")
-    draw = ImageDraw.Draw(image)
-    draw.text((100, 45), "Paired mission-success differences", font=bold, fill="#172033")
-    draw.text((100, 95), "Point: matched-case mean difference; whisker: deterministic 10,000-draw bootstrap 95% interval.", font=small, fill="#172033")
-    left, top, right, bottom = 310, 155, 100, 115
-    pw, ph = 1600-left-right, 850-top-bottom
-    xmin, xmax = -0.03, .48
-    sx = lambda x: left+(x-xmin)/(xmax-xmin)*pw
-    for tick in (0.0, .1, .2, .3, .4):
-        x = sx(tick)
-        draw.line((x, top, x, 850-bottom), fill="#d7dde7", width=2)
-        draw.text((x-20, 850-bottom+25), f"{tick*100:.0f} pp", font=small, fill="#172033")
-    draw.line((sx(0), top, sx(0), 850-bottom), fill="#172033", width=3)
-    display = [("T3-T2", "run_a"), ("T3-T2", "run_b"), ("T3-T2", "pooled_two_runs"), ("T4-T3", "run_a"), ("T4-T3", "run_b"), ("T4-T3", "pooled_two_runs")]
-    for i, (contrast, scope) in enumerate(display):
-        row = next(item for item in paired_rows if item["contrast"] == contrast and item["scope"] == scope)
-        y = top+(i+.5)*(ph/len(display))
-        estimate, low, high = (float(row[key]) for key in ("paired_success_difference", "bootstrap95_low", "bootstrap95_high"))
-        color = "#405cf5" if contrast == "T3-T2" else "#e18d38"
-        draw.line((sx(low), y, sx(high), y), fill=color, width=8)
-        draw.ellipse((sx(estimate)-10, y-10, sx(estimate)+10, y+10), fill=color)
-        draw.text((25, y-12), f"{contrast.replace('-', '−')} · {scope.replace('_', ' ')}", font=regular, fill="#172033")
-        draw.text((sx(high)+18, y-12), f"{estimate*100:+.1f} pp [{low*100:+.1f}, {high*100:+.1f}]", font=small, fill="#172033")
-    draw.text((310, 800), "Pooled: resample runs first, then paired cases within selected runs (two clusters); descriptive sensitivity interval only.", font=small, fill="#172033")
-    image.save(graph_dir / "paired_effects.png", format="PNG", optimize=False)
-
-
 def results_markdown(variant_rows: list[dict[str, Any]], paired: list[dict[str, Any]]) -> str:
     by = {(row["run"], row["variant"]): row for row in variant_rows}
     pa = {(row["scope"], row["contrast"]): row for row in paired}
@@ -523,6 +454,8 @@ def results_markdown(variant_rows: list[dict[str, Any]], paired: list[dict[str, 
         "## Methodology",
         "",
         "Success fractions are exact counts over 400 cases per run; uncertainty bars use Wilson 95% intervals. T3−T2 and T4−T3 are paired case-level success differences. Each run uses a deterministic 10,000-draw paired-case bootstrap. The pooled interval samples the two runs as clusters, then 400 matched cases within each selected run; with only two clusters it is transparent descriptive sensitivity analysis, not robust population inference.",
+        "",
+        "Canonical CSV/JSON data and SVG figures are authoritative, byte-stable raw-to-output reconstruction artifacts. The two published PNG figures are frozen, non-authoritative raster companions: their original Pillow rasterizer was not a declared project dependency, so clean reconstruction intentionally does not generate or claim to reproduce them. When the companion files are present in this publication directory, their existing bytes are recorded in `evidence_manifest.json` and `SHA256SUMS`.",
         "",
         "## Objective",
         "",
@@ -559,14 +492,20 @@ def evidence(project_root: Path, output: Path, runs: list[dict[str, Any]]) -> di
     generated_names = {"evidence_manifest.json", "SHA256SUMS", "reconstruct_analysis.py", "test_reconstruct.py"}
     output_files = [
         path for path in sorted(output.rglob("*"))
-        if path.is_file() and path.name not in generated_names and "__pycache__" not in path.parts
+        if path.is_file() and path.name not in generated_names and path.suffix.lower() != ".png" and "__pycache__" not in path.parts
     ]
     outputs = [{"path": path.relative_to(output).as_posix(), "bytes": path.stat().st_size, "sha256": sha256(path)} for path in output_files]
+    companions = [
+        {"path": path.relative_to(output).as_posix(), "bytes": path.stat().st_size, "sha256": sha256(path)}
+        for path in sorted((output / "graphs").glob("*.png"))
+    ]
     return {
         "schema_version": "indicative-twin-hierarchy-synthesis-evidence-v1",
         "analysis_identity": {"script": "reconstruct_analysis.py", "bootstrap_draws": BOOTSTRAP_DRAWS, "bootstrap_interval": "percentile_2.5_to_97.5_linear_interpolation"},
         "inputs": inputs,
         "outputs": outputs,
+        "non_authoritative_png_companions": companions,
+        "png_reconstruction_policy": "PNG companions are authenticated when present but intentionally excluded from clean reconstruction; canonical data and SVG are the authoritative reproducible graph artifacts.",
         "self_hashing": "evidence_manifest.json is hashed in SHA256SUMS, a non-self-referential sidecar; SHA256SUMS itself is an index rather than a substantive analysis artifact.",
     }
 
@@ -587,7 +526,7 @@ def reconstruct(project_root: Path, output: Path) -> None:
     runs = [load_run(project_root, run) for run in RUNS]
     if output.exists():
         if output.resolve() == (project_root / "results" / ROOT_NAME).resolve():
-            for child in ("data", "graphs", "evidence_manifest.json", "SHA256SUMS", "RESULTS.md"):
+            for child in ("data", "evidence_manifest.json", "SHA256SUMS", "RESULTS.md"):
                 target = output / child
                 if target.is_dir():
                     shutil.rmtree(target)
@@ -619,7 +558,6 @@ def reconstruct(project_root: Path, output: Path) -> None:
     write_json(output / "data" / "examples.json", {"schema_version": "indicative-twin-hierarchy-synthesis-examples-v1", "examples": examples})
     write_variant_svg(output / "graphs" / "variant_success.svg", variant_rows)
     write_effect_svg(output / "graphs" / "paired_effects.svg", paired_rows)
-    write_pngs(output / "graphs", variant_rows, paired_rows)
     (output / "RESULTS.md").write_text(results_markdown(variant_rows, paired_rows), encoding="utf-8")
     write_evidence(project_root, output, runs)
 
