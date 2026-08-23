@@ -270,6 +270,29 @@ def _parents(root: Path, commit: str) -> tuple[str, ...]:
     return tuple(fields[1:])
 
 
+def _require_capture_on_current_first_parent(
+    root: Path, current_head: str, capture_sha: str
+) -> None:
+    """Require capture to be a bounded, merge-free first-parent ancestor of HEAD."""
+    current = current_head
+    if current == capture_sha:
+        return
+    for _ in range(MAX_ANCESTRY_COMMITS):
+        parents = _parents(root, current)
+        if len(parents) > 1:
+            raise P3GateError(
+                "current HEAD ancestry contains a merge before the sealed capture"
+            )
+        if not parents:
+            raise P3GateError(
+                "sealed capture is unrelated to the current HEAD first-parent root"
+            )
+        current = parents[0]
+        if current == capture_sha:
+            return
+    raise P3GateError("bounded current HEAD ancestry did not reach the sealed capture")
+
+
 def _derive_state_indexes(
     root: Path, capture_sha: str, reports: Mapping[str, str]
 ) -> dict[str, str]:
@@ -515,8 +538,13 @@ def _verify_exact_evidence(expected: P3GateEvidence, actual: P3GateEvidence) -> 
 
 def require_p3_gate(repo_root: Path, evidence: P3GateEvidence) -> None:
     try:
+        root = Path(repo_root)
+        current_head = _git_text(root, "rev-parse", "HEAD")
+        _require_capture_on_current_first_parent(
+            root, current_head, evidence.run_manifest_capture_git_sha
+        )
         reconstructed = _capture_gate(
-            Path(repo_root), evidence.run_manifest_capture_git_sha
+            root, evidence.run_manifest_capture_git_sha
         )
         _verify_exact_evidence(evidence, reconstructed)
     except P3GateError:
@@ -587,38 +615,72 @@ def _publish_create_only(parent: Path, name: str, content: bytes) -> None:
                 raise P3GateError("concurrent P3 gate publication conflict")
             os.fsync(directory_fd)
             return
-        destination_state = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
-        temporary_state = os.stat(
-            temporary, dir_fd=directory_fd, follow_symlinks=False
-        )
-        descriptor_state = os.fstat(descriptor)
-        current = b""
-        while len(current) < descriptor_state.st_size:
-            chunk = os.pread(
-                descriptor,
-                descriptor_state.st_size - len(current),
-                len(current),
+        try:
+            destination_descriptor = os.open(
+                name,
+                os.O_RDONLY
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_CLOEXEC", 0),
+                dir_fd=directory_fd,
             )
-            if not chunk:
-                break
-            current += chunk
-        if (
-            (destination_state.st_dev, destination_state.st_ino) != identity
-            or (temporary_state.st_dev, temporary_state.st_ino) != identity
-            or not stat.S_ISREG(destination_state.st_mode)
-            or not stat.S_ISREG(descriptor_state.st_mode)
-            or stat.S_IMODE(descriptor_state.st_mode) != 0o600
-            or destination_state.st_size != len(content)
-            or current != content
-        ):
-            latest = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
-            if (latest.st_dev, latest.st_ino) == (
-                destination_state.st_dev,
-                destination_state.st_ino,
+            try:
+                destination_state = os.fstat(destination_descriptor)
+                destination_content = b""
+                while len(destination_content) < destination_state.st_size:
+                    chunk = os.pread(
+                        destination_descriptor,
+                        destination_state.st_size - len(destination_content),
+                        len(destination_content),
+                    )
+                    if not chunk:
+                        break
+                    destination_content += chunk
+            finally:
+                os.close(destination_descriptor)
+            temporary_state = os.stat(
+                temporary, dir_fd=directory_fd, follow_symlinks=False
+            )
+            descriptor_state = os.fstat(descriptor)
+            held_content = b""
+            while len(held_content) < descriptor_state.st_size:
+                chunk = os.pread(
+                    descriptor,
+                    descriptor_state.st_size - len(held_content),
+                    len(held_content),
+                )
+                if not chunk:
+                    break
+                held_content += chunk
+            if (
+                (destination_state.st_dev, destination_state.st_ino) != identity
+                or (temporary_state.st_dev, temporary_state.st_ino) != identity
+                or not stat.S_ISREG(destination_state.st_mode)
+                or not stat.S_ISREG(descriptor_state.st_mode)
+                or stat.S_IMODE(descriptor_state.st_mode) != 0o600
+                or destination_state.st_size != len(content)
+                or descriptor_state.st_size != len(content)
+                or destination_content != content
+                or held_content != content
             ):
+                raise P3GateError(
+                    "P3 gate publication did not retain the held temporary inode"
+                )
+            os.fsync(directory_fd)
+            final_state = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+            if (final_state.st_dev, final_state.st_ino) != identity:
+                raise P3GateError(
+                    "P3 gate destination identity drifted after publication fsync"
+                )
+        except (OSError, P3GateError) as exc:
+            try:
+                latest = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                latest = None
+            if latest is not None and identity == (latest.st_dev, latest.st_ino):
                 os.unlink(name, dir_fd=directory_fd)
-            raise P3GateError("P3 gate publication did not retain the held temporary inode")
-        os.fsync(directory_fd)
+            if isinstance(exc, P3GateError):
+                raise
+            raise P3GateError(f"P3 gate destination publication failed: {exc}") from exc
     finally:
         if descriptor >= 0:
             os.close(descriptor)

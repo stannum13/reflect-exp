@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 from pathlib import Path
+import stat
 import subprocess
 
 import pytest
@@ -189,13 +190,162 @@ def test_create_only_publication_rejects_temporary_inode_swap(
     with pytest.raises(gate.P3GateError, match="inode|publication|temporary"):
         gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
     assert attacked
-    assert not (tmp_path / "gate.yaml").exists()
+    assert (tmp_path / "gate.yaml").read_bytes() == b"attacker\n"
+
+
+def test_create_only_publication_rejects_post_link_destination_swap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_link = gate.os.link
+    real_open = gate.os.open
+    linked = False
+    attacked = False
+
+    def mark_linked(source: str, target: str, **kwargs: object) -> None:
+        nonlocal linked
+        real_link(source, target, **kwargs)
+        linked = True
+
+    def swap_before_destination_open(
+        path: str, flags: int, mode: int = 0o777, *, dir_fd: int | None = None
+    ) -> int:
+        nonlocal attacked
+        if linked and not attacked and path == "gate.yaml" and dir_fd is not None:
+            attacked = True
+            gate.os.unlink(path, dir_fd=dir_fd)
+            attacker = real_open(
+                path,
+                gate.os.O_WRONLY | gate.os.O_CREAT | gate.os.O_EXCL,
+                0o600,
+                dir_fd=dir_fd,
+            )
+            gate.os.write(attacker, b"attacker\n")
+            gate.os.close(attacker)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(gate.os, "link", mark_linked)
+    monkeypatch.setattr(gate.os, "open", swap_before_destination_open)
+    with pytest.raises(gate.P3GateError, match="publication|destination|inode"):
+        gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
+    assert attacked
+    assert (tmp_path / "gate.yaml").read_bytes() == b"attacker\n"
+
+
+def test_create_only_publication_preserves_unowned_post_verification_conflict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_fsync = gate.os.fsync
+    attacked = False
+
+    def swap_before_final_identity_check(descriptor: int) -> None:
+        nonlocal attacked
+        if not attacked and stat.S_ISDIR(gate.os.fstat(descriptor).st_mode):
+            attacked = True
+            gate.os.unlink("gate.yaml", dir_fd=descriptor)
+            attacker = gate.os.open(
+                "gate.yaml",
+                gate.os.O_WRONLY | gate.os.O_CREAT | gate.os.O_EXCL,
+                0o600,
+                dir_fd=descriptor,
+            )
+            gate.os.write(attacker, b"unowned\n")
+            gate.os.close(attacker)
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(gate.os, "fsync", swap_before_final_identity_check)
+    with pytest.raises(gate.P3GateError, match="publication|destination|inode"):
+        gate._publish_create_only(tmp_path, "gate.yaml", b"authentic\n")
+    assert attacked
+    assert (tmp_path / "gate.yaml").read_bytes() == b"unowned\n"
 
 
 def test_state_index_search_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repository, _, evidence = _closed_repository(tmp_path)
     monkeypatch.setattr(gate, "MAX_ANCESTRY_COMMITS", 1)
     with pytest.raises(gate.P3GateError, match="bound|ancestry|state-index"):
+        gate.require_p3_gate(repository, evidence)
+
+
+def test_sealed_capture_must_be_on_current_head_first_parent_ancestry(
+    tmp_path: Path,
+) -> None:
+    repository, _, evidence = _closed_repository(tmp_path)
+    tree = subprocess.run(
+        ["git", "write-tree"], cwd=repository, capture_output=True, check=True, text=True
+    ).stdout.strip()
+    unrelated = subprocess.run(
+        ["git", "commit-tree", tree],
+        cwd=repository,
+        input="unrelated root\n",
+        capture_output=True,
+        check=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "checkout", "--detach", unrelated], cwd=repository, check=True
+    )
+    with pytest.raises(gate.P3GateError, match="capture|ancestry|root|unrelated"):
+        gate.require_p3_gate(repository, evidence)
+
+
+def test_sealed_capture_to_current_head_walk_is_bounded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository, _, evidence = _closed_repository(tmp_path)
+    for index in range(2):
+        subprocess.run(
+            ["git", "commit", "--allow-empty", "-m", f"later {index}"],
+            cwd=repository,
+            capture_output=True,
+            check=True,
+        )
+    monkeypatch.setattr(gate, "MAX_ANCESTRY_COMMITS", 1)
+    with pytest.raises(gate.P3GateError, match="capture|bound|ancestry"):
+        gate.require_p3_gate(repository, evidence)
+
+
+def test_sealed_capture_rejects_merge_in_current_head_ancestry(
+    tmp_path: Path,
+) -> None:
+    repository, _, evidence = _closed_repository(tmp_path)
+    capture = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repository,
+        capture_output=True,
+        check=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "checkout", "-b", "side"],
+        cwd=repository,
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "side"],
+        cwd=repository,
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "checkout", "--detach", capture],
+        cwd=repository,
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "first parent"],
+        cwd=repository,
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "merge", "--no-ff", "side", "-m", "merge"],
+        cwd=repository,
+        capture_output=True,
+        check=True,
+    )
+    with pytest.raises(gate.P3GateError, match="merge"):
         gate.require_p3_gate(repository, evidence)
 
 
