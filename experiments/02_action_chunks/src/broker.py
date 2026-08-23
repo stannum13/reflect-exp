@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import json
+from types import MappingProxyType
+from typing import Callable, Mapping
 
 import numpy as np
 
@@ -48,26 +51,32 @@ def derive_ensemble(parents: tuple[np.ndarray, ...]) -> np.ndarray:
     return _readonly_float64(np.mean(np.stack(arrays, axis=0), axis=0), ndim=2)
 
 
-def derive_overlap_blend(old: np.ndarray, new: np.ndarray, overlap_rows: int) -> np.ndarray:
+def derive_overlap_blend(old: np.ndarray, new: np.ndarray, overlap_rows: int, blend_window: int | None = None) -> np.ndarray:
     left = _readonly_float64(old, ndim=2)
     right = _readonly_float64(new, ndim=2)
     if left.shape != right.shape or type(overlap_rows) is not int or not 0 <= overlap_rows <= len(left):
         raise BrokerError("invalid overlap blend inputs")
     result = np.array(right, copy=True, order="C")
+    denominator = overlap_rows if blend_window is None else blend_window
+    if denominator < overlap_rows or denominator <= 0:
+        raise BrokerError("blend window cannot be shorter than overlap")
     for row in range(overlap_rows):
-        beta = (row + 1) / (overlap_rows + 1)
+        beta = (row + 1) / (denominator + 1)
         result[row] = (1.0 - beta) * left[row] + beta * right[row]
     return _readonly_float64(result, ndim=2)
 
 
-def derive_rtc_approximation(old: np.ndarray, new: np.ndarray, overlap_rows: int) -> np.ndarray:
+def derive_rtc_approximation(old: np.ndarray, new: np.ndarray, overlap_rows: int, projection_window: int | None = None) -> np.ndarray:
     left = _readonly_float64(old, ndim=2)
     right = _readonly_float64(new, ndim=2)
     if left.shape != right.shape or type(overlap_rows) is not int or not 0 < overlap_rows <= len(left):
         raise BrokerError("invalid RTC approximation inputs")
     result = np.array(right, copy=True, order="C")
+    denominator = overlap_rows if projection_window is None else projection_window
+    if denominator < overlap_rows or denominator <= 0:
+        raise BrokerError("projection window cannot be shorter than overlap")
     for row in range(overlap_rows):
-        gamma = (overlap_rows - row) / overlap_rows
+        gamma = (denominator - row) / denominator
         result[row] = gamma * left[row] + (1.0 - gamma) * right[row]
     return _readonly_float64(result, ndim=2)
 
@@ -115,32 +124,125 @@ def apply_fault_payload(actions: np.ndarray, *, stack_id: str, fault_id: str, en
     return FaultPayload("exp02-fault-payload-v1", selected, direction, selected_sign, amplitude, step_index, pre, post)
 
 
+_SEAL_KEY = b"exp02-sealed-proposal-v1"
+
+
+def _array_sha(value: np.ndarray) -> str:
+    return hashlib.sha256(value.astype("<f8", copy=False).tobytes(order="C")).hexdigest()
+
+
 @dataclass(frozen=True)
-class NormalizedProposal:
+class SealedProposal:
     proposal_id: str
+    request_id: str
     request_sequence: int
+    stack_id: str
+    representation: str
+    skill_id: str
+    expected_phase: str
+    source_observation_id: int
+    source_observation_time_ns: int
+    normal_delivery_tick: int
     actual_delivery_tick: int
+    coverage_start_tick: int
+    coverage_end_tick: int
+    delivery_mode: str
+    raw_actions: np.ndarray
     actions: np.ndarray
+    policy_actions_sha256: str
+    normalized_actions_sha256: str
+    fault_id: str | None
+    fault_revision: str | None
+    fault_step_index: int | None
+    fault_amplitude: float | None
+    fault_direction: tuple[float, ...] | None
+    fault_sign: int | None
+    pre_fault_normalized_sha256: str | None
+    disposition: str
+    _signature: str
 
     def __post_init__(self) -> None:
-        if not isinstance(self.proposal_id, str) or not self.proposal_id:
-            raise BrokerError("proposal_id must be nonempty")
-        if type(self.request_sequence) is not int or self.request_sequence < 0:
-            raise BrokerError("request_sequence must be a nonnegative integer")
-        if type(self.actual_delivery_tick) is not int or self.actual_delivery_tick < 0:
-            raise BrokerError("actual_delivery_tick must be a nonnegative integer")
-        actions = _readonly_float64(self.actions, ndim=2)
-        if not actions.shape[0] or not actions.shape[1]:
-            raise BrokerError("proposal actions must be nonempty")
-        object.__setattr__(self, "actions", actions)
+        width = 3 if self.stack_id == "P2" else 2 if self.stack_id == "P4" else 0
+        expected_representation = "JOINT_POSITION" if self.stack_id == "P2" else "EEF_TRAJECTORY"
+        if width == 0 or self.representation != expected_representation:
+            raise BrokerError("proposal stack/representation binding is invalid")
+        if not all(isinstance(value, str) and value for value in (self.proposal_id, self.request_id, self.skill_id, self.expected_phase)):
+            raise BrokerError("proposal identities are invalid")
+        for name in ("request_sequence", "source_observation_id", "source_observation_time_ns", "normal_delivery_tick", "actual_delivery_tick", "coverage_start_tick", "coverage_end_tick"):
+            value = getattr(self, name)
+            if type(value) is not int or value < 0:
+                raise BrokerError(f"{name} must be a nonnegative integer")
+        if self.delivery_mode not in {"normal", "paused"} or self.disposition != "DELIVERED":
+            raise BrokerError("proposal delivery/disposition is invalid")
+        if (self.delivery_mode == "normal") != (self.actual_delivery_tick == self.normal_delivery_tick) or (self.delivery_mode == "paused" and self.actual_delivery_tick <= self.normal_delivery_tick):
+            raise BrokerError("proposal normal/paused timing binding is invalid")
+        if self.coverage_start_tick != self.actual_delivery_tick or self.coverage_end_tick != min(self.actual_delivery_tick + 125, 3125) or self.coverage_end_tick - self.coverage_start_tick != 125:
+            raise BrokerError("proposal coverage binding is invalid")
+        raw = _readonly_float64(self.raw_actions, ndim=2); actions = _readonly_float64(self.actions, ndim=2)
+        if raw.shape != (9, width) or actions.shape != (125, width):
+            raise BrokerError("proposal raw/normalized shapes are invalid")
+        object.__setattr__(self, "raw_actions", raw); object.__setattr__(self, "actions", actions)
+        if _array_sha(raw) != self.policy_actions_sha256 or _array_sha(actions) != self.normalized_actions_sha256:
+            raise BrokerError("proposal byte/hash binding is invalid")
+        if self._signature != _proposal_signature(self):
+            raise BrokerError("proposal seal is invalid")
 
     @property
     def expiry_tick(self) -> int:
-        return self.actual_delivery_tick + self.actions.shape[0]
+        return self.coverage_end_tick
+
+    @property
+    def coverage_ticks(self) -> tuple[int, int]:
+        return self.coverage_start_tick, self.coverage_end_tick
 
     @property
     def actions_sha256(self) -> str:
-        return hashlib.sha256(self.actions.tobytes(order="C")).hexdigest()
+        return self.normalized_actions_sha256
+
+    @property
+    def dt_s(self) -> float:
+        return 0.002
+
+
+def _proposal_signature(value: SealedProposal | Mapping[str, object]) -> str:
+    names = ("proposal_id", "request_id", "request_sequence", "stack_id", "representation", "skill_id", "expected_phase", "source_observation_id", "source_observation_time_ns", "normal_delivery_tick", "actual_delivery_tick", "coverage_start_tick", "coverage_end_tick", "delivery_mode", "policy_actions_sha256", "normalized_actions_sha256", "fault_id", "fault_revision", "fault_step_index", "fault_amplitude", "fault_direction", "fault_sign", "pre_fault_normalized_sha256", "disposition")
+    payload = {name: (getattr(value, name) if isinstance(value, SealedProposal) else value[name]) for name in names}
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("ascii")
+    return hashlib.sha256(_SEAL_KEY + encoded).hexdigest()
+
+
+def _seal_proposal(**values: object) -> SealedProposal:
+    values["_signature"] = _proposal_signature(values)
+    return SealedProposal(**values)  # type: ignore[arg-type]
+
+
+@dataclass(frozen=True)
+class ExecutableChunk:
+    chunk_id: str
+    representation: str
+    skill_id: str
+    source_observation_id: int
+    source_observation_time_ns: int
+    coverage: tuple[int, int]
+    actions: np.ndarray
+    rule: str
+    parent_sha256s: tuple[str, ...]
+    parent_coverages: tuple[tuple[str, int, int], ...]
+    owner_observation_id: int
+    h: int | None
+    output_sha256: str
+
+    def __post_init__(self) -> None:
+        actions = _readonly_float64(self.actions, ndim=2); object.__setattr__(self, "actions", actions)
+        if self.coverage[1] - self.coverage[0] != len(actions) or self.coverage[1] <= self.coverage[0]:
+            raise BrokerError("executable coverage is invalid")
+        if self.parent_sha256s != tuple(sorted(self.parent_sha256s)) or _array_sha(actions) != self.output_sha256:
+            raise BrokerError("executable parent/output binding is invalid")
+        if self.rule in {"OVERLAP_BLEND", "RTC_APPROXIMATION"} and (type(self.h) is not int or self.h <= 0):
+            raise BrokerError("overlap derivation requires positive h")
+
+
+NormalizedProposal = SealedProposal
 
 
 @dataclass(frozen=True)
@@ -149,6 +251,11 @@ class BrokerTransition:
     event_type: str
     chunk_id: str | None
     detail: str
+    sidecar: Mapping[str, object] | None = None
+
+    def __post_init__(self) -> None:
+        if self.sidecar is not None:
+            object.__setattr__(self, "sidecar", MappingProxyType(dict(self.sidecar)))
 
 
 @dataclass(frozen=True)
@@ -162,14 +269,28 @@ class IssuedAction:
         object.__setattr__(self, "action", _readonly_float64(self.action, ndim=1))
 
 
-class TemporalBroker:
-    """Minimal real lifecycle seam: delivery, issue, safe hold, and close."""
+@dataclass(frozen=True)
+class PendingRequest:
+    request_id: str
+    request_sequence: int
+    request_tick: int
+    delivery_tick: int
 
-    def __init__(self, *, terminal_tick: int) -> None:
-        if type(terminal_tick) is not int or terminal_tick <= 0:
-            raise BrokerError("terminal_tick must be a positive integer")
-        self._terminal_tick = terminal_tick
-        self._active: NormalizedProposal | None = None
+
+class TemporalBroker:
+    """Total integer-tick request/delivery/derivation/issue lifecycle."""
+
+    def __init__(self, *, protocol_id: str, capacity: int, terminal_tick: int, proposal_verifier: Callable[[SealedProposal], bool], overlap_rows: int = 1, ensemble_lambda: float = 0.0, request_cutoff_tick: int = 2500) -> None:
+        if protocol_id not in set("ABCDEFG") or type(capacity) is not int or capacity <= 0 or type(terminal_tick) is not int or terminal_tick <= 0:
+            raise BrokerError("broker configuration is invalid")
+        if type(overlap_rows) is not int or overlap_rows <= 0 or not callable(proposal_verifier) or type(request_cutoff_tick) is not int or request_cutoff_tick < 0:
+            raise BrokerError("broker verifier/overlap configuration is invalid")
+        self.protocol_id = protocol_id; self.capacity = capacity; self._terminal_tick = terminal_tick
+        self._verifier = proposal_verifier; self._overlap_rows = overlap_rows; self._lambda = float(ensemble_lambda)
+        self._request_cutoff_tick = min(request_cutoff_tick, terminal_tick - 1)
+        self._active: ExecutableChunk | None = None
+        self._contributors: list[SealedProposal] = []
+        self._pending: dict[str, PendingRequest] = {}
         self._last_sequence = -1
         self._hold_id: str | None = None
         self._hold_action: np.ndarray | None = None
@@ -177,6 +298,7 @@ class TemporalBroker:
         self._issued: list[IssuedAction] = []
         self._hold_ticks: list[int] = []
         self._finished = False
+        self._current_tick = -1; self._tick_open = False; self._requested_this_tick = False; self._issued_this_tick = False; self._pending_at_start = 0; self._last_delivery_order: tuple[int, int] | None = None; self._transition_prepared = False
 
     @property
     def events(self) -> tuple[BrokerTransition, ...]:
@@ -192,71 +314,160 @@ class TemporalBroker:
 
     @property
     def active_chunk_id(self) -> str | None:
-        return None if self._active is None else self._active.proposal_id
+        return None if self._active is None else self._active.chunk_id
+
+    @property
+    def active(self) -> ExecutableChunk | None:
+        return self._active
 
     @property
     def pending_count(self) -> int:
-        return 0
+        return len(self._pending)
 
-    def _expire(self, tick: int) -> None:
-        if self._active is not None and tick >= self._active.expiry_tick:
-            self._events.append(BrokerTransition(tick, "CHUNK_EXPIRED", self._active.proposal_id, "HALF_OPEN_EXPIRY"))
-            self._active = None
+    def open_tick(self, tick: int) -> None:
+        if self._finished or self._tick_open or type(tick) is not int or tick != self._current_tick + 1 or tick > self._terminal_tick:
+            raise BrokerError("ticks must be monotonic, contiguous, and opened once")
+        self._current_tick = tick; self._tick_open = True; self._requested_this_tick = False; self._issued_this_tick = False; self._pending_at_start = len(self._pending); self._last_delivery_order = None; self._transition_prepared = False
 
-    def deliver(self, proposal: NormalizedProposal, tick: int) -> BrokerTransition:
-        if self._finished or type(tick) is not int:
-            raise BrokerError("broker is closed or tick is invalid")
-        self._expire(tick)
-        if tick >= proposal.expiry_tick:
-            event = BrokerTransition(tick, "CHUNK_REJECTED", proposal.proposal_id, "EXPIRED")
-            self._events.append(event)
-            return event
-        if tick != proposal.actual_delivery_tick:
-            raise BrokerError("delivery tick does not match proposal provenance")
-        if proposal.expiry_tick <= tick:
-            raise BrokerError("proposal is expired")
+    def _prepare_transition(self) -> None:
+        if self._transition_prepared:
+            return
+        self._transition_prepared = True
+        self._contributors = [item for item in self._contributors if item.coverage_end_tick > self._current_tick]
+        if self._active is not None and self._current_tick >= self._active.coverage[1]:
+            expired = self._active; self._active = None
+            self._events.append(BrokerTransition(self._current_tick, "CHUNK_EXPIRED", expired.chunk_id, "HALF_OPEN_EXPIRY"))
+            if self.protocol_id == "C" and self._contributors:
+                self._active = self._derive_c()
+                self._events.append(BrokerTransition(self._current_tick, "DERIVATION_RECOMPUTED", self._active.chunk_id, "CONTRIBUTOR_EXPIRY", self._sidecar(self._active)))
+                self._events.append(BrokerTransition(self._current_tick, "CHUNK_ACCEPTED", self._active.chunk_id, self._active.rule, self._sidecar(self._active)))
+
+    def request(self, request_id: str, request_sequence: int, *, delivery_tick: int, drop: bool = False) -> BrokerTransition:
+        if not self._tick_open or self._requested_this_tick:
+            raise BrokerError("at most one request is allowed per open nonterminal tick")
+        if self._current_tick > self._request_cutoff_tick:
+            raise BrokerError("request is after the sealed cutoff")
+        if not isinstance(request_id, str) or not request_id or request_id in self._pending or type(request_sequence) is not int or request_sequence < 0 or type(delivery_tick) is not int or delivery_tick < self._current_tick:
+            raise BrokerError("request identity/timing is invalid")
+        if self._pending_at_start >= self.capacity or len(self._pending) >= self.capacity:
+            raise BrokerError("request exceeds capacity measured at tick start")
+        self._requested_this_tick = True
+        if drop:
+            event = BrokerTransition(self._current_tick, "REQUEST_DROPPED", request_id, "NO_RESPONSE_OR_WRAPPER")
+        else:
+            self._pending[request_id] = PendingRequest(request_id, request_sequence, self._current_tick, delivery_tick)
+            event = BrokerTransition(self._current_tick, "POLICY_REQUESTED", request_id, "PENDING")
+        self._events.append(event); return event
+
+    def deliver(self, proposal: SealedProposal) -> BrokerTransition:
+        if not self._tick_open or not isinstance(proposal, SealedProposal) or not self._verifier(proposal):
+            raise BrokerError("delivery requires an inverse-verified sealed proposal in an open tick")
+        self._prepare_transition()
+        pending = self._pending.get(proposal.request_id)
+        if pending is None or pending.request_sequence != proposal.request_sequence or pending.delivery_tick != self._current_tick or proposal.actual_delivery_tick != self._current_tick:
+            raise BrokerError("delivery does not match a pending request")
+        order = (proposal.actual_delivery_tick, proposal.request_sequence)
+        if self._last_delivery_order is not None and order <= self._last_delivery_order:
+            raise BrokerError("same-tick deliveries must be strictly ordered")
+        self._last_delivery_order = order
+        del self._pending[proposal.request_id]
+        if self._current_tick >= proposal.coverage_end_tick:
+            self._events.append(BrokerTransition(self._current_tick, "POLICY_RESPONDED", proposal.proposal_id, "RAW_REJECTED"))
+            event = BrokerTransition(self._current_tick, "CHUNK_REJECTED", proposal.proposal_id, "EXPIRED")
+            self._events.append(event); return event
         if proposal.request_sequence <= self._last_sequence:
-            event = BrokerTransition(tick, "CHUNK_REJECTED", proposal.proposal_id, "OUT_OF_ORDER")
-            self._events.append(event)
-            return event
-        self._active = proposal
+            self._events.append(BrokerTransition(self._current_tick, "POLICY_RESPONDED", proposal.proposal_id, "RAW_REJECTED"))
+            event = BrokerTransition(self._current_tick, "CHUNK_REJECTED", proposal.proposal_id, "OUT_OF_ORDER")
+            self._events.append(event); return event
         self._last_sequence = proposal.request_sequence
+        previous = self._active
+        if self.protocol_id == "C":
+            self._contributors.append(proposal); self._contributors.sort(key=lambda item: (item.actual_delivery_tick, item.request_sequence, item.proposal_id)); self._active = self._derive_c()
+        elif self.protocol_id in {"F", "G"}:
+            self._active = self._derive_overlap(proposal)
+        else:
+            self._active = self._direct(proposal)
         self._hold_id = None
         self._hold_action = None
-        event = BrokerTransition(tick, "CHUNK_ACCEPTED", proposal.proposal_id, "DIRECT_NORMALIZED")
-        self._events.append(event)
-        return event
+        self._events.append(BrokerTransition(self._current_tick, "POLICY_RESPONDED", self._active.chunk_id, "EXECUTABLE_RESPONSE", self._sidecar(self._active)))
+        if previous is not None and previous.coverage[0] <= self._current_tick < previous.coverage[1] and previous.chunk_id != self._active.chunk_id:
+            self._events.append(BrokerTransition(self._current_tick, "CHUNK_REPLACED", previous.chunk_id, "UNISSUED_FUTURE_REPLACED", {"replacement_chunk_id": self._active.chunk_id}))
+        event = BrokerTransition(self._current_tick, "CHUNK_ACCEPTED", self._active.chunk_id, self._active.rule, self._sidecar(self._active))
+        self._events.append(event); return event
 
-    def issue(self, tick: int, *, measured_q: object) -> IssuedAction:
-        if self._finished or type(tick) is not int or not 0 <= tick < self._terminal_tick:
-            raise BrokerError("issue tick is outside the open episode")
-        self._expire(tick)
+    def _direct(self, proposal: SealedProposal) -> ExecutableChunk:
+        parents = (proposal.normalized_actions_sha256,)
+        return ExecutableChunk(f"direct-{proposal.proposal_id}", proposal.representation, proposal.skill_id, proposal.source_observation_id, proposal.source_observation_time_ns, (self._current_tick, proposal.coverage_end_tick), proposal.actions, "DIRECT_NORMALIZED", parents, ((proposal.proposal_id, proposal.coverage_start_tick, proposal.coverage_end_tick),), proposal.source_observation_id, None, _array_sha(proposal.actions))
+
+    def _derive_c(self) -> ExecutableChunk:
+        valid = [item for item in self._contributors if item.coverage_start_tick <= self._current_tick < item.coverage_end_tick]
+        if not valid: raise BrokerError("C derivation has no current contributors")
+        z = min(item.coverage_end_tick for item in valid); rows = []
+        for absolute in range(self._current_tick, z):
+            weights = [np.exp(-self._lambda * ((absolute - item.actual_delivery_tick) * 0.002)) for item in valid]
+            values = [item.actions[absolute - item.coverage_start_tick] for item in valid]
+            rows.append(sum(weight * value for weight, value in zip(weights, values)) / sum(weights))
+        actions = np.asarray(rows, dtype=np.float64); owner = valid[-1]
+        hashes = tuple(sorted(item.normalized_actions_sha256 for item in valid)); coverages = tuple((item.proposal_id, item.coverage_start_tick, item.coverage_end_tick) for item in valid)
+        return ExecutableChunk(f"derived-C-{owner.proposal_id}-{self._current_tick}", owner.representation, owner.skill_id, owner.source_observation_id, owner.source_observation_time_ns, (self._current_tick, z), actions, "TEMPORAL_ENSEMBLE", hashes, coverages, owner.source_observation_id, None, _array_sha(actions))
+
+    def _derive_overlap(self, proposal: SealedProposal) -> ExecutableChunk:
+        old = self._active
+        compatible = old is not None and old.representation == proposal.representation and old.coverage[0] <= self._current_tick < old.coverage[1]
+        if not compatible: return self._direct(proposal)
+        assert old is not None
+        z = proposal.coverage_end_tick; h = min(self._overlap_rows, z - self._current_tick, old.coverage[1] - self._current_tick)
+        if h <= 0: return self._direct(proposal)
+        old_start = self._current_tick - old.coverage[0]; old_rows = old.actions[old_start:old_start + (z - self._current_tick)]
+        new_rows = proposal.actions[: z - self._current_tick]
+        padded_old = np.array(new_rows, copy=True); padded_old[:len(old_rows)] = old_rows
+        if self.protocol_id == "F": actions = derive_overlap_blend(padded_old, new_rows, h, self._overlap_rows); rule = "OVERLAP_BLEND"
+        else: actions = derive_rtc_approximation(padded_old, new_rows, h, self._overlap_rows); rule = "RTC_APPROXIMATION"
+        hashes = tuple(sorted((*old.parent_sha256s, proposal.normalized_actions_sha256)))
+        coverages = (*old.parent_coverages, (proposal.proposal_id, proposal.coverage_start_tick, proposal.coverage_end_tick))
+        return ExecutableChunk(f"derived-{self.protocol_id}-{proposal.proposal_id}-{self._current_tick}", proposal.representation, proposal.skill_id, proposal.source_observation_id, proposal.source_observation_time_ns, (self._current_tick, z), actions, rule, hashes, coverages, proposal.source_observation_id, h, _array_sha(actions))
+
+    @staticmethod
+    def _sidecar(chunk: ExecutableChunk) -> dict[str, object]:
+        return {"parent_sha256s": chunk.parent_sha256s, "parent_coverages": chunk.parent_coverages, "owner_observation_id": chunk.owner_observation_id, "b": chunk.coverage[0], "z": chunk.coverage[1], "h": chunk.h, "rule": chunk.rule, "output_sha256": chunk.output_sha256}
+
+    def issue(self, *, measured_q: object) -> IssuedAction:
+        if not self._tick_open or self._current_tick >= self._terminal_tick or self._issued_this_tick:
+            raise BrokerError("exactly one issue is allowed per open execution tick")
+        self._prepare_transition()
+        self._issued_this_tick = True
         if self._active is not None:
-            row = tick - self._active.actual_delivery_tick
+            row = self._current_tick - self._active.coverage[0]
             if not 0 <= row < self._active.actions.shape[0]:
                 raise BrokerError("active proposal lacks the requested absolute tick")
-            record = IssuedAction(tick, self._active.proposal_id, "normalized_proposal", self._active.actions[row])
+            record = IssuedAction(self._current_tick, self._active.chunk_id, "executable", self._active.actions[row])
         else:
             if self._hold_id is None:
                 q = _readonly_float64(measured_q, ndim=1)
-                self._hold_id = f"hold-{tick}"
+                if q.shape != (3,): raise BrokerError("safe hold requires measured joint position")
+                self._hold_id = f"hold-{self._current_tick}"
                 self._hold_action = q
-                self._events.append(BrokerTransition(tick, "SAFE_HOLD_ENTERED", self._hold_id, "LATCHED_CURRENT_Q_ZERO_DQ"))
+                self._events.append(BrokerTransition(self._current_tick, "SAFE_HOLD_ENTERED", self._hold_id, "LATCHED_CURRENT_Q_ZERO_DQ"))
             assert self._hold_action is not None
-            record = IssuedAction(tick, self._hold_id, "broker_safe_hold", self._hold_action)
-            self._hold_ticks.append(tick)
-        self._issued.append(record)
-        return record
+            record = IssuedAction(self._current_tick, self._hold_id, "broker_safe_hold", self._hold_action)
+            self._hold_ticks.append(self._current_tick)
+        self._issued.append(record); return record
 
-    def finish(self, tick: int) -> BrokerTransition:
-        if self._finished or tick != self._terminal_tick:
-            raise BrokerError("finish must occur exactly once at terminal_tick")
-        self._expire(tick)
-        if self._active is not None:
-            raise BrokerError("terminal broker still has an active proposal")
+    def close_tick(self) -> None:
+        if not self._tick_open or self._current_tick >= self._terminal_tick or not self._issued_this_tick:
+            raise BrokerError("execution tick cannot close without exactly one issue")
+        if any(item.delivery_tick <= self._current_tick for item in self._pending.values()):
+            raise BrokerError("delivery tick closed with an unmatched response")
+        self._tick_open = False
+
+    def finish(self) -> BrokerTransition:
+        if self._finished or not self._tick_open or self._current_tick != self._terminal_tick:
+            raise BrokerError("finish requires the open terminal tick")
+        self._prepare_transition()
+        if self._active is not None or self._pending:
+            raise BrokerError("terminal has active or unmatched pending state")
         self._hold_id = None
         self._hold_action = None
-        self._finished = True
-        event = BrokerTransition(tick, "TERMINAL_EMPTY", None, "NO_ACTIVE_OR_PENDING")
-        self._events.append(event)
-        return event
+        self._finished = True; self._tick_open = False
+        event = BrokerTransition(self._current_tick, "TERMINAL_EMPTY", None, "NO_ACTIVE_OR_PENDING")
+        self._events.append(event); return event

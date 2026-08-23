@@ -26,7 +26,7 @@ def test_policy_raw_normalizes_with_frozen_interpolation(stack_id: str, width: i
     assert normalized.actions.flags.c_contiguous and not normalized.actions.flags.writeable
     expected = np.vstack([kinematics.linear_knot_reference(knots, row * 2_000_000, 100_000_000) for row in range(125)])
     assert normalized.actions.tobytes(order="C") == expected.astype("<f8").tobytes(order="C")
-    assert adapter.verify_normalized_policy(raw, normalized)
+    assert adapter.verify_normalized_policy(normalized)
     executable = adapter.dispatch_executable(normalized, tick=300)
     assert executable.actions.tobytes(order="C") == normalized.actions.tobytes(order="C")
     assert executable.valid_from_ns == 600_000_000 and executable.expires_at_ns == 850_000_000
