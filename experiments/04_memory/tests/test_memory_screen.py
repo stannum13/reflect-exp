@@ -273,3 +273,12 @@ def test_v3_metrics_retain_fuzzy_vector_candidate_membership() -> None:
     assert metrics["fuzzy_vector_candidate_count"] == 16
     assert 0 <= metrics["fuzzy_vector_candidate_hit_count"] <= 16
     assert metrics["fuzzy_vector_candidate_miss_count"] == 16 - metrics["fuzzy_vector_candidate_hit_count"]
+
+
+def test_v2_embedding_claim_has_narrow_machine_supersession() -> None:
+    marker = Path("experiments/04_memory/ENGINEERING_FIRST_RUN_V2_EMBEDDING_SUPERSESSION.json")
+    value = json.loads(marker.read_text(encoding="ascii"))
+    assert value["disposition"] == "SUPERSEDED_EMBEDDING_SPECIFIC_CLAIM_ONLY"
+    assert value["preserved_v2_evidence_tree_sha256"] == "7d2cb8aa4dfc5b7781294d76b6152a9d49e8c5e7793fbdd40924d93d0e0c295a"
+    assert value["preserved_claims"] == ["M5_CONFIDENCE_HANDLING", "M5_STALENESS_HANDLING"]
+    assert value["replacement_evidence_root"] == "results/engineering-first-run-v3"
