@@ -11,7 +11,7 @@ import subprocess
 import pytest
 import yaml
 
-from reflect.source_evidence import canonical_sha256
+from reflect.source_evidence import CheckoutEvidence, canonical_sha256
 
 
 def _canonical(value: object) -> bytes:
@@ -239,6 +239,71 @@ def test_reporter_rejects_tampered_lerobot_revision_artifact(
     monkeypatch.setattr(report, "_git_artifact", mutate)
     with pytest.raises(ValueError, match="LeRobot|revision|artifact|hash"):
         report._read_snapshot(Path.cwd(), "709bb90f13e5c3729748a0ce95fe6e82fa370ee0")
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("restricted-command", "nonzero-status", "r1-outcome", "r2-outcome", "r3-reason", "r3-nested-extra"),
+)
+def test_reporter_rejects_coherently_rehashed_lerobot_revision_tamper(
+    monkeypatch: pytest.MonkeyPatch, mutation: str,
+) -> None:
+    report = importlib.import_module("scripts.write_p3_report")
+    commit = "461647b03849660b91043163e0d032a483a9d960"
+    receipt_path = "experiments/00_source_audit/results/fragments/lerobot-checkout.json"
+    r1_path = "experiments/00_source_audit/MANIFEST_AMENDMENT.yaml"
+    r2_path = "experiments/00_source_audit/MANIFEST_AMENDMENT_R2.yaml"
+    r3_path = "experiments/00_source_audit/MANIFEST_AMENDMENT_R3.yaml"
+    originals = {
+        path: report._git_artifact(Path.cwd(), commit, path)
+        for path in (receipt_path, r1_path, r2_path, r3_path)
+    }
+    changed: dict[str, bytes] = {}
+    amendment = yaml.safe_load(originals[r3_path].content)
+    if mutation in {"restricted-command", "nonzero-status"}:
+        raw = json.loads(originals[receipt_path].content)
+        index = next(index for index, command in enumerate(raw["commands"]) if "ls-tree" in command)
+        if mutation == "restricted-command":
+            separator = raw["commands"][index].index("--")
+            raw["commands"][index] = raw["commands"][index][: separator + 2]
+        else:
+            raw["statuses"][index] = 1
+        raw.pop("evidence_sha256")
+        raw["evidence_sha256"] = canonical_sha256(raw)
+        if mutation == "restricted-command":
+            receipt = CheckoutEvidence.from_dict(raw)
+            changed[receipt_path] = receipt.canonical_bytes()
+            evidence_sha256 = receipt.evidence_sha256
+        else:
+            changed[receipt_path] = _canonical(raw)
+            evidence_sha256 = raw["evidence_sha256"]
+        amendment["revision_3_receipt"]["file_sha256"] = hashlib.sha256(changed[receipt_path]).hexdigest()
+        amendment["revision_3_receipt"]["evidence_sha256"] = evidence_sha256
+    elif mutation in {"r1-outcome", "r2-outcome"}:
+        path = r1_path if mutation == "r1-outcome" else r2_path
+        prior = yaml.safe_load(originals[path].content)
+        if mutation == "r1-outcome":
+            prior["outcome"]["p3_operational_gate"] = "PASS"
+            index = 0
+        else:
+            prior["result"]["operational_gate"] = "BLOCKED"
+            index = 1
+        changed[path] = yaml.safe_dump(prior, sort_keys=False).encode()
+        amendment["prior_amendments"][index]["sha256"] = hashlib.sha256(changed[path]).hexdigest()
+    elif mutation == "r3-reason":
+        amendment["reason"] = "A contradictory replacement reason."
+    else:
+        amendment["revision_2_receipt"]["unexpected"] = "ambiguous authority"
+    changed[r3_path] = yaml.safe_dump(amendment, sort_keys=False).encode()
+    original = report._git_artifact
+
+    def mutate_artifact(root: Path, evidence_sha: str, path: str):
+        artifact = original(root, evidence_sha, path)
+        return report.GitArtifact(path, artifact.blob_id, changed[path]) if path in changed else artifact
+
+    monkeypatch.setattr(report, "_git_artifact", mutate_artifact)
+    with pytest.raises(ValueError, match="LeRobot|revision|amendment|exhaustive|command|hash|zero statuses"):
+        report._read_snapshot(Path.cwd(), commit)
 
 
 def test_reporter_replaces_only_prior_tracked_report_candidate(tmp_path: Path) -> None:

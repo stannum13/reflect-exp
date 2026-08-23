@@ -30,7 +30,7 @@ from reflect.source_ops import (
     run_source_operation,
     write_fragment_create_only,
 )
-from reflect.source_evidence import CheckoutEvidence, canonical_sha256
+from reflect.source_evidence import CheckoutEvidence, canonical_json_bytes, canonical_sha256
 from reflect.source_fetch import lock_yaml_bytes
 from scripts.source_audit import main as source_audit_main
 from reflect.sources import (
@@ -798,6 +798,24 @@ def _copy_lerobot_public_snapshot(tmp_path: Path) -> tuple[object, object, objec
     return registry, lock, manifest
 
 
+def _rewrite_lerobot_receipt_and_r3(
+    tmp_path: Path, mutate: object,
+) -> None:
+    receipt_path = tmp_path / "experiments/00_source_audit/results/fragments/lerobot-checkout.json"
+    raw = json.loads(receipt_path.read_text())
+    mutate(raw)
+    raw.pop("evidence_sha256")
+    raw["evidence_sha256"] = canonical_sha256(raw)
+    receipt = CheckoutEvidence.from_dict(raw)
+    receipt_bytes = receipt.canonical_bytes()
+    receipt_path.write_bytes(receipt_bytes)
+    amendment_path = tmp_path / "experiments/00_source_audit/MANIFEST_AMENDMENT_R3.yaml"
+    amendment = yaml.safe_load(amendment_path.read_text())
+    amendment["revision_3_receipt"]["file_sha256"] = hashlib.sha256(receipt_bytes).hexdigest()
+    amendment["revision_3_receipt"]["evidence_sha256"] = receipt.evidence_sha256
+    amendment_path.write_text(yaml.safe_dump(amendment, sort_keys=False))
+
+
 @pytest.mark.parametrize("missing", _LEROBOT_REVISION_PATHS)
 def test_public_fragment_loader_requires_all_six_lerobot_revision_artifacts(
     tmp_path: Path, missing: str
@@ -837,6 +855,88 @@ def test_public_fragment_loader_rejects_contradictory_r3(
     target[keys[-1]] = value
     amendment_path.write_text(yaml.safe_dump(amendment, sort_keys=False))
     with pytest.raises(ValueError, match="LeRobot|revision|count"):
+        load_manifest_fragments(tmp_path, manifest, registry, lock)
+
+
+@pytest.mark.parametrize("mutation", ("restricted-domain", "altered-argv"))
+def test_public_fragment_loader_rejects_coherently_rehashed_nonexhaustive_command(
+    tmp_path: Path, mutation: str,
+) -> None:
+    registry, lock, manifest = _copy_lerobot_public_snapshot(tmp_path)
+
+    def mutate(raw: dict[str, object]) -> None:
+        index = next(
+            index for index, command in enumerate(raw["commands"])
+            if "ls-tree" in command
+        )
+        command = list(raw["commands"][index])
+        separator = command.index("--")
+        if mutation == "restricted-domain":
+            raw["commands"][index] = command[: separator + 2]
+        elif mutation == "altered-argv":
+            raw["commands"][index] = [*command[:separator], "--full-tree", *command[separator:]]
+    _rewrite_lerobot_receipt_and_r3(tmp_path, mutate)
+    with pytest.raises(ValueError, match="LeRobot|revision|exhaustive|command"):
+        load_manifest_fragments(tmp_path, manifest, registry, lock)
+
+
+def test_public_fragment_loader_rejects_coherently_rehashed_nonzero_exhaustive_status(
+    tmp_path: Path,
+) -> None:
+    registry, lock, manifest = _copy_lerobot_public_snapshot(tmp_path)
+    receipt_path = tmp_path / "experiments/00_source_audit/results/fragments/lerobot-checkout.json"
+    raw = json.loads(receipt_path.read_text())
+    index = next(index for index, command in enumerate(raw["commands"]) if "ls-tree" in command)
+    raw["statuses"][index] = 1
+    raw.pop("evidence_sha256")
+    raw["evidence_sha256"] = canonical_sha256(raw)
+    receipt_bytes = canonical_json_bytes(raw)
+    receipt_path.write_bytes(receipt_bytes)
+    amendment_path = tmp_path / "experiments/00_source_audit/MANIFEST_AMENDMENT_R3.yaml"
+    amendment = yaml.safe_load(amendment_path.read_text())
+    amendment["revision_3_receipt"]["file_sha256"] = hashlib.sha256(receipt_bytes).hexdigest()
+    amendment["revision_3_receipt"]["evidence_sha256"] = raw["evidence_sha256"]
+    amendment_path.write_text(yaml.safe_dump(amendment, sort_keys=False))
+    with pytest.raises(ValueError, match="PASS outcome requires zero statuses"):
+        load_manifest_fragments(tmp_path, manifest, registry, lock)
+
+
+@pytest.mark.parametrize(
+    ("relative", "section", "key", "value", "prior_index"),
+    (
+        ("experiments/00_source_audit/MANIFEST_AMENDMENT.yaml", "outcome", "p3_operational_gate", "PASS", 0),
+        ("experiments/00_source_audit/MANIFEST_AMENDMENT_R2.yaml", "result", "operational_gate", "BLOCKED", 1),
+    ),
+)
+def test_public_fragment_loader_rejects_coherently_rehashed_prior_amendment_semantics(
+    tmp_path: Path, relative: str, section: str, key: str, value: str, prior_index: int,
+) -> None:
+    registry, lock, manifest = _copy_lerobot_public_snapshot(tmp_path)
+    prior_path = tmp_path / relative
+    prior = yaml.safe_load(prior_path.read_text())
+    prior[section][key] = value
+    prior_path.write_text(yaml.safe_dump(prior, sort_keys=False))
+    amendment_path = tmp_path / "experiments/00_source_audit/MANIFEST_AMENDMENT_R3.yaml"
+    amendment = yaml.safe_load(amendment_path.read_text())
+    amendment["prior_amendments"][prior_index]["sha256"] = hashlib.sha256(prior_path.read_bytes()).hexdigest()
+    amendment_path.write_text(yaml.safe_dump(amendment, sort_keys=False))
+    with pytest.raises(ValueError, match="LeRobot|revision|amendment|hash"):
+        load_manifest_fragments(tmp_path, manifest, registry, lock)
+
+
+@pytest.mark.parametrize("mutation", ("reason", "nested-extra"))
+def test_public_fragment_loader_rejects_r3_reason_and_nested_extra_keys(
+    tmp_path: Path, mutation: str,
+) -> None:
+    registry, lock, manifest = _copy_lerobot_public_snapshot(tmp_path)
+    amendment_path = tmp_path / "experiments/00_source_audit/MANIFEST_AMENDMENT_R3.yaml"
+    amendment = yaml.safe_load(amendment_path.read_text())
+    if mutation == "reason":
+        amendment["reason"] = "A contradictory replacement reason."
+    else:
+        amendment["revision_1_failure"]["unexpected"] = "ambiguous authority"
+    amendment_path.write_text(yaml.safe_dump(amendment, sort_keys=False))
+    with pytest.raises(ValueError, match="LeRobot|revision|amendment|hash"):
         load_manifest_fragments(tmp_path, manifest, registry, lock)
 
 

@@ -66,6 +66,13 @@ _LEROBOT_AMENDMENT_PATH = "experiments/00_source_audit/MANIFEST_AMENDMENT_R3.yam
 _LEROBOT_V1_PATH = "experiments/00_source_audit/results/attempts/lerobot-checkout-v1-fail.json"
 _LEROBOT_V2_PATH = "experiments/00_source_audit/results/attempts/lerobot-checkout-v2-pass.json"
 _LEROBOT_RECEIPT_PATH = "experiments/00_source_audit/results/fragments/lerobot-checkout.json"
+_LEROBOT_R1_AMENDMENT_SHA256 = "58a18736dbdee83081228a8ce3cc44c537c3c5bbbb56e2b9fe75c692ec95a67e"
+_LEROBOT_R2_AMENDMENT_SHA256 = "7d998f508d069e66b8742210700e3d09ac006626f3e9bf42650c79c46bd74c06"
+_LEROBOT_R3_REASON = (
+    "Independent audit found that revision 2 validated each declared link but did not "
+    "prove the absence of an undeclared fourth link. Revision 3 exhaustively inventories "
+    "every Git object beneath the selected paths and records the link and target modes."
+)
 _EVIDENCE_KEYS = {
     "schema_version", "evidence_type", "registry_sha256", "repository",
     "commit_sha", "experiment", "selected_path", "operation_id", "operation", "platform",
@@ -570,8 +577,8 @@ def _validate_lerobot_revision_chain(
     scope = amendment.get("scope")
     result = amendment.get("result")
     expected_prior_amendments = [
-        {"path": _LEROBOT_R1_AMENDMENT_PATH, "sha256": hashlib.sha256(r1_amendment_bytes).hexdigest()},
-        {"path": _LEROBOT_R2_AMENDMENT_PATH, "sha256": hashlib.sha256(r2_amendment_bytes).hexdigest()},
+        {"path": _LEROBOT_R1_AMENDMENT_PATH, "sha256": _LEROBOT_R1_AMENDMENT_SHA256},
+        {"path": _LEROBOT_R2_AMENDMENT_PATH, "sha256": _LEROBOT_R2_AMENDMENT_SHA256},
     ]
     expected_scope = {
         "checkout": "EXACT_LOCKED_LEROBOT_ARTIFACT_ONLY",
@@ -595,11 +602,14 @@ def _validate_lerobot_revision_chain(
     }
     if (
         set(amendment) != expected_top_keys
+        or hashlib.sha256(r1_amendment_bytes).hexdigest() != _LEROBOT_R1_AMENDMENT_SHA256
+        or hashlib.sha256(r2_amendment_bytes).hexdigest() != _LEROBOT_R2_AMENDMENT_SHA256
         or amendment.get("schema_version") != 1
         or amendment.get("record_type") != "P3_OPERATION_CONTRACT_REVISION"
         or amendment.get("revision") != 3
         or amendment.get("operation_id") != "LEROBOT_CHECKOUT"
         or amendment.get("classification") != "ENGINEERING_NONCONFIRMATORY"
+        or amendment.get("reason") != _LEROBOT_R3_REASON
         or amendment.get("implementation_commit") != "3cc5d180dde9b2a4f2682a3c3c92daf3e9619d91"
         or amendment.get("registry_sha256") != receipt.registry_sha256
         or (registry is not None and amendment.get("registry_sha256") != registry.registry_sha256)
@@ -607,27 +617,31 @@ def _validate_lerobot_revision_chain(
         or amendment.get("locked_commit_sha") != receipt.locked_sha
         or amendment.get("locked_recursive_tree_sha") != receipt.recursive_tree_sha
         or amendment.get("policy") != "CONTAINED_GIT_SYMLINKS_V1"
-        or not isinstance(contract_binding, Mapping)
-        or contract_binding.get("path") != _LEROBOT_CONTRACT_PATH
-        or contract_binding.get("sha256") != hashlib.sha256(contract_bytes).hexdigest()
+        or contract_binding != {
+            "path": _LEROBOT_CONTRACT_PATH,
+            "sha256": hashlib.sha256(contract_bytes).hexdigest(),
+        }
         or prior_amendments != expected_prior_amendments
         or scope != expected_scope
-        or not isinstance(prior, Mapping)
-        or prior.get("path") != _LEROBOT_V1_PATH
-        or prior.get("file_sha256") != hashlib.sha256(v1_bytes).hexdigest()
-        or prior.get("evidence_sha256") != v1.evidence_sha256
-        or prior.get("outcome") != "FAIL"
+        or prior != {
+            "path": _LEROBOT_V1_PATH,
+            "file_sha256": hashlib.sha256(v1_bytes).hexdigest(),
+            "evidence_sha256": v1.evidence_sha256,
+            "outcome": "FAIL",
+        }
         or v1.schema_version != 1
         or v1.repository != "lerobot"
         or v1.registry_sha256 != receipt.registry_sha256
         or v1.locked_sha != receipt.locked_sha
         or v1.blocker != "checkout contains a nonregular or linked file"
         or v1.outcome != "FAIL"
-        or not isinstance(prior_pass, Mapping)
-        or prior_pass.get("path") != _LEROBOT_V2_PATH
-        or prior_pass.get("file_sha256") != hashlib.sha256(v2_bytes).hexdigest()
-        or prior_pass.get("evidence_sha256") != v2.evidence_sha256
-        or prior_pass.get("outcome") != "PASS"
+        or prior_pass != {
+            "path": _LEROBOT_V2_PATH,
+            "file_sha256": hashlib.sha256(v2_bytes).hexdigest(),
+            "evidence_sha256": v2.evidence_sha256,
+            "outcome": "PASS",
+            "limitation": "declared-link query did not establish absence of undeclared links",
+        }
         or v2.schema_version != 2
         or v2.repository != receipt.repository
         or v2.registry_sha256 != receipt.registry_sha256
@@ -637,14 +651,15 @@ def _validate_lerobot_revision_chain(
         or len(v2.content_hashes) != 33
         or len(v2.contained_symlinks) != 3
         or v2.outcome != "PASS"
-        or not isinstance(current, Mapping)
-        or current.get("path") != _LEROBOT_RECEIPT_PATH
-        or current.get("file_sha256") != hashlib.sha256(receipt_bytes).hexdigest()
-        or current.get("evidence_sha256") != receipt.evidence_sha256
-        or current.get("outcome") != "PASS"
-        or current.get("download_bytes") != receipt.download_bytes
-        or current.get("disk_bytes") != receipt.disk_bytes
-        or current.get("retained_file_count") != len(receipt.content_hashes)
+        or current != {
+            "path": _LEROBOT_RECEIPT_PATH,
+            "file_sha256": hashlib.sha256(receipt_bytes).hexdigest(),
+            "evidence_sha256": receipt.evidence_sha256,
+            "outcome": "PASS",
+            "download_bytes": receipt.download_bytes,
+            "disk_bytes": receipt.disk_bytes,
+            "retained_file_count": len(receipt.content_hashes),
+        }
         or receipt.outcome != "PASS"
         or receipt.schema_version != 3
         or receipt.symlink_policy != "CONTAINED_GIT_SYMLINKS_V1"
@@ -678,23 +693,32 @@ def _validate_lerobot_revision_chain(
     receipt_rows = [dict(row) for row in receipt.contained_symlinks]
     if not isinstance(contract_rows, list) or len(contract_rows) != len(receipt_rows):
         raise ValueError("LeRobot revision symlink inventory cardinality differs")
-    by_path = {row.get("path"): row for row in contract_rows if isinstance(row, Mapping)}
-    for row in receipt_rows:
-        expected = by_path.get(row["path"])
+    expected_contract_row_keys = {
+        "path", "link_blob_sha1", "target", "target_path", "target_blob_sha1",
+    }
+    if any(not isinstance(row, Mapping) or set(row) != expected_contract_row_keys for row in contract_rows):
+        raise ValueError("LeRobot revision contract symlink row schema is not exact")
+    for expected, row in zip(contract_rows, receipt_rows, strict=True):
         if (
-            not isinstance(expected, Mapping)
-            or any(row[key] != expected[key] for key in ("path", "link_blob_sha1", "target", "target_path", "target_blob_sha1"))
+            any(row[key] != expected[key] for key in expected_contract_row_keys)
             or row["link_mode"] != "120000"
             or row["target_mode"] != "100644"
         ):
             raise ValueError("LeRobot revision receipt object modes or identities differ")
-    if sorted(by_path) != sorted(row["path"] for row in receipt_rows):
-        raise ValueError("LeRobot revision receipt symlink inventory is not exact")
-    exhaustive = [
-        command for command in receipt.commands
-        if len(command) >= 7 and "ls-tree" in command and "-r" in command and "-z" in command
+    expected_exhaustive_command = (
+        "git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+        "-c", "credential.helper=", "-C", "lerobot", "ls-tree", "-r", "-z",
+        "HEAD", "--", *receipt.patterns,
+        *(row["target_path"] for row in contract_rows),
+    )
+    exhaustive_indices = [
+        index for index, command in enumerate(receipt.commands) if "ls-tree" in command
     ]
-    if len(exhaustive) != 1 or "HEAD" not in exhaustive[0] or "--" not in exhaustive[0]:
+    if (
+        len(exhaustive_indices) != 1
+        or receipt.commands[exhaustive_indices[0]] != expected_exhaustive_command
+        or receipt.statuses[exhaustive_indices[0]] != 0
+    ):
         raise ValueError("LeRobot revision receipt lacks one exhaustive selected-tree inventory")
 
 
