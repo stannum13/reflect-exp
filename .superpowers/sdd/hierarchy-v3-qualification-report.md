@@ -6,7 +6,7 @@ Branch: `feat/hierarchy-recovery-probe`
 
 Base: `3c2f5a3`
 
-Qualified source commit: `3b2c731769a68803df580b7d912722865dbaed97`
+Qualified source commit: `2878a81cec4a728c713acbc6bba9e7311da239be`
 
 Status: **READY FOR FRESH READ-ONLY REVIEW**
 
@@ -16,7 +16,7 @@ This report records pre-outcome qualification only. It is not an approval, does 
 
 The implementation follows `docs/superpowers/specs/2026-08-23-hierarchical-recovery-v3-preregistered.md` and the binding V2 audit findings incorporated there. The V1/V2 reports, source, raw results, and derived results were read-only. Experiment 01 was imported for its existing arm, contracts, kinematics, representations, P6 path, and repaired P4 path; its 62-file tracked tree remained byte-identical. The frozen comparison covered those 62 files plus the two frozen V2 execution files (`run_v2.py` and `src/v2.py`), 64 files total. A base-to-HEAD path diff also confirms no tracked Experiment 01, V1/V2 execution, or pre-existing result file changed.
 
-All new execution code is isolated in `v3_*` modules. The V3 contracts reject every seed outside calibration seeds `20261891`, `20261892`, `20261893`, and `20261894`, including an explicit test rejection of `20261801`.
+All new execution code is isolated in `v3_*` modules. The qualification stage rejects every seed outside calibration seeds `20261891`, `20261892`, `20261893`, and `20261894`. A separately typed, frozen outcome stage accepts only held-out seeds `20261801..20261810` after an immutable approval report/hash binding; constructing its exact 360-cell plan neither samples nor executes a seed and creates no output.
 
 ## TDD record
 
@@ -40,6 +40,12 @@ GREEN commits:
 - `57da362` — independently score V3 raw traces
 - `4789d59` — publish replayable V3 qualification evidence
 - `3b2c731` — retain full contact envelopes and make them scorer-authoritative
+- `d8d76d9` — close the injected-cause/observable boundary and add structural taint closure
+- `c30aaba` — bind `T3_LIVE_BELIEF_V1` and reconstruct scorer authorities from immutable raw
+- `a825b46` — freeze the approval-hash-guarded 360-cell outcome path and authentic geometry NOT_RUN
+- `2878a81` — replace self-referential gates, freeze environment/spec/config, add PNGs and durable archive publication
+
+Review-fix RED/GREEN evidence included five authority-tamper failures (trace target/action flags, reported reset count, retained EEF, matched qref/torque envelope tampering, and T3 provenance/evidence hash), a last-object-only mission structural failure, missing spec/environment/PNG/archive failures, and independent gate failures. Focused GREEN runs were **18 scorer tests passed in 47.38s**, **1 full qualification/publication/reconstruction test passed in 211.46s**, and **1 durable archive extraction test passed in 140.09s**.
 
 Final focused verification before this report:
 
@@ -99,7 +105,7 @@ The existing P6 and repaired P4 sensitivity paths are both actually called, and 
 
 ## Independent scoring and controls
 
-The independent scorer does not import `v3_runtime` and never reads executor-authored result/debug Booleans. It reconstructs command hashes, actual trajectory members, action/reference/torque agreement, action age and validity, contact collision, memory freshness, authorization, selected object, dwell, loop progress, and reset receipts from raw authorities.
+The independent scorer does not import `v3_runtime` and never reads executor-authored result/debug Booleans. It reconstructs FK/end-effector pose and target error from raw qpos and the world ledger; command hashes; actual ActionChunk trajectory members; action/reference/torque agreement; action age and validity; contact collision; the complete object mission across the final dwell window; `T3_LIVE_BELIEF_V1` schema, facts, provenance, stale/unknown fields and evidence hashes; authorization; loop progress; and successful-execution/reset validity from raw authorities. It no longer uses a last-executed-object shortcut.
 
 Each single-authority positive control independently closes the terminal to FAILURE:
 
@@ -121,27 +127,33 @@ An architecture-independent positive control is retained as NOT_RUN before execu
 
 Ignored qualification evidence root: `results/hierarchical-recovery-v3-qualification`
 
-Files: **414**
+Files: **437**
 
-Disk usage: **47,508 KiB**
+Bytes: **49,744,416**
 
 | Artifact | SHA-256 |
 |---|---|
-| qualification freeze | `2c2b57cb687ba89527c5c7593459473d665885a7f95182904d37bcaf165c82eb` |
-| raw manifest / raw tree | `21687b3313b13912757ac47d1d2e2d267f1acf125fe78974044bc5c732a562dd` |
-| derived manifest / derived tree | `a0b9cdf07a452bdd5f4dadee31c54629a37710537d0a739986192f6889bd6845` |
+| qualification freeze | `984eb9d4226139cb7ac609c2ab3b230e13067fa384ae79698f45bec088ae287d` |
+| raw manifest / raw reconstruction | `786dcdaf10f3e40b4dca090b62b0109d173bb5b347bfa75d07c7c1093233041c` |
+| derived manifest / derived reconstruction | `44494430629fadf45d7fa0b2bf1873e4259c9660fd72c97f876e81d976ed2d66` |
 | qualification summary | `1372bb6421ff5ef0aae9aa64b398dd58df81daf46c639a25c9c28710304b32ca` |
-| replay receipt | `05bcc628b07d10417e249d1e90f4630f84630a1547d42e9d804c2957019ad4e7` |
-| source closure | `9a5f2be3c7585552236994d73f5c7d54a980c8b95d64f2f4cf5386495709876a` |
-| frozen configuration | `d3c73768a6b24bd188f7a030be0f043aee5c5cac6b6c49b3e494140901927d82` |
+| gate audit receipts | `2a49faacd9c55f7849f80a0f1f6e1de33e4ab42e8de1da5b557536ab1c3aec29` |
+| replay receipt | `b6909f5f32a2df53479dc48266ca12d571c038d796bfc011f58675161e044b22` |
+| source/spec/import closure | `a6eac2aca7fda84dcdfc67813a1f51cbbdb70348caedcd9f58249c45d4b671f9` |
+| frozen qualification/outcome configuration | `1e5fec9533ad61eced4a485ef5b8615586050e470167b8f373b79e55d1860672` |
+| frozen environment | `78fdfbfb5e10f750e3b7851b5ad83d26942254bc64b03e4815eff1d8dacefe21` |
+| durable qualification tree | `33bf3f96863777bbb13df830c9bbc75e426bf88830d8e74ddba574909e0da160` |
+| durable archive | `c5d264ff245071ef3eee65cb812b1d935bc4cc1b347ae7b236390fdebf270f7d` |
 
-Clean reconstruction destination: `/private/tmp/hierarchy-v3-reconstruction.Gw2Dgr/clean`. It independently replayed all **18** episodes with `matched=true`; the regenerated raw and derived tree hashes exactly equal the hashes above. Reconstruction reads raw episode inputs and does not trust the original summaries.
+Clean reconstruction destination: `/private/tmp/hierarchical-recovery-v3-clean-2878a81`. It independently replayed all **18** episodes with `matched=true`; the regenerated raw and derived manifest hashes exactly equal the hashes above. Reconstruction reads raw episode inputs and does not trust the original summaries.
 
-The canonical diagnostic bundle includes tables and deterministic SVGs for injection timing/disturbance realization, P6/P4 controller byte differences, time-advanced budgets/retries, and scorer-positive controls. `examples.json` binds:
+The canonical diagnostic bundle includes tables plus deterministic SVG and PNG companions for injection timing/disturbance realization, P6/P4 controller byte differences, time-advanced budgets/retries, and scorer-positive controls. All companions are authenticated by the derived manifest. `gate-audits.json` retains scenario-specific disturbance, independently reconstructed budget/reset, structural cause-boundary, and recomputed geometric NOT_RUN receipts. `examples.json` binds:
 
 - working: `qualification-P6-R3-semantic-object-unavailable-20261891`
 - nonworking: `qualification-P6-R0-semantic-object-unavailable-20261893`
-- NOT_RUN: `qualification-P6-R3-motion-path-infeasible-20261894`
+- NOT_RUN: `architecture-independent-unreachable-geometry-v1`
+
+The ignored working bundle is durably retained as the tracked, deterministic, content-addressed archive `reports/evidence/hierarchical-recovery-v3-qualification/c5d264ff245071ef3eee65cb812b1d935bc4cc1b347ae7b236390fdebf270f7d.tar.gz` (**8,552,340 bytes; 437 members**) with a tracked manifest and byte-exact extraction test.
 
 The 10 registered hard gates all pass in the qualification bundle: exact sampled-tick injection, six realized disturbances, distinct observable policy sequences, real/different P6 and P4 paths, time-advanced guarded budgets, closed cause boundary, independent raw scorer, nine terminal-positive controls, byte-exact replay/reconstruction, and architecture-independent NOT_RUN handling.
 
@@ -149,8 +161,8 @@ The 10 registered hard gates all pass in the qualification bundle: exact sampled
 
 - This is representative calibration qualification, not an outcome sample, power result, or scientific claim.
 - The one R0 failure is intended evidence for a nonworking architecture under semantic change; it is not silently excluded.
-- The qualification API is deliberately calibration-only. Outcome execution requires a separate, explicit authorization path after fresh read-only review.
-- The ignored evidence is create-only and source-bound to commit `3b2c731`; any source change requires regeneration and another review.
+- Outcome execution is frozen but approval-gated: it requires a separate immutable approval report and exact content binding after fresh read-only review.
+- The ignored evidence is create-only and source-bound to commit `2878a81`; any source change requires regeneration and another review.
 - No outcome evidence root exists at report time.
 
 Reviewer decision: **PENDING — approve or reject; this implementation does not self-authorize.**
