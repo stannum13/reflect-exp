@@ -1,1 +1,0 @@
-{"case_count":200,"files":[{"bytes":1169567,"path":"cases.jsonl","sha256":"22286ed0bcf74349214dc809f2a6b61bc33ee7b2cadf10c20923bfc3c56c5961"},{"bytes":812851,"path":"outcomes.jsonl","sha256":"dfc2a17f1b7efbe420cc79619d1de4f495176fea0774c1bbed96f4360df95542"}],"outcome_count":1000,"schema_version":"exp05-manifest-v1","seed_count":40,"status":"PRELIMINARY_ENGINEERING_ONLY"}

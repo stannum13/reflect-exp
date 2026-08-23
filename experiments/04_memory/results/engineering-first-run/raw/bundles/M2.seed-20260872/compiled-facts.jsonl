@@ -1,3 +1,0 @@
-{"case_id":"case/03","confidence":0.9,"fact_id":"03-attempt","observed_tick":1,"predicate":"ATTEMPT_OUTCOME","received_tick":2,"source_event_id":"event/03-attempt","status":"asserted","subject_id":"door/0003","value":"OPEN_DOOR:FAILED:BLOCKED","variant_id":"M2"}
-{"case_id":"case/04","confidence":0.85,"fact_id":"04-failure","observed_tick":1,"predicate":"ATTEMPT_OUTCOME","received_tick":2,"source_event_id":"event/04-failure","status":"asserted","subject_id":"door/0003","value":"OPEN_DOOR:FAILED:BLOCKED","variant_id":"M2"}
-{"case_id":"case/06","confidence":0.9,"fact_id":"06-placed","observed_tick":1,"predicate":"ON","received_tick":3,"source_event_id":"event/06-placed","status":"asserted","subject_id":"tool/0002","value":"asset/0003","variant_id":"M2"}
