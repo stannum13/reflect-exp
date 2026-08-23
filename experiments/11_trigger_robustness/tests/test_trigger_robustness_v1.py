@@ -83,3 +83,17 @@ def test_seed_cluster_bootstrap_retains_effective_n():
     assert result["effective_n"] == 12
     assert len(result["draw_cluster_indices"]) == 50
     assert all(len(draw) == 12 for draw in result["draw_cluster_indices"])
+
+
+def test_derived_graphs_are_data_faithful_and_full_reconstruction_matches(tmp_path, monkeypatch):
+    monkeypatch.setitem(exp.CONFIG, "bootstrap_draws", 50)
+    root = tmp_path / "source"; root.mkdir()
+    cells = exp.fixture_matrix()[:16]
+    exp.publish_raw(cells, root / "raw")
+    exp.derive(root / "raw", root / "derived")
+    exp.validate_derived(root / "raw", root / "derived")
+    assert (root / "derived/dose-response.svg").read_bytes().startswith(b"<svg")
+    assert (root / "derived/dose-response.png").read_bytes().startswith(b"\x89PNG")
+    rebuilt = tmp_path / "rebuilt"
+    exp.reconstruct_all(root, rebuilt)
+    assert exp.tree_hash(root) == exp.tree_hash(rebuilt)

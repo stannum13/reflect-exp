@@ -153,6 +153,111 @@ def reconstruct_raw(source: Path, target: Path) -> None:
     if tree_hash(source)!=tree_hash(target): raise IntegrityError("raw reconstruction mismatch")
 
 
+METRICS = ("completion","progress","retries","wakes","false_wakes","late_wakes","wasted_wakes","thrash","trigger_precision","trigger_recall","cost_proxy","storage_reads","storage_writes","storage_bytes","storage_age","escalation_event","escalation_failure")
+
+
+def _mean(values: Sequence[float]) -> float: return sum(values)/len(values)
+
+
+def _aggregate(cells: Sequence[Mapping[str, Any]], scores: Sequence[Mapping[str, Any]], keys: Sequence[str]) -> list[dict[str, Any]]:
+    groups: dict[tuple[Any,...],list[tuple[Mapping[str,Any],Mapping[str,Any]]]]={}
+    for cell,score in zip(cells,scores,strict=True): groups.setdefault(tuple(cell[k] for k in keys),[]).append((cell,score))
+    rows=[]
+    for identity,members in sorted(groups.items()):
+        row={key:value for key,value in zip(keys,identity,strict=True)}; row["n"]=len(members)
+        for metric in METRICS: row[metric]=round(_mean([float(score[metric]) for _,score in members]),6)
+        rows.append(row)
+    return rows
+
+
+def _svg(graph: Sequence[Mapping[str, Any]]) -> bytes:
+    width,height=900,520; left,top,right,bottom=75,35,25,70; plot_w=width-left-right; plot_h=height-top-bottom
+    colors={"PERIODIC_ONLY":"#0072B2","FAILURE_THRESHOLD":"#D55E00","EVENT_DRIVEN":"#009E73","HYBRID":"#CC79A7"}
+    policies=tuple(policy for policy in CONFIG["trigger_policies"] if any(r["trigger_policy"]==policy for r in graph)); qids=[q["id"] for q in CONFIG["quality_profiles"] if any(r["quality_id"]==q["id"] for r in graph)]
+    pieces=[f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">', '<rect width="100%" height="100%" fill="#ffffff"/>',
+            '<text x="450" y="20" text-anchor="middle" font-family="sans-serif" font-size="16">Exp11 completion dose response (synthetic oracle, not VLA)</text>',
+            f'<line x1="{left}" y1="{top}" x2="{left}" y2="{top+plot_h}" stroke="#222"/><line x1="{left}" y1="{top+plot_h}" x2="{left+plot_w}" y2="{top+plot_h}" stroke="#222"/>']
+    for index,qid in enumerate(qids):
+        x=left+index*plot_w/max(1,len(qids)-1); pieces.append(f'<text x="{x:.2f}" y="{top+plot_h+18}" transform="rotate(35 {x:.2f} {top+plot_h+18})" font-family="sans-serif" font-size="9">{qid}</text>')
+    for p_index,policy in enumerate(policies):
+        values=[]
+        for qid in qids:
+            matched=[float(r["completion"]) for r in graph if r["trigger_policy"]==policy and r["quality_id"]==qid]
+            values.append(_mean(matched))
+        points=" ".join(f"{left+i*plot_w/max(1,len(qids)-1):.2f},{top+(1-v)*plot_h:.2f}" for i,v in enumerate(values))
+        pieces.append(f'<polyline points="{points}" fill="none" stroke="{colors[policy]}" stroke-width="3"/>')
+        pieces.append(f'<text x="{left+10}" y="{top+18+p_index*18}" font-family="sans-serif" font-size="12" fill="{colors[policy]}">{policy}</text>')
+    pieces.append('</svg>')
+    return ("".join(pieces)+"\n").encode("ascii")
+
+
+def _png(graph: Sequence[Mapping[str, Any]]) -> bytes:
+    width,height=900,520; pixels=bytearray([255]*(width*height*3)); colors=((0,114,178),(213,94,0),(0,158,115),(204,121,167)); qids=[q["id"] for q in CONFIG["quality_profiles"] if any(r["quality_id"]==q["id"] for r in graph)]
+    def dot(x:int,y:int,color:tuple[int,int,int]):
+        for yy in range(max(0,y-3),min(height,y+4)):
+            for xx in range(max(0,x-3),min(width,x+4)): pixels[(yy*width+xx)*3:(yy*width+xx)*3+3]=bytes(color)
+    for p_index,policy in enumerate(CONFIG["trigger_policies"]):
+        for i,qid in enumerate(qids):
+            values=[float(r["completion"]) for r in graph if r["trigger_policy"]==policy and r["quality_id"]==qid]
+            if values: dot(75+round(i*800/max(1,len(qids)-1)),35+round((1-_mean(values))*415),colors[p_index])
+    raw=b"".join(b"\x00"+bytes(pixels[y*width*3:(y+1)*width*3]) for y in range(height))
+    def chunk(kind:bytes,data:bytes)->bytes: return struct.pack(">I",len(data))+kind+data+struct.pack(">I",zlib.crc32(kind+data)&0xffffffff)
+    return b"\x89PNG\r\n\x1a\n"+chunk(b"IHDR",struct.pack(">IIBBBBB",width,height,8,2,0,0,0))+chunk(b"IDAT",zlib.compress(raw,9))+chunk(b"IEND",b"")
+
+
+def derive(raw: Path, derived: Path) -> None:
+    if derived.exists(): raise IntegrityError("create-only derived root exists")
+    cells=_read_jsonl(raw/"cells.jsonl"); scores=validate_raw(raw,expected_cells=cells); derived.mkdir(parents=True)
+    episode_rows=[{**cell,**score} for cell,score in zip(cells,scores,strict=True)]
+    episode_fields=tuple(cells[0])+tuple(k for k in scores[0] if k not in cells[0])
+    cell_keys=("storage_variant","trigger_policy","quality_id","disturbance_family","severity","horizon","prompt_envelope")
+    cell_rows=_aggregate(cells,scores,cell_keys); dose_rows=_aggregate(cells,scores,("storage_variant","trigger_policy","quality_id")); hetero_rows=_aggregate(cells,scores,("trigger_policy","quality_id","disturbance_family","severity","horizon"))
+    dose_fields=tuple(dose_rows[0]); cell_fields=tuple(cell_rows[0]); hetero_fields=tuple(hetero_rows[0])
+    bootstrap=[]
+    observed=sorted({(str(r["storage_variant"]),str(r["trigger_policy"]),str(r["quality_id"])) for r in episode_rows})
+    for storage,policy,qid in observed:
+        members=[row for row in episode_rows if row["storage_variant"]==storage and row["trigger_policy"]==policy and row["quality_id"]==qid]
+        result=cluster_bootstrap(members,value="completion",draws=int(CONFIG["bootstrap_draws"]),bootstrap_seed=int(CONFIG["bootstrap_seed"])+len(bootstrap))
+        bootstrap.append({"storage_variant":storage,"trigger_policy":policy,"quality_id":qid,"effective_n":result["effective_n"],"estimate":round(result["estimate"],6),"ci_low":round(result["ci_low"],6),"ci_high":round(result["ci_high"],6),"draw_indices_sha256":sha(canonical(result["draw_cluster_indices"]))})
+    slopes=[]
+    for storage,policy in sorted({(str(r["storage_variant"]),str(r["trigger_policy"])) for r in dose_rows}):
+        ordered_qids=[q["id"] for q in CONFIG["quality_profiles"] if any(r["storage_variant"]==storage and r["trigger_policy"]==policy and r["quality_id"]==q["id"] for r in dose_rows)]
+        vals=[next(float(r["completion"]) for r in dose_rows if r["storage_variant"]==storage and r["trigger_policy"]==policy and r["quality_id"]==qid) for qid in ordered_qids]
+        drops=[vals[i+1]-vals[i] for i in range(len(vals)-1)]; cliff=min(range(len(drops)),key=lambda i:drops[i])
+        slopes.append({"storage_variant":storage,"trigger_policy":policy,"clean_to_hostile_slope":round((vals[-1]-vals[0])/max(1,len(vals)-1),6),"largest_adjacent_drop":round(drops[cliff],6),"cliff_after_quality":ordered_qids[cliff]})
+    working=max(episode_rows,key=lambda r:(r["completion"],r["progress"],-r["cost_proxy"])); nonworking=min(episode_rows,key=lambda r:(r["completion"],r["progress"],-r["retries"]))
+    payloads={
+        "episodes.csv":csv_data(episode_rows,episode_fields),"cell-summary.csv":csv_data(cell_rows,cell_fields),"dose-response.csv":csv_data(dose_rows,dose_fields),
+        "heterogeneity.csv":csv_data(hetero_rows,hetero_fields),"bootstrap.csv":csv_data(bootstrap,tuple(bootstrap[0])),"slopes-cliffs.csv":csv_data(slopes,tuple(slopes[0])),
+        "examples.json":canonical({"nonworking":nonworking,"working":working}),"graph-table.csv":csv_data(dose_rows,dose_fields),"dose-response.svg":_svg(dose_rows),"dose-response.png":_png(dose_rows),
+        "plot-style.json":canonical({"background":"#ffffff","colors":{"PERIODIC_ONLY":"#0072B2","FAILURE_THRESHOLD":"#D55E00","EVENT_DRIVEN":"#009E73","HYBRID":"#CC79A7"},"renderer":"STDLIB_ZLIB_DATA_POINTS_V1","theme_independent":True})}
+    best=max(dose_rows,key=lambda r:r["completion"]); worst=min(dose_rows,key=lambda r:r["completion"])
+    report=("# Experiment 11 Trigger Robustness Dose Response\n\n"
+            f"Scope: `{CLAIM_SCOPE}`. The planner is deterministic and typed; these are not VLA results.\n\n"
+            f"Validated episodes: {len(cells):,}; exact raw ticks: {sum(s['tick_count'] for s in scores):,}; paired seed clusters: {len(SEEDS)}.\n\n"
+            f"Best storage x trigger x quality completion: {best['storage_variant']} x {best['trigger_policy']} x {best['quality_id']} = {best['completion']:.3f}. "
+            f"Worst: {worst['storage_variant']} x {worst['trigger_policy']} x {worst['quality_id']} = {worst['completion']:.3f}.\n\n"
+            "See `bootstrap.csv` for seed-cluster 95% intervals, `heterogeneity.csv` for family/severity/horizon effects, and `slopes-cliffs.csv` for degradation and cliff locations.\n")
+    payloads["RESULT.md"]=report.encode("ascii")
+    for name,data in payloads.items(): (derived/name).write_bytes(data)
+    manifest={name:{"bytes":len(data),"sha256":sha(data)} for name,data in payloads.items()}; (derived/"manifest.json").write_bytes(canonical({"files":manifest,"raw_tree_sha256":tree_hash(raw),"schema_version":1}))
+
+
+def validate_derived(raw: Path, derived: Path) -> None:
+    manifest=json.loads((derived/"manifest.json").read_text(encoding="ascii"))
+    if manifest["raw_tree_sha256"]!=tree_hash(raw): raise IntegrityError("derived/raw binding mismatch")
+    actual={p.name for p in derived.iterdir() if p.is_file() and p.name!="manifest.json"}
+    if actual!=set(manifest["files"]): raise IntegrityError("derived inventory mismatch")
+    for name,receipt in manifest["files"].items():
+        data=(derived/name).read_bytes()
+        if len(data)!=receipt["bytes"] or sha(data)!=receipt["sha256"]: raise IntegrityError("derived manifest mismatch")
+
+
+def reconstruct_all(source: Path, target: Path) -> None:
+    reconstruct_raw(source/"raw",target/"raw"); derive(target/"raw",target/"derived"); validate_derived(target/"raw",target/"derived")
+    if tree_hash(source)!=tree_hash(target): raise IntegrityError("full reconstruction mismatch")
+
+
 def cluster_bootstrap(rows: Sequence[Mapping[str, Any]], *, value: str, draws: int, bootstrap_seed: int) -> dict[str, Any]:
     seeds=sorted({int(row["seed"]) for row in rows}); grouped={seed:[float(r[value]) for r in rows if int(r["seed"])==seed] for seed in seeds}; rng=random.Random(bootstrap_seed)
     indices=[]; estimates=[]
@@ -166,9 +271,14 @@ def main(argv: Sequence[str] | None=None) -> int:
     parser=argparse.ArgumentParser(); sub=parser.add_subparsers(dest="cmd",required=True)
     run=sub.add_parser("run"); run.add_argument("root",type=Path); run.add_argument("--fixture",action="store_true")
     val=sub.add_parser("validate"); val.add_argument("root",type=Path); val.add_argument("--fixture",action="store_true")
-    args=parser.parse_args(argv); cells=fixture_matrix() if args.fixture else frozen_matrix()
+    full=sub.add_parser("full"); full.add_argument("root",type=Path)
+    rec=sub.add_parser("reconstruct"); rec.add_argument("source",type=Path); rec.add_argument("target",type=Path)
+    args=parser.parse_args(argv); cells=fixture_matrix() if getattr(args,"fixture",False) else frozen_matrix()
     if args.cmd=="run": publish_raw(cells,args.root)
-    else: validate_raw(args.root,expected_cells=cells)
+    elif args.cmd=="validate": validate_raw(args.root,expected_cells=cells)
+    elif args.cmd=="full":
+        args.root.mkdir(parents=True); publish_raw(cells,args.root/"raw"); derive(args.root/"raw",args.root/"derived"); validate_derived(args.root/"raw",args.root/"derived")
+    else: reconstruct_all(args.source,args.target)
     return 0
 
 
