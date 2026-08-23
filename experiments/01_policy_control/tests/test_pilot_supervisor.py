@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -136,6 +137,72 @@ def test_supervisor_timeout_is_declared_invalid_with_bounded_readable_output(
     assert all(json.loads(row)["reason"] == "PROCESS_TIMEOUT" for row in failure.splitlines())
     assert all(path.stat().st_size <= 2 * 65_536 for path in shard_dir.rglob("*output*") if path.is_file())
     _assert_completion_marker_is_last(completion_paths[0])
+
+
+def test_supervisor_refuses_before_spawn_and_publishes_resource_terminal(
+    base_pilot: tuple[Path, Path, Path, str], tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = tmp_path / "refused-results"
+    sentinel = tmp_path / "worker-ran"
+    monkeypatch.setattr(
+        artifacts.shutil, "disk_usage",
+        lambda _path: SimpleNamespace(total=1, used=1, free=0),
+    )
+    assert _supervise(
+        base_pilot, output,
+        worker_argv=(sys.executable, "-c", f"open({str(sentinel)!r},'w').write('ran')"),
+    ) == "resource-exhausted"
+    assert not sentinel.exists()
+    terminal = _json(output / "resource-terminal.json")
+    assert terminal["source"] == "PREFLIGHT"
+    assert terminal["lifecycle_state"] == "STOPPED"
+    assert tuple(output.glob("P*")) == ()
+
+
+def test_supervisor_exact_reissue_validates_and_skips_without_spawn(
+    base_pilot: tuple[Path, Path, Path, str], tmp_path: Path,
+) -> None:
+    output = tmp_path / "resume-results"
+    assert _supervise(
+        base_pilot, output, deadline_s=0.05, term_grace_s=0.05,
+        worker_argv=(sys.executable, "-c", "import time;time.sleep(60)"),
+    ) == "declared-invalid"
+    sentinel = tmp_path / "resume-worker-ran"
+    assert _supervise(
+        base_pilot, output,
+        worker_argv=(sys.executable, "-c", f"open({str(sentinel)!r},'w').write('ran')"),
+    ) == "validated-and-skipped"
+    assert not sentinel.exists()
+
+
+def test_supervisor_rejects_deadline_above_frozen_shard_cap(
+    base_pilot: tuple[Path, Path, Path, str], tmp_path: Path,
+) -> None:
+    with pytest.raises(artifacts.ArtifactError, match="3,600|3600|deadline"):
+        _supervise(base_pilot, tmp_path / "results", deadline_s=3_600.000_001)
+
+
+def test_supervisor_records_measured_child_cpu_not_literal_zero(
+    base_pilot: tuple[Path, Path, Path, str], tmp_path: Path,
+) -> None:
+    output = tmp_path / "cpu-results"
+    assert _supervise(base_pilot, output) == "published"
+    ledger = json.loads(next(output.rglob("resource-ledger.jsonl")).read_text())
+    assert type(ledger["cpu_ns"]) is int and ledger["cpu_ns"] > 0
+
+
+@pytest.mark.parametrize("return_code", (1, 2, 70))
+def test_untyped_worker_failure_is_not_published_as_accidental_invalid(
+    base_pilot: tuple[Path, Path, Path, str], tmp_path: Path, return_code: int,
+) -> None:
+    output = tmp_path / f"internal-{return_code}"
+    with pytest.raises(artifacts.ArtifactError, match="worker|unsafe|internal"):
+        _supervise(
+            base_pilot, output,
+            worker_argv=(sys.executable, "-c", f"raise SystemExit({return_code})"),
+        )
+    assert tuple(output.rglob("completion.json")) == ()
 
 
 def test_real_p1_base_shard_runs_all_three_declared_conditions(

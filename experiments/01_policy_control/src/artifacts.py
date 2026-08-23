@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import resource
 import secrets
 import shutil
 import signal
@@ -2768,6 +2769,29 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _child_cpu_ns() -> int:
+    usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+    return int((usage.ru_utime + usage.ru_stime) * 1_000_000_000)
+
+
+def _publish_preflight_terminal(
+    directory_descriptor: int, phase: str, revision: int,
+    preflight_bytes: bytes, reasons: Sequence[str],
+) -> None:
+    terminal = {
+        "schema_version": 1, "study_id": STUDY_ID, "phase": phase,
+        "revision": revision, "source": "PREFLIGHT", "shard_id": None,
+        "resource_ledger_sha256": None,
+        "preflight_sha256": hashlib.sha256(preflight_bytes).hexdigest(),
+        "reasons": list(reasons), "lifecycle_state": "STOPPED",
+        "scientific_result": "INCONCLUSIVE",
+    }
+    _write_at_create_only(
+        directory_descriptor, "resource-terminal.json", canonical_json_bytes(terminal),
+    )
+    os.fsync(directory_descriptor)
+
+
 def run_supervised_shard(
     manifest_path: Path,
     shard_id: str,
@@ -2793,10 +2817,31 @@ def run_supervised_shard(
     for path, name in ((Path(config_path), "config"), (Path(p3_gate_path), "P3 gate")):
         if path.is_symlink() or not path.is_file():
             raise ArtifactError(f"supervisor {name} input is unavailable or unsafe")
-    if not math.isfinite(deadline_s) or deadline_s <= 0 or not math.isfinite(term_grace_s) or term_grace_s <= 0:
-        raise ArtifactError("supervisor deadlines must be finite and positive")
+    if (
+        not math.isfinite(deadline_s) or deadline_s <= 0 or deadline_s > 3_600
+        or not math.isfinite(term_grace_s) or term_grace_s <= 0
+    ):
+        raise ArtifactError("supervisor deadline must be finite, positive, and at most 3,600 seconds")
     output_dir = Path(output_dir)
     parent_descriptor = open_directory_chain(output_dir, create=True)
+    final_name = _shard_directory_name(shard_id)
+    try:
+        existing_state = os.stat(
+            final_name, dir_fd=parent_descriptor, follow_symlinks=False,
+        )
+    except FileNotFoundError:
+        existing_state = None
+    if existing_state is not None:
+        if not stat.S_ISDIR(existing_state.st_mode):
+            os.close(parent_descriptor)
+            raise ArtifactError("existing shard publication is not a directory")
+        try:
+            evidence = load_resource_completion_evidence(manifest_path, output_dir)
+            if shard_id not in evidence.completed_shard_ids:
+                raise ArtifactError("existing shard is not in validated completion evidence")
+            return "validated-and-skipped"
+        finally:
+            os.close(parent_descriptor)
     try:
         os.stat("preflight.json", dir_fd=parent_descriptor, follow_symlinks=False)
     except FileNotFoundError:
@@ -2809,9 +2854,29 @@ def run_supervised_shard(
             manifest["phase"], 0, 0, 0, shutil.disk_usage(output_dir).free, 0, 0,
             rollout_count=phase_rollouts, revision=manifest["revision"],
         )
-        _write_at_create_only(parent_descriptor, "preflight.json", preflight.canonical_bytes())
+        preflight_bytes = preflight.canonical_bytes()
+        _write_at_create_only(parent_descriptor, "preflight.json", preflight_bytes)
         os.fsync(parent_descriptor)
-    final_name = _shard_directory_name(shard_id)
+    else:
+        raw_preflight, preflight_bytes = _canonical_json_at(
+            parent_descriptor, "preflight.json", _PREFLIGHT_KEYS,
+        )
+        preflight = ResourceDisposition(
+            raw_preflight["schema_version"], raw_preflight["study_id"],
+            raw_preflight["phase"], raw_preflight["revision"],
+            raw_preflight["retained_bytes"], raw_preflight["temp_bytes"],
+            raw_preflight["quarantine_bytes"], raw_preflight["free_bytes"],
+            raw_preflight["reserved_bytes"], raw_preflight["wall_seconds"],
+            raw_preflight["cpu_seconds"], raw_preflight["shard_wall_limit_seconds"],
+            raw_preflight["disposition"], tuple(raw_preflight["reasons"]),
+        )
+    if preflight.disposition == "REFUSE":
+        _publish_preflight_terminal(
+            parent_descriptor, manifest["phase"], manifest["revision"],
+            preflight_bytes, preflight.reasons,
+        )
+        os.close(parent_descriptor)
+        return "resource-exhausted"
     held = create_temporary_directory(parent_descriptor, f".{final_name}.shard-stage-")
     stage_path = output_dir / held.name
     capability_read = capability_write = -1
@@ -2846,6 +2911,7 @@ def run_supervised_shard(
             }
             argv = tuple(replacements.get(item, item) for item in worker_argv)
         command_sha = hashlib.sha256(canonical_json_bytes(list(argv))).hexdigest()
+        child_cpu_before = _child_cpu_ns()
         with tempfile.TemporaryFile() as stdout_handle, tempfile.TemporaryFile() as stderr_handle:
             process = subprocess.Popen(
                 argv, cwd=Path(repo_root), stdin=subprocess.DEVNULL,
@@ -2867,14 +2933,20 @@ def run_supervised_shard(
                 return_code = process.returncode
             stdout = _bounded_process_output(stdout_handle)
             stderr = _bounded_process_output(stderr_handle)
+        child_cpu_ns = max(0, _child_cpu_ns() - child_cpu_before)
         if stdout:
             _write_at_create_only(held.descriptor, "stdout-output.bin", stdout)
         if stderr:
             _write_at_create_only(held.descriptor, "stderr-output.bin", stderr)
         success = not timed_out and return_code == 0
+        resource_exhausted = not timed_out and return_code == 3
+        if not success and not timed_out and not resource_exhausted:
+            if return_code == 2:
+                raise ImplementationDriftError("unsafe or implementation-drift worker failure")
+            raise ArtifactError(f"internal worker failure with exit status {return_code}")
         failure_sha: str | None = None
         if not success:
-            reason = "PROCESS_TIMEOUT" if timed_out else "CORRUPT_OUTPUT"
+            reason = "PROCESS_TIMEOUT" if timed_out else "RESOURCE_EXHAUSTION"
             readable = stdout + stderr
             rows = tuple({
                 "schema_version": 1, "study_id": STUDY_ID,
@@ -2895,13 +2967,15 @@ def run_supervised_shard(
         retained = sum(_directory_bytes(stage_path / name) for name in completed_outputs) + sum(
             path.stat().st_size for path in stage_path.iterdir() if path.is_file()
         )
-        disposition = "COMPLETE" if success else "DECLARED_INVALID"
+        disposition = "COMPLETE" if success else (
+            "REFUSED" if resource_exhausted else "DECLARED_INVALID"
+        )
         ledger = {
             "schema_version": 1, "study_id": STUDY_ID, "phase": manifest["phase"],
             "revision": manifest["revision"], "shard_id": shard_id,
             "command_sha256": command_sha, "started_at_utc": started_utc,
             "finished_at_utc": _utc_now(), "wall_ns": time.monotonic_ns() - started_ns,
-            "cpu_ns": 0, "retained_bytes": retained, "temp_peak_bytes": 0,
+            "cpu_ns": child_cpu_ns, "retained_bytes": retained, "temp_peak_bytes": 0,
             "quarantine_bytes": 0, "free_bytes_after": shutil.disk_usage(output_dir).free,
             "disposition": disposition,
         }
@@ -2919,13 +2993,27 @@ def run_supervised_shard(
             "rollout_sha256s": list(rollout_hashes),
             "failure_disposition_sha256": failure_sha,
             "resource_ledger_sha256": hashlib.sha256(ledger_bytes).hexdigest(),
-            "state": disposition,
+            "state": "DECLARED_INVALID" if resource_exhausted else disposition,
         }
         _write_at_create_only(held.descriptor, "completion.json", canonical_json_bytes(completion))
         os.fsync(held.descriptor)
         _renameat_directory_noreplace(parent_descriptor, held.name, parent_descriptor, final_name)
         os.fsync(parent_descriptor)
         published = True
+        if resource_exhausted:
+            terminal = {
+                "schema_version": 1, "study_id": STUDY_ID, "phase": manifest["phase"],
+                "revision": manifest["revision"], "source": "SHARD",
+                "shard_id": shard_id,
+                "resource_ledger_sha256": hashlib.sha256(ledger_bytes).hexdigest(),
+                "preflight_sha256": None, "reasons": ["PHASE_BYTES_EXCEEDED"],
+                "lifecycle_state": "STOPPED", "scientific_result": "INCONCLUSIVE",
+            }
+            _write_at_create_only(
+                parent_descriptor, "resource-terminal.json", canonical_json_bytes(terminal),
+            )
+            os.fsync(parent_descriptor)
+            return "resource-exhausted"
         return "published" if success else "declared-invalid"
     finally:
         if capability_read >= 0:
