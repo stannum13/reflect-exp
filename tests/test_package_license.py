@@ -254,6 +254,29 @@ def test_current_platform_tags_select_the_real_locked_numpy_wheel() -> None:
     assert selected.sha256 == "4cfe66903cc32a9921a6733d96b19bb6abf310397581bbad89c228f5abaf0ee8"
 
 
+def test_real_lock_eligibility_is_exact_for_mixed_direct_tools(tmp_path: Path) -> None:
+    resolver = LockedWheelLicenseResolver(
+        uv_lock_bytes=Path("uv.lock").read_bytes(),
+        transport=_WheelTransport(b"not fetched"),
+        cache=CacheStore(tmp_path / "cache"),
+        clock=lambda: datetime(2026, 8, 23, tzinfo=timezone.utc),
+    )
+
+    def entry(name: str) -> RegistryEntry:
+        return RegistryEntry(
+            name=name,
+            url=f"https://github.com/example/{name}",
+            mode=ReuseMode.DIRECT_DEPENDENCY,
+            experiments=("bootstrap",),
+            selected_paths=(),
+            use="Fixture.",
+        )
+
+    assert resolver.eligible(entry("numpy")) is True
+    assert resolver.eligible(entry("uv")) is False
+    assert resolver.eligible(entry("hatchling")) is False
+
+
 def test_offline_validation_rebinds_evidence_to_uv_lock_selection() -> None:
     wheel = _wheel()
     evidence = dict(

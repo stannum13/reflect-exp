@@ -303,7 +303,12 @@ def resolve_entry(
         and entry.mode is ReuseMode.DIRECT_DEPENDENCY
         and artifact_license_resolver is not None
     ):
-        artifact_evidence = artifact_license_resolver(entry)
+        eligible = getattr(artifact_license_resolver, "eligible", None)
+        artifact_evidence = None
+        if not callable(eligible) or eligible(entry):
+            artifact_evidence = artifact_license_resolver(entry)
+        if artifact_evidence is None:
+            artifact_evidence = {}
         if not isinstance(artifact_evidence, Mapping):
             raise SourceFetchError("artifact license resolver returned invalid evidence")
         for key, value in artifact_evidence.items():

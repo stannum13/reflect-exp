@@ -577,6 +577,43 @@ def test_artifact_license_resolver_is_not_used_for_non_direct_source() -> None:
     )
 
 
+def test_ineligible_unknown_direct_remains_named_structural_gate_error() -> None:
+    calls: list[str] = []
+
+    class SelectiveResolver:
+        def eligible(self, entry: RegistryEntry) -> bool:
+            return entry.name == "numpy"
+
+        def __call__(self, entry: RegistryEntry) -> dict[str, str]:
+            calls.append(entry.name)
+            evidence = _wheel_artifact_evidence()
+            return {
+                key: value.replace("example", entry.name)
+                for key, value in evidence.items()
+            }
+
+    uv = RegistryEntry(
+        name="uv", url=REPO_URL, mode=ReuseMode.DIRECT_DEPENDENCY,
+        experiments=("bootstrap",), selected_paths=(), use="Tool.",
+    )
+    numpy = RegistryEntry(
+        name="numpy", url=REPO_URL, mode=ReuseMode.DIRECT_DEPENDENCY,
+        experiments=("bootstrap",), selected_paths=(), use="Array runtime.",
+    )
+    with pytest.raises(
+        SourceFetchError,
+        match="direct/adapter license is not discovered: uv",
+    ):
+        resolve_registry(
+            _registry(uv, numpy),
+            ("uv", "numpy"),
+            FixtureTransport(license_response=_license_response(spdx="NOASSERTION")),
+            _clock,
+            artifact_license_resolver=SelectiveResolver(),
+        )
+    assert calls == ["numpy"]
+
+
 def test_metadata_cli_injects_exact_wheel_evidence_without_installing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

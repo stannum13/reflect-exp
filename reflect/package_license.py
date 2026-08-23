@@ -30,6 +30,10 @@ class PackageLicenseError(ValueError):
     """Raised when locked distribution license evidence is not exact and complete."""
 
 
+class PackageLicenseUnavailable(PackageLicenseError):
+    """Raised when a package has no exact compatible locked wheel."""
+
+
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _PYTHONHOSTED_WHEEL = re.compile(
     r"https://files\.pythonhosted\.org/packages/[0-9a-f]{2}/[0-9a-f]{2}/"
@@ -109,6 +113,20 @@ class LockedWheelLicenseResolver:
         self._cache = cache
         self._clock = clock
         self._compatible_tags = compatible_tags or current_wheel_tags()
+
+    def eligible(self, entry: RegistryEntry) -> bool:
+        """Return whether this direct dependency has an exact compatible wheel."""
+        if not isinstance(entry, RegistryEntry) or entry.mode is not ReuseMode.DIRECT_DEPENDENCY:
+            return False
+        try:
+            select_locked_wheel(
+                self._uv_lock_bytes,
+                package_name=entry.name,
+                compatible_tags=self._compatible_tags,
+            )
+        except PackageLicenseUnavailable:
+            return False
+        return True
 
     def __call__(self, entry: RegistryEntry) -> MappingProxyType[str, str]:
         if not isinstance(entry, RegistryEntry) or entry.mode is not ReuseMode.DIRECT_DEPENDENCY:
@@ -208,6 +226,8 @@ def select_locked_wheel(
         and type(item.get("name")) is str
         and _normalized_name(item["name"], "locked package name") == requested
     ]
+    if not matches:
+        raise PackageLicenseUnavailable("uv.lock has no locked package")
     if len(matches) != 1:
         raise PackageLicenseError("uv.lock must contain exactly one locked package")
     package = matches[0]
@@ -216,7 +236,7 @@ def select_locked_wheel(
         raise PackageLicenseError("locked package version must be a nonempty string")
     wheels = package.get("wheels")
     if not isinstance(wheels, list) or not wheels:
-        raise PackageLicenseError("locked package has no wheels")
+        raise PackageLicenseUnavailable("locked package has no wheels")
     ranks = {tag: index for index, tag in enumerate(compatible_tags)}
     candidates: list[tuple[int, LockedWheel]] = []
     for item in wheels:
@@ -248,7 +268,7 @@ def select_locked_wheel(
                 )
             )
     if not candidates:
-        raise PackageLicenseError("uv.lock has no compatible locked wheel")
+        raise PackageLicenseUnavailable("uv.lock has no compatible locked wheel")
     candidates.sort(key=lambda item: (item[0], item[1].filename, item[1].sha256))
     if len(candidates) > 1 and candidates[0][0] == candidates[1][0]:
         raise PackageLicenseError("uv.lock has ambiguous compatible locked wheels")
