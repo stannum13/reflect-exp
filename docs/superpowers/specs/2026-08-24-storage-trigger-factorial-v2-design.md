@@ -8,7 +8,7 @@ V2 remains a deterministic white-box engineering study of `ORACLE_TYPED_SEMANTIC
 
 ## Frozen design
 
-V2 uses a new held-back seed namespace, exactly `20265101..20265120`. The Cartesian matrix remains 5 storage variants x 5 trigger variants x 4 disturbance families x 2 severities x 3 horizons x 20 paired seeds = 12,000 unique episodes. Bootstrap inference resamples the 20 seed clusters in 10,000 deterministic draws using seed `20265999`.
+The initial namespace `20265101..20265120` was retired without publication after the independent scorer stopped the first in-memory run on a mutable-alias receipt mismatch. V2R1 uses a fresh held-back seed namespace, exactly `20265201..20265220`. The Cartesian matrix remains 5 storage variants x 5 trigger variants x 4 disturbance families x 2 severities x 3 horizons x 20 paired seeds = 12,000 unique episodes. Bootstrap inference resamples the 20 seed clusters in 10,000 deterministic draws using seed `20265999`.
 
 The V2 source commit precedes execution. Its closure includes the V2 executor, independent scorer, committed config and seeds, and the imported Experiment 04 generator. The freeze binds the exact implementation commit, every closure member's bytes and SHA-256, Python/NumPy identities, exact configuration bytes, exact seed bytes, and canonical matrix identity. Execution and reconstruction reject any mismatch.
 
@@ -55,4 +55,3 @@ SVG and PNG are generated from the same tidy table. Both contain a title, axis l
 5. Execute exactly the 12,000 V2 cells once into a new create-only V2 result root.
 6. Reconstruct into a clean temporary destination and require byte equality.
 7. Independently recompute representative contrasts and heterogeneity, update the scoped report, and commit V2 evidence/report atomically.
-

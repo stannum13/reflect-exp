@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Preserve every V1 tracked byte.
-- V2 seeds are exactly `20265101..20265120`; bootstrap seed is `20265999`.
+- V2R1 seeds are exactly `20265201..20265220`; the failed unpublished `20265101..20265120` namespace is retired; bootstrap seed is `20265999`.
 - V2 matrix is exactly 5 x 5 x 4 x 2 x 3 x 20 = 12,000 unique episodes.
 - The V2 result is synthetic white-box engineering evidence only.
 - No V2 outcome runs before the source/config/seeds/tests commit.
@@ -119,4 +119,3 @@
 - [ ] Update the V2 report with exact counts, hashes, contrast intervals, heterogeneity, 100%/zero-width limitations, and verification receipts.
 - [ ] Run focused tests, complete Experiment 10 tests, Ruff, reconstruction, manifest closure, V1 immutability, and `git diff --check`.
 - [ ] Commit result/report atomically with `exp(exp10): publish reconstructible storage trigger V2`.
-
