@@ -12,6 +12,22 @@ class BrokerError(ValueError):
     pass
 
 
+@dataclass(frozen=True)
+class FaultPayload:
+    revision: str
+    actions: np.ndarray
+    direction: np.ndarray
+    sign: int
+    amplitude: float
+    step_index: int | None
+    pre_sha256: str
+    post_sha256: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "actions", _readonly_float64(self.actions, ndim=2))
+        object.__setattr__(self, "direction", _readonly_float64(self.direction, ndim=1))
+
+
 def _readonly_float64(values: object, *, ndim: int) -> np.ndarray:
     source = np.asarray(values)
     if source.dtype != np.float64 or source.ndim != ndim or not source.flags.c_contiguous:
@@ -54,6 +70,49 @@ def derive_rtc_approximation(old: np.ndarray, new: np.ndarray, overlap_rows: int
         gamma = (overlap_rows - row) / overlap_rows
         result[row] = gamma * left[row] + (1.0 - gamma) * right[row]
     return _readonly_float64(result, ndim=2)
+
+
+def apply_fault_payload(actions: np.ndarray, *, stack_id: str, fault_id: str, envelope: tuple[float, float]) -> FaultPayload:
+    source = _readonly_float64(actions, ndim=2)
+    if source.shape[0] != 125 or stack_id not in {"P2", "P4"} or fault_id not in {"ALTERNATIVE", "DISCONTINUITY"}:
+        raise BrokerError("fault payload identity or shape is invalid")
+    if len(envelope) != 2 or not envelope[0] < envelope[1]:
+        raise BrokerError("fault envelope is invalid")
+    if stack_id == "P2":
+        if source.shape[1] != 3:
+            raise BrokerError("P2 fault rows require width three")
+        direction = np.array((1.0, -1.0, 1.0), dtype=np.float64) / np.sqrt(3.0)
+        amplitude = 0.05 if fault_id == "ALTERNATIVE" else 0.10
+    else:
+        if source.shape[1] != 2:
+            raise BrokerError("P4 fault rows require width two")
+        delta = source[-1] - source[0]
+        norm = float(np.linalg.norm(delta))
+        if not norm > 0:
+            raise BrokerError("P4 fault direction is undefined")
+        direction = np.array((-delta[1], delta[0]), dtype=np.float64) / norm
+        amplitude = 0.02 if fault_id == "ALTERNATIVE" else 0.03
+    step_index = None if fault_id == "ALTERNATIVE" else 2
+    selected: np.ndarray | None = None
+    selected_sign = 0
+    for sign in (1, -1):
+        if fault_id == "ALTERNATIVE":
+            weights = np.sin(np.pi * np.arange(125, dtype=np.float64) / 124.0)
+            weights[0] = 0.0
+            weights[-1] = 0.0
+        else:
+            weights = np.zeros(125, dtype=np.float64)
+            weights[2:] = 1.0
+        candidate = source + sign * amplitude * weights[:, None] * direction[None, :]
+        if np.all(candidate >= envelope[0]) and np.all(candidate <= envelope[1]):
+            selected = np.array(candidate, dtype=np.float64, order="C", copy=True)
+            selected_sign = sign
+            break
+    if selected is None:
+        raise BrokerError("neither sign fits the hard envelope")
+    pre = hashlib.sha256(source.astype("<f8", copy=False).tobytes(order="C")).hexdigest()
+    post = hashlib.sha256(selected.astype("<f8", copy=False).tobytes(order="C")).hexdigest()
+    return FaultPayload("exp02-fault-payload-v1", selected, direction, selected_sign, amplitude, step_index, pre, post)
 
 
 @dataclass(frozen=True)
