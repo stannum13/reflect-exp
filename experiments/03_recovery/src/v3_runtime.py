@@ -819,6 +819,7 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
                 make_command(tick + 1, str(active.record["object_id"]), active.path, active.segment_index + 1)
 
         if attempt is not None and tick + 1 >= attempt.end_tick:
+            completed_level = attempt.level
             successful_sha = attempt.new_content_sha256 if attempt.new_content_sha256 != attempt.old_content_sha256 and attempt.executed_valid_ticks > 0 else ZERO_SHA256
             if successful_sha != ZERO_SHA256:
                 execution_receipts.append(MappingProxyType({
@@ -828,6 +829,8 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
                     "executed_valid_ticks": attempt.executed_valid_ticks,
                     "receipt_sha256": sha256_bytes(canonical_bytes((successful_sha, attempt.start_tick, tick + 1, attempt.executed_valid_ticks))),
                 }))
+            if completed_level is DecisionLevel.CONTROL and active is not None:
+                make_command(tick + 1, str(active.record["object_id"]), active.path, active.segment_index)
             before = budget
             observable = _observable(
                 tick=tick + 1,
