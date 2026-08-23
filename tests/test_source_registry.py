@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError
 import hashlib
 from pathlib import Path
+import tomllib
 
 import pytest
 
@@ -71,9 +72,23 @@ def test_complete_registry_preserves_representative_canonical_values() -> None:
     assert entries["mjctrl"].selected_paths == ("*.py", "README.md")
     assert entries["unitree_rl_mjlab"].mode is ReuseMode.REMOTE_ONLY
     assert entries["isaac_lab_arena"].mode is ReuseMode.DEFERRED
+    assert entries["rerun"].mode is ReuseMode.DEFERRED
+    assert entries["rerun"].caveat == (
+        "Optional telemetry remains disabled; GitHub NOASSERTION blocks importing, "
+        "installing, or using the adapter until separately approved."
+    )
     assert entries["uv"].justification == "The host already provides uv; no source clone is required."
     assert registry.large_model_downloads_default is False
     assert registry.physical_deployment_default is False
+
+
+def test_deferred_rerun_is_not_a_declared_runtime_or_build_dependency() -> None:
+    project = tomllib.loads(Path("pyproject.toml").read_text())
+    declared = tuple(project["project"]["dependencies"])
+    build = tuple(project["build-system"]["requires"])
+
+    assert all(requirement.split("[", 1)[0].split("=", 1)[0] != "rerun" for requirement in declared)
+    assert all(requirement.split("[", 1)[0].split("=", 1)[0] != "rerun" for requirement in build)
 
 
 def test_registry_entries_are_frozen_and_sequences_are_tuples() -> None:

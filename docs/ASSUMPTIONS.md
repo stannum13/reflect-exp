@@ -63,3 +63,13 @@ exact version, selected `uv.lock` wheel filename and SHA-256, exact `METADATA` a
 `RECORD` hashes, and the complete declared `License-File` inventory. GitHub's
 `NOASSERTION` remains recorded; no license text is classified locally. Repository
 copying and adapter use remain blocked without repository-level SPDX evidence.
+
+## A-012 — Deferred optional Rerun adapter
+
+Rerun is optional telemetry, is not imported or installed by the current runtime,
+and has no scientific-authority role. Because its pinned GitHub license observation
+is `NOASSERTION`, its registry mode is `DEFERRED`; importing, installing, or using
+the adapter requires a separate approval. This mode change intentionally changes
+the exact `references/repos.yaml` SHA-256, so every P2 lock, report, phase record,
+and downstream P3 binding derived from the prior registry bytes is stale and must be
+regenerated rather than edited or reused.

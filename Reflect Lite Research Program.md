@@ -649,11 +649,11 @@ repositories:
 
   - name: rerun
     url: https://github.com/rerun-io/rerun
-    mode: ADAPTER_DEPENDENCY
+    mode: DEFERRED
     experiments: [01_policy_control, 02_action_chunks, 03_recovery, 04_memory, 05_semantic_twin]
     selected_paths: [rerun_py, examples/python]
     use: Optional time-synchronized multimodal logging and visual replay.
-    caveat: Rerun is a visualization/logging adapter, not the semantic-memory authority.
+    caveat: Optional telemetry remains disabled; GitHub NOASSERTION blocks importing, installing, or using the adapter until separately approved.
 
   - name: openusd
     url: https://github.com/PixarAnimationStudios/OpenUSD
