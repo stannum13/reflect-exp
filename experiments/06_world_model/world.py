@@ -116,8 +116,9 @@ def scene_rows() -> tuple[SceneSpec, ...]:
         layout.extend(("evaluation", stratum, index) for index in range(8))
     rows = []
     for partition, stratum, ordinal in layout:
-        seed = _seed("scene", partition, stratum, ordinal)
-        rows.append(SceneSpec(partition, stratum, ordinal, seed, f"exp06/{partition}/{stratum.lower()}/{seed:016x}"))
+        namespace = "exp06-v5" if partition == "evaluation" else "exp06"
+        seed = _seed("scene-v5-untouched" if partition == "evaluation" else "scene", partition, stratum, ordinal)
+        rows.append(SceneSpec(partition, stratum, ordinal, seed, f"{namespace}/{partition}/{stratum.lower()}/{seed:016x}"))
     return tuple(rows)
 
 

@@ -11,6 +11,7 @@ import pytest
 
 world = importlib.import_module("experiments.06_world_model.world")
 runner = importlib.import_module("experiments.06_world_model.run")
+model = importlib.import_module("experiments.06_world_model.model")
 
 
 @pytest.fixture(autouse=True)
@@ -119,3 +120,17 @@ def test_reconstruction_rejects_source_ledger_not_bound_to_recorded_git_tree(tmp
 
     with pytest.raises(ValueError, match="source Git"):
         runner.reconstruct(original / "raw", tmp_path / "reconstructed")
+
+
+def test_v5_run_uses_sealed_models_without_refitting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    specs = tuple(next(x for x in world.scene_rows() if x.partition == part) for part in ("train", "tuning", "evaluation"))
+    frozen = Path(world.HERE) / "results/model-quality-v4/derived/models.json"
+    monkeypatch.setattr(model, "fit_models", lambda *_: (_ for _ in ()).throw(AssertionError("refit forbidden")))
+    output = tmp_path / "v5"
+    runner.run_matrix(output, specs=specs, require_full=False, frozen_models_from=frozen)
+    provenance = json.loads((output / "raw/model-provenance.json").read_text())
+    assert provenance["disposition"] == "V4_MODELS_BYTE_FROZEN_NO_REFIT"
+    assert provenance["models_sha256"] == model.V4_MODELS_SHA256
+    reconstructed = tmp_path / "reconstructed-v5"
+    runner.reconstruct(output / "raw", reconstructed)
+    assert (reconstructed / "models.json").read_bytes() == frozen.read_bytes()

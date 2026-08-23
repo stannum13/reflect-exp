@@ -25,6 +25,8 @@ SOURCE_PATHS = (
     Path("experiments/06_world_model/model.py"),
     Path("experiments/06_world_model/run.py"),
 )
+V4_PARENT_MANIFEST_SHA256="40be9ef3b736684b89854af856462aab3ad65c8f2a9f2bfdb1463a26a7bdc8c4"
+V4_SOURCE_GIT_HEAD="0ff47efb29b30cccc7a265d8992310c6aca4be7f"
 
 
 def _write(path: Path, payload: bytes) -> None:
@@ -112,6 +114,16 @@ def _raw_dataset(raw: Path) -> tuple[model.DatasetRow,...]:
         rows.append(model.DatasetRow(item["partition"],item["stratum"],item["scene_id"],item["anchor_id"],item["candidate_id"],item["strategy_id"],tuple(item["state_features"]),command,item["action_sha256"],tuple(outcome["terminal_state"]),outcome["position_error_m"],outcome["orientation_error_rad"],outcome["collision"],outcome["action_energy"],outcome["unsafe"],outcome["success"],outcome["terminal_failure"],outcome["actual_cost"],outcome["outcome_sha256"]))
     return tuple(rows)
 
+def _frozen_models(raw:Path)->tuple[model.FittedModel,...]|None:
+    path=raw/"frozen-models.json"
+    if not path.exists():return None
+    provenance=_load_canonical_json(raw/"model-provenance.json")
+    expected={"schema_version":1,"disposition":"V4_MODELS_BYTE_FROZEN_NO_REFIT","models_sha256":model.V4_MODELS_SHA256,"parent_manifest_sha256":V4_PARENT_MANIFEST_SHA256,"parent_source_git_head":V4_SOURCE_GIT_HEAD,"selection":"W3R","training_scenes":72,"tuning_scenes":24}
+    if provenance!=expected or hashlib.sha256(path.read_bytes()).hexdigest()!=model.V4_MODELS_SHA256:raise ValueError("frozen model provenance mismatch")
+    fitted=model.load_frozen_models(path.read_bytes());rows=world.scene_rows();train={x.scene_id for x in rows if x.partition=="train"};tune={x.scene_id for x in rows if x.partition=="tuning"};evaluation={x.scene_id for x in rows if x.partition=="evaluation"}
+    if any(set(x.fit_scene_ids)!=train or set(x.tuning_scene_ids)!=tune or set(x.fit_scene_ids)&evaluation or set(x.tuning_scene_ids)&evaluation for x in fitted):raise ValueError("frozen model ancestry does not bind the frozen split")
+    return fitted
+
 
 def _authenticate_and_replay(raw: Path) -> None:
     manifest=_validate_root_manifest(raw);_validate_source_ledger(raw)
@@ -145,7 +157,7 @@ def _authenticate_and_replay(raw: Path) -> None:
 def _derive(raw: Path, output: Path) -> None:
     output.mkdir(parents=True)
     rows=_raw_dataset(raw);training=tuple(x for x in rows if x.partition=="train");tuning=tuple(x for x in rows if x.partition=="tuning");evaluation=tuple(x for x in rows if x.partition=="evaluation")
-    fitted=model.fit_models(training,tuning);predictions=model.predict_all(fitted,evaluation);selections=model.rank_selectors(predictions,evaluation);metrics=model.aggregate_metrics(selections,predictions,evaluation)
+    fitted=_frozen_models(raw) or model.fit_models(training,tuning);predictions=model.predict_all(fitted,evaluation);selections=model.rank_selectors(predictions,evaluation);metrics=model.aggregate_metrics(selections,predictions,evaluation)
     latency=_load_canonical_json(raw/"latency.json")
     selected=next(x.selector_id for x in fitted if x.selected_for_evaluation)
     gate=model.quality_gate(metrics,selected,latency["selectors"])
@@ -156,19 +168,20 @@ def _derive(raw: Path, output: Path) -> None:
             item=max(pool,key=lambda x:(x.regret,x.scene_id,x.anchor_id));examples.append({"kind":kind,"selector_id":selected,"scene_id":item.scene_id,"anchor_id":item.anchor_id,"candidate_id":item.candidate_id,"stratum":item.stratum,"regret":item.regret,"selection_sha256":world.sha(world.canonical(asdict(item)))})
     _write(output/"models.json",world.canonical([asdict(x) for x in fitted]));_write(output/"predictions.jsonl",_json_lines(asdict(x) for x in predictions));_write(output/"selections.jsonl",_json_lines(asdict(x) for x in selections));_write(output/"metrics.json",world.canonical(metrics));_write(output/"latency.json",world.canonical(latency));_write(output/"gate.json",world.canonical(gate));_write(output/"annotations.json",world.canonical(examples))
     raw_hashes=[_hash_file(path) for path in sorted(raw.iterdir()) if path.is_file()]
-    recipe={"schema_version":4,"renderer":"experiments.06_world_model.run:reconstruct","raw_files":raw_hashes,"fit_partition":"train","tuning_partition":"tuning","untouched_prediction_partition":"evaluation","selectors":list(model.SELECTORS),"selected_residual_selector":selected,"annotation_rule":"max regret; first available working/nonworking class by maximum regret","sort":"canonical generation order","numpy":np.__version__}
+    recipe={"schema_version":5 if _frozen_models(raw) else 4,"renderer":"experiments.06_world_model.run:reconstruct","raw_files":raw_hashes,"fit_partition":"sealed v4 model ancestry; no refit" if _frozen_models(raw) else "train","tuning_partition":"sealed v4 selection; no retune" if _frozen_models(raw) else "tuning","untouched_prediction_partition":"evaluation","selectors":list(model.SELECTORS),"selected_residual_selector":selected,"annotation_rule":"max regret; first available working/nonworking class by maximum regret","sort":"canonical generation order","numpy":np.__version__}
     _write(output/"recipe.json",world.canonical(recipe))
 
 
 def reconstruct(raw: Path, output: Path) -> None:
     if output.exists():raise FileExistsError(output)
     required={"source-ledger.json","scenes.jsonl","anchors.jsonl","candidates.jsonl","actions.npy","truth.jsonl","attempts.jsonl","latency.json"}
+    if (raw/"frozen-models.json").exists():required|={"frozen-models.json","model-provenance.json"}
     if not raw.is_dir() or {x.name for x in raw.iterdir()}!=required:raise ValueError("raw evidence file set is not exact")
     _authenticate_and_replay(raw)
     _derive(raw,output)
 
 
-def run_matrix(output: Path, *, specs: Sequence[world.SceneSpec] | None = None, require_full: bool = True) -> dict[str,int]:
+def run_matrix(output: Path, *, specs: Sequence[world.SceneSpec] | None = None, require_full: bool = True, frozen_models_from:Path|None=None) -> dict[str,int]:
     if output.exists():raise FileExistsError(output)
     selected=tuple(world.scene_rows() if specs is None else specs)
     if require_full and selected!=world.scene_rows():raise ValueError("full run requires exact frozen scene manifest")
@@ -176,6 +189,8 @@ def run_matrix(output: Path, *, specs: Sequence[world.SceneSpec] | None = None, 
     source=_source_ledger();git_head=subprocess.run(("git","rev-parse","HEAD"),check=True,stdout=subprocess.PIPE).stdout.decode().strip()
     source_receipt={"schema_version":3,"git_head":git_head,"python":platform.python_version(),"numpy":np.__version__,"mujoco":mujoco.__version__,"files":source}
     output.mkdir(parents=True);raw=output/"raw";raw.mkdir();_write(raw/"source-ledger.json",world.canonical(source_receipt));_validate_source_ledger(raw)
+    if frozen_models_from is not None:
+        frozen_payload=frozen_models_from.read_bytes();model.load_frozen_models(frozen_payload);_write(raw/"frozen-models.json",frozen_payload);_write(raw/"model-provenance.json",world.canonical({"schema_version":1,"disposition":"V4_MODELS_BYTE_FROZEN_NO_REFIT","models_sha256":model.V4_MODELS_SHA256,"parent_manifest_sha256":V4_PARENT_MANIFEST_SHA256,"parent_source_git_head":V4_SOURCE_GIT_HEAD,"selection":"W3R","training_scenes":72,"tuning_scenes":24}));_frozen_models(raw)
     scenes=[];anchors=[];candidate_rows=[];truth=[];actions=[];attempts=[]
     for spec in selected:
         try:
@@ -193,7 +208,7 @@ def run_matrix(output: Path, *, specs: Sequence[world.SceneSpec] | None = None, 
     if len(scenes)!=expected_scenes or len(anchors)!=expected_scenes*2 or len(candidate_rows)!=expected_candidates or any(x["outcome"]!="VALID" for x in attempts):raise RuntimeError("Experiment 06 matrix is incomplete")
     if require_full:
         if (sum(x.partition=="train" for x in selected),sum(x.partition=="tuning" for x in selected),sum(x.partition=="evaluation" for x in selected))!=(72,24,48):raise RuntimeError("split counts drifted")
-    rows=_raw_dataset(raw);training=tuple(x for x in rows if x.partition=="train");tuning=tuple(x for x in rows if x.partition=="tuning");evaluation=tuple(x for x in rows if x.partition=="evaluation");fitted=model.fit_models(training,tuning);samples={}
+    rows=_raw_dataset(raw);training=tuple(x for x in rows if x.partition=="train");tuning=tuple(x for x in rows if x.partition=="tuning");evaluation=tuple(x for x in rows if x.partition=="evaluation");fitted=_frozen_models(raw) or model.fit_models(training,tuning);samples={}
     for fitted_model in fitted:
         durations=[]
         for row in evaluation[:min(64,len(evaluation))]:
@@ -210,9 +225,9 @@ def run_matrix(output: Path, *, specs: Sequence[world.SceneSpec] | None = None, 
 
 
 def _main() -> None:
-    parser=argparse.ArgumentParser();group=parser.add_mutually_exclusive_group(required=True);group.add_argument("--output",type=Path);group.add_argument("--reconstruct-from",type=Path);parser.add_argument("--reconstructed-output",type=Path);args=parser.parse_args()
+    parser=argparse.ArgumentParser();group=parser.add_mutually_exclusive_group(required=True);group.add_argument("--output",type=Path);group.add_argument("--reconstruct-from",type=Path);parser.add_argument("--reconstructed-output",type=Path);parser.add_argument("--frozen-models-from",type=Path);args=parser.parse_args()
     if args.output is not None:
-        print(world.canonical(run_matrix(args.output)).decode(),end="")
+        print(world.canonical(run_matrix(args.output,frozen_models_from=args.frozen_models_from)).decode(),end="")
     else:
         if args.reconstructed_output is None:parser.error("--reconstructed-output is required with --reconstruct-from")
         reconstruct(args.reconstruct_from,args.reconstructed_output)

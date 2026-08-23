@@ -1,8 +1,9 @@
 """Truth-free controls and compact ridge ensembles for Experiment 06."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import hashlib
+import json
 import math
 from typing import Iterable, Sequence
 import numpy as np
@@ -10,6 +11,7 @@ from . import world
 
 SELECTORS=("DIRECT","W0","W1","W1V2","W2","W3","W4","W3R","W4R")
 LEARNED=("W3","W4","W3R","W4R")
+V4_MODELS_SHA256="70666cdd4226a05e00d0a1b4552fd27760f91d42ca7f93dca4d0706e046a20de"
 
 @dataclass(frozen=True)
 class DatasetRow:
@@ -36,6 +38,23 @@ class Prediction:
 class Selection:
     selector_id:str; scene_id:str; stratum:str; anchor_id:str; candidate_id:str; strategy_id:str
     selected_actual_cost:float; oracle_actual_cost:float; regret:float; spearman:float|None; success:bool; collision:bool
+
+def frozen_models_sha256(models:Sequence[FittedModel])->str:
+    return hashlib.sha256(world.canonical([asdict(item) for item in models])).hexdigest()
+
+def load_frozen_models(payload:bytes)->tuple[FittedModel,...]:
+    value=json.loads(payload)
+    if world.canonical(value)!=payload or not isinstance(value,list):raise ValueError("frozen model bytes are not canonical")
+    exact=set(FittedModel.__dataclass_fields__);models=[]
+    for row in value:
+        if not isinstance(row,dict) or set(row)!=exact:raise ValueError("frozen model schema is not exact")
+        converted={**row,"feature_mean":tuple(row["feature_mean"]),"feature_scale":tuple(row["feature_scale"]),"coefficient_shape":tuple(row["coefficient_shape"]),"coefficients":tuple(row["coefficients"]),"intercept":tuple(row["intercept"]),"fit_scene_ids":tuple(row["fit_scene_ids"]),"tuning_scene_ids":tuple(row["tuning_scene_ids"]),"member_alphas":tuple(row["member_alphas"])}
+        item=FittedModel(**converted);wire=[item.selector_id,item.member_alphas,item.feature_mean,item.feature_scale,item.coefficient_shape,item.coefficients,item.intercept,item.fit_scene_ids,item.tuning_scene_ids]
+        if hashlib.sha256(world.canonical(wire)).hexdigest()!=item.model_sha256:raise ValueError("frozen model record hash mismatch")
+        models.append(item)
+    result=tuple(models)
+    if tuple(x.selector_id for x in result)!=LEARNED or sum(x.selected_for_evaluation for x in result)!=1 or frozen_models_sha256(result)!=V4_MODELS_SHA256:raise ValueError("frozen v4 model set mismatch")
+    return result
 
 def scene_features(scene:world.Scene,anchor:world.Anchor)->tuple[float,...]:
     geometry=(1.,0.) if scene.geometry=="disk" else (0.,1.); obstacle=(0.,)*5 if scene.obstacle is None else (1.,*scene.obstacle)

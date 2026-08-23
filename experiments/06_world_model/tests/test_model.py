@@ -4,6 +4,7 @@ import importlib
 from dataclasses import replace
 
 import pytest
+from pathlib import Path
 
 world = importlib.import_module("experiments.06_world_model.world")
 model = importlib.import_module("experiments.06_world_model.model")
@@ -79,3 +80,11 @@ def test_quality_gate_is_mechanical() -> None:
     gate = model.quality_gate({"overall": overall, "strata": strata}, "W3R", {"W3R": {"p95_ns": 1000}}, latency_limit_ns=5000)
     assert gate["passed"] is True
     assert gate["strata_beaten"] == 4
+
+
+def test_v4_models_load_byte_frozen_without_refitting() -> None:
+    path = Path(world.HERE) / "results/model-quality-v4/derived/models.json"
+    fitted = model.load_frozen_models(path.read_bytes())
+    assert tuple(item.selector_id for item in fitted) == ("W3", "W4", "W3R", "W4R")
+    assert next(item.selector_id for item in fitted if item.selected_for_evaluation) == "W3R"
+    assert model.frozen_models_sha256(fitted) == "70666cdd4226a05e00d0a1b4552fd27760f91d42ca7f93dca4d0706e046a20de"
