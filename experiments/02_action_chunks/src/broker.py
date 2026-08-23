@@ -23,6 +23,39 @@ def _readonly_float64(values: object, *, ndim: int) -> np.ndarray:
     return result
 
 
+def derive_ensemble(parents: tuple[np.ndarray, ...]) -> np.ndarray:
+    if not parents:
+        raise BrokerError("ensemble requires parents")
+    arrays = tuple(_readonly_float64(parent, ndim=2) for parent in parents)
+    if len({array.shape for array in arrays}) != 1:
+        raise BrokerError("ensemble parents require identical coverage")
+    return _readonly_float64(np.mean(np.stack(arrays, axis=0), axis=0), ndim=2)
+
+
+def derive_overlap_blend(old: np.ndarray, new: np.ndarray, overlap_rows: int) -> np.ndarray:
+    left = _readonly_float64(old, ndim=2)
+    right = _readonly_float64(new, ndim=2)
+    if left.shape != right.shape or type(overlap_rows) is not int or not 0 <= overlap_rows <= len(left):
+        raise BrokerError("invalid overlap blend inputs")
+    result = np.array(right, copy=True, order="C")
+    for row in range(overlap_rows):
+        beta = (row + 1) / (overlap_rows + 1)
+        result[row] = (1.0 - beta) * left[row] + beta * right[row]
+    return _readonly_float64(result, ndim=2)
+
+
+def derive_rtc_approximation(old: np.ndarray, new: np.ndarray, overlap_rows: int) -> np.ndarray:
+    left = _readonly_float64(old, ndim=2)
+    right = _readonly_float64(new, ndim=2)
+    if left.shape != right.shape or type(overlap_rows) is not int or not 0 < overlap_rows <= len(left):
+        raise BrokerError("invalid RTC approximation inputs")
+    result = np.array(right, copy=True, order="C")
+    for row in range(overlap_rows):
+        gamma = (overlap_rows - row) / overlap_rows
+        result[row] = gamma * left[row] + (1.0 - gamma) * right[row]
+    return _readonly_float64(result, ndim=2)
+
+
 @dataclass(frozen=True)
 class NormalizedProposal:
     proposal_id: str
@@ -115,6 +148,10 @@ class TemporalBroker:
         if self._finished or type(tick) is not int:
             raise BrokerError("broker is closed or tick is invalid")
         self._expire(tick)
+        if tick >= proposal.expiry_tick:
+            event = BrokerTransition(tick, "CHUNK_REJECTED", proposal.proposal_id, "EXPIRED")
+            self._events.append(event)
+            return event
         if tick != proposal.actual_delivery_tick:
             raise BrokerError("delivery tick does not match proposal provenance")
         if proposal.expiry_tick <= tick:
