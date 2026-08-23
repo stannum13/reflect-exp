@@ -16,6 +16,11 @@ policy: CONTAINED_GIT_SYMLINKS_V1
 contract:
   path: experiments/00_source_audit/configs/lerobot-contained-symlinks-v1.json
   sha256: 4ce69394bc36198ec39372b250804f341453a96b1778377fc2a2c8a23292b02f
+prior_amendments:
+  - path: experiments/00_source_audit/MANIFEST_AMENDMENT.yaml
+    sha256: 58a18736dbdee83081228a8ce3cc44c537c3c5bbbb56e2b9fe75c692ec95a67e
+  - path: experiments/00_source_audit/MANIFEST_AMENDMENT_R2.yaml
+    sha256: 7d998f508d069e66b8742210700e3d09ac006626f3e9bf42650c79c46bd74c06
 scope:
   checkout: EXACT_LOCKED_LEROBOT_ARTIFACT_ONLY
   source_copy_authority: false

@@ -39,6 +39,7 @@ from reflect.sources import (
     MetadataStatus,
     PathStatus,
     SourceLock,
+    load_lock,
     load_registry,
 )
 
@@ -738,41 +739,116 @@ def test_lerobot_revision_chain_hash_joins_contract_attempts_modes_and_receipt(
     project = Path.cwd()
     paths = (
         "experiments/00_source_audit/configs/lerobot-contained-symlinks-v1.json",
+        "experiments/00_source_audit/MANIFEST_AMENDMENT.yaml",
+        "experiments/00_source_audit/MANIFEST_AMENDMENT_R2.yaml",
+        "experiments/00_source_audit/MANIFEST_AMENDMENT_R3.yaml",
         "experiments/00_source_audit/results/attempts/lerobot-checkout-v1-fail.json",
+        "experiments/00_source_audit/results/attempts/lerobot-checkout-v2-pass.json",
     )
     for relative in paths:
         destination = tmp_path / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(project / relative, destination)
-    v2_bytes = (project / "experiments/00_source_audit/results/attempts/lerobot-checkout-v2-pass.json").read_bytes()
-    v2_path = tmp_path / "experiments/00_source_audit/results/attempts/lerobot-checkout-v2-pass.json"
-    v2_path.parent.mkdir(parents=True, exist_ok=True)
-    v2_path.write_bytes(v2_bytes)
-    raw = json.loads(v2_bytes)
-    raw["schema_version"] = 3
-    for row in raw["contained_symlinks"]:
-        row["link_mode"] = "120000"
-        row["target_mode"] = "100644"
-    raw.pop("evidence_sha256")
-    raw["evidence_sha256"] = canonical_sha256(raw)
+    receipt_path = project / "experiments/00_source_audit/results/fragments/lerobot-checkout.json"
+    receipt_bytes = receipt_path.read_bytes()
+    raw = json.loads(receipt_bytes)
     receipt = CheckoutEvidence.from_dict(raw)
-    receipt_bytes = receipt.canonical_bytes()
-    amendment = yaml.safe_load((project / "experiments/00_source_audit/MANIFEST_AMENDMENT_R2.yaml").read_text())
-    amendment["revision"] = 3
-    amendment["revision_2_receipt"]["path"] = "experiments/00_source_audit/results/attempts/lerobot-checkout-v2-pass.json"
-    amendment["revision_2_receipt"]["file_sha256"] = hashlib.sha256(v2_bytes).hexdigest()
-    amendment["revision_3_receipt"] = {
-        "path": "experiments/00_source_audit/results/fragments/lerobot-checkout.json",
-        "file_sha256": hashlib.sha256(receipt_bytes).hexdigest(),
-        "evidence_sha256": receipt.evidence_sha256,
-        "outcome": "PASS",
-    }
-    amendment_path = tmp_path / "experiments/00_source_audit/MANIFEST_AMENDMENT_R3.yaml"
-    amendment_path.write_text(yaml.safe_dump(amendment, sort_keys=False))
 
     source_compat_module._validate_lerobot_revision_chain(tmp_path, receipt, receipt_bytes)
 
-    contract_path = tmp_path / paths[0]
+    contract_path = tmp_path / "experiments/00_source_audit/configs/lerobot-contained-symlinks-v1.json"
     contract_path.write_bytes(contract_path.read_bytes() + b" ")
     with pytest.raises(ValueError, match="hash join"):
         source_compat_module._validate_lerobot_revision_chain(tmp_path, receipt, receipt_bytes)
+
+
+_LEROBOT_REVISION_PATHS = (
+    "experiments/00_source_audit/configs/lerobot-contained-symlinks-v1.json",
+    "experiments/00_source_audit/MANIFEST_AMENDMENT.yaml",
+    "experiments/00_source_audit/MANIFEST_AMENDMENT_R2.yaml",
+    "experiments/00_source_audit/MANIFEST_AMENDMENT_R3.yaml",
+    "experiments/00_source_audit/results/attempts/lerobot-checkout-v1-fail.json",
+    "experiments/00_source_audit/results/attempts/lerobot-checkout-v2-pass.json",
+)
+
+
+def _copy_lerobot_public_snapshot(tmp_path: Path) -> tuple[object, object, object]:
+    project = Path.cwd()
+    for relative in (
+        "references/repos.yaml",
+        "references/repos.lock.yaml",
+        "experiments/00_source_audit/configs/operation-manifest.yaml",
+        *_LEROBOT_REVISION_PATHS,
+    ):
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(project / relative, destination)
+    shutil.copytree(
+        project / "experiments/00_source_audit/results/fragments",
+        tmp_path / "experiments/00_source_audit/results/fragments",
+    )
+    registry = load_registry(tmp_path / "references/repos.yaml")
+    lock = load_lock(tmp_path / "references/repos.lock.yaml")
+    manifest = load_operation_manifest(
+        tmp_path / "experiments/00_source_audit/configs/operation-manifest.yaml",
+        registry,
+        lock,
+        tmp_path,
+    )
+    return registry, lock, manifest
+
+
+@pytest.mark.parametrize("missing", _LEROBOT_REVISION_PATHS)
+def test_public_fragment_loader_requires_all_six_lerobot_revision_artifacts(
+    tmp_path: Path, missing: str
+) -> None:
+    registry, lock, manifest = _copy_lerobot_public_snapshot(tmp_path)
+    (tmp_path / missing).unlink()
+    with pytest.raises(ValueError, match="LeRobot|revision|artifact"):
+        load_manifest_fragments(tmp_path, manifest, registry, lock)
+
+
+@pytest.mark.parametrize(
+    ("keys", "value"),
+    (
+        (("implementation_commit",), "0" * 40),
+        (("registry_sha256",), "0" * 64),
+        (("lock_sha256",), "0" * 64),
+        (("locked_recursive_tree_sha",), "0" * 40),
+        (("scope", "source_copy_authority"), True),
+        (("validation", "selected_tree_inventory"), "DECLARED_ONLY"),
+        (("validation", "git_object_modes"), ["120000", "120000", "100644"]),
+        (("validation", "regular_target_modes"), ["100644", "100755", "100644"]),
+        (("validation", "observed_link_count"), 4),
+        (("result", "operational_gate"), "BLOCKED"),
+        (("revision_3_receipt", "retained_file_count"), 32),
+        (("revision_3_receipt", "outcome"), "FAIL"),
+    ),
+)
+def test_public_fragment_loader_rejects_contradictory_r3(
+    tmp_path: Path, keys: tuple[str, ...], value: object,
+) -> None:
+    registry, lock, manifest = _copy_lerobot_public_snapshot(tmp_path)
+    amendment_path = tmp_path / "experiments/00_source_audit/MANIFEST_AMENDMENT_R3.yaml"
+    amendment = yaml.safe_load(amendment_path.read_text())
+    target = amendment
+    for key in keys[:-1]:
+        target = target[key]
+    target[keys[-1]] = value
+    amendment_path.write_text(yaml.safe_dump(amendment, sort_keys=False))
+    with pytest.raises(ValueError, match="LeRobot|revision|count"):
+        load_manifest_fragments(tmp_path, manifest, registry, lock)
+
+
+def test_public_fragment_loader_rejects_special_policy_elsewhere(tmp_path: Path) -> None:
+    registry, lock, _ = _copy_lerobot_public_snapshot(tmp_path)
+    manifest_path = tmp_path / "experiments/00_source_audit/configs/operation-manifest.yaml"
+    raw_manifest = yaml.safe_load(manifest_path.read_text())
+    next(
+        row for row in raw_manifest["operations"]
+        if row["operation_id"] == "LEROBOT_CHECKOUT"
+    )["operation_id"] = "LEROBOT_OTHER"
+    manifest_path.write_text(yaml.safe_dump(raw_manifest, sort_keys=False))
+    altered = load_operation_manifest(manifest_path, registry, lock, tmp_path)
+    with pytest.raises(ValueError, match="restricted|LEROBOT_CHECKOUT"):
+        load_manifest_fragments(tmp_path, altered, registry, lock)

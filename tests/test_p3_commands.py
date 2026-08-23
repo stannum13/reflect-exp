@@ -213,6 +213,34 @@ def test_reporter_renders_exact_section35_report_and_is_deterministic(tmp_path: 
         report.validate_rendered_report(text + f"\n- Other Git SHA: `{sha}`\n", sha)
 
 
+@pytest.mark.parametrize(
+    "tampered",
+    (
+        "experiments/00_source_audit/configs/lerobot-contained-symlinks-v1.json",
+        "experiments/00_source_audit/MANIFEST_AMENDMENT.yaml",
+        "experiments/00_source_audit/MANIFEST_AMENDMENT_R2.yaml",
+        "experiments/00_source_audit/MANIFEST_AMENDMENT_R3.yaml",
+        "experiments/00_source_audit/results/attempts/lerobot-checkout-v1-fail.json",
+        "experiments/00_source_audit/results/attempts/lerobot-checkout-v2-pass.json",
+    ),
+)
+def test_reporter_rejects_tampered_lerobot_revision_artifact(
+    monkeypatch: pytest.MonkeyPatch, tampered: str
+) -> None:
+    report = importlib.import_module("scripts.write_p3_report")
+    original = report._git_artifact
+
+    def mutate(root: Path, commit: str, path: str):
+        artifact = original(root, commit, path)
+        if path == tampered:
+            return report.GitArtifact(path, artifact.blob_id, artifact.content + b" ")
+        return artifact
+
+    monkeypatch.setattr(report, "_git_artifact", mutate)
+    with pytest.raises(ValueError, match="LeRobot|revision|artifact|hash"):
+        report._read_snapshot(Path.cwd(), "709bb90f13e5c3729748a0ce95fe6e82fa370ee0")
+
+
 def test_reporter_replaces_only_prior_tracked_report_candidate(tmp_path: Path) -> None:
     report = importlib.import_module("scripts.write_p3_report")
     repository = tmp_path / "repository"

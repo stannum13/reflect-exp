@@ -60,6 +60,8 @@ _SHA40 = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _FIXED_SMOKE_PATH = "experiments/00_source_audit/results/fragments/mujoco-package-smoke.json"
 _LEROBOT_CONTRACT_PATH = "experiments/00_source_audit/configs/lerobot-contained-symlinks-v1.json"
+_LEROBOT_R1_AMENDMENT_PATH = "experiments/00_source_audit/MANIFEST_AMENDMENT.yaml"
+_LEROBOT_R2_AMENDMENT_PATH = "experiments/00_source_audit/MANIFEST_AMENDMENT_R2.yaml"
 _LEROBOT_AMENDMENT_PATH = "experiments/00_source_audit/MANIFEST_AMENDMENT_R3.yaml"
 _LEROBOT_V1_PATH = "experiments/00_source_audit/results/attempts/lerobot-checkout-v1-fail.json"
 _LEROBOT_V2_PATH = "experiments/00_source_audit/results/attempts/lerobot-checkout-v2-pass.json"
@@ -503,13 +505,19 @@ def _read_regular_artifact(root: Path, relative: str) -> bytes:
     path = PurePosixPath(relative)
     if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
         raise ValueError("P3 revision artifact path is unsafe")
-    parent = open_directory_chain(root.joinpath(*path.parts[:-1]), create=False)
     try:
-        descriptor = os.open(
-            path.parts[-1],
-            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
-            dir_fd=parent,
-        )
+        parent = open_directory_chain(root.joinpath(*path.parts[:-1]), create=False)
+    except OSError as error:
+        raise ValueError(f"P3 revision artifact is unavailable: {relative}") from error
+    try:
+        try:
+            descriptor = os.open(
+                path.parts[-1],
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
+                dir_fd=parent,
+            )
+        except OSError as error:
+            raise ValueError(f"P3 revision artifact is unavailable: {relative}") from error
     finally:
         os.close(parent)
     try:
@@ -529,36 +537,91 @@ def _validate_lerobot_revision_chain(
     project_root: Path,
     receipt: CheckoutEvidence,
     receipt_bytes: bytes,
+    registry: SourceRegistry | None = None,
+    lock: SourceLock | None = None,
 ) -> None:
     contract_bytes = _read_regular_artifact(project_root, _LEROBOT_CONTRACT_PATH)
+    r1_amendment_bytes = _read_regular_artifact(project_root, _LEROBOT_R1_AMENDMENT_PATH)
+    r2_amendment_bytes = _read_regular_artifact(project_root, _LEROBOT_R2_AMENDMENT_PATH)
     amendment_bytes = _read_regular_artifact(project_root, _LEROBOT_AMENDMENT_PATH)
     v1_bytes = _read_regular_artifact(project_root, _LEROBOT_V1_PATH)
     v2_bytes = _read_regular_artifact(project_root, _LEROBOT_V2_PATH)
     contract = _json_no_duplicates(contract_bytes)
+    r1_amendment = yaml.load(r1_amendment_bytes, Loader=_UniqueLoader)
+    r2_amendment = yaml.load(r2_amendment_bytes, Loader=_UniqueLoader)
     amendment = yaml.load(amendment_bytes, Loader=_UniqueLoader)
     v1 = CheckoutEvidence.from_dict(_json_no_duplicates(v1_bytes))
     v2 = CheckoutEvidence.from_dict(_json_no_duplicates(v2_bytes))
-    if not isinstance(amendment, Mapping):
+    if not all(isinstance(value, Mapping) for value in (r1_amendment, r2_amendment, amendment)):
         raise ValueError("LeRobot revision amendment must be a mapping")
+    expected_top_keys = {
+        "schema_version", "record_type", "revision", "classification", "operation_id",
+        "reason", "implementation_commit", "registry_sha256", "lock_sha256",
+        "locked_commit_sha", "locked_recursive_tree_sha", "policy", "contract",
+        "prior_amendments", "scope", "validation", "revision_1_failure",
+        "revision_2_receipt", "revision_3_receipt", "result",
+    }
     contract_binding = amendment.get("contract")
+    prior_amendments = amendment.get("prior_amendments")
     prior = amendment.get("revision_1_failure")
     prior_pass = amendment.get("revision_2_receipt")
     current = amendment.get("revision_3_receipt")
     validation = amendment.get("validation")
+    scope = amendment.get("scope")
+    result = amendment.get("result")
+    expected_prior_amendments = [
+        {"path": _LEROBOT_R1_AMENDMENT_PATH, "sha256": hashlib.sha256(r1_amendment_bytes).hexdigest()},
+        {"path": _LEROBOT_R2_AMENDMENT_PATH, "sha256": hashlib.sha256(r2_amendment_bytes).hexdigest()},
+    ]
+    expected_scope = {
+        "checkout": "EXACT_LOCKED_LEROBOT_ARTIFACT_ONLY",
+        "source_copy_authority": False,
+        "adapter_authority": False,
+        "symlink_chain_following": False,
+        "filesystem_symlink_output": False,
+    }
+    expected_result = {
+        "prior_attempts_preserved": True,
+        "operational_gate": "PASS",
+        "confirmation_eligible": False,
+        "limitation": (
+            "This post-freeze engineering repair closes only the operational source gate; it "
+            "does not convert the amended P3 evidence into confirmatory evidence."
+        ),
+    }
+    expected_contract_keys = {
+        "schema_version", "policy", "registry_sha256", "repository", "url",
+        "commit_sha", "recursive_tree_sha", "symlinks",
+    }
     if (
-        amendment.get("schema_version") != 1
+        set(amendment) != expected_top_keys
+        or amendment.get("schema_version") != 1
         or amendment.get("record_type") != "P3_OPERATION_CONTRACT_REVISION"
         or amendment.get("revision") != 3
         or amendment.get("operation_id") != "LEROBOT_CHECKOUT"
+        or amendment.get("classification") != "ENGINEERING_NONCONFIRMATORY"
+        or amendment.get("implementation_commit") != "3cc5d180dde9b2a4f2682a3c3c92daf3e9619d91"
+        or amendment.get("registry_sha256") != receipt.registry_sha256
+        or (registry is not None and amendment.get("registry_sha256") != registry.registry_sha256)
+        or (lock is not None and amendment.get("lock_sha256") != source_lock_sha256(lock))
+        or amendment.get("locked_commit_sha") != receipt.locked_sha
+        or amendment.get("locked_recursive_tree_sha") != receipt.recursive_tree_sha
         or amendment.get("policy") != "CONTAINED_GIT_SYMLINKS_V1"
         or not isinstance(contract_binding, Mapping)
         or contract_binding.get("path") != _LEROBOT_CONTRACT_PATH
         or contract_binding.get("sha256") != hashlib.sha256(contract_bytes).hexdigest()
+        or prior_amendments != expected_prior_amendments
+        or scope != expected_scope
         or not isinstance(prior, Mapping)
         or prior.get("path") != _LEROBOT_V1_PATH
         or prior.get("file_sha256") != hashlib.sha256(v1_bytes).hexdigest()
         or prior.get("evidence_sha256") != v1.evidence_sha256
         or prior.get("outcome") != "FAIL"
+        or v1.schema_version != 1
+        or v1.repository != "lerobot"
+        or v1.registry_sha256 != receipt.registry_sha256
+        or v1.locked_sha != receipt.locked_sha
+        or v1.blocker != "checkout contains a nonregular or linked file"
         or v1.outcome != "FAIL"
         or not isinstance(prior_pass, Mapping)
         or prior_pass.get("path") != _LEROBOT_V2_PATH
@@ -566,21 +629,47 @@ def _validate_lerobot_revision_chain(
         or prior_pass.get("evidence_sha256") != v2.evidence_sha256
         or prior_pass.get("outcome") != "PASS"
         or v2.schema_version != 2
+        or v2.repository != receipt.repository
+        or v2.registry_sha256 != receipt.registry_sha256
+        or v2.locked_sha != receipt.locked_sha
+        or v2.recursive_tree_sha != receipt.recursive_tree_sha
+        or v2.symlink_policy != receipt.symlink_policy
+        or len(v2.content_hashes) != 33
+        or len(v2.contained_symlinks) != 3
         or v2.outcome != "PASS"
         or not isinstance(current, Mapping)
         or current.get("path") != _LEROBOT_RECEIPT_PATH
         or current.get("file_sha256") != hashlib.sha256(receipt_bytes).hexdigest()
         or current.get("evidence_sha256") != receipt.evidence_sha256
         or current.get("outcome") != "PASS"
+        or current.get("download_bytes") != receipt.download_bytes
+        or current.get("disk_bytes") != receipt.disk_bytes
+        or current.get("retained_file_count") != len(receipt.content_hashes)
         or receipt.outcome != "PASS"
+        or receipt.schema_version != 3
+        or receipt.symlink_policy != "CONTAINED_GIT_SYMLINKS_V1"
         or not isinstance(validation, Mapping)
+        or set(validation) != {
+            "git_object_modes", "regular_target_modes", "materialization", "target_rule",
+            "selected_tree_inventory", "declared_link_count", "observed_link_count",
+        }
+        or validation.get("git_object_modes") != ["120000", "120000", "120000"]
+        or validation.get("regular_target_modes") != ["100644", "100644", "100644"]
         or validation.get("materialization") != "CORE_SYMLINKS_FALSE_REGULAR_DESCRIPTOR"
         or validation.get("target_rule") != "RELATIVE_CONTAINED_DECLARED_REGULAR_BLOB"
+        or validation.get("selected_tree_inventory") != "EXHAUSTIVE_LS_TREE_RECURSIVE"
+        or validation.get("declared_link_count") != 3
+        or validation.get("observed_link_count") != 3
+        or result != expected_result
     ):
         raise ValueError("LeRobot revision receipt/contract/amendment hash join is invalid")
     if (
-        contract.get("policy") != receipt.symlink_policy
+        set(contract) != expected_contract_keys
+        or contract.get("schema_version") != 1
+        or contract.get("policy") != receipt.symlink_policy
+        or contract.get("registry_sha256") != receipt.registry_sha256
         or contract.get("repository") != receipt.repository
+        or contract.get("url") != receipt.url
         or contract.get("commit_sha") != receipt.locked_sha
         or contract.get("recursive_tree_sha") != receipt.recursive_tree_sha
     ):
@@ -596,9 +685,17 @@ def _validate_lerobot_revision_chain(
             not isinstance(expected, Mapping)
             or any(row[key] != expected[key] for key in ("path", "link_blob_sha1", "target", "target_path", "target_blob_sha1"))
             or row["link_mode"] != "120000"
-            or row["target_mode"] not in {"100644", "100755"}
+            or row["target_mode"] != "100644"
         ):
             raise ValueError("LeRobot revision receipt object modes or identities differ")
+    if sorted(by_path) != sorted(row["path"] for row in receipt_rows):
+        raise ValueError("LeRobot revision receipt symlink inventory is not exact")
+    exhaustive = [
+        command for command in receipt.commands
+        if len(command) >= 7 and "ls-tree" in command and "-r" in command and "-z" in command
+    ]
+    if len(exhaustive) != 1 or "HEAD" not in exhaustive[0] or "--" not in exhaustive[0]:
+        raise ValueError("LeRobot revision receipt lacks one exhaustive selected-tree inventory")
 
 
 def load_operation_manifest(path: Path, registry: SourceRegistry, lock: SourceLock, root: Path) -> OperationManifest:
@@ -822,10 +919,14 @@ def load_manifest_fragments(
                 raise ValueError("checkout receipt does not bind the manifest/lock")
             if item.download_bytes > operation.download_ceiling_bytes or item.disk_bytes > operation.disk_ceiling_bytes or len(item.content_hashes) > operation.file_count_ceiling:
                 raise ValueError("checkout receipt exceeds manifest byte/inventory ceilings")
-            if item.schema_version == 2:
-                if operation.operation_id != "LEROBOT_CHECKOUT":
-                    raise ValueError("contained-symlink authority is restricted to LEROBOT_CHECKOUT")
-                _validate_lerobot_revision_chain(project_root, item, data)
+            if item.symlink_policy == "CONTAINED_GIT_SYMLINKS_V1" or item.schema_version != 1:
+                if (
+                    item.schema_version != 3
+                    or operation.operation_id != "LEROBOT_CHECKOUT"
+                    or operation.repository != "lerobot"
+                ):
+                    raise ValueError("contained-symlink authority is restricted to schema-3 LEROBOT_CHECKOUT")
+                _validate_lerobot_revision_chain(project_root, item, data, registry, lock)
             checkouts.append(item)
         else:
             compatibility.append(validate_fragment(raw, registry, lock, manifest, relative))
