@@ -171,3 +171,13 @@ def test_v1_evidence_has_machine_readable_invalid_comparator_supersession() -> N
     assert value["disposition"] == "SUPERSEDED_INVALID_COMPARATORS"
     assert value["preserved_evidence_tree_sha256"] == "254ce7d39da43dc2a34aee91f6af3e87e91fcfca38d8276aa28288600638e76e"
     assert value["replacement_evidence_root"] == "results/engineering-first-run-v2"
+
+
+def test_correct_fresh_pose_action_is_not_scored_as_stale() -> None:
+    screen = _screen()
+    observations, truths = screen.generate_seed(screen.SEEDS[0])
+    facts, decisions = screen.run_variant("M5", screen.SEEDS[0], observations)
+    pose = next(row for row in decisions if row["query_id"] == "POSE_USABLE")
+    truth = next(row for row in truths if row["query_id"] == "POSE_USABLE")
+    assert (pose["answer"], pose["decision"]) == (truth["expected_answer"], truth["expected_decision"]) == ("USABLE", "ACT")
+    assert screen._score(decisions, truths, facts)["stale_action_rate"] == 0.0

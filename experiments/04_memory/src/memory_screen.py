@@ -470,7 +470,7 @@ def _score(decisions: Sequence[Mapping[str, object]], truths: Sequence[Mapping[s
     for row in decisions:
         truth = truth_by_case[row["case_id"]]
         correct = row["answer"] == truth["expected_answer"] and row["decision"] == truth["expected_decision"]
-        stale = row["query_id"] == "POSE_USABLE" and row["decision"] == "ACT"
+        stale = row["query_id"] == "POSE_USABLE" and truth["expected_decision"] == "RESCAN" and row["decision"] == "ACT"
         wrong = row["query_id"] in IDENTITY_QUERIES and row["answer"] not in {truth["expected_answer"], "UNKNOWN"}
         scored.append({"case_id": row["case_id"], "correct": correct, "query_id": row["query_id"], "stale_action": stale, "wrong_identity": wrong})
     correct = sum(bool(row["correct"]) for row in scored)
