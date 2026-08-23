@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Mapping, Sequence
 
 import numpy as np
 
 from .v3_contracts import Architecture, OUTCOME_SEEDS, PRIMARY_CONTROLLER_ID, SCENARIO_IDS, SENSITIVITY_CONTROLLER_ID, canonical_bytes, sha256_bytes
-from .v3_evidence import _csv, _diagnostic_png, _diagnostic_svg, _inventory, _write
+from .v3_evidence import _csv, _diagnostic_png, _diagnostic_svg, _inventory
 
 
 BOOTSTRAP_DRAWS = 10_000
@@ -24,6 +25,33 @@ REALIZATION_KEYS = {
     "injection_tick", "impulse_nm", "impulse_ticks", "dropout_ticks", "target_shift_xy",
     "obstacle_xy", "obstacle_radius_m", "damping_multiplier", "semantic_delay_ticks", "parameter_sha256",
 }
+
+
+def _write_expected(path: Path, payload: bytes) -> None:
+    if path.exists():
+        if path.is_symlink() or not path.is_file() or path.read_bytes() != payload:
+            raise RuntimeError(f"outcome derived create-only mismatch: {path}")
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("xb") as stream:
+        stream.write(payload)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def _validate_raw_inventory(output: Path) -> None:
+    manifest_path = output / "raw/manifest.json"
+    payload = manifest_path.read_bytes()
+    manifest = json.loads(payload.decode("ascii"))
+    if canonical_bytes(manifest) != payload:
+        raise RuntimeError("outcome raw manifest is not canonical")
+    actual = []
+    for item in manifest.get("files", ()):
+        path = output / "raw" / str(item["path"])
+        member = path.read_bytes()
+        actual.append({"path": str(item["path"]), "bytes": len(member), "sha256": sha256_bytes(member)})
+    if actual != manifest.get("files"):
+        raise RuntimeError("outcome raw inventory mismatch")
 
 
 def _domain(scenario: str) -> str:
@@ -93,7 +121,22 @@ def matrix_identity_audit(rows: Sequence[Mapping[str, object]]) -> dict[str, obj
 
 
 def _success(row: Mapping[str, object]) -> int:
-    return int(row.get("disposition") == "TERMINAL" and row.get("terminal") == "SUCCESS")
+    return int(row.get("disposition") == "COMPLETE" and row.get("terminal") == "SUCCESS")
+
+
+def _verified_parameter_use(row: Mapping[str, object]) -> bool:
+    receipt = row.get("parameter_use_receipt")
+    precheck = row.get("precheck_input")
+    if not isinstance(receipt, Mapping) or not isinstance(precheck, Mapping):
+        return False
+    payload = dict(receipt)
+    claimed = payload.pop("receipt_sha256", None)
+    if claimed != sha256_bytes(canonical_bytes(payload)):
+        return False
+    if row.get("parameter_use_sha256") != sha256_bytes(canonical_bytes(receipt)):
+        return False
+    shared = set(payload) & set(precheck) - {"episode_id", "scenario_id", "stage", "seed", "parameter_sha256"}
+    return bool(shared) and all(payload[key] == precheck[key] for key in shared)
 
 
 def paired_rows(rows: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
@@ -170,7 +213,7 @@ def realization_bootstrap(pairs: Sequence[Mapping[str, object]]) -> dict[str, ob
 def evaluate_outcome_gates(rows: Sequence[Mapping[str, object]], *, construct_integrity: Mapping[str, bool]) -> dict[str, object]:
     matrix = matrix_identity_audit(rows)
     valid_dispositions = all(
-        row.get("disposition") in {"TERMINAL", "NOT_RUN"}
+        row.get("disposition") in {"COMPLETE", "NOT_RUN"}
         and isinstance(row.get("precheck_input"), Mapping)
         and isinstance(row.get("precheck_receipt"), Mapping)
         and bool(row["precheck_receipt"].get("architecture_independent"))
@@ -196,7 +239,7 @@ def evaluate_outcome_gates(rows: Sequence[Mapping[str, object]], *, construct_in
     g3 = sum(int(row["r3_success"]) - int(row["r1_success"]) for row in semantic) >= 0 and sum(int(row["r3_semantic"]) for row in semantic) < sum(int(row["r1_semantic"]) for row in semantic)
     control = [row for row in pairs if row["scenario_id"] in DOMAINS["CONTROL"]]
     g4 = all(sum(int(row["r3_success"]) - int(row[f"{arch.lower()}_success"]) for row in control) >= 0 for arch in ("R0", "R1", "R2")) and sum(int(row["r3_semantic"]) for row in control) < sum(int(row["r1_semantic"]) for row in control) and sum(int(row["r3_motion"]) for row in control) < sum(int(row["r2_motion"]) for row in control)
-    counterfactual = [row for row in r3 if row.get("disposition") == "TERMINAL"]
+    counterfactual = [row for row in r3 if row.get("disposition") == "COMPLETE"]
     event_total = sum(int(row.get("counterfactual_event_audit", {}).get("event_count", 0)) for row in counterfactual)
     event_matched = sum(int(row.get("counterfactual_event_audit", {}).get("matched_event_count", 0)) for row in counterfactual)
     g5 = event_total > 0 and event_matched / event_total >= 0.8 and all(sum(int(row[key]) for row in r3) == 0 for key in ("loop", "reset"))
@@ -204,12 +247,28 @@ def evaluate_outcome_gates(rows: Sequence[Mapping[str, object]], *, construct_in
     fixed_best = max(("R0", "R1", "R2"), key=lambda arch: (comparator_totals[arch], -int(arch[1])))
     g6 = all(sum(int(row["r3_success"]) - int(row[f"{fixed_best.lower()}_success"]) for row in pairs if row["scenario_id"] in scenarios) >= 0 for scenarios in DOMAINS.values())
     disturbed = [row for row in r3 if row["scenario_id"] not in ("anchor-nominal", "anchor-slow-policy")]
-    diversity = all(len({str(row.get("physical_trace_sha256")) for row in disturbed if row["scenario_id"] == scenario}) >= 8 and len({str(row.get("parameter_use_sha256")) for row in disturbed if row["scenario_id"] == scenario}) >= 8 for scenario in sum(DOMAINS.values(), ()))
-    g7 = diversity
+    diversity = {}
+    for scenario in sum(DOMAINS.values(), ()):
+        template = [row for row in disturbed if row["scenario_id"] == scenario]
+        complete = [row for row in template if row.get("disposition") == "COMPLETE"]
+        trace_hashes = {
+            str(row["physical_trace_sha256"]) for row in complete
+            if isinstance(row.get("physical_trace_sha256"), str) and len(str(row["physical_trace_sha256"])) == 64
+        }
+        verified_parameter_hashes = {
+            str(row["parameter_use_sha256"]) for row in complete if _verified_parameter_use(row)
+        }
+        diversity[scenario] = {
+            "denominator": len(template), "complete": len(complete),
+            "distinct_complete_physical_traces": len(trace_hashes),
+            "distinct_verified_parameter_uses": len(verified_parameter_hashes),
+            "passed": len(template) == 10 and len(complete) >= 8 and len(trace_hashes) >= 8 and len(verified_parameter_hashes) >= 8,
+        }
+    g7 = all(item["passed"] for item in diversity.values())
     g8 = True
     gates = [g1, g2, g3, g4, g5, g6, g7, g8]
     result = "SUPPORTS_CONSTRUCT_VALID_LAYER_MATCHED_HIERARCHY" if all(gates) else "INVALID_EXPERIMENT" if not g8 else "DOES_NOT_SUPPORT_CONSTRUCT_VALID_LAYER_MATCHED_HIERARCHY"
-    return {"scientific_result": result, "gates": [{"gate": index + 1, "passed": value} for index, value in enumerate(gates)], "paired_row_count": len(pairs), "matrix_identity": matrix, "fixed_best_comparator": fixed_best, "comparator_totals": comparator_totals, "counterfactual_events": {"matched": event_matched, "total": event_total}}
+    return {"scientific_result": result, "gates": [{"gate": index + 1, "passed": value} for index, value in enumerate(gates)], "paired_row_count": len(pairs), "matrix_identity": matrix, "fixed_best_comparator": fixed_best, "comparator_totals": comparator_totals, "counterfactual_events": {"matched": event_matched, "total": event_total}, "diversity": diversity}
 
 
 def outcome_payloads(rows: Sequence[Mapping[str, object]], *, construct_integrity: Mapping[str, bool]) -> dict[str, bytes]:
@@ -251,13 +310,12 @@ def outcome_payloads(rows: Sequence[Mapping[str, object]], *, construct_integrit
 
 def analyze_outcomes(output: Path, *, construct_integrity: Mapping[str, bool]) -> dict[str, object]:
     derived = output / "derived"
-    if derived.exists():
-        raise FileExistsError(derived)
+    _validate_raw_inventory(output)
     rows = [json.loads(line) for line in (output / "raw/outcome-rows.jsonl").read_text(encoding="ascii").splitlines()]
     payloads = outcome_payloads(rows, construct_integrity=construct_integrity)
     for name, payload in sorted(payloads.items()):
-        _write(derived / name, payload)
-    _write(derived / "manifest.json", canonical_bytes({"schema_version": 1, "files": _inventory(payloads)}))
+        _write_expected(derived / name, payload)
+    _write_expected(derived / "manifest.json", canonical_bytes({"schema_version": 1, "files": _inventory(payloads)}))
     return json.loads(payloads["decision.json"])
 
 

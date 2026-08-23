@@ -162,19 +162,27 @@ def test_complete_outcome_analysis_bundle_is_frozen_without_sampling(monkeypatch
             "target_shift_xy": [0.04, 0.0], "obstacle_xy": [0.3, 0.0], "obstacle_radius_m": 0.04,
             "damping_multiplier": 1.0, "semantic_delay_ticks": 4, "parameter_sha256": parameter_sha,
         }
+        parameter_use = {
+            "q0": precheck_input["q0"], "target_a_xy": precheck_input["target_a_xy"],
+            "target_b_xy": precheck_input["target_b_xy"], "injection_tick": precheck_input["injection_tick"],
+            "damping_multiplier": precheck_input["damping_multiplier"], "impulse_nm": precheck_input["impulse_nm"],
+            "impulse_ticks": precheck_input["impulse_ticks"],
+        }
+        parameter_use["receipt_sha256"] = contracts.sha256_bytes(contracts.canonical_bytes(parameter_use))
         rows.append({
             "episode_id": spec.episode_id, "architecture": spec.architecture.value,
             "scenario_id": spec.scenario_id, "seed": spec.seed, "controller_id": spec.controller_id,
             "template_id": spec.scenario_id, "domain": domain,
             "matrix_role": "PRIMARY" if spec.controller_id == contracts.PRIMARY_CONTROLLER_ID else "SENSITIVITY",
             "approval_report_sha256": "a" * 64,
-            "disposition": "TERMINAL", "terminal": "SUCCESS",
+            "disposition": "COMPLETE", "terminal": "SUCCESS",
             "unsafe": 0, "forbidden": 0, "collision": 0, "invalid_action": 0, "stale": 0, "loop": 0, "reset": 0,
             "control_interventions": 0, "motion_interventions": 1 if spec.architecture is contracts.Architecture.R2 else 0,
             "semantic_interventions": 0 if spec.architecture is contracts.Architecture.R3 else 1,
             "counterfactual_event_audit": {"event_count": 1, "matched_event_count": 1, "fraction": 1.0, "events": []},
             "physical_trace_sha256": hashlib.sha256(spec.episode_id.encode()).hexdigest(),
-            "parameter_use_sha256": parameter_sha,
+            "parameter_use_sha256": contracts.sha256_bytes(contracts.canonical_bytes(parameter_use)),
+            "parameter_use_receipt": parameter_use,
             "precheck_input": precheck_input,
             "precheck_receipt": {"architecture_independent": True, "realization_sha256": parameter_sha},
         })
@@ -224,6 +232,19 @@ def test_complete_outcome_analysis_bundle_is_frozen_without_sampling(monkeypatch
     assert invalid["scientific_result"] == "INVALID_EXPERIMENT"
     assert invalid["gates"][7]["passed"] is False
 
+    incomplete_diversity = [dict(item) for item in rows]
+    selected = [item for item in incomplete_diversity if item["architecture"] == "R3" and item["controller_id"] == contracts.PRIMARY_CONTROLLER_ID and item["scenario_id"] == "control-impulse"]
+    for item in selected[7:]:
+        item["disposition"] = "NOT_RUN"
+        item["terminal"] = None
+        item["physical_trace_sha256"] = None
+        item["parameter_use_sha256"] = None
+        item["parameter_use_receipt"] = None
+    diversity_failure = analysis.evaluate_outcome_gates(incomplete_diversity, construct_integrity=integrity)
+    assert diversity_failure["gates"][6]["passed"] is False
+    assert diversity_failure["diversity"]["control-impulse"]["complete"] == 7
+    assert diversity_failure["diversity"]["control-impulse"]["denominator"] == 10
+
 
 def test_interrupted_outcome_attempt_retains_create_only_invalid_disposition_without_sampling(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     qualification, binding, report = _approval_fixture(tmp_path, monkeypatch, "APPROVED_FOR_OUTCOME")
@@ -255,6 +276,12 @@ def test_interrupted_outcome_attempt_retains_create_only_invalid_disposition_wit
     assert reconstruction["matched"] is True
     assert reconstruction["scientific_result"] == "INVALID_EXPERIMENT"
     assert json.loads((root / "derived/decision.json").read_text(encoding="ascii"))["gates"][7]["passed"] is False
+    integrity = {"approval": True, "inventory": False, "freeze": True, "cause": True, "replay": False, "reconstruction": True}
+    assert analysis.analyze_outcomes(root, construct_integrity=integrity)["scientific_result"] == "INVALID_EXPERIMENT"
+    rows_path = root / "raw/outcome-rows.jsonl"
+    rows_path.write_bytes(rows_path.read_bytes() + b"{}\n")
+    with pytest.raises(outcome.OutcomeAuthorizationError, match="mismatch"):
+        outcome.seal_invalid_outcomes(root)
 
 
 def test_realization_bootstrap_resamples_ten_seed_clusters_with_perfect_within_seed_correlation() -> None:
@@ -276,21 +303,28 @@ def test_realization_bootstrap_resamples_ten_seed_clusters_with_perfect_within_s
     assert len(sensitivity["draws"]) == 10_000
 
 
-def test_counterfactual_oracle_binds_each_failure_event_to_ordered_minimal_effect() -> None:
+def test_counterfactual_oracle_rejects_wrong_object_and_missing_execution_or_reset_receipts() -> None:
     runtime = importlib.import_module("experiments.03_recovery.src.v3_runtime")
-    raw = runtime.run_episode(runtime.V3EpisodeSpec(contracts.Architecture.R3, "control-impulse", 20261892, contracts.PRIMARY_CONTROLLER_ID))
-    first_observation = raw.observations[0]
-    first_decision = raw.decisions[0]
-    second_observation = replace(first_observation, tick=first_observation.tick + contracts.REOBSERVE_TICKS, reobserve_index=first_observation.reobserve_index + 1, geometry_feasible=False)
-    second_decision = replace(first_decision, level=contracts.DecisionLevel.MOTION, observed_tick=second_observation.tick, observable_sha256=second_observation.sha256)
-    doubled = replace(raw, observations=(first_observation, second_observation), decisions=(first_decision, second_decision))
-    baseline = outcome.counterfactual_event_audit(doubled)
-    assert baseline["event_count"] == 2
-    assert baseline["matched_event_count"] == 2
-    decisions = list(doubled.decisions)
-    reversed_levels = tuple(replace(item, level=decisions[-1 - index].level) for index, item in enumerate(decisions))
-    assert outcome.counterfactual_event_audit(replace(doubled, decisions=reversed_levels))["matched_event_count"] < 2
-    assert outcome.counterfactual_event_audit(replace(doubled, decisions=(decisions[0],)))["matched_event_count"] < 2
-    assert outcome.counterfactual_event_audit(replace(doubled, decisions=()))["matched_event_count"] == 0
-    over = tuple(replace(item, level=contracts.DecisionLevel.SEMANTIC) for item in decisions)
-    assert outcome.counterfactual_event_audit(replace(doubled, decisions=over))["matched_event_count"] < 2
+    raw = runtime.run_episode(runtime.V3EpisodeSpec(contracts.Architecture.R3, "motion-target-shift", 20261892, contracts.PRIMARY_CONTROLLER_ID))
+    baseline = outcome.counterfactual_event_audit(raw)
+    assert baseline["event_count"] == baseline["matched_event_count"] == 1
+    wrong = tuple({**dict(item), "object_id": "forged-object"} for item in raw.action_envelopes)
+    assert outcome.counterfactual_event_audit(replace(raw, action_envelopes=wrong))["matched_event_count"] == 0
+    assert outcome.counterfactual_event_audit(replace(raw, execution_receipts=()))["matched_event_count"] == 0
+    assert outcome.counterfactual_event_audit(replace(raw, budget_resets=()))["matched_event_count"] == 0
+
+
+def test_create_only_members_resume_exact_bytes_and_reject_tamper(tmp_path: Path) -> None:
+    root = tmp_path / "transaction"
+    members = {"header.json": b"header\n", "episode.json": b"episode\n", "rows.jsonl": b"row\n", "raw-manifest.json": b"raw\n", "derived.json": b"derived\n", "archive.tar.gz": b"archive\n"}
+    for crash_after in members:
+        attempt = tmp_path / crash_after.replace(".", "-")
+        ordered = dict(list(members.items())[: list(members).index(crash_after) + 1])
+        outcome._resume_create_only_members(attempt, ordered, marker_name="SEALED.json", seal=False)
+        outcome._resume_create_only_members(attempt, members, marker_name="SEALED.json", seal=True)
+        assert (attempt / "SEALED.json").is_file()
+        outcome._resume_create_only_members(attempt, members, marker_name="SEALED.json", seal=True)
+    outcome._resume_create_only_members(root, members, marker_name="SEALED.json", seal=True)
+    (root / "rows.jsonl").write_bytes(b"tampered\n")
+    with pytest.raises(outcome.OutcomeAuthorizationError, match="mismatch"):
+        outcome._resume_create_only_members(root, members, marker_name="SEALED.json", seal=True)

@@ -6,7 +6,6 @@ inside :func:`run_outcomes`, after the immutable approval binding is authenticat
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -22,7 +21,7 @@ from .v3_contracts import (
     canonical_bytes,
     sha256_bytes,
 )
-from .v3_evidence import _assert_trees_equal, _freeze_record, _inventory, _tree_bytes, _write_episode, qualification_specs, source_closure
+from .v3_evidence import _assert_trees_equal, _freeze_record, _inventory, _tree_bytes, _validate_episode, episode_payloads, qualification_specs, source_closure
 from .v3_runtime import V3EpisodeSpec, precheck, run_episode
 from .v3_scorer import score_episode
 from .v3_outcome_analysis import analyze_outcomes
@@ -129,20 +128,83 @@ def _write(path: Path, payload: bytes) -> None:
         os.fsync(stream.fileno())
 
 
+def _write_expected(path: Path, payload: bytes) -> None:
+    """Create a member once, or authenticate identical bytes left by a crashed attempt."""
+    if path.exists():
+        if path.is_symlink() or not path.is_file() or path.read_bytes() != payload:
+            raise OutcomeAuthorizationError(f"create-only member mismatch: {path}")
+        return
+    _write(path, payload)
+
+
+def _resume_create_only_members(
+    root: Path, members: Mapping[str, bytes], *, marker_name: str, seal: bool,
+    marker_payload: bytes | None = None,
+) -> None:
+    """Validate-or-complete an idempotent bundle; the authenticated marker is last."""
+    root.mkdir(parents=True, exist_ok=True)
+    for name, payload in members.items():
+        _write_expected(root / name, payload)
+    if seal:
+        payload = marker_payload or canonical_bytes({"schema_version": 1, "files": _inventory(members)})
+        _write_expected(root / marker_name, payload)
+
+
+def _write_episode_resume(root: Path, raw: object) -> dict[str, object]:
+    destination = root / "episodes" / raw.spec.episode_id
+    payloads = episode_payloads(raw)
+    manifest = {
+        "schema_version": 1, "episode_id": raw.spec.episode_id, "seed": raw.spec.seed,
+        "injection_tick": raw.realization.injection_tick, "files": _inventory(payloads),
+    }
+    manifest_payload = canonical_bytes(manifest)
+    _resume_create_only_members(destination, payloads, marker_name="manifest.json", seal=True, marker_payload=manifest_payload)
+    _validate_episode(destination)
+    return {
+        "episode_id": raw.spec.episode_id, "seed": raw.spec.seed,
+        "scenario_id": raw.spec.scenario_id, "architecture": raw.spec.architecture.value,
+        "controller_id": raw.spec.controller_id, "manifest_sha256": sha256_bytes(manifest_payload),
+    }
+
+
+def _read_disposition(path: Path) -> dict[str, object]:
+    if path.is_symlink() or not path.is_file():
+        raise OutcomeAuthorizationError(f"invalid disposition member: {path}")
+    payload = path.read_bytes()
+    try:
+        row = json.loads(payload.decode("ascii"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise OutcomeAuthorizationError(f"invalid disposition: {path}") from exc
+    if not isinstance(row, dict) or canonical_bytes(row) != payload or row.get("episode_id") != path.stem:
+        raise OutcomeAuthorizationError(f"disposition identity mismatch: {path}")
+    return row
+
+
+def _validate_complete_episode(output: Path, row: Mapping[str, object]) -> None:
+    if row.get("disposition") != "COMPLETE":
+        return
+    manifest = _validate_episode(output / "raw/episodes" / str(row["episode_id"]))
+    if sha256_bytes(canonical_bytes(manifest)) != row.get("episode_manifest_sha256"):
+        raise OutcomeAuthorizationError(f"episode manifest mismatch: {row['episode_id']}")
+
+
 def _seal_dispositions(output: Path) -> list[dict[str, object]]:
-    if (output / "raw/manifest.json").is_file():
-        return [json.loads(line) for line in (output / "raw/outcome-rows.jsonl").read_text(encoding="ascii").splitlines()]
     disposition_root = output / "raw/dispositions"
-    rows = [json.loads(path.read_text(encoding="ascii")) for path in sorted(disposition_root.glob("*.json"))]
+    paths = sorted(disposition_root.glob("*.json"))
+    rows = [_read_disposition(path) for path in paths]
+    for row in rows:
+        _validate_complete_episode(output, row)
     rows_payload = b"".join(canonical_bytes(item) for item in rows)
-    disposition_payloads = {f"dispositions/{path.name}": path.read_bytes() for path in sorted(disposition_root.glob("*.json"))}
+    disposition_payloads = {f"dispositions/{path.name}": path.read_bytes() for path in paths}
     raw_manifest = {
         "schema_version": 1,
         "episode_dispositions": len(rows),
         "files": _inventory({"outcome-rows.jsonl": rows_payload, **disposition_payloads}),
     }
-    _write(output / "raw/outcome-rows.jsonl", rows_payload)
-    _write(output / "raw/manifest.json", canonical_bytes(raw_manifest))
+    _resume_create_only_members(
+        output / "raw", {"outcome-rows.jsonl": rows_payload, **disposition_payloads},
+        marker_name="manifest.json", seal=True, marker_payload=canonical_bytes(raw_manifest),
+    )
     return rows
 
 
@@ -181,6 +243,14 @@ def dry_run_outcomes(*, qualification_root: Path, approval_binding: Path, approv
 
 def counterfactual_event_audit(raw: object) -> dict[str, object]:
     """Bind each observable failure to its minimal causal intervention and verified effect."""
+    score = score_episode(raw)
+    scorer_rows = {int(item["tick"]): item for item in score.rows}
+    commands = {str(item["content_sha256"]): item for item in raw.commands}
+    receipts = {}
+    for item in raw.execution_receipts:
+        binding = {"content_sha256": item["content_sha256"], "start_tick": item["start_tick"], "end_tick": item["end_tick"]}
+        if item["receipt_sha256"] == sha256_bytes(canonical_bytes(binding)):
+            receipts.setdefault(str(item["content_sha256"]), []).append(item)
     triggers = [item for item in raw.observations if item.failure_detected]
     decisions = {item.observable_sha256: item for item in raw.decisions}
     events = []
@@ -196,21 +266,56 @@ def counterfactual_event_audit(raw: object) -> dict[str, object]:
             expected = "CONTROL"
         decision = decisions.get(observable.sha256)
         causal = bool(decision is not None and decision.observed_tick == observable.tick and decision.level.value == expected)
-        if expected in {"CONTROL", "MOTION"}:
-            effect = any(
-                int(item["tick"]) >= observable.tick and int(item["tick"]) < next_tick and item["mode"] == "EXECUTE"
-                for item in raw.action_envelopes
-            )
-        elif expected == "SEMANTIC":
-            effect = any(
-                item["event"] == "AUTHORIZED_ALTERNATIVE_SELECTED"
-                and int(item["tick"]) >= observable.tick and int(item["tick"]) < next_tick
+        if expected in {"CONTROL", "MOTION", "SEMANTIC"}:
+            valid_actions = []
+            for item in raw.action_envelopes:
+                tick = int(item["tick"])
+                scorer_row = scorer_rows.get(tick, {})
+                content = str(item["command_content_sha256"])
+                command = commands.get(content)
+                valid = bool(
+                    observable.tick <= tick < next_tick and item["mode"] == "EXECUTE"
+                    and item["object_id"] == scorer_row.get("expected_object_id")
+                    and item["affordance"] == "inspect" and command is not None
+                    and command["object_id"] == item["object_id"] and command["affordance"] == item["affordance"]
+                    and not any(bool(scorer_row.get(key)) for key in ("unsafe", "forbidden", "collision", "invalid_action", "wrong_object"))
+                )
+                if valid:
+                    valid_actions.append(item)
+            contents = {str(item["command_content_sha256"]) for item in valid_actions}
+            verified_receipts = []
+            for content in contents:
+                action_ticks = {int(item["tick"]) for item in valid_actions if item["command_content_sha256"] == content}
+                for receipt in receipts.get(content, ()):
+                    start, end = int(receipt["start_tick"]), int(receipt["end_tick"])
+                    executed_ticks = {tick for tick in action_ticks if start <= tick < end}
+                    if (
+                        observable.tick <= start < end <= next_tick
+                        and len(executed_ticks) == int(receipt.get("executed_valid_ticks", -1)) > 0
+                        and executed_ticks == set(range(start, end))
+                    ):
+                        verified_receipts.append(receipt)
+            receipt_valid = bool(verified_receipts)
+            post = next((item for item in raw.observations if observable.tick < item.tick <= next_tick), None)
+            post_valid = bool(post is not None and post.action_valid and post.controller_safe)
+            changed_contents = {content for content in contents if content != decision.budget_before.active_content_sha256} if decision is not None else set()
+            if expected in {"MOTION", "SEMANTIC"}:
+                reset_valid = any(
+                    item["old_content_sha256"] == decision.budget_before.active_content_sha256
+                    and item["new_content_sha256"] in changed_contents
+                    and item["successful_execution_content_sha256"] == item["new_content_sha256"]
+                    and item["execution_receipt_sha256"] in {receipt["receipt_sha256"] for receipt in verified_receipts}
+                    and int(item["tick"]) == next(int(receipt["end_tick"]) for receipt in verified_receipts if receipt["receipt_sha256"] == item["execution_receipt_sha256"])
+                    for item in raw.budget_resets
+                ) if decision is not None else False
+                post_valid = post_valid and post.successful_execution_content_sha256 in changed_contents
+            else:
+                reset_valid = True
+            semantic_guard = True if expected != "SEMANTIC" else any(
+                item["event"] == "AUTHORIZED_ALTERNATIVE_SELECTED" and observable.tick <= int(item["tick"]) < next_tick
                 for item in raw.world_ledger
-            ) and any(
-                int(item["tick"]) >= observable.tick and int(item["tick"]) < next_tick
-                and item["mode"] == "HOLD" and item["object_id"] is None
-                for item in raw.action_envelopes
             )
+            effect = bool(valid_actions and receipt_valid and post_valid and reset_valid and semantic_guard and score.violation_counts["reset"] == 0)
         else:
             effect = bool(decision is not None and decision.level.value == "SAFE_ABORT")
         events.append({
@@ -241,7 +346,7 @@ def _terminal_row(spec: V3EpisodeSpec, receipt: object, raw: object, episode_man
         "episode_id": spec.episode_id, "architecture": spec.architecture.value,
         "scenario_id": spec.scenario_id, "seed": spec.seed, "controller_id": spec.controller_id,
         **_matrix_fields(spec), "approval_report_sha256": approval_report_sha256,
-        "disposition": "TERMINAL", "terminal": score.terminal,
+        "disposition": "COMPLETE", "terminal": score.terminal,
         "unsafe": counts["unsafe"], "forbidden": counts["forbidden"], "collision": counts["collision"],
         "invalid_action": counts["invalid_action"], "stale": counts["stale"], "loop": counts["loop"], "reset": counts["reset"],
         "control_interventions": levels.count("CONTROL"), "motion_interventions": levels.count("MOTION"),
@@ -249,6 +354,7 @@ def _terminal_row(spec: V3EpisodeSpec, receipt: object, raw: object, episode_man
         "counterfactual_event_audit": counterfactual_event_audit(raw),
         "physical_trace_sha256": sha256_bytes(raw.trace["q"].tobytes()),
         "parameter_use_sha256": sha256_bytes(canonical_bytes(raw.parameter_use_receipt)),
+        "parameter_use_receipt": raw.parameter_use_receipt,
         "precheck_input": receipt.precheck_input, "precheck_receipt": receipt,
         "precheck_sha256": sha256_bytes(canonical_bytes(receipt)),
         "episode_manifest_sha256": episode_manifest["manifest_sha256"],
@@ -275,23 +381,23 @@ def run_outcomes(
         "source_closure_sha256": sha256_bytes(canonical_bytes(source_closure())),
         "episode_ids": [item.episode_id for item in specs],
     }
-    if output.exists():
-        if not (output / "outcome-freeze.json").is_file() or (output / "outcome-freeze.json").read_bytes() != canonical_bytes(freeze):
-            raise OutcomeAuthorizationError("existing outcome root does not match immutable approval/freeze")
-        if (output / "approval/approval-binding.json").read_bytes() != approval_binding.read_bytes() or (output / "approval/approval-report.json").read_bytes() != approval_report.read_bytes():
-            raise OutcomeAuthorizationError("retained approval bytes do not match authenticated inputs")
-        if (output / "raw/manifest.json").is_file():
-            rows = (output / "raw/outcome-rows.jsonl").read_text(encoding="ascii").splitlines()
-            return {"status": "SEALED_AWAITING_RECONSTRUCTION", "episode_dispositions": len(rows)}
-    else:
-        output.mkdir(parents=True)
-        _write(output / "outcome-freeze.json", canonical_bytes(freeze))
-        _write(output / "approval/approval-binding.json", approval_binding.read_bytes())
-        _write(output / "approval/approval-report.json", approval_report.read_bytes())
+    _resume_create_only_members(output, {
+        "outcome-freeze.json": canonical_bytes(freeze),
+        "approval/approval-binding.json": approval_binding.read_bytes(),
+        "approval/approval-report.json": approval_report.read_bytes(),
+    }, marker_name="HEADERS-SEALED.json", seal=True)
+    if (output / "raw/manifest.json").is_file():
+        rows = _seal_dispositions(output)
+        return {"status": "SEALED_AWAITING_RECONSTRUCTION", "episode_dispositions": len(rows)}
     disposition_root = output / "raw/dispositions"
     for spec in specs:
         disposition_path = disposition_root / f"{spec.episode_id}.json"
         if disposition_path.is_file():
+            retained = _read_disposition(disposition_path)
+            expected_identity = {"episode_id": spec.episode_id, "architecture": spec.architecture.value, "scenario_id": spec.scenario_id, "seed": spec.seed, "controller_id": spec.controller_id}
+            if any(retained.get(key) != value for key, value in expected_identity.items()):
+                raise OutcomeAuthorizationError(f"retained disposition mismatch: {spec.episode_id}")
+            _validate_complete_episode(output, retained)
             continue
         receipt = precheck(spec)
         if receipt.disposition == "NOT_RUN":
@@ -308,7 +414,8 @@ def run_outcomes(
                 "stale": 0, "loop": 0, "reset": 0,
                 "control_interventions": 0, "motion_interventions": 0, "semantic_interventions": 0,
                 "lowest_sufficient_correct": None,
-                "physical_trace_sha256": None, "parameter_use_sha256": receipt.realization_sha256,
+                "physical_trace_sha256": None, "parameter_use_sha256": None,
+                "parameter_use_receipt": None,
                 "precheck_input": receipt.precheck_input,
                 "precheck_receipt": receipt,
                 "precheck_sha256": sha256_bytes(canonical_bytes(receipt)),
@@ -317,7 +424,7 @@ def run_outcomes(
             continue
         try:
             raw = run_episode(spec)
-            episode_manifest = _write_episode(output / "raw", raw)
+            episode_manifest = _write_episode_resume(output / "raw", raw)
             row = _terminal_row(spec, receipt, raw, episode_manifest, str(approval["approval_report_sha256"]))
             _write(disposition_path, canonical_bytes(row))
         except BaseException as exc:

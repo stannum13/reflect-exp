@@ -824,9 +824,9 @@ def tree_sha256(root: Path) -> str:
 
 def publish_durable_archive(output: Path, destination: Path) -> dict[str, object]:
     """Publish a deterministic, content-addressed archive suitable for git retention."""
-    if not output.is_dir() or destination.exists():
-        raise FileExistsError(destination)
-    destination.mkdir(parents=True)
+    if not output.is_dir():
+        raise FileNotFoundError(output)
+    destination.mkdir(parents=True, exist_ok=True)
     buffer = io.BytesIO()
     with gzip.GzipFile(fileobj=buffer, mode="wb", filename="", mtime=0, compresslevel=9) as compressed:
         with tarfile.open(fileobj=compressed, mode="w|") as archive:
@@ -841,7 +841,12 @@ def publish_durable_archive(output: Path, destination: Path) -> dict[str, object
     payload = buffer.getvalue()
     digest = sha256_bytes(payload)
     archive_name = f"{digest}.tar.gz"
-    _write(destination / archive_name, payload)
+    archive_path = destination / archive_name
+    if archive_path.exists():
+        if archive_path.is_symlink() or not archive_path.is_file() or archive_path.read_bytes() != payload:
+            raise RuntimeError("durable archive create-only member mismatch")
+    else:
+        _write(archive_path, payload)
     receipt = {
         "schema_version": 1,
         "archive": archive_name,
@@ -850,7 +855,13 @@ def publish_durable_archive(output: Path, destination: Path) -> dict[str, object
         "tree_sha256": tree_sha256(output),
         "member_count": len(_tree_bytes(output)),
     }
-    _write(destination / "manifest.json", canonical_bytes(receipt))
+    manifest_payload = canonical_bytes(receipt)
+    manifest_path = destination / "manifest.json"
+    if manifest_path.exists():
+        if manifest_path.is_symlink() or not manifest_path.is_file() or manifest_path.read_bytes() != manifest_payload:
+            raise RuntimeError("durable archive manifest mismatch")
+    else:
+        _write(manifest_path, manifest_payload)
     return receipt
 
 

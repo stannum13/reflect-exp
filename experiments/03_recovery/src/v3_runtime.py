@@ -10,7 +10,6 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 import importlib
 import json
-import math
 from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping, Sequence
@@ -1087,11 +1086,12 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
 
         if attempt is not None and tick + 1 >= attempt.end_tick:
             completed_level = attempt.level
-            successful_sha = attempt.new_content_sha256 if attempt.new_content_sha256 != attempt.old_content_sha256 and attempt.executed_valid_ticks > 0 else ZERO_SHA256
+            executed_sha = attempt.new_content_sha256 if attempt.executed_valid_ticks > 0 else ZERO_SHA256
+            successful_sha = executed_sha if executed_sha != attempt.old_content_sha256 else ZERO_SHA256
             execution_receipt_sha = ZERO_SHA256
-            if successful_sha != ZERO_SHA256:
+            if executed_sha != ZERO_SHA256:
                 receipt_binding = {
-                    "content_sha256": successful_sha,
+                    "content_sha256": executed_sha,
                     "start_tick": attempt.start_tick,
                     "end_tick": tick + 1,
                 }

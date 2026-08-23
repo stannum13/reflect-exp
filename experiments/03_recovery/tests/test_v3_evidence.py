@@ -115,6 +115,7 @@ def test_durable_archive_is_content_addressed_and_extracts_byte_exact(tmp_path: 
     evidence.run_qualification(output)
     destination = tmp_path / "durable"
     receipt = evidence.publish_durable_archive(output, destination)
+    assert evidence.publish_durable_archive(output, destination) == receipt
     archive = destination / receipt["archive"]
     assert archive.name == f"{receipt['archive_sha256']}.tar.gz"
     assert hashlib.sha256(archive.read_bytes()).hexdigest() == receipt["archive_sha256"]
@@ -123,6 +124,9 @@ def test_durable_archive_is_content_addressed_and_extracts_byte_exact(tmp_path: 
     with tarfile.open(archive, "r:gz") as stream:
         stream.extractall(extracted, filter="data")
     assert evidence.tree_sha256(output) == evidence.tree_sha256(extracted)
+    archive.write_bytes(archive.read_bytes() + b"tamper")
+    with pytest.raises(RuntimeError, match="archive create-only member mismatch"):
+        evidence.publish_durable_archive(output, destination)
 
 
 def test_publication_is_create_only(tmp_path: Path) -> None:
