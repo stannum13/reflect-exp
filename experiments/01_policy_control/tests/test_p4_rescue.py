@@ -70,6 +70,29 @@ def test_joint_limit_outward_feedforward_is_suppressed_and_safe_hold_is_zero(mon
     timing=importlib.import_module("experiments.01_policy_control.src.timing");hold=timing.SafeHoldCommand(q,np.zeros(3));assert np.array_equal(hold.dq_ref,np.zeros(3))
 
 
+@pytest.mark.parametrize(
+    ("joint_limit", "outward_velocity", "inward_velocity"),
+    (("max", 1.0, -1.0), ("min", -1.0, 1.0)),
+)
+def test_exact_joint_limit_suppresses_only_outward_feedforward(
+    monkeypatch: pytest.MonkeyPatch,
+    joint_limit: str,
+    outward_velocity: float,
+    inward_velocity: float,
+) -> None:
+    cfg=config();value=policy_input();chunk=rep.with_p4_executor_tuning(rep.emit_chunk(contracts.CommandStack.P4,value,cfg),rep.P4ExecutorTuning(49,True))
+    limit=cfg.arm.joint_max_rad if joint_limit=="max" else cfg.arm.joint_min_rad
+    q=np.full(3,limit);state=rep.initial_executor_state(q)
+    monkeypatch.setattr(rep,"differential_ik_command",lambda *args,**kwargs:(q.copy(),np.full(3,outward_velocity)))
+    outward,_,_=rep.reference_for_tick(contracts.CommandStack.P4,chunk,q,np.zeros(3),chunk.valid_from_ns,state,cfg)
+    assert np.array_equal(outward.q_ref,q)
+    assert np.array_equal(outward.dq_ref,np.zeros(3))
+    monkeypatch.setattr(rep,"differential_ik_command",lambda *args,**kwargs:(q.copy(),np.full(3,inward_velocity)))
+    inward,_,_=rep.reference_for_tick(contracts.CommandStack.P4,chunk,q,np.zeros(3),chunk.valid_from_ns,state,cfg)
+    assert np.array_equal(inward.q_ref,q)
+    assert np.array_equal(inward.dq_ref,np.full(3,inward_velocity))
+
+
 def test_rescue_grid_and_selection_are_exact() -> None:
     rescue=importlib.import_module("experiments.01_policy_control.engineering_p4_rescue")
     assert rescue.LOOKAHEADS==(1,12,25,49) and rescue.FEEDFORWARD==(False,True)

@@ -170,11 +170,9 @@ def reference_for_tick(
     else:
         raise NotImplementedError(stack.value)
     bounded, did_slew = _slew(candidate, state.latched_q_ref, config)
-    before_joint_clip = bounded
     bounded = np.clip(bounded, config.arm.joint_min_rad, config.arm.joint_max_rad)
     outward = ((bounded >= config.arm.joint_max_rad) & (dq_reference > 0)) | ((bounded <= config.arm.joint_min_rad) & (dq_reference < 0))
-    if np.any(before_joint_clip != bounded):
-        dq_reference = np.where(outward, 0.0, dq_reference)
+    dq_reference = np.where(outward, 0.0, dq_reference)
     reference = ControlReference(chunk.chunk_id, time_ns, bounded, dq_reference, None, None, "JOINT_PD")
     next_state = ExecutorState(
         chunk.chunk_id,
