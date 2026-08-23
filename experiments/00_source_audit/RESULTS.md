@@ -1,4 +1,21 @@
 # Experiment 00 results
 
-Not generated yet. Task 4 writes this document only from immutable live evidence after the
-complete P2 lock is available.
+comparative_implementation_time_claim: INCONCLUSIVE
+
+operational_gate: BLOCKED
+
+registry_sha256: eb72b501a177ee9dcf93a77444536e07dd532d9ac92950c61a063b8a8d1a4a3d
+
+lock_sha256: ce46f15903be44af121d8d2e2430d4bff78d94b978a09c48820dd31190f4e449
+
+expected_operation_ids: ACT_CHECKOUT,BEHAVIORTREE_CPP_CHECKOUT,LEROBOT_CHECKOUT,MJCTRL_AST_PARSE,MJCTRL_CHECKOUT,MUJOCO_MENAGERIE_CHECKOUT,MUJOCO_MPC_CHECKOUT,MUJOCO_PACKAGE_SMOKE,NAVIGATION2_CHECKOUT,OPENPI_CHECKOUT
+
+seen_operation_ids: ACT_CHECKOUT,BEHAVIORTREE_CPP_CHECKOUT,LEROBOT_CHECKOUT,MJCTRL_AST_PARSE,MJCTRL_CHECKOUT,MUJOCO_MENAGERIE_CHECKOUT,MUJOCO_MPC_CHECKOUT,MUJOCO_PACKAGE_SMOKE,NAVIGATION2_CHECKOUT,OPENPI_CHECKOUT
+
+missing_operation_ids: NONE
+
+nonpass_operation_ids: LEROBOT_CHECKOUT
+
+mujoco_package_smoke: PASS
+
+blockers: nonpass:LEROBOT_CHECKOUT; checkout contains a nonregular or linked file
