@@ -978,10 +978,15 @@ def verify_qualification_report(output: Path, report: Path, *, archive_manifest:
     validate_publishable_evidence(output)
     text = report.read_text(encoding="utf-8")
     freeze = _canonical_json(output / "qualification-freeze.json")
+    raw = _canonical_json(output / "raw/manifest.json")
     summary = _canonical_json(output / "derived/qualification-summary.json")
+    replay = _canonical_json(output / "derived/replay.json")
+    examples = _canonical_json(output / "derived/examples.json")
     controllers = list(csv.DictReader((output / "derived/controller-paths.csv").read_text(encoding="ascii").splitlines()))
     controls = list(csv.DictReader((output / "derived/scorer-controls.csv").read_text(encoding="ascii").splitlines()))
+    gates = list(csv.DictReader((output / "derived/hard-gates.csv").read_text(encoding="ascii").splitlines()))
     visible_text = re.sub(r"<!--.*?(?:-->|$)", "", text, flags=re.DOTALL)
+    fact_count = 0
 
     def one(pattern: str) -> tuple[str, ...]:
         matches = re.findall(pattern, visible_text, flags=re.MULTILINE)
@@ -990,10 +995,121 @@ def verify_qualification_report(output: Path, report: Path, *, archive_manifest:
         match = matches[0]
         return (match,) if isinstance(match, str) else tuple(match)
 
+    def expect(label: str, pattern: str, expected: tuple[str, ...]) -> None:
+        nonlocal fact_count
+        if one(pattern) != expected:
+            raise RuntimeError(f"qualification report consistency mismatch: {label}")
+        fact_count += 1
+
+    def expect_line(label: str, line: str) -> None:
+        expect(label, rf"^{re.escape(line)}$", (line,))
+
+    def expect_hash_row(label: str, expected_hash: str) -> None:
+        expect(
+            label,
+            rf"^\| {re.escape(label)} \| `([0-9a-f]{{64}})` \|$",
+            (expected_hash,),
+        )
+
+    def episode_terminal(episode_id: str) -> str:
+        scorer = _canonical_json(output / "raw/episodes" / episode_id / "scorer.json")
+        return str(scorer["terminal"])
+
+    def terminals(rows: Sequence[Mapping[str, object]]) -> dict[str, int]:
+        counts = {"SUCCESS": 0, "FAILURE": 0}
+        for row in rows:
+            terminal = episode_terminal(str(row["episode_id"]))
+            counts[terminal] = counts.get(terminal, 0) + 1
+        return counts
+
+    def all_success(rows: Sequence[Mapping[str, object]]) -> str:
+        counts = terminals(rows)
+        if set(counts) - {"SUCCESS", "FAILURE"} or counts.get("FAILURE", 0):
+            raise RuntimeError("qualification report consistency mismatch: coverage terminal inventory")
+        return f"{counts.get('SUCCESS', 0)} SUCCESS"
+
+    def display_call_path(call_path: str) -> str:
+        names = call_path.replace("representations.", "").replace("arm.", "").split("->")
+        return " -> ".join(names)
+
     expected_commit = str(freeze["source_commit"])
-    if one(r"^Qualified source commit: `([0-9a-f]{40})`$") != (expected_commit,):
-        raise RuntimeError("qualification report consistency mismatch: source commit")
+    expect("source commit", r"^Qualified source commit: `([0-9a-f]{40})`$", (expected_commit,))
+    matrix = freeze["configuration"]["outcome_matrix"]
+    held_out = matrix["seeds"]
+    expect_line(
+        "pre-outcome disposition",
+        "This is calibration-only qualification, not an outcome claim or approval. "
+        f"Held-out seeds `{min(held_out)}..{max(held_out)}` were not executed, and "
+        "`results/hierarchical-recovery-v3` was not created. "
+        f"The frozen post-approval matrix contains {matrix['episode_count']} cells: "
+        f"{matrix['primary_cells']} primary P6 cells and {matrix['sensitivity_cells']} fixed P4 sensitivity cells.",
+    )
     retained_tree = _tree_bytes(output)
+    semantic_counts = summary["terminal_counts"]
+    expect(
+        "terminal counts",
+        r"^The retained matrix contains exactly \*\*([0-9]+) executed episodes\*\*, all using calibration seeds\. "
+        r"Independent scoring reconstructed \*\*([0-9]+) SUCCESS\*\* and \*\*([0-9]+) expected FAILURE\*\*\. "
+        r"The retained calibration seeds are `([0-9]+)`, `([0-9]+)`, `([0-9]+)`, and `([0-9]+)`\.$",
+        (
+            str(summary["episode_count"]), str(semantic_counts["SUCCESS"]), str(semantic_counts["FAILURE"]),
+            *tuple(str(seed) for seed in summary["calibration_seeds"]),
+        ),
+    )
+    episodes = list(raw["episodes"])
+    coverage_rows = (
+        (
+            "R3/P6, all eight registered scenarios, seed `20261891`",
+            [
+                row for row in episodes
+                if row["architecture"] == "R3" and row["controller_id"] == PRIMARY_CONTROLLER_ID and row["seed"] == 20261891
+            ],
+            None,
+        ),
+        (
+            "R0/R1/R2/R3 semantic-object-unavailable, seed `20261893`",
+            [
+                row for row in episodes
+                if row["scenario_id"] == "semantic-object-unavailable" and row["seed"] == 20261893
+            ],
+            "R0 expected FAILURE",
+        ),
+        (
+            "R0/R1/R2/R3 control-impulse, seed `20261892`",
+            [
+                row for row in episodes
+                if row["scenario_id"] == "control-impulse" and row["seed"] == 20261892
+            ],
+            None,
+        ),
+        (
+            "R3 P6/P4 anchor sensitivity, seed `20261894`",
+            [
+                row for row in episodes
+                if row["architecture"] == "R3" and row["scenario_id"] == "anchor-nominal" and row["seed"] == 20261894
+            ],
+            None,
+        ),
+    )
+    for label, rows, failure_note in coverage_rows:
+        counts = terminals(rows)
+        if failure_note is None:
+            result = all_success(rows)
+        else:
+            failed = [row for row in rows if episode_terminal(str(row["episode_id"])) == "FAILURE"]
+            if [row["architecture"] for row in failed] != ["R0"]:
+                raise RuntimeError("qualification report consistency mismatch: expected failure inventory")
+            result = f"{counts['SUCCESS']} SUCCESS; {failure_note}"
+        expect_line("coverage row", f"| {label} | {len(rows)} | {result} |")
+    if not all(row["passed"] == "True" for row in gates) or len(gates) != int(summary["hard_gates_total"]):
+        raise RuntimeError("qualification report consistency mismatch: hard gates")
+    expect_line(
+        "hard gate summary",
+        "The 10 registered hard gates all pass in the qualification bundle: exact sampled-tick injection, "
+        "six realized disturbances, distinct observable policy sequences, real and different P6/P4 paths, "
+        "time-advanced guarded budgets, closed cause boundary, independent raw scorer, "
+        "nine terminal-positive controls, byte-exact replay/reconstruction, and architecture-independent NOT_RUN handling.",
+    )
     visible_inventory = (
         ("files", r"^Files: \*\*([0-9,]+)\*\*$", f"{len(retained_tree):,}"),
         ("bytes", r"^Bytes: \*\*([0-9,]+)\*\*$", f"{sum(len(payload) for payload in retained_tree.values()):,}"),
@@ -1014,32 +1130,67 @@ def verify_qualification_report(output: Path, report: Path, *, archive_manifest:
         ),
     )
     for label, pattern, expected in visible_inventory:
-        if one(pattern) != (expected,):
-            raise RuntimeError(f"qualification report consistency mismatch: {label}")
+        expect(label, pattern, (expected,))
     controller_by_id = {row["controller_id"]: row for row in controllers}
-    p6 = one(r"^\| P6 \|.*\| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \|$")
-    p4 = one(r"^\| repaired P4 \|.*\| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \|$")
-    for actual, row in (
-        (p6, controller_by_id["P6-res0p5-slew48"]),
-        (p4, controller_by_id["P4-lookahead1-dqon"]),
+    for label, row in (
+        ("P6", controller_by_id["P6-res0p5-slew48"]),
+        ("repaired P4", controller_by_id["P4-lookahead1-dqon"]),
     ):
-        if actual != (row["trajectory_sha256"], row["q_ref_sha256"], row["torque_sha256"]):
-            raise RuntimeError("qualification report consistency mismatch: controller table")
-    invalid = next(row for row in controls if row["control"] == "invalid_action")
-    if one(r"^\| invalid action/trajectory \| ([0-9]+) \|$") != (invalid["detected_count"],):
-        raise RuntimeError("qualification report consistency mismatch: invalid-action control")
-    artifact_patterns = (
-        ("qualification freeze", "qualification-freeze.json"),
-        ("raw manifest / raw reconstruction", "raw/manifest.json"),
-        ("derived manifest / derived reconstruction", "derived/manifest.json"),
+        expect(
+            "controller table",
+            rf"^\| {re.escape(label)} \| `([^`]+)` \| `([0-9a-f]{{64}})` \| `([0-9a-f]{{64}})` \| `([0-9a-f]{{64}})` \|$",
+            (display_call_path(row["call_path"]), row["trajectory_sha256"], row["q_ref_sha256"], row["torque_sha256"]),
+        )
+    controls_by_id = {row["control"]: row for row in controls}
+    control_labels = (
+        ("collision", "collision"),
+        ("forbidden execution", "forbidden"),
+        ("invalid action/trajectory", "invalid_action"),
+        ("loop/no progress", "loop"),
+        ("missed dwell", "missed_dwell"),
+        ("invalid reset", "reset"),
+        ("stale observation/memory", "stale"),
+        ("unsafe torque", "unsafe"),
+        ("wrong object", "wrong_object"),
     )
-    for label, relative in artifact_patterns:
-        expected_hash = sha256_bytes((output / relative).read_bytes())
-        if one(rf"^\| {re.escape(label)} \| `([0-9a-f]{{64}})` \|$") != (expected_hash,):
-            raise RuntimeError(f"qualification report consistency mismatch: {label}")
-    fact_count = 15
+    for label, control_id in control_labels:
+        row = controls_by_id[control_id]
+        if row["terminal"] != "FAILURE":
+            raise RuntimeError("qualification report consistency mismatch: scorer control terminal")
+        expect("scorer control", rf"^\| {re.escape(label)} \| ([0-9]+) \|$", (row["detected_count"],))
+    expect(
+        "examples",
+        r"^The retained examples bind the working episode `([^`]+)`, nonworking episode `([^`]+)`, "
+        r"and architecture-independent NOT_RUN control `([^`]+)`\.$",
+        (str(examples["working"]), str(examples["nonworking"]), str(examples["not_run"])),
+    )
+    artifact_rows = (
+        ("qualification freeze", sha256_bytes((output / "qualification-freeze.json").read_bytes())),
+        ("raw manifest / raw reconstruction", sha256_bytes((output / "raw/manifest.json").read_bytes())),
+        ("derived manifest / derived reconstruction", sha256_bytes((output / "derived/manifest.json").read_bytes())),
+        ("qualification summary", sha256_bytes((output / "derived/qualification-summary.json").read_bytes())),
+        ("gate audit receipts", sha256_bytes((output / "derived/gate-audits.json").read_bytes())),
+        ("replay receipt", sha256_bytes((output / "derived/replay.json").read_bytes())),
+        ("source/spec/import closure", str(freeze["source_closure_sha256"])),
+        ("frozen qualification/outcome configuration", str(freeze["configuration_sha256"])),
+        ("frozen environment", str(freeze["environment_sha256"])),
+    )
+    for label, expected_hash in artifact_rows:
+        expect_hash_row(label, expected_hash)
     if archive_manifest is not None:
         archive = _canonical_json(archive_manifest)
+        expect_hash_row("durable qualification tree", str(archive["tree_sha256"]))
+        expect_hash_row("durable archive", str(archive["archive_sha256"]))
+        expected_matched = str(bool(replay["raw_matched"] and replay["derived_matched"])).lower()
+        expect(
+            "reconstruction receipt",
+            r"^Clean reconstruction destination: .+\. It replayed all \*\*([0-9]+)\*\* episodes with `matched=(true|false)`; "
+            r"raw manifest `([0-9a-f]{64})` and derived manifest `([0-9a-f]{64})` matched byte-exactly\.$",
+            (
+                str(replay["episodes_replayed"]), expected_matched, str(replay["raw_manifest_sha256"]),
+                sha256_bytes((output / "derived/manifest.json").read_bytes()),
+            ),
+        )
         expected_report_sha256 = archive.get("qualification_report_sha256")
         if expected_report_sha256 != sha256_bytes(report.read_bytes()):
             raise RuntimeError("qualification report consistency mismatch: report bytes")
@@ -1068,7 +1219,13 @@ def verify_qualification_report(output: Path, report: Path, *, archive_manifest:
             str(verification["experiment_03_passed"]),
         ):
             raise RuntimeError("qualification report consistency mismatch: verification receipt")
-        fact_count += 7
+        fact_count += 5
+    if freeze["status"] != "QUALIFICATION_IMPLEMENTATION_UNAPPROVED" or freeze["self_authorizes_outcomes"] is not False:
+        raise RuntimeError("qualification report consistency mismatch: reviewer status")
+    expect_line(
+        "reviewer status",
+        "The qualification does not self-authorize. Reviewer decision: **PENDING \u2014 approve or reject**.",
+    )
     return {"matched": True, "authenticated_fact_count": fact_count}
 
 

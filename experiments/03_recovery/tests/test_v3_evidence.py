@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import csv
 import json
 from pathlib import Path
 import tarfile
@@ -33,6 +34,12 @@ def _tracked_qualification(tmp_path: Path) -> tuple[Path, Path, Path]:
     archive_manifest = tmp_path / "archive-manifest.json"
     archive_manifest.write_bytes(contracts.canonical_bytes(receipt))
     return output, report, archive_manifest
+
+
+def _refresh_report_receipt(report: Path, archive_manifest: Path) -> None:
+    receipt = json.loads(archive_manifest.read_text(encoding="ascii"))
+    receipt["qualification_report_sha256"] = hashlib.sha256(report.read_bytes()).hexdigest()
+    archive_manifest.write_bytes(contracts.canonical_bytes(receipt))
 
 
 def test_qualification_matrix_is_calibration_only_and_covers_required_contrasts() -> None:
@@ -177,81 +184,31 @@ def test_manifest_inventory_rejects_unlisted_recursive_member(tmp_path: Path) ->
         evidence._validate_inventory(root, inventory)
 
 
-def test_qualification_report_facts_are_authenticated_from_derived_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    output = tmp_path / "hierarchical-recovery-v3-qualification"
-    (output / "derived").mkdir(parents=True)
-    commit = "b" * 40
-    (output / "qualification-freeze.json").write_bytes(contracts.canonical_bytes({"source_commit": commit}))
-    (output / "raw").mkdir()
-    (output / "raw/manifest.json").write_bytes(contracts.canonical_bytes({"schema_version": 1}))
-    (output / "derived/manifest.json").write_bytes(contracts.canonical_bytes({"schema_version": 1}))
-    (output / "derived/qualification-summary.json").write_bytes(contracts.canonical_bytes({
-        "episode_count": 18,
-        "hard_gates_passed": 10,
-        "status": "READY_FOR_FRESH_READ_ONLY_REVIEW",
-    }))
-    hashes = [hashlib.sha256(f"controller-{index}".encode()).hexdigest() for index in range(6)]
-    (output / "derived/controller-paths.csv").write_text(
-        "controller_id,trajectory_sha256,q_ref_sha256,torque_sha256\n"
-        f"P4-lookahead1-dqon,{hashes[0]},{hashes[1]},{hashes[2]}\n"
-        f"P6-res0p5-slew48,{hashes[3]},{hashes[4]},{hashes[5]}\n", encoding="ascii",
-    )
-    (output / "derived/scorer-controls.csv").write_text("control,terminal,detected_count\ninvalid_action,FAILURE,17\n", encoding="ascii")
-    report = tmp_path / "report.md"
-    freeze_hash, raw_hash, derived_hash = [
-        hashlib.sha256((output / name).read_bytes()).hexdigest()
-        for name in ("qualification-freeze.json", "raw/manifest.json", "derived/manifest.json")
-    ]
-    retained = [path for path in output.rglob("*") if path.is_file()]
-    archive_sha = "a" * 64
-    report.write_text("\n".join((
-        f"Qualified source commit: `{commit}`",
-        "Status: **READY FOR FRESH READ-ONLY REVIEW**",
-        f"Files: **{len(retained)}**",
-        f"Bytes: **{sum(path.stat().st_size for path in retained):,}**",
-        "The retained matrix contains exactly **18 executed episodes**, all using calibration seeds.",
-        "The 10 registered hard gates all pass in the qualification bundle:",
-        "| Controller | Call path | Trajectory SHA-256 | q_ref SHA-256 | torque SHA-256 |",
-        "|---|---|---|---|---|",
-        f"| P6 | `p6` | `{hashes[3]}` | `{hashes[4]}` | `{hashes[5]}` |",
-        f"| repaired P4 | `p4` | `{hashes[0]}` | `{hashes[1]}` | `{hashes[2]}` |",
-        "| Control | Detected count |", "|---|---:|",
-        "| invalid action/trajectory | 17 |",
-        "| Artifact | SHA-256 |", "|---|---|",
-        f"| qualification freeze | `{freeze_hash}` |",
-        f"| raw manifest / raw reconstruction | `{raw_hash}` |",
-        f"| derived manifest / derived reconstruction | `{derived_hash}` |",
-        "Governed verification receipt: **1 V3 passed, 2 deselected; 3 Experiment 03 passed**.",
-        "The ignored working bundle is durably retained as the tracked, deterministic, content-addressed archive "
-        f"`reports/evidence/hierarchical-recovery-v3-qualification/{archive_sha}.tar.gz` "
-        f"(**123 bytes; {len(retained)} members**) with a tracked manifest and byte-exact extraction test.",
-    )), encoding="utf-8")
-    archive_manifest = tmp_path / "archive-manifest.json"
-    archive_manifest.write_bytes(contracts.canonical_bytes({
-        "archive_bytes": 123,
-        "archive_sha256": archive_sha,
-        "member_count": len(retained),
-        "qualification_report_sha256": hashlib.sha256(report.read_bytes()).hexdigest(),
-        "tree_sha256": evidence.tree_sha256(output),
-        "verification": {"experiment_03_passed": 3, "v3_deselected": 2, "v3_passed": 1},
-    }))
-    monkeypatch.setattr(evidence, "validate_publishable_evidence", lambda root: {"kind": "QUALIFICATION"})
+def test_qualification_report_facts_are_authenticated_from_derived_data(tmp_path: Path) -> None:
+    output, report, archive_manifest = _tracked_qualification(tmp_path)
     assert evidence.verify_qualification_report(output, report, archive_manifest=archive_manifest)["matched"] is True
     original = report.read_text(encoding="utf-8")
+    commit = json.loads((output / "qualification-freeze.json").read_text(encoding="ascii"))["source_commit"]
     report.write_text(
-        original.replace(f"Qualified source commit: `{commit}`", "Qualified source commit: `stale`")
+        original.replace(f"Qualified source commit: `{commit}`", f"Qualified source commit: `{'0' * 40}`")
         + f"\n<!--\nQualified source commit: `{commit}`\n-->\n",
         encoding="utf-8",
     )
+    _refresh_report_receipt(report, archive_manifest)
     with pytest.raises(RuntimeError, match="report consistency"):
         evidence.verify_qualification_report(output, report, archive_manifest=archive_manifest)
+    original = report.read_text(encoding="utf-8")
+    report.write_text(original, encoding="utf-8")
+    original = (ROOT / ".superpowers/sdd/hierarchy-v3-qualification-report.md").read_text(encoding="utf-8")
+    p6 = next(row for row in csv.DictReader((output / "derived/controller-paths.csv").read_text(encoding="ascii").splitlines()) if row["controller_id"] == "P6-res0p5-slew48")
     report.write_text(
         original
-        .replace(hashes[3], "stale-p6-hash", 1)
+        .replace(p6["trajectory_sha256"], "0" * 64, 1)
         .replace("| invalid action/trajectory | 17 |", "| invalid action/trajectory | 1 |", 1)
-        + f"\n<!-- orphan tokens {hashes[3]} | invalid action/trajectory | 17 | -->\n",
+        + f"\n<!-- orphan tokens {p6['trajectory_sha256']} | invalid action/trajectory | 17 | -->\n",
         encoding="utf-8",
     )
+    _refresh_report_receipt(report, archive_manifest)
     with pytest.raises(RuntimeError, match="report consistency"):
         evidence.verify_qualification_report(output, report, archive_manifest=archive_manifest)
 
@@ -272,6 +229,58 @@ def test_qualification_report_rejects_forged_visible_inventory_and_gate_counts(
     original = report.read_text(encoding="utf-8")
     assert old in original
     report.write_text(original.replace(old, forged, 1), encoding="utf-8")
+    _refresh_report_receipt(report, archive_manifest)
+    with pytest.raises(RuntimeError, match="report consistency"):
+        evidence.verify_qualification_report(output, report, archive_manifest=archive_manifest)
+
+
+@pytest.mark.parametrize(("old", "forged"), (
+    ("Held-out seeds `20261801..20261810` were not executed", "Held-out seeds `20261801..20261811` were not executed"),
+    ("The frozen post-approval matrix contains 360 cells", "The frozen post-approval matrix contains 359 cells"),
+    ("320 primary P6 cells and 40 fixed P4 sensitivity cells", "321 primary P6 cells and 39 fixed P4 sensitivity cells"),
+    ("Independent scoring reconstructed **17 SUCCESS** and **1 expected FAILURE**", "Independent scoring reconstructed **18 SUCCESS** and **0 expected FAILURE**"),
+    ("The retained calibration seeds are `20261891`, `20261892`, `20261893`, and `20261894`", "The retained calibration seeds are `20261891`, `20261892`, `20261893`, and `20261895`"),
+    ("| R3/P6, all eight registered scenarios, seed `20261891` | 8 | 8 SUCCESS |", "| R3/P6, all eight registered scenarios, seed `20261891` | 7 | 7 SUCCESS |"),
+    ("| R0/R1/R2/R3 semantic-object-unavailable, seed `20261893` | 4 | 3 SUCCESS; R0 expected FAILURE |", "| R0/R1/R2/R3 semantic-object-unavailable, seed `20261893` | 4 | 4 SUCCESS |"),
+    ("| R0/R1/R2/R3 control-impulse, seed `20261892` | 4 | 4 SUCCESS |", "| R0/R1/R2/R3 control-impulse, seed `20261892` | 5 | 5 SUCCESS |"),
+    ("| R3 P6/P4 anchor sensitivity, seed `20261894` | 2 | 2 SUCCESS |", "| R3 P6/P4 anchor sensitivity, seed `20261894` | 1 | 1 SUCCESS |"),
+    ("exact sampled-tick injection, six realized disturbances", "exact sampled-tick injection, five realized disturbances"),
+    ("independent raw scorer, nine terminal-positive controls", "independent raw scorer, eight terminal-positive controls"),
+    ("`emit_chunk:P6 -> reference_for_tick:P6 -> bounded_pd`", "`stale-p6-call-path`"),
+    ("`emit_chunk:P4 -> with_p4_executor_tuning:1:dqon -> reference_for_tick:P4 -> bounded_pd`", "`stale-p4-call-path`"),
+    ("| collision | 1 |", "| collision | 2 |"),
+    ("| forbidden execution | 9 |", "| forbidden execution | 8 |"),
+    ("| loop/no progress | 1 |", "| loop/no progress | 2 |"),
+    ("| missed dwell | 1 |", "| missed dwell | 2 |"),
+    ("| invalid reset | 1 |", "| invalid reset | 2 |"),
+    ("| stale observation/memory | 2 |", "| stale observation/memory | 1 |"),
+    ("| unsafe torque | 1 |", "| unsafe torque | 2 |"),
+    ("| wrong object | 9 |", "| wrong object | 8 |"),
+    ("working episode `qualification-P6-R3-semantic-object-unavailable-20261891`", "working episode `qualification-P6-R3-anchor-nominal-20261891`"),
+    ("nonworking episode `qualification-P6-R0-semantic-object-unavailable-20261893`", "nonworking episode `qualification-P6-R3-semantic-object-unavailable-20261893`"),
+    ("NOT_RUN control `architecture-independent-unreachable-geometry-v1`", "NOT_RUN control `stale-not-run-control`"),
+    ("| qualification summary | `1372bb6421ff5ef0aae9aa64b398dd58df81daf46c639a25c9c28710304b32ca` |", "| qualification summary | `0000000000000000000000000000000000000000000000000000000000000000` |"),
+    ("| gate audit receipts | `432804155b58920b7379795079d5dd5c5b219075c51c1a4a047ab346f139bdab` |", "| gate audit receipts | `0000000000000000000000000000000000000000000000000000000000000000` |"),
+    ("| replay receipt | `4d9f103ebb42021f7ef888f88dc4f7069bb366114dedb7dbd125a16225ef7a2f` |", "| replay receipt | `0000000000000000000000000000000000000000000000000000000000000000` |"),
+    ("| source/spec/import closure | `3d07f3361ebee8fe4127babb714bcf9752e8a5f76efc58d54f3aaeae5cb0ecac` |", "| source/spec/import closure | `0000000000000000000000000000000000000000000000000000000000000000` |"),
+    ("| frozen qualification/outcome configuration | `1e5fec9533ad61eced4a485ef5b8615586050e470167b8f373b79e55d1860672` |", "| frozen qualification/outcome configuration | `0000000000000000000000000000000000000000000000000000000000000000` |"),
+    ("| frozen environment | `d6e2926ed735b6049ca7752e318f32206af0926e6745fbd2d52f9886669d1b5f` |", "| frozen environment | `0000000000000000000000000000000000000000000000000000000000000000` |"),
+    ("| durable qualification tree | `19c8aeb7de2ab9a6b3060e2d409ce5fddfe31c06dccd14ba454eaab227cc9f7f` |", "| durable qualification tree | `0000000000000000000000000000000000000000000000000000000000000000` |"),
+    ("| durable archive | `4dc382d06cbe96e7ff9d9d2cfd058234fb0583b2196586dc671b7c5b48f79dbe` |", "| durable archive | `0000000000000000000000000000000000000000000000000000000000000000` |"),
+    ("It replayed all **18** episodes with `matched=true`", "It replayed all **17** episodes with `matched=true`"),
+    ("It replayed all **18** episodes with `matched=true`", "It replayed all **18** episodes with `matched=false`"),
+    ("raw manifest `561397e27fb82e4368b5b254bd06dd8f7947a1b878718a21be62aa708af90169`", "raw manifest `0000000000000000000000000000000000000000000000000000000000000000`"),
+    ("derived manifest `7135b0739e8e4f83d687e4008780b8e65d50e76ab1969601ae0b0ac2e5ec1eb3`", "derived manifest `0000000000000000000000000000000000000000000000000000000000000000`"),
+    ("Reviewer decision: **PENDING — approve or reject**", "Reviewer decision: **APPROVED**"),
+))
+def test_qualification_report_rejects_forged_visible_semantic_fact_with_recomputed_receipt(
+    tmp_path: Path, old: str, forged: str,
+) -> None:
+    output, report, archive_manifest = _tracked_qualification(tmp_path)
+    original = report.read_text(encoding="utf-8")
+    assert old in original
+    report.write_text(original.replace(old, forged, 1), encoding="utf-8")
+    _refresh_report_receipt(report, archive_manifest)
     with pytest.raises(RuntimeError, match="report consistency"):
         evidence.verify_qualification_report(output, report, archive_manifest=archive_manifest)
 
@@ -279,12 +288,18 @@ def test_qualification_report_rejects_forged_visible_inventory_and_gate_counts(
 @pytest.mark.parametrize("line", (
     "Files: **437**",
     "The 10 registered hard gates all pass in the qualification bundle:",
+    "| R3/P6, all eight registered scenarios, seed `20261891` | 8 | 8 SUCCESS |",
+    "| collision | 1 |",
+    "| qualification summary | `1372bb6421ff5ef0aae9aa64b398dd58df81daf46c639a25c9c28710304b32ca` |",
+    "The retained examples bind the working episode `qualification-P6-R3-semantic-object-unavailable-20261891`, nonworking episode `qualification-P6-R0-semantic-object-unavailable-20261893`, and architecture-independent NOT_RUN control `architecture-independent-unreachable-geometry-v1`.",
+    "Reviewer decision: **PENDING — approve or reject**",
 ))
 def test_qualification_report_rejects_duplicate_visible_mutable_fact(tmp_path: Path, line: str) -> None:
     output, report, archive_manifest = _tracked_qualification(tmp_path)
     original = report.read_text(encoding="utf-8")
-    matched = next(item for item in original.splitlines() if item.startswith(line))
+    matched = next(item for item in original.splitlines() if line in item)
     report.write_text(f"{original}\n{matched}\n", encoding="utf-8")
+    _refresh_report_receipt(report, archive_manifest)
     with pytest.raises(RuntimeError, match="report consistency"):
         evidence.verify_qualification_report(output, report, archive_manifest=archive_manifest)
 
