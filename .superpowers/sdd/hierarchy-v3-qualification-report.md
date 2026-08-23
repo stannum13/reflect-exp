@@ -4,96 +4,15 @@ Date: 2026-08-24
 
 Branch: `feat/hierarchy-recovery-probe`
 
-Base: `3c2f5a3`
-
-Qualified source commit: `72af2333dbbb62d5987251523e2c010476a0385d`
+Qualified source commit: `27cef6662c84602e453f98bb0c596ce7d5a95c34`
 
 Status: **READY FOR FRESH READ-ONLY REVIEW**
 
-This report records pre-outcome qualification only. It is not an approval, does not self-authorize outcome execution, and makes no outcome claim. Seeds `20261801..20261810` were not executed. The outcome root `results/hierarchical-recovery-v3` was not created. A fresh read-only reviewer must approve or reject the qualification before any outcome run.
+This is calibration-only qualification, not an outcome claim or approval. Held-out seeds `20261801..20261810` were not executed, and `results/hierarchical-recovery-v3` was not created. The frozen post-approval matrix contains 360 cells: 320 primary P6 cells and 40 fixed P4 sensitivity cells.
 
-## Scope and immutable inputs
+## Qualification result
 
-The implementation follows `docs/superpowers/specs/2026-08-23-hierarchical-recovery-v3-preregistered.md` and the binding V2 audit findings incorporated there. The V1/V2 reports, source, raw results, and derived results were read-only. Experiment 01 was imported for its existing arm, contracts, kinematics, representations, P6 path, and repaired P4 path; its 62-file tracked tree remained byte-identical. The frozen comparison covered those 62 files plus the two frozen V2 execution files (`run_v2.py` and `src/v2.py`), 64 files total. A base-to-HEAD path diff also confirms no tracked Experiment 01, V1/V2 execution, or pre-existing result file changed.
-
-All new execution code is isolated in `v3_*` modules. The qualification stage rejects every seed outside calibration seeds `20261891`, `20261892`, `20261893`, and `20261894`. A separately typed, frozen outcome stage accepts only held-out seeds `20261801..20261810` after an immutable approval report/hash binding; constructing its exact 360-cell plan neither samples nor executes a seed and creates no output.
-
-## TDD record
-
-Baseline before V3 changes:
-
-- `python -m pytest experiments/03_recovery/tests -q`: **60 passed in 39.17s**.
-- Frozen V1/V2 plus Experiment 01 baseline: **64 files**, captured in `/private/tmp/hierarchy-v3-frozen-baseline.sha256`.
-
-RED was observed before each implementation stage:
-
-1. Contract/policy tests failed collection because `v3_contracts` and `v3_policy` did not exist.
-2. Physical runtime tests failed because there was no V3 episode executor, disturbance realization, observable decision sequence, P6/P4 byte binding, or guarded budget reset.
-3. Scorer tests failed because there was no raw-only independent scorer or terminal-positive-control audit.
-4. Publication tests failed because there was no create-only qualification publisher, complete import-closure freeze, diagnostic bundle, or clean reconstruction.
-5. The final contact-envelope RED run produced **2 failures**: missing per-tick contact force/envelope retention, and a collision scorer that still trusted the trace Boolean. After the fix, the targeted runtime/contact/scorer-control run was **3 passed in 3.41s**, and the runtime/scorer/evidence suite was **23 passed in 82.18s**.
-
-GREEN commits:
-
-- `cdf94ba` — define V3 qualification contracts
-- `b71c5f0` — execute physical V3 qualification episodes
-- `57da362` — independently score V3 raw traces
-- `4789d59` — publish replayable V3 qualification evidence
-- `3b2c731` — retain full contact envelopes and make them scorer-authoritative
-- `d8d76d9` — close the injected-cause/observable boundary and add structural taint closure
-- `c30aaba` — bind `T3_LIVE_BELIEF_V1` and reconstruct scorer authorities from immutable raw
-- `a825b46` — freeze the approval-hash-guarded 360-cell outcome path and authentic geometry NOT_RUN
-- `2878a81` — replace self-referential gates, freeze environment/spec/config, add PNGs and durable archive publication
-- `e5c7fe4` — close the second construct review: verdict authentication, transitive cause closure, event-reconstructed T3, exact budgets/anchor effects/prechecks, and the complete frozen outcome path
-- `1cc81bc` — force invalid/interrupted retained outcome dispositions to invalidate construct Gate 8
-- `f20a1dd` — bind the exact 360-cell matrix, causal per-event sufficiency, clustered bootstraps, fixed estimators, invalid lifecycle, and approval provenance
-- `bc34193` — authenticate per-event object/action/execution/reset effects, restrict Gate 7 to verified COMPLETE physical runs, and make every outcome publication boundary exact-byte crash-resumable
-- `32a2585` — require exact post-effect failure clearance, make sealed deletion fail closed with durable fsync ordering, authenticate outcome archive publication, and verify report facts from derived evidence
-- `72af233` — close recursive qualification/outcome inventories and authenticate exact visible report fields
-
-Review-fix RED/GREEN evidence included five authority-tamper failures (trace target/action flags, reported reset count, retained EEF, matched qref/torque envelope tampering, and T3 provenance/evidence hash), a last-object-only mission structural failure, missing spec/environment/PNG/archive failures, and independent gate failures. Focused GREEN runs were **18 scorer tests passed in 47.38s**, **1 full qualification/publication/reconstruction test passed in 211.46s**, and **1 durable archive extraction test passed in 140.09s**.
-
-Initial focused verification before the first review:
-
-- `python -m pytest experiments/03_recovery/tests -q`: **89 passed in 121.17s**.
-- `git diff --check`: pass.
-- `shasum -a 256 -c /private/tmp/hierarchy-v3-frozen-baseline.sha256`: **64/64 OK**.
-- Repository-wide sandboxed run: **640 passed, 5 environment-only failures in 91.95s**. The failures were caused by sandbox-denied macOS dynamic-store/sysctl/localhost operations in existing P0/P1/replay/source-checkout tests, not V3 assertions.
-- Repository-wide run with the required macOS dynamic-store/sysctl/localhost test capabilities: **645 passed in 92.39s**.
-
-Final post-review-fix verification:
-
-- V3-only selection: **43 passed, 60 deselected in 444.70s**.
-- Complete Experiment 03 suite: **103 passed in 474.15s**.
-- Canonical qualification CLI: **18 episodes; 17 SUCCESS, 1 expected FAILURE; 10/10 gates; `READY_FOR_FRESH_READ_ONLY_REVIEW`**.
-- Independent clean reconstruction: **18 episodes, `matched=true`**, raw manifest `f15dbae8…`, derived manifest `104842a6…`.
-- Durable archive extraction round trip: **1 passed in 140.09s**.
-
-Second-review RED/GREEN evidence includes: rejected-report acceptance (**2 RED → 2 GREEN**); forged and self-rehashed T3 fact (**1 RED → GREEN**); CONTROL `2→2` budget tamper (**1 RED → GREEN**); seven matched-anchor substitutions (**7 GREEN**); environment/config drift (**2 GREEN**); missing/tampered prechecks (**1 GREEN**); approval dry-run and interrupted disposition retention (**2 GREEN**); synthetic 360-row complete analysis without sampling (**1 GREEN**); contracts/runtime/outcome (**24 passed in 30.67s**); scorer/outcome (**30 passed in 50.55s**); and full publication/reconstruction (**1 passed in 222.54s**).
-
-Final second-review V3 selection: **60 passed, 60 deselected in 481.01s**.
-
-Final complete Experiment 03 regression: **120 passed in 531.63s**.
-
-Third-review RED/GREEN coverage includes exact matrix field substitutions, missing/extra/duplicate cells and paired count; aggregate zero-margin NI; a frozen best-comparator estimator; perfect within-seed bootstrap correlation; reversed/two-events-one-decision/no-intervention/overintervention causal sufficiency; invalid deterministic sealing/reconstruction; and byte-exact approval provenance. Focused runtime/scorer/outcome verification: **41 passed in 83.20s**; outcome-only verification: **13 passed in 2.88s**.
-
-Final third-review verification: V3 selection **62 passed, 60 deselected in 486.90s**; complete Experiment 03 regression **122 passed in 530.44s**.
-
-Fourth-review RED/GREEN coverage includes forged wrong-object EXECUTE, missing execution receipt, missing reset receipt, seven COMPLETE plus three NOT_RUN diversity, exact-byte retries across header/episode/aggregate/raw-manifest/derived/archive boundaries, and sealed-raw tampering. The focused outcome-path suite was **14 passed in 5.51s**; the durable archive resume/tamper round trip was **1 passed in 146.12s**.
-
-Final fourth-review verification: V3 selection **63 passed, 60 deselected in 493.53s**; complete Experiment 03 regression **123 passed in 530.70s**. Canonical qualification regeneration retained **18 calibration episodes, 17 SUCCESS, 1 expected FAILURE, 10/10 gates**, and clean reconstruction replayed all 18 byte-exactly.
-
-Fifth-review RED/GREEN coverage includes a still-failing domain predicate after an otherwise authenticated intervention; deleted members under sealed raw/derived/archive manifests; directory and file fsync ordering; arbitrary one-file archive input; unapproved and approved-but-unsealed archive requests; and stale report controller/control facts. Focused verification was **17 outcome-path tests passed in 5.93s**, **2 report/archive validation tests passed in 0.14s**, and the full archive deletion/tamper round trip was **1 passed in 148.63s**.
-
-Final fifth-review verification: V3 selection **68 passed, 60 deselected in 495.12s**; complete Experiment 03 regression **128 passed in 538.49s**. The report verifier authenticated **13 derived/archive facts**, and canonical regeneration again retained **18 calibration episodes, 17 SUCCESS, 1 expected FAILURE, 10/10 gates** with byte-exact reconstruction.
-
-Sixth-review RED/GREEN coverage includes unlisted recursive evidence members, unlisted retained invalid-outcome members before reconstruction, stale visible report fields paired with hidden/comment copies of the authenticated values, and exact closed archive inventory. The three focused adversarial tests were **3 passed in 0.94s** after all three attacks failed under the prior implementation.
-
-Final sixth-review-fix verification: V3 selection **69 passed, 60 deselected in 536.06s**; complete Experiment 03 regression **129 passed in 574.07s**. Fresh canonical qualification retained **18 calibration episodes, 17 SUCCESS, 1 expected FAILURE, 10/10 gates**; clean reconstruction replayed all 18 byte-exactly, and the report verifier authenticated **13 exact visible derived/archive facts**.
-
-## Qualification episodes
-
-The retained matrix contains exactly **18 executed episodes**, all using calibration seeds. Independent scoring reconstructed **17 SUCCESS** and **1 expected FAILURE**. The failure is the deliberately nonworking R0 semantic case, which exhausts its two control retries and safely aborts without executing a forbidden action.
+The retained matrix contains exactly **18 executed episodes**, all using calibration seeds. Independent scoring reconstructed **17 SUCCESS** and **1 expected FAILURE**. The retained calibration seeds are `20261891`, `20261892`, `20261893`, and `20261894`.
 
 | Coverage cell | Episodes | Result |
 |---|---:|---|
@@ -102,48 +21,14 @@ The retained matrix contains exactly **18 executed episodes**, all using calibra
 | R0/R1/R2/R3 control-impulse, seed `20261892` | 4 | 4 SUCCESS |
 | R3 P6/P4 anchor sensitivity, seed `20261894` | 2 | 2 SUCCESS |
 
-Injection rows exactly equal the sampled injection tick in every executed episode. Retained sampled ticks range from 625 to 885 and are never replaced by a fixed step. The diagnostic table retains the sampled tick, retained row, parameter-use hash, and physical-trace hash for every episode.
+The 10 registered hard gates all pass in the qualification bundle: exact sampled-tick injection, six realized disturbances, distinct observable policy sequences, real and different P6/P4 paths, time-advanced guarded budgets, closed cause boundary, independent raw scorer, nine terminal-positive controls, byte-exact replay/reconstruction, and architecture-independent NOT_RUN handling.
 
-The six disturbances operate on the simulated system rather than scenario counters:
-
-- control impulse applies the sampled N·m vector through MuJoCo `qfrc_applied` for the sampled duration;
-- control dropout withholds/holds commands for the sampled interval;
-- target shift mutates the world target and regenerates the motion command;
-- path infeasibility activates a real contact-enabled obstacle; the direct segment is blocked and the retained waypoint route is collision-free;
-- semantic object unavailability and restriction change remain pending until their sampled delivery tick, update retained memory to version 2 exactly once, force an objectless safe hold, and authorize the alternative object B only after delivery;
-- the slow-policy anchor delays the observable policy path without inventing a disturbance or intervention count.
-
-Every episode retains 3,125 rows at 500 Hz for state, velocity, end-effector pose, joint position/velocity reference, actual actuator torque, applied external torque, target, action validity, authorization, safe hold, contact count, and force/torque norms. It also retains a per-tick action envelope and full per-contact envelope: geom IDs and names, distance, 3D position, 9D frame, and the six-axis contact force/torque. The scorer derives obstacle collision from contact geom identities; falsifying the old `obstacle_contact` trace Boolean does not change the terminal.
-
-## Observable policies, budgets, and controller paths
-
-The recovery policy accepts only `(architecture, observable, budget)`. The typed observable excludes scenario ID/domain, hidden cause, and intended/expected recovery level. Decisions bind the observable SHA-256 and observed tick.
-
-Retained non-NONE decision sequences for semantic-object-unavailable seed `20261893` are:
-
-| Architecture | Decision sequence | Terminal |
-|---|---|---|
-| R0 | CONTROL at 733; CONTROL at 758; SAFE_ABORT at 783 | FAILURE |
-| R1 | SEMANTIC at 733 | SUCCESS |
-| R2 | MOTION at 733; MOTION at 758; SEMANTIC at 783 | SUCCESS |
-| R3 | SEMANTIC at 733 | SUCCESS |
-
-For control-impulse seed `20261892`, the first retained decisions are R0=CONTROL, R1=SEMANTIC, R2=MOTION, and R3=CONTROL, demonstrating distinct policy behavior from shared physical realization rather than scenario-selected recovery.
-
-Budgets are exactly control/motion/semantic = `2/2/1`. Each retry/replan advances 25 MuJoCo ticks (50 ms) before re-observation. Resets occur only when content bytes change and a retained successful-execution receipt binds the new content SHA-256; the diagnostic budget table includes the pre/post counters and observed ticks.
-
-The existing P6 and repaired P4 sensitivity paths are both actually called, and their executed bytes differ:
+## Controller and scorer evidence
 
 | Controller | Call path | Trajectory SHA-256 | q_ref SHA-256 | torque SHA-256 |
 |---|---|---|---|---|
 | P6 | `emit_chunk:P6 -> reference_for_tick:P6 -> bounded_pd` | `d541bdfa927db8c405e5dfa7bd0816b0cdb47f33dd94dc6bc008b5a39b4c66f3` | `4b15de7f2ae423c793ee21c7ce4afb3bae41b225e41ff779aaecef6ce88de803` | `0a14099f48d8aab7ca82945a28240af29a37179755f5f57f69729dd059cfafdf` |
 | repaired P4 | `emit_chunk:P4 -> with_p4_executor_tuning:1:dqon -> reference_for_tick:P4 -> bounded_pd` | `5301a17c41747cdf2ae8960d9f8e1cb928be5068aa1dd428102542bab443c483` | `a03f3e9d70e73586b78be19e8fff3ef9344b597d1175c479be2a66b964bd7ce4` | `743638fe0054d0826d2893e3c2e2b99eb16becdb8a0620d1a3494f347f010232` |
-
-## Independent scoring and controls
-
-The independent scorer does not import `v3_runtime` and never reads executor-authored result/debug Booleans. It reconstructs FK/end-effector pose and target error from raw qpos and the world ledger; command hashes; actual ActionChunk trajectory members; action/reference/torque agreement; action age and validity; contact collision; the complete object mission across the final dwell window; `T3_LIVE_BELIEF_V1` schema, facts, provenance, stale/unknown fields and evidence hashes; authorization; loop progress; and successful-execution/reset validity from raw authorities. It no longer uses a last-executed-object shortcut.
-
-Each single-authority positive control independently closes the terminal to FAILURE:
 
 | Control | Detected count |
 |---|---:|
@@ -157,9 +42,9 @@ Each single-authority positive control independently closes the terminal to FAIL
 | unsafe torque | 1 |
 | wrong object | 9 |
 
-An architecture-independent positive control is retained as NOT_RUN before execution for the geometric-precheck path. It is not counted as an episode or failure.
+The retained examples bind the working episode `qualification-P6-R3-semantic-object-unavailable-20261891`, nonworking episode `qualification-P6-R0-semantic-object-unavailable-20261893`, and architecture-independent NOT_RUN control `architecture-independent-unreachable-geometry-v1`.
 
-## Evidence, reconstruction, and diagnostics
+## Retained evidence
 
 Ignored qualification evidence root: `results/hierarchical-recovery-v3-qualification`
 
@@ -169,36 +54,26 @@ Bytes: **50,009,565**
 
 | Artifact | SHA-256 |
 |---|---|
-| qualification freeze | `bb82d04f9a777e915bb5b6cea6f009f21e6cb253ed747871f7a939a901c4e41b` |
+| qualification freeze | `ed9ae1356570b531263c052359acfa2e2bda139b5d3cbee09ba5b15547b1898d` |
 | raw manifest / raw reconstruction | `561397e27fb82e4368b5b254bd06dd8f7947a1b878718a21be62aa708af90169` |
-| derived manifest / derived reconstruction | `d373a70898d54b9d36c61bca5e1e87dc9fb7d07e69e7169b0a219fde881bf18e` |
+| derived manifest / derived reconstruction | `7135b0739e8e4f83d687e4008780b8e65d50e76ab1969601ae0b0ac2e5ec1eb3` |
 | qualification summary | `1372bb6421ff5ef0aae9aa64b398dd58df81daf46c639a25c9c28710304b32ca` |
 | gate audit receipts | `432804155b58920b7379795079d5dd5c5b219075c51c1a4a047ab346f139bdab` |
 | replay receipt | `4d9f103ebb42021f7ef888f88dc4f7069bb366114dedb7dbd125a16225ef7a2f` |
-| source/spec/import closure | `cf9247b865550564719887a9ae98aa390bf8c8002792bc1df2757b885aa7d592` |
+| source/spec/import closure | `3d07f3361ebee8fe4127babb714bcf9752e8a5f76efc58d54f3aaeae5cb0ecac` |
 | frozen qualification/outcome configuration | `1e5fec9533ad61eced4a485ef5b8615586050e470167b8f373b79e55d1860672` |
 | frozen environment | `d6e2926ed735b6049ca7752e318f32206af0926e6745fbd2d52f9886669d1b5f` |
-| durable qualification tree | `6d1f5a25fdacdb9f8f866f30d7da05a04d896dc1657a68f7d222f3d42bb548b9` |
-| durable archive | `e36aaca1b747322765440a5b1b024a19376e1405e07f31dbc474dd10ad74c1c1` |
+| durable qualification tree | `19c8aeb7de2ab9a6b3060e2d409ce5fddfe31c06dccd14ba454eaab227cc9f7f` |
+| durable archive | `4dc382d06cbe96e7ff9d9d2cfd058234fb0583b2196586dc671b7c5b48f79dbe` |
 
-Clean reconstruction destination: `/private/tmp/hierarchy-v3-sixth-fix-72af233/reconstructed`. It independently replayed all **18** episodes with `matched=true`; the regenerated raw and derived manifest hashes exactly equal the hashes above. Reconstruction reads raw episode inputs and does not trust the original summaries.
+Clean reconstruction destination: `/private/tmp/hierarchy-v3-seventh-reseal-27cef66-reconstructed`. It replayed all **18** episodes with `matched=true`; raw manifest `561397e27fb82e4368b5b254bd06dd8f7947a1b878718a21be62aa708af90169` and derived manifest `7135b0739e8e4f83d687e4008780b8e65d50e76ab1969601ae0b0ac2e5ec1eb3` matched byte-exactly.
 
-The canonical diagnostic bundle includes tables plus deterministic SVG and exact SVG-rasterized PNG companions for injection timing/disturbance realization, P6/P4 controller byte differences, time-advanced budgets/retries, and scorer-positive controls. All companions are authenticated by the derived manifest. `gate-audits.json` retains separate injection receipts, matched-anchor domain effects, exact decision-budget transitions, transitive typed cause closure, every qualification precheck, the frozen precheck-before-execution outcome plan, and recomputed geometric NOT_RUN receipts. `examples.json` binds:
+The ignored working bundle is durably retained as the tracked, deterministic, content-addressed archive `reports/evidence/hierarchical-recovery-v3-qualification/4dc382d06cbe96e7ff9d9d2cfd058234fb0583b2196586dc671b7c5b48f79dbe.tar.gz` (**8,759,575 bytes; 437 members**) with a tracked manifest and byte-exact extraction test.
 
-- working: `qualification-P6-R3-semantic-object-unavailable-20261891`
-- nonworking: `qualification-P6-R0-semantic-object-unavailable-20261893`
-- NOT_RUN: `architecture-independent-unreachable-geometry-v1`
+Governed verification receipt: **78 V3 passed, 60 deselected; 138 Experiment 03 passed**.
 
-The ignored working bundle is durably retained as the tracked, deterministic, content-addressed archive `reports/evidence/hierarchical-recovery-v3-qualification/e36aaca1b747322765440a5b1b024a19376e1405e07f31dbc474dd10ad74c1c1.tar.gz` (**8,759,557 bytes; 437 members**) with a tracked manifest and byte-exact extraction test.
+The companion authentication record binds the complete visible report bytes, archive/tree receipt, and governed test counts. Artifact-derived structured checks independently authenticate status, recursive file/byte inventory, episode and hard-gate counts, controller hashes, positive-control count, freeze/raw/derived hashes, archive bytes/member count, and test receipt. Missing, contradictory, duplicate, or altered visible values fail closed.
 
-The 10 registered hard gates all pass in the qualification bundle: exact sampled-tick injection, six realized disturbances, distinct observable policy sequences, real/different P6 and P4 paths, time-advanced guarded budgets, closed cause boundary, independent raw scorer, nine terminal-positive controls, byte-exact replay/reconstruction, and architecture-independent NOT_RUN handling.
+## Reviewer decision
 
-## Concerns and reviewer decision
-
-- This is representative calibration qualification, not an outcome sample, power result, or scientific claim.
-- The one R0 failure is intended evidence for a nonworking architecture under semantic change; it is not silently excluded.
-- Outcome execution is frozen but approval-gated: the verifier parses a canonical reviewer report, requires exact `APPROVED_FOR_OUTCOME` with zero Critical/Important findings, binds all qualification/source/report hashes, and rechecks configuration/environment identities. The frozen post-approval path includes resumable create-only execution, full dispositions, paired analysis, 10,000-draw realization bootstrap, eight gates, graphs, reconstruction, and archive publication.
-- The ignored evidence is create-only and source-bound to commit `72af233`; any source change requires regeneration and another review.
-- No outcome evidence root exists at report time.
-
-Reviewer decision: **PENDING — approve or reject; this implementation does not self-authorize.**
+The qualification does not self-authorize. Reviewer decision: **PENDING — approve or reject**.

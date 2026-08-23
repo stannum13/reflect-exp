@@ -23,14 +23,11 @@ def _tracked_qualification(tmp_path: Path) -> tuple[Path, Path, Path]:
     with tarfile.open(durable / receipt["archive"], "r:gz") as stream:
         stream.extractall(output, filter="data")
     report = tmp_path / "qualification-report.md"
-    report.write_bytes(
-        (ROOT / ".superpowers/sdd/hierarchy-v3-qualification-report.md").read_bytes()
-        + b"\nGoverned verification receipt: **69 V3 passed, 60 deselected; 129 Experiment 03 passed**.\n"
-    )
+    report.write_bytes((ROOT / ".superpowers/sdd/hierarchy-v3-qualification-report.md").read_bytes())
     receipt["verification"] = {
-        "experiment_03_passed": 129,
+        "experiment_03_passed": 138,
         "v3_deselected": 60,
-        "v3_passed": 69,
+        "v3_passed": 78,
     }
     receipt["qualification_report_sha256"] = hashlib.sha256(report.read_bytes()).hexdigest()
     archive_manifest = tmp_path / "archive-manifest.json"
@@ -265,8 +262,8 @@ def test_qualification_report_facts_are_authenticated_from_derived_data(tmp_path
     ("The 10 registered hard gates all pass", "The 0 registered hard gates all pass"),
     ("Status: **READY FOR FRESH READ-ONLY REVIEW**", "Status: **STALE**"),
     ("exactly **18 executed episodes**", "exactly **99 executed episodes**"),
-    ("V3 selection **69 passed, 60 deselected", "V3 selection **999 passed, 60 deselected"),
-    ("8,759,557 bytes; 437 members", "8,759,557 bytes; 999 members"),
+    ("Governed verification receipt: **78 V3 passed", "Governed verification receipt: **999 V3 passed"),
+    ("8,759,575 bytes; 437 members", "8,759,575 bytes; 999 members"),
 ))
 def test_qualification_report_rejects_forged_visible_inventory_and_gate_counts(
     tmp_path: Path, old: str, forged: str,
