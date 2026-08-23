@@ -86,6 +86,7 @@ class StorageReplay:
     latest_write_tick: int = 0
 
     def __post_init__(self) -> None:
+        self.initial_world = _copy(self.initial_world)
         self.belief = _copy(self.initial_world)
 
     def ingest(self, event: Mapping[str, Any]) -> None:

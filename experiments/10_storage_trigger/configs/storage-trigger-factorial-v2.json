@@ -8,6 +8,7 @@
   "disturbance_families": ["POSE_SHIFT", "AVAILABILITY_LOSS", "RESTRICTION_CHANGE", "CONTROL_FAILURE"],
   "severities": ["LOW", "HIGH"],
   "mission_horizons": [4, 8, 12],
+  "calibration_seeds": [20265291, 20265292],
   "period_ticks": 3,
   "failure_threshold": 2,
   "hybrid_cooldown_ticks": 2,

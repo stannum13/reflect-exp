@@ -96,6 +96,22 @@ def frozen_matrix() -> tuple[dict[str, Any], ...]:
     ))
 
 
+def fixture_matrix() -> tuple[dict[str, Any], ...]:
+    cells = []
+    for storage, trigger, family, horizon, seed in itertools.product(
+        ("NO_MEMORY", "FIXED_SNAPSHOT", "LIVE_EPISODIC"),
+        ("NO_REPLAN", "PERIODIC_ONLY", "HYBRID"),
+        ("POSE_SHIFT", "CONTROL_FAILURE"), (4, 8), tuple(CONFIG["calibration_seeds"]),
+    ):
+        cells.append({
+            "claim_scope": CLAIM_SCOPE, "disturbance_family": family,
+            "episode_id": _episode_id(storage, trigger, family, "HIGH", horizon, seed),
+            "horizon": horizon, "planner_id": PLANNER_ID, "seed": seed, "severity": "HIGH",
+            "storage_variant": storage, "trigger_variant": trigger,
+        })
+    return tuple(cells)
+
+
 def _legacy():
     return importlib.import_module("experiments.10_storage_trigger.src.factorial")
 
@@ -593,14 +609,7 @@ def _publish(output: Path, cells: Sequence[Mapping[str, Any]], *, implementation
 
 
 def run_fixture(output: Path, *, implementation_git_sha: str) -> None:
-    cells = [
-        row for row in frozen_matrix()
-        if row["storage_variant"] in {"FIXED_SNAPSHOT", "LIVE_EPISODIC"}
-        and row["trigger_variant"] in {"NO_REPLAN", "HYBRID"}
-        and row["disturbance_family"] in {"POSE_SHIFT", "CONTROL_FAILURE"}
-        and row["severity"] == "HIGH" and row["horizon"] == 4 and row["seed"] in SEEDS[:2]
-    ]
-    _publish(output, cells, implementation_git_sha=implementation_git_sha, fixture=True)
+    _publish(output, fixture_matrix(), implementation_git_sha=implementation_git_sha, fixture=True)
 
 
 def run_frozen(output: Path, *, implementation_git_sha: str) -> None:
@@ -628,6 +637,6 @@ def reconstruct_fixture(raw: Path, destination: Path) -> None:
 
 
 __all__ = [
-    "EPISODE_FIELDS", "FactorialV2Error", "canonical_bytes", "csv_bytes", "frozen_matrix", "jsonl_bytes",
+    "EPISODE_FIELDS", "FactorialV2Error", "canonical_bytes", "csv_bytes", "fixture_matrix", "frozen_matrix", "jsonl_bytes",
     "reconstruct", "reconstruct_fixture", "run_episode", "run_fixture", "run_frozen",
 ]

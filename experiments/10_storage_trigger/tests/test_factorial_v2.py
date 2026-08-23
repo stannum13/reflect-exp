@@ -30,9 +30,22 @@ def test_v2_matrix_uses_exact_held_back_paired_namespace() -> None:
     module = _module()
     rows = module.frozen_matrix()
     assert len(rows) == len({row["episode_id"] for row in rows}) == 12_000
-    assert {row["seed"] for row in rows} == set(range(20265101, 20265121))
+    assert {row["seed"] for row in rows} == set(range(20265201, 20265221))
     assert {row["planner_id"] for row in rows} == {"ORACLE_TYPED_SEMANTIC_V2"}
     assert {row["claim_scope"] for row in rows} == {"SYNTHETIC_WHITE_BOX_ENGINEERING_ORACLE_NOT_VLA"}
+
+
+def test_v2_no_memory_periodic_replay_keeps_immutable_initial_world() -> None:
+    module = _module()
+    cell = next(
+        row for row in module.fixture_matrix()
+        if row["storage_variant"] == "NO_MEMORY"
+        and row["trigger_variant"] == "PERIODIC_ONLY"
+        and row["disturbance_family"] == "POSE_SHIFT"
+        and row["horizon"] == 8
+    )
+    episode, _start, _steps = module.run_episode(cell)
+    assert episode["episode_id"] == cell["episode_id"]
 
 
 def test_v2_independent_scorer_ignores_diagnostics_and_rejects_action_forgery(tmp_path: Path) -> None:
