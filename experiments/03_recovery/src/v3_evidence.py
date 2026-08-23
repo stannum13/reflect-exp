@@ -29,13 +29,15 @@ from .v3_contracts import (
     canonical_bytes,
     sha256_bytes,
 )
-from .v3_runtime import V3EpisodeRaw, V3EpisodeSpec, precheck, run_episode
+from .v3_runtime import V3EpisodeRaw, V3EpisodeSpec, precheck, run_episode, unreachable_precheck_control
 from .v3_scorer import ScoreResult, positive_control_audit, score_episode
 
 
 _SEED_MODULES = (
     "experiments.03_recovery.run_v3_qualification",
+    "experiments.03_recovery.run_v3_outcome",
     "experiments.03_recovery.src.v3_evidence",
+    "experiments.03_recovery.src.v3_outcome",
     "experiments.03_recovery.src.contracts",
     "experiments.01_policy_control.src.arm",
     "experiments.01_policy_control.src.contracts",
@@ -305,15 +307,17 @@ def _validate_episode(destination: Path) -> dict[str, object]:
 
 
 def _not_run_control() -> dict[str, object]:
-    spec = V3EpisodeSpec(Architecture.R3, "motion-path-infeasible", 20261894, PRIMARY_CONTROLLER_ID)
-    receipt = precheck(spec, force_not_run=True)
+    control = unreachable_precheck_control()
+    receipt = precheck(control)
     return {
-        "control_id": "architecture-independent-unreachable-positive-control",
-        "episode_id": spec.episode_id,
+        "control_id": control.control_id,
+        "episode_id": None,
         "disposition": receipt.disposition,
         "reason": receipt.reason,
         "architecture_independent": receipt.architecture_independent,
         "geometry_sha256": receipt.geometry_sha256,
+        "precheck_input": control,
+        "precheck_receipt": receipt,
     }
 
 
@@ -513,7 +517,7 @@ def _derive(
     gate_csv_rows = [{"gate": item["gate"], "passed": item["passed"], "evidence": item["evidence"]} for item in gates]
     working = next(episode_id for episode_id, score in sorted(scores.items()) if score.terminal == "SUCCESS" and "semantic-object-unavailable" in episode_id and "R3" in episode_id)
     nonworking = next(episode_id for episode_id, score in sorted(scores.items()) if score.terminal == "FAILURE")
-    examples = {"working": working, "nonworking": nonworking, "not_run": not_run["episode_id"]}
+    examples = {"working": working, "nonworking": nonworking, "not_run": not_run["control_id"]}
     payloads: dict[str, bytes] = {
         "qualification-summary.json": canonical_bytes(summary),
         "hard-gates.csv": _csv(gate_csv_rows, ("gate", "passed", "evidence")),

@@ -29,6 +29,7 @@ from .v3_contracts import (
     ObservableState,
     PRIMARY_CONTROLLER_ID,
     REOBSERVE_TICKS,
+    RunStage,
     SCENARIO_IDS,
     SENSITIVITY_CONTROLLER_ID,
     TIMESTEP_S,
@@ -36,6 +37,7 @@ from .v3_contracts import (
     canonical_bytes,
     initial_budget,
     make_realization,
+    seeds_for_stage,
     sha256_bytes,
 )
 from .v3_policy import decide
@@ -53,21 +55,26 @@ class V3EpisodeSpec:
     scenario_id: str
     seed: int
     controller_id: str
+    stage: RunStage = RunStage.QUALIFICATION
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "architecture", Architecture(self.architecture))
+        object.__setattr__(self, "stage", RunStage(self.stage))
         if self.scenario_id not in SCENARIO_IDS:
             raise ValueError("unknown V3 qualification scenario")
         if self.controller_id not in {PRIMARY_CONTROLLER_ID, SENSITIVITY_CONTROLLER_ID}:
             raise ValueError("unknown V3 qualification controller")
         if self.controller_id == SENSITIVITY_CONTROLLER_ID and self.architecture is not Architecture.R3:
             raise ValueError("repaired P4 is a R3 sensitivity controller only")
-        make_realization(self.scenario_id, self.seed)
+        if self.seed not in seeds_for_stage(self.stage):
+            label = "qualification/calibration" if self.stage is RunStage.QUALIFICATION else "outcome"
+            raise ValueError(f"seed is outside the frozen {label} namespace")
 
     @property
     def episode_id(self) -> str:
         controller = "P6" if self.controller_id == PRIMARY_CONTROLLER_ID else "P4"
-        return f"qualification-{controller}-{self.architecture.value}-{self.scenario_id}-{self.seed}"
+        prefix = "qualification" if self.stage is RunStage.QUALIFICATION else "outcome"
+        return f"{prefix}-{controller}-{self.architecture.value}-{self.scenario_id}-{self.seed}"
 
 
 @dataclass(frozen=True)
@@ -81,6 +88,31 @@ class PrecheckReceipt:
     waypoint_path_clear: bool
     target_a_ik_error_m: float
     target_b_ik_error_m: float
+
+
+@dataclass(frozen=True)
+class PrecheckControlSpec:
+    control_id: str
+    q0: tuple[float, float, float]
+    target_a_xy: tuple[float, float]
+    target_b_xy: tuple[float, float]
+    obstacle_xy: tuple[float, float]
+    obstacle_radius_m: float
+
+
+def unreachable_precheck_control() -> PrecheckControlSpec:
+    q0 = (0.35, -0.70, 0.35)
+    start = _forward_xy(q0)
+    target_a = np.asarray((0.90, 0.0), dtype=np.float64)
+    obstacle = (start + target_a) / 2.0
+    return PrecheckControlSpec(
+        "architecture-independent-unreachable-geometry-v1",
+        q0,
+        tuple(float(item) for item in target_a),
+        (0.49, -0.14),
+        tuple(float(item) for item in obstacle),
+        0.04,
+    )
 
 
 @dataclass(frozen=True)
@@ -190,18 +222,33 @@ def _waypoint_path(start: np.ndarray, target: np.ndarray, center: np.ndarray, ra
     raise ValueError("no frozen waypoint route")
 
 
-def precheck(spec: V3EpisodeSpec, *, force_not_run: bool = False) -> PrecheckReceipt:
+def precheck(spec: V3EpisodeSpec | PrecheckControlSpec) -> PrecheckReceipt:
     """Run the architecture-independent feasibility gate before realization execution."""
-    realization = make_realization(spec.scenario_id, spec.seed)
+    if isinstance(spec, V3EpisodeSpec):
+        realization = make_realization(spec.scenario_id, spec.seed, stage=spec.stage)
+        q0_tuple = realization.q0
+        target_a_xy = realization.target_a_xy
+        target_b_xy = realization.target_b_xy
+        obstacle_xy = realization.obstacle_xy
+        radius = realization.obstacle_radius_m
+        input_sha256 = realization.parameter_sha256
+    elif isinstance(spec, PrecheckControlSpec):
+        q0_tuple = spec.q0
+        target_a_xy = spec.target_a_xy
+        target_b_xy = spec.target_b_xy
+        obstacle_xy = spec.obstacle_xy
+        radius = spec.obstacle_radius_m
+        input_sha256 = sha256_bytes(canonical_bytes(spec))
+    else:
+        raise TypeError("precheck requires an episode or geometric-control specification")
     _, _, kinematics, _ = _modules()
     config = _controller_config()
-    q0 = np.asarray(realization.q0)
-    targets = (np.asarray(realization.target_a_xy), np.asarray(realization.target_b_xy))
+    q0 = np.asarray(q0_tuple)
+    targets = (np.asarray(target_a_xy), np.asarray(target_b_xy))
     solutions = tuple(kinematics.absolute_ik(target, q0, config.arm.link_lengths_m, config.controller.ik_damping_candidates[0], config) for target in targets)
     errors = tuple(float(np.linalg.norm(_forward_xy(solution) - target)) for solution, target in zip(solutions, targets, strict=True))
     start = _forward_xy(q0)
-    obstacle = np.asarray(realization.obstacle_xy)
-    radius = realization.obstacle_radius_m
+    obstacle = np.asarray(obstacle_xy)
     straight_blocked = _blocked(start, targets[0], obstacle, radius)
     try:
         waypoint = _waypoint_path(start, targets[0], obstacle, radius)
@@ -210,22 +257,33 @@ def precheck(spec: V3EpisodeSpec, *, force_not_run: bool = False) -> PrecheckRec
         waypoint = ()
         waypoint_clear = False
     geometry = {
-        "q0": realization.q0,
-        "targets": (realization.target_a_xy, realization.target_b_xy),
+        "q0": q0_tuple,
+        "targets": (target_a_xy, target_b_xy),
         "ik_solution_sha256s": tuple(sha256_bytes(np.asarray(item, dtype="<f8").tobytes()) for item in solutions),
         "ik_errors_m": errors,
-        "obstacle_xy": realization.obstacle_xy,
+        "obstacle_xy": obstacle_xy,
         "obstacle_radius_m": radius,
         "straight_path_blocked": straight_blocked,
         "waypoint": waypoint,
         "waypoint_path_clear": waypoint_clear,
+        "arm_max_reach_m": sum(config.arm.link_lengths_m),
+        "target_radius_m": tuple(float(np.linalg.norm(item)) for item in targets),
     }
-    feasible = not force_not_run and max(errors) <= config.thresholds.success_radius_m and straight_blocked and waypoint_clear
+    within_reach = all(np.linalg.norm(target) <= sum(config.arm.link_lengths_m) for target in targets)
+    feasible = within_reach and max(errors) <= config.thresholds.success_radius_m and straight_blocked and waypoint_clear
+    if not within_reach:
+        reason = "TARGET_OUTSIDE_REACH"
+    elif max(errors) > config.thresholds.success_radius_m:
+        reason = "IK_ERROR_EXCEEDS_TOLERANCE"
+    elif not straight_blocked or not waypoint_clear:
+        reason = "GEOMETRY_PATH_PRECHECK_FAILED"
+    else:
+        reason = "PASS"
     return PrecheckReceipt(
         "READY" if feasible else "NOT_RUN",
-        "PASS" if feasible else "ARCHITECTURE_INDEPENDENT_FEASIBILITY_CONTROL",
+        reason,
         True,
-        realization.parameter_sha256,
+        input_sha256,
         sha256_bytes(canonical_bytes(geometry)),
         straight_blocked,
         waypoint_clear,
@@ -582,7 +640,7 @@ def _controller_binding(spec: V3EpisodeSpec, arm_module: object) -> Mapping[str,
 
 def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
     """Execute one calibration episode and return immutable raw evidence inputs."""
-    realization = make_realization(spec.scenario_id, spec.seed)
+    realization = make_realization(spec.scenario_id, spec.seed, stage=spec.stage)
     receipt = precheck(spec)
     if receipt.disposition != "READY":
         raise RuntimeError("architecture-independent precheck returned NOT_RUN")
@@ -1080,4 +1138,7 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
     )
 
 
-__all__ = ["PrecheckReceipt", "V3EpisodeRaw", "V3EpisodeSpec", "precheck", "run_episode"]
+__all__ = [
+    "PrecheckControlSpec", "PrecheckReceipt", "V3EpisodeRaw", "V3EpisodeSpec", "precheck",
+    "run_episode", "unreachable_precheck_control",
+]

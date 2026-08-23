@@ -18,6 +18,7 @@ import numpy as np
 
 
 CALIBRATION_SEEDS = (20261891, 20261892, 20261893, 20261894)
+OUTCOME_SEEDS = tuple(range(20261801, 20261811))
 SCENARIO_IDS = (
     "anchor-nominal",
     "anchor-slow-policy",
@@ -42,6 +43,20 @@ class Architecture(str, Enum):
     R1 = "R1"
     R2 = "R2"
     R3 = "R3"
+
+
+class RunStage(str, Enum):
+    QUALIFICATION = "QUALIFICATION"
+    OUTCOME = "OUTCOME"
+
+
+def seeds_for_stage(stage: RunStage) -> tuple[int, ...]:
+    stage = RunStage(stage)
+    return CALIBRATION_SEEDS if stage is RunStage.QUALIFICATION else OUTCOME_SEEDS
+
+
+def _stage_label(stage: RunStage) -> str:
+    return "qualification/calibration" if stage is RunStage.QUALIFICATION else "outcome"
 
 
 class DecisionLevel(str, Enum):
@@ -95,6 +110,7 @@ def _finite_tuple(value: tuple[float, ...], length: int, name: str) -> tuple[flo
 @dataclass(frozen=True)
 class V3Realization:
     scenario_id: str
+    stage: RunStage
     seed: int
     q0: tuple[float, float, float]
     target_a_xy: tuple[float, float]
@@ -113,8 +129,9 @@ class V3Realization:
     def __post_init__(self) -> None:
         if self.scenario_id not in SCENARIO_IDS:
             raise ValueError("unknown V3 scenario")
-        if self.seed not in CALIBRATION_SEEDS:
-            raise ValueError("V3 qualification accepts calibration seeds only")
+        object.__setattr__(self, "stage", RunStage(self.stage))
+        if self.seed not in seeds_for_stage(self.stage):
+            raise ValueError(f"seed is outside the frozen {_stage_label(self.stage)} namespace")
         object.__setattr__(self, "q0", _finite_tuple(self.q0, 3, "q0"))
         for name in ("target_a_xy", "target_b_xy", "target_shift_xy", "obstacle_xy"):
             object.__setattr__(self, name, _finite_tuple(getattr(self, name), 2, name))
@@ -133,13 +150,14 @@ class V3Realization:
         _sha(self.parameter_sha256, "parameter_sha256")
 
 
-def make_realization(scenario_id: str, seed: int) -> V3Realization:
-    """Sample one calibration realization; outcome seeds are rejected at this API."""
+def make_realization(scenario_id: str, seed: int, *, stage: RunStage = RunStage.QUALIFICATION) -> V3Realization:
+    """Sample one realization from an explicit closed execution stage."""
     if scenario_id not in SCENARIO_IDS:
         raise ValueError("unknown V3 scenario")
-    if seed not in CALIBRATION_SEEDS:
-        raise ValueError("V3 qualification accepts calibration seeds only")
-    namespace = int.from_bytes(hashlib.sha256(f"hierarchy-v3-qualification:{seed}".encode("ascii")).digest()[:8], "little")
+    stage = RunStage(stage)
+    if seed not in seeds_for_stage(stage):
+        raise ValueError(f"seed is outside the frozen {_stage_label(stage)} namespace")
+    namespace = int.from_bytes(hashlib.sha256(f"hierarchy-v3-{stage.value.lower()}:{seed}".encode("ascii")).digest()[:8], "little")
     rng = np.random.Generator(np.random.PCG64(namespace))
     q0 = tuple(float(item) for item in np.array((0.35, -0.70, 0.35)) + rng.uniform(-0.025, 0.025, 3))
     target_a = np.array((0.55, 0.08)) + rng.uniform(-0.018, 0.018, 2)
@@ -166,7 +184,7 @@ def make_realization(scenario_id: str, seed: int) -> V3Realization:
         "damping_multiplier": float(rng.uniform(0.90, 1.10)),
         "semantic_delay_ticks": int(rng.integers(0, 13)),
     }
-    return V3Realization(scenario_id, seed, **sampled, parameter_sha256=sha256_bytes(canonical_bytes(sampled)))
+    return V3Realization(scenario_id, stage, seed, **sampled, parameter_sha256=sha256_bytes(canonical_bytes(sampled)))
 
 
 @dataclass(frozen=True)
@@ -270,8 +288,10 @@ __all__ = [
     "EPISODE_TICKS",
     "EXTERNAL_LOAD_THRESHOLD_NM",
     "ObservableState",
+    "OUTCOME_SEEDS",
     "PRIMARY_CONTROLLER_ID",
     "REOBSERVE_TICKS",
+    "RunStage",
     "SCENARIO_IDS",
     "SENSITIVITY_CONTROLLER_ID",
     "TIMESTEP_S",
@@ -280,4 +300,5 @@ __all__ = [
     "initial_budget",
     "make_realization",
     "sha256_bytes",
+    "seeds_for_stage",
 ]

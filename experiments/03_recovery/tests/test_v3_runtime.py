@@ -30,9 +30,13 @@ def test_realization_pairs_share_physics_and_precheck_can_retain_not_run() -> No
     assert anchor.q0 == disturbed.q0
     assert anchor.target_a_xy == disturbed.target_a_xy
     assert runtime.precheck(spec("anchor-nominal")).disposition == "READY"
-    not_run = runtime.precheck(spec("motion-path-infeasible"), force_not_run=True)
+    control = runtime.unreachable_precheck_control()
+    assert np.linalg.norm(control.target_a_xy) > sum((0.30, 0.25, 0.20))
+    not_run = runtime.precheck(control)
     assert not_run.disposition == "NOT_RUN"
     assert not_run.architecture_independent is True
+    assert not_run.reason == "TARGET_OUTSIDE_REACH"
+    assert not_run.target_a_ik_error_m > 0.025
 
 
 @pytest.fixture(scope="module")

@@ -71,6 +71,10 @@ def test_full_qualification_publication_and_raw_reconstruction_are_byte_exact(tm
     raw_manifest = json.loads((output / "raw/manifest.json").read_text(encoding="ascii"))
     assert raw_manifest["episode_count"] == 18
     assert raw_manifest["not_run_positive_control"]["disposition"] == "NOT_RUN"
+    assert raw_manifest["not_run_positive_control"]["reason"] == "TARGET_OUTSIDE_REACH"
+    assert set(raw_manifest["not_run_positive_control"]["precheck_input"]) == {
+        "control_id", "q0", "target_a_xy", "target_b_xy", "obstacle_xy", "obstacle_radius_m",
+    }
     assert all(row["seed"] in contracts.CALIBRATION_SEEDS for row in raw_manifest["episodes"])
     first = output / "raw/episodes" / raw_manifest["episodes"][0]["episode_id"]
     assert (first / "contact-envelopes.jsonl").is_file()
