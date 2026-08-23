@@ -977,19 +977,13 @@ def derive_pilot_selection(
                 raise ValueError("P5 candidates do not bind selected PD/IK and the P5-only domain")
             if index == 0 and (vector["p5_smoothness"] != 0.02 or item.reuse_hashes != reuse):
                 raise ValueError("reused P5 baseline does not bind selected predecessor bundles")
-        p5_base = p5[0]
         selected_p5 = select_p5_smoothness(p5)
     else:
         if p5:
             raise ValueError("base-killed P5 cannot have smoothness candidates")
-        p5_base = None
         selected_p5 = None
-    digest = hashlib.sha256(canonical_json_bytes({
-        "pd_candidates": [_candidate_wire(item) for item in pd],
-        "ik_candidates": [_candidate_wire(item) for item in ik],
-        "p5_reused_candidate": _candidate_wire(p5_base) if p5_base is not None else None,
-        "p5_alternatives": [_candidate_wire(item) for item in p5[1:]],
-    })).hexdigest()
+    recorded_candidates = (*pd, *ik, *p5[1:])
+    digest = hashlib.sha256(candidate_evaluations_bytes(recorded_candidates)).hexdigest()
     return PilotSelectionEvidence(
         qualification, selected_pd, selected_ik, selected_p5, digest,
         _seal=_PILOT_SELECTION_SEAL,
