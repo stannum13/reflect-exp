@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import importlib
+import hashlib
 import inspect
+import json
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -87,3 +90,22 @@ def test_tuned_p4_episode_records_feedforward_and_zero_dq_safe_hold() -> None:
     record=evaluate.run_episode(contracts.CommandStack.P4,evaluate.core_conditions(cfg)[0],evaluate.generate_scenario(20261301,cfg),cfg,identity,p4_executor_tuning=rep.P4ExecutorTuning(12,True));raw=record.metrics["raw_500hz"]
     assert any(any(abs(value)>0 for value in row) for row in raw["dq_ref"])
     assert all(not raw["safe_hold"][index] or np.array_equal(raw["dq_ref"][index],np.zeros(3)) for index in range(len(raw["tick"])))
+
+
+def test_committed_p4_rescue_receipt_binds_reconstructable_raw_when_present() -> None:
+    rescue=importlib.import_module("experiments.01_policy_control.engineering_p4_rescue")
+    root=Path(rescue.__file__).resolve().parent
+    receipt=json.loads((root/"ENGINEERING_P4_RESCUE_EVIDENCE.json").read_text())
+    evidence=Path(rescue.ROOT)/receipt["evidence"]["relative_path"]
+    assert receipt["disposition"]=="PRELIMINARY_MECHANISM_RESCUE_CANDIDATE_FOR_FORMAL_P4_PILOT_NO_PROMOTION"
+    assert receipt["selected"]==["P4-lookahead1-dqon","P4-lookahead12-dqon"]
+    assert receipt["aggregates"]["P4-lookahead1-dqon"]["working"]==88
+    assert receipt["aggregates"]["P6-res0p5-slew48"]["working"]==96
+    if evidence.is_dir():
+        rows=[]
+        for path in sorted(x for x in evidence.rglob("*") if x.is_file()):
+            payload=path.read_bytes();rows.append({"path":path.relative_to(evidence).as_posix(),"bytes":len(payload),"sha256":hashlib.sha256(payload).hexdigest()})
+        assert len(rows)==receipt["evidence"]["files"]
+        assert sum(row["bytes"] for row in rows)==receipt["evidence"]["bytes"]
+        assert hashlib.sha256(rescue.canonical(rows)).hexdigest()==receipt["evidence"]["inventory_sha256"]
+        assert rescue.reconstruct(evidence)["manifest_sha256"]==receipt["evidence"]["manifest_sha256"]
