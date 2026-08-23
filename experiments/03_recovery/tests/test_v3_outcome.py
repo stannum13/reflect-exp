@@ -4,6 +4,7 @@ import importlib
 import hashlib
 import json
 from pathlib import Path
+from dataclasses import replace
 
 import pytest
 
@@ -152,26 +153,74 @@ def test_complete_outcome_analysis_bundle_is_frozen_without_sampling(monkeypatch
     monkeypatch.setattr(contracts, "make_realization", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("sampled")))
     rows = []
     for spec in outcome.outcome_specs():
+        domain = "CONTROL" if spec.scenario_id.startswith("control-") else "MOTION" if spec.scenario_id.startswith("motion-") else "SEMANTIC" if spec.scenario_id.startswith("semantic-") else "ANCHOR"
+        parameter_sha = hashlib.sha256((spec.episode_id + "parameter").encode()).hexdigest()
+        precheck_input = {
+            "episode_id": spec.episode_id, "scenario_id": spec.scenario_id, "stage": "OUTCOME", "seed": spec.seed,
+            "q0": [0.0, 0.0, 0.0], "target_a_xy": [0.5, 0.0], "target_b_xy": [0.4, 0.1],
+            "injection_tick": 700, "impulse_nm": 0.2, "impulse_ticks": 8, "dropout_ticks": 30,
+            "target_shift_xy": [0.04, 0.0], "obstacle_xy": [0.3, 0.0], "obstacle_radius_m": 0.04,
+            "damping_multiplier": 1.0, "semantic_delay_ticks": 4, "parameter_sha256": parameter_sha,
+        }
         rows.append({
             "episode_id": spec.episode_id, "architecture": spec.architecture.value,
             "scenario_id": spec.scenario_id, "seed": spec.seed, "controller_id": spec.controller_id,
+            "template_id": spec.scenario_id, "domain": domain,
+            "matrix_role": "PRIMARY" if spec.controller_id == contracts.PRIMARY_CONTROLLER_ID else "SENSITIVITY",
+            "approval_report_sha256": "a" * 64,
             "disposition": "TERMINAL", "terminal": "SUCCESS",
             "unsafe": 0, "forbidden": 0, "collision": 0, "invalid_action": 0, "stale": 0, "loop": 0, "reset": 0,
-            "control_interventions": 0, "motion_interventions": 0,
+            "control_interventions": 0, "motion_interventions": 1 if spec.architecture is contracts.Architecture.R2 else 0,
             "semantic_interventions": 0 if spec.architecture is contracts.Architecture.R3 else 1,
-            "lowest_sufficient_correct": True,
+            "counterfactual_event_audit": {"event_count": 1, "matched_event_count": 1, "fraction": 1.0, "events": []},
             "physical_trace_sha256": hashlib.sha256(spec.episode_id.encode()).hexdigest(),
-            "parameter_use_sha256": hashlib.sha256((spec.episode_id + "parameter").encode()).hexdigest(),
-            "precheck_input": {"episode_id": spec.episode_id},
-            "precheck_receipt": {"architecture_independent": True},
+            "parameter_use_sha256": parameter_sha,
+            "precheck_input": precheck_input,
+            "precheck_receipt": {"architecture_independent": True, "realization_sha256": parameter_sha},
         })
     payloads = analysis.outcome_payloads(rows, construct_integrity={name: True for name in ("approval", "inventory", "freeze", "cause", "replay", "reconstruction")})
     assert {"decision.json", "paired-rows.csv", "bootstrap.json", "template-cluster-sensitivity.json", "graph-table.csv", "outcome-by-domain.svg", "outcome-by-domain.png", "examples.json"} <= set(payloads)
     assert json.loads(payloads["bootstrap.json"])["draw_count"] == 10_000
     assert payloads["outcome-by-domain.png"].startswith(b"\x89PNG\r\n\x1a\n")
+    integrity = {name: True for name in ("approval", "inventory", "freeze", "cause", "replay", "reconstruction")}
+    baseline = analysis.evaluate_outcome_gates(rows, construct_integrity=integrity)
+    assert baseline["gates"][7]["passed"] is True
+    assert baseline["matrix_identity"]["paired_count"] == 80
+    assert baseline["gates"][2]["passed"] is True
+    assert baseline["gates"][3]["passed"] is True
+    assert baseline["fixed_best_comparator"] == "R0"
+    aggregate_ni = [dict(item) for item in rows]
+    semantic_cells = [item for item in aggregate_ni if item["controller_id"] == contracts.PRIMARY_CONTROLLER_ID and item["scenario_id"] == "semantic-object-unavailable" and item["architecture"] in {"R1", "R3"}]
+    for item in semantic_cells:
+        if item["seed"] == 20261801:
+            item["terminal"] = "FAILURE" if item["architecture"] == "R3" else "SUCCESS"
+        elif item["seed"] == 20261802:
+            item["terminal"] = "SUCCESS" if item["architecture"] == "R3" else "FAILURE"
+    assert analysis.evaluate_outcome_gates(aggregate_ni, construct_integrity=integrity)["gates"][2]["passed"] is True
+    fixed_rule = [dict(item) for item in rows]
+    for item in fixed_rule:
+        if item["controller_id"] == contracts.PRIMARY_CONTROLLER_ID and item["domain"] == "CONTROL" and item["architecture"] in {"R0", "R1", "R2", "R3"}:
+            first_half = item["seed"] <= 20261805
+            if item["architecture"] in {"R0", "R2", "R3"}:
+                item["terminal"] = "SUCCESS" if first_half else "FAILURE"
+            else:
+                item["terminal"] = "FAILURE" if first_half else "SUCCESS"
+    fixed_result = analysis.evaluate_outcome_gates(fixed_rule, construct_integrity=integrity)
+    assert fixed_result["fixed_best_comparator"] == "R0"
+    assert fixed_result["gates"][5]["passed"] is True
+    for field, value in (("architecture", "R0" if rows[0]["architecture"] != "R0" else "R3"), ("seed", 20261899), ("controller_id", "forged"), ("scenario_id", "forged-template"), ("matrix_role", "PRIMARY" if rows[0]["matrix_role"] != "PRIMARY" else "SENSITIVITY"), ("approval_report_sha256", "b" * 64)):
+        substituted = [dict(item) for item in rows]
+        substituted[0][field] = value
+        result = analysis.evaluate_outcome_gates(substituted, construct_integrity=integrity)
+        assert result["gates"][7]["passed"] is False, field
+        assert result["scientific_result"] == "INVALID_EXPERIMENT"
+    for malformed in (rows[:-1], [*rows, dict(rows[0])], [dict(rows[0]), *rows[1:-1], dict(rows[0])]):
+        result = analysis.evaluate_outcome_gates(malformed, construct_integrity=integrity)
+        assert result["gates"][7]["passed"] is False
+        assert result["scientific_result"] == "INVALID_EXPERIMENT"
     damaged = [dict(item) for item in rows]
     damaged[0] = {"episode_id": damaged[0]["episode_id"], "architecture": damaged[0]["architecture"], "scenario_id": damaged[0]["scenario_id"], "seed": damaged[0]["seed"], "controller_id": damaged[0]["controller_id"], "disposition": "INVALID"}
-    invalid = analysis.evaluate_outcome_gates(damaged, construct_integrity={"reconstruction": True})
+    invalid = analysis.evaluate_outcome_gates(damaged, construct_integrity=integrity)
     assert invalid["scientific_result"] == "INVALID_EXPERIMENT"
     assert invalid["gates"][7]["passed"] is False
 
@@ -195,3 +244,53 @@ def test_interrupted_outcome_attempt_retains_create_only_invalid_disposition_wit
     assert retained["precheck_receipt"]["architecture_independent"] is True
     with pytest.raises(FileExistsError):
         outcome._write(dispositions[0], b"overwrite")
+    assert (root / "approval/approval-report.json").read_bytes() == report.read_bytes()
+    assert (root / "approval/approval-binding.json").read_bytes() == binding.read_bytes()
+    sealed = outcome.seal_invalid_outcomes(root)
+    assert sealed["status"] == "SEALED_INVALID_EXPERIMENT"
+    reconstruction = outcome.reconstruct_outcomes(
+        root, tmp_path / "invalid-clean", qualification_root=qualification,
+        approval_binding=binding, approval_report=report,
+    )
+    assert reconstruction["matched"] is True
+    assert reconstruction["scientific_result"] == "INVALID_EXPERIMENT"
+    assert json.loads((root / "derived/decision.json").read_text(encoding="ascii"))["gates"][7]["passed"] is False
+
+
+def test_realization_bootstrap_resamples_ten_seed_clusters_with_perfect_within_seed_correlation() -> None:
+    pairs = []
+    templates = analysis.DOMAINS["MOTION"] + analysis.DOMAINS["SEMANTIC"]
+    for seed_index, seed in enumerate(range(20261801, 20261811)):
+        effect = 1 if seed_index < 5 else -1
+        for template in templates:
+            pairs.append({"scenario_id": template, "seed": seed, "r3_success": int(effect == 1), "r0_success": int(effect == -1)})
+    result = analysis.realization_bootstrap(pairs)
+    assert result["effective_n"] == 10
+    assert result["effective_n_unit"] == "seed_realization_clusters"
+    assert all(len(cluster["rows"]) == 4 for cluster in result["cluster_inputs"])
+    first_indices = result["cluster_indices"][0]
+    cluster_effects = [1.0] * 5 + [-1.0] * 5
+    assert result["draws"][0] == pytest.approx(sum(cluster_effects[index] for index in first_indices) / 10)
+    sensitivity = result["template_cluster_sensitivity"]
+    assert sensitivity["cluster_unit"] == "template_with_all_10_realizations"
+    assert len(sensitivity["draws"]) == 10_000
+
+
+def test_counterfactual_oracle_binds_each_failure_event_to_ordered_minimal_effect() -> None:
+    runtime = importlib.import_module("experiments.03_recovery.src.v3_runtime")
+    raw = runtime.run_episode(runtime.V3EpisodeSpec(contracts.Architecture.R3, "control-impulse", 20261892, contracts.PRIMARY_CONTROLLER_ID))
+    first_observation = raw.observations[0]
+    first_decision = raw.decisions[0]
+    second_observation = replace(first_observation, tick=first_observation.tick + contracts.REOBSERVE_TICKS, reobserve_index=first_observation.reobserve_index + 1, geometry_feasible=False)
+    second_decision = replace(first_decision, level=contracts.DecisionLevel.MOTION, observed_tick=second_observation.tick, observable_sha256=second_observation.sha256)
+    doubled = replace(raw, observations=(first_observation, second_observation), decisions=(first_decision, second_decision))
+    baseline = outcome.counterfactual_event_audit(doubled)
+    assert baseline["event_count"] == 2
+    assert baseline["matched_event_count"] == 2
+    decisions = list(doubled.decisions)
+    reversed_levels = tuple(replace(item, level=decisions[-1 - index].level) for index, item in enumerate(decisions))
+    assert outcome.counterfactual_event_audit(replace(doubled, decisions=reversed_levels))["matched_event_count"] < 2
+    assert outcome.counterfactual_event_audit(replace(doubled, decisions=(decisions[0],)))["matched_event_count"] < 2
+    assert outcome.counterfactual_event_audit(replace(doubled, decisions=()))["matched_event_count"] == 0
+    over = tuple(replace(item, level=contracts.DecisionLevel.SEMANTIC) for item in decisions)
+    assert outcome.counterfactual_event_audit(replace(doubled, decisions=over))["matched_event_count"] < 2

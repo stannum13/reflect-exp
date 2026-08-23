@@ -22,7 +22,7 @@ from .v3_contracts import (
     canonical_bytes,
     sha256_bytes,
 )
-from .v3_evidence import _assert_trees_equal, _freeze_record, _inventory, _write_episode, qualification_specs, source_closure
+from .v3_evidence import _assert_trees_equal, _freeze_record, _inventory, _tree_bytes, _write_episode, qualification_specs, source_closure
 from .v3_runtime import V3EpisodeSpec, precheck, run_episode
 from .v3_scorer import score_episode
 from .v3_outcome_analysis import analyze_outcomes
@@ -129,6 +129,29 @@ def _write(path: Path, payload: bytes) -> None:
         os.fsync(stream.fileno())
 
 
+def _seal_dispositions(output: Path) -> list[dict[str, object]]:
+    if (output / "raw/manifest.json").is_file():
+        return [json.loads(line) for line in (output / "raw/outcome-rows.jsonl").read_text(encoding="ascii").splitlines()]
+    disposition_root = output / "raw/dispositions"
+    rows = [json.loads(path.read_text(encoding="ascii")) for path in sorted(disposition_root.glob("*.json"))]
+    rows_payload = b"".join(canonical_bytes(item) for item in rows)
+    disposition_payloads = {f"dispositions/{path.name}": path.read_bytes() for path in sorted(disposition_root.glob("*.json"))}
+    raw_manifest = {
+        "schema_version": 1,
+        "episode_dispositions": len(rows),
+        "files": _inventory({"outcome-rows.jsonl": rows_payload, **disposition_payloads}),
+    }
+    _write(output / "raw/outcome-rows.jsonl", rows_payload)
+    _write(output / "raw/manifest.json", canonical_bytes(raw_manifest))
+    return rows
+
+
+def seal_invalid_outcomes(output: Path) -> dict[str, object]:
+    rows = _seal_dispositions(output)
+    invalid = sum(row.get("disposition") in {"INVALID", "INTERRUPTED"} for row in rows)
+    return {"status": "SEALED_INVALID_EXPERIMENT" if invalid else "SEALED_AWAITING_RECONSTRUCTION", "episode_dispositions": len(rows), "invalid_dispositions": invalid}
+
+
 def _outcome_decision(rows: Sequence[Mapping[str, object]]) -> dict[str, object]:
     inventory_complete = len(rows) == 360 and len({str(item["episode_id"]) for item in rows}) == 360
     safety_closed = all(sum(int(item[metric]) for item in rows) == 0 for metric in (
@@ -156,33 +179,74 @@ def dry_run_outcomes(*, qualification_root: Path, approval_binding: Path, approv
     }
 
 
-def _counterfactual_sufficient(raw: object) -> bool:
-    expected = []
-    for observable in raw.observations:
+def counterfactual_event_audit(raw: object) -> dict[str, object]:
+    """Bind each observable failure to its minimal causal intervention and verified effect."""
+    triggers = [item for item in raw.observations if item.failure_detected]
+    decisions = {item.observable_sha256: item for item in raw.decisions}
+    events = []
+    for index, observable in enumerate(triggers):
+        next_tick = triggers[index + 1].tick if index + 1 < len(triggers) else len(raw.action_envelopes)
         if not observable.controller_safe:
-            continue
-        if not observable.semantic_preconditions_valid:
-            expected.append("SEMANTIC")
+            expected = "SAFE_ABORT"
+        elif not observable.semantic_preconditions_valid:
+            expected = "SEMANTIC"
         elif not observable.action_valid or not observable.geometry_feasible:
-            expected.append("MOTION")
-        elif observable.failure_detected:
-            expected.append("CONTROL")
-    selected = [item.level.value for item in raw.decisions if item.level.value in {"CONTROL", "MOTION", "SEMANTIC"}]
-    return bool(not expected or all(level in selected for level in expected))
+            expected = "MOTION"
+        else:
+            expected = "CONTROL"
+        decision = decisions.get(observable.sha256)
+        causal = bool(decision is not None and decision.observed_tick == observable.tick and decision.level.value == expected)
+        if expected in {"CONTROL", "MOTION"}:
+            effect = any(
+                int(item["tick"]) >= observable.tick and int(item["tick"]) < next_tick and item["mode"] == "EXECUTE"
+                for item in raw.action_envelopes
+            )
+        elif expected == "SEMANTIC":
+            effect = any(
+                item["event"] == "AUTHORIZED_ALTERNATIVE_SELECTED"
+                and int(item["tick"]) >= observable.tick and int(item["tick"]) < next_tick
+                for item in raw.world_ledger
+            ) and any(
+                int(item["tick"]) >= observable.tick and int(item["tick"]) < next_tick
+                and item["mode"] == "HOLD" and item["object_id"] is None
+                for item in raw.action_envelopes
+            )
+        else:
+            effect = bool(decision is not None and decision.level.value == "SAFE_ABORT")
+        events.append({
+            "observable_sha256": observable.sha256, "observed_tick": observable.tick,
+            "next_event_tick": next_tick, "minimal_sufficient_level": expected,
+            "decision_level": None if decision is None else decision.level.value,
+            "causal_assignment": causal, "verified_effect_before_next_event": bool(effect),
+            "matched": bool(causal and effect),
+        })
+    matched = sum(bool(item["matched"]) for item in events)
+    return {"event_count": len(events), "matched_event_count": matched, "fraction": 1.0 if not events else matched / len(events), "events": events}
 
 
-def _terminal_row(spec: V3EpisodeSpec, receipt: object, raw: object, episode_manifest: Mapping[str, object]) -> dict[str, object]:
+def _matrix_fields(spec: V3EpisodeSpec) -> dict[str, object]:
+    domain = (
+        "CONTROL" if spec.scenario_id.startswith("control-") else
+        "MOTION" if spec.scenario_id.startswith("motion-") else
+        "SEMANTIC" if spec.scenario_id.startswith("semantic-") else "ANCHOR"
+    )
+    return {"template_id": spec.scenario_id, "domain": domain, "matrix_role": "PRIMARY" if spec.controller_id == PRIMARY_CONTROLLER_ID else "SENSITIVITY"}
+
+
+def _terminal_row(spec: V3EpisodeSpec, receipt: object, raw: object, episode_manifest: Mapping[str, object], approval_report_sha256: str) -> dict[str, object]:
     score = score_episode(raw)
     counts = score.violation_counts
     levels = [item.level.value for item in raw.decisions]
     return {
         "episode_id": spec.episode_id, "architecture": spec.architecture.value,
         "scenario_id": spec.scenario_id, "seed": spec.seed, "controller_id": spec.controller_id,
+        **_matrix_fields(spec), "approval_report_sha256": approval_report_sha256,
         "disposition": "TERMINAL", "terminal": score.terminal,
         "unsafe": counts["unsafe"], "forbidden": counts["forbidden"], "collision": counts["collision"],
         "invalid_action": counts["invalid_action"], "stale": counts["stale"], "loop": counts["loop"], "reset": counts["reset"],
         "control_interventions": levels.count("CONTROL"), "motion_interventions": levels.count("MOTION"),
-        "semantic_interventions": levels.count("SEMANTIC"), "lowest_sufficient_correct": _counterfactual_sufficient(raw),
+        "semantic_interventions": levels.count("SEMANTIC"),
+        "counterfactual_event_audit": counterfactual_event_audit(raw),
         "physical_trace_sha256": sha256_bytes(raw.trace["q"].tobytes()),
         "parameter_use_sha256": sha256_bytes(canonical_bytes(raw.parameter_use_receipt)),
         "precheck_input": receipt.precheck_input, "precheck_receipt": receipt,
@@ -214,12 +278,16 @@ def run_outcomes(
     if output.exists():
         if not (output / "outcome-freeze.json").is_file() or (output / "outcome-freeze.json").read_bytes() != canonical_bytes(freeze):
             raise OutcomeAuthorizationError("existing outcome root does not match immutable approval/freeze")
+        if (output / "approval/approval-binding.json").read_bytes() != approval_binding.read_bytes() or (output / "approval/approval-report.json").read_bytes() != approval_report.read_bytes():
+            raise OutcomeAuthorizationError("retained approval bytes do not match authenticated inputs")
         if (output / "raw/manifest.json").is_file():
             rows = (output / "raw/outcome-rows.jsonl").read_text(encoding="ascii").splitlines()
             return {"status": "SEALED_AWAITING_RECONSTRUCTION", "episode_dispositions": len(rows)}
     else:
         output.mkdir(parents=True)
         _write(output / "outcome-freeze.json", canonical_bytes(freeze))
+        _write(output / "approval/approval-binding.json", approval_binding.read_bytes())
+        _write(output / "approval/approval-report.json", approval_report.read_bytes())
     disposition_root = output / "raw/dispositions"
     for spec in specs:
         disposition_path = disposition_root / f"{spec.episode_id}.json"
@@ -233,6 +301,7 @@ def run_outcomes(
                 "scenario_id": spec.scenario_id,
                 "seed": spec.seed,
                 "controller_id": spec.controller_id,
+                **_matrix_fields(spec), "approval_report_sha256": approval["approval_report_sha256"],
                 "disposition": "NOT_RUN",
                 "terminal": None,
                 "unsafe": 0, "forbidden": 0, "collision": 0, "invalid_action": 0,
@@ -249,27 +318,20 @@ def run_outcomes(
         try:
             raw = run_episode(spec)
             episode_manifest = _write_episode(output / "raw", raw)
-            row = _terminal_row(spec, receipt, raw, episode_manifest)
+            row = _terminal_row(spec, receipt, raw, episode_manifest, str(approval["approval_report_sha256"]))
             _write(disposition_path, canonical_bytes(row))
         except BaseException as exc:
             interrupted = {
                 "episode_id": spec.episode_id, "architecture": spec.architecture.value,
                 "scenario_id": spec.scenario_id, "seed": spec.seed, "controller_id": spec.controller_id,
+                **_matrix_fields(spec), "approval_report_sha256": approval["approval_report_sha256"],
                 "disposition": "INTERRUPTED" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "INVALID",
                 "error_type": type(exc).__name__, "precheck_input": receipt.precheck_input,
                 "precheck_receipt": receipt,
             }
             _write(disposition_path, canonical_bytes(interrupted))
             raise
-    rows = [json.loads(path.read_text(encoding="ascii")) for path in sorted(disposition_root.glob("*.json"))]
-    rows_payload = b"".join(canonical_bytes(item) for item in rows)
-    raw_manifest = {
-        "schema_version": 1,
-        "episode_dispositions": len(rows),
-        "files": _inventory({"outcome-rows.jsonl": rows_payload}),
-    }
-    _write(output / "raw/outcome-rows.jsonl", rows_payload)
-    _write(output / "raw/manifest.json", canonical_bytes(raw_manifest))
+    rows = _seal_dispositions(output)
     return {"status": "SEALED_AWAITING_RECONSTRUCTION", "episode_dispositions": len(rows)}
 
 
@@ -277,8 +339,23 @@ def reconstruct_outcomes(
     output: Path, clean: Path, *, qualification_root: Path, approval_binding: Path, approval_report: Path
 ) -> dict[str, object]:
     """Re-execute immutable raw, compare byte-exactly, then publish all scientific deliverables."""
-    if clean.exists() or not (output / "raw/manifest.json").is_file():
+    if clean.exists():
         raise FileExistsError(clean)
+    verify_outcome_approval(qualification_root, approval_binding, approval_report)
+    if (output / "approval/approval-binding.json").read_bytes() != approval_binding.read_bytes() or (output / "approval/approval-report.json").read_bytes() != approval_report.read_bytes():
+        raise OutcomeAuthorizationError("retained approval provenance drifted before reconstruction")
+    rows = _seal_dispositions(output)
+    invalid = any(row.get("disposition") in {"INVALID", "INTERRUPTED"} for row in rows)
+    if invalid or len(rows) != 360:
+        replay = clean / OUTCOME_ROOT_NAME
+        for name, payload in sorted(_tree_bytes(output).items()):
+            if not name.startswith("derived/"):
+                _write(replay / name, payload)
+        integrity = {"approval": True, "inventory": False, "freeze": True, "cause": True, "replay": False, "reconstruction": True}
+        decision = analyze_outcomes(output, construct_integrity=integrity)
+        analyze_outcomes(replay, construct_integrity=integrity)
+        _assert_trees_equal(output / "derived", replay / "derived")
+        return {"matched": True, "episode_dispositions": len(rows), "scientific_result": decision["scientific_result"], "invalid_dispositions": sum(row.get("disposition") in {"INVALID", "INTERRUPTED"} for row in rows)}
     replay = clean / OUTCOME_ROOT_NAME
     replay.parent.mkdir(parents=True)
     run_outcomes(
@@ -303,5 +380,5 @@ def reconstruct_outcomes(
 
 __all__ = [
     "APPROVAL_DECISION", "OUTCOME_ROOT_NAME", "OutcomeAuthorizationError", "dry_run_outcomes", "outcome_specs",
-    "reconstruct_outcomes", "run_outcomes", "verify_outcome_approval",
+    "reconstruct_outcomes", "run_outcomes", "seal_invalid_outcomes", "verify_outcome_approval",
 ]

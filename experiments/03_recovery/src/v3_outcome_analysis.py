@@ -8,7 +8,7 @@ from typing import Mapping, Sequence
 
 import numpy as np
 
-from .v3_contracts import PRIMARY_CONTROLLER_ID, canonical_bytes, sha256_bytes
+from .v3_contracts import Architecture, OUTCOME_SEEDS, PRIMARY_CONTROLLER_ID, SCENARIO_IDS, SENSITIVITY_CONTROLLER_ID, canonical_bytes, sha256_bytes
 from .v3_evidence import _csv, _diagnostic_png, _diagnostic_svg, _inventory, _write
 
 
@@ -19,6 +19,77 @@ DOMAINS = {
     "MOTION": ("motion-target-shift", "motion-path-infeasible"),
     "SEMANTIC": ("semantic-object-unavailable", "semantic-restriction-change"),
 }
+REALIZATION_KEYS = {
+    "episode_id", "scenario_id", "stage", "seed", "q0", "target_a_xy", "target_b_xy",
+    "injection_tick", "impulse_nm", "impulse_ticks", "dropout_ticks", "target_shift_xy",
+    "obstacle_xy", "obstacle_radius_m", "damping_multiplier", "semantic_delay_ticks", "parameter_sha256",
+}
+
+
+def _domain(scenario: str) -> str:
+    return next((domain for domain, scenarios in DOMAINS.items() if scenario in scenarios), "ANCHOR")
+
+
+def expected_outcome_matrix() -> dict[str, dict[str, object]]:
+    result: dict[str, dict[str, object]] = {}
+    for architecture in Architecture:
+        for scenario in SCENARIO_IDS:
+            for seed in OUTCOME_SEEDS:
+                episode_id = f"outcome-P6-{architecture.value}-{scenario}-{seed}"
+                result[episode_id] = {
+                    "episode_id": episode_id, "architecture": architecture.value, "scenario_id": scenario,
+                    "template_id": scenario, "domain": _domain(scenario), "seed": seed,
+                    "controller_id": PRIMARY_CONTROLLER_ID, "matrix_role": "PRIMARY",
+                }
+    for scenario in SCENARIO_IDS:
+        for seed in OUTCOME_SEEDS[:5]:
+            episode_id = f"outcome-P4-R3-{scenario}-{seed}"
+            result[episode_id] = {
+                "episode_id": episode_id, "architecture": "R3", "scenario_id": scenario,
+                "template_id": scenario, "domain": _domain(scenario), "seed": seed,
+                "controller_id": SENSITIVITY_CONTROLLER_ID, "matrix_role": "SENSITIVITY",
+            }
+    if len(result) != 360:
+        raise RuntimeError("frozen outcome identity construction failed")
+    return result
+
+
+def matrix_identity_audit(rows: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    expected = expected_outcome_matrix()
+    seen: set[str] = set()
+    errors: list[dict[str, object]] = []
+    approval_hashes: set[str] = set()
+    for index, row in enumerate(rows):
+        episode_id = str(row.get("episode_id", ""))
+        if episode_id in seen:
+            errors.append({"index": index, "episode_id": episode_id, "error": "DUPLICATE"})
+        seen.add(episode_id)
+        identity = expected.get(episode_id)
+        if identity is None:
+            errors.append({"index": index, "episode_id": episode_id, "error": "EXTRA_OR_SUBSTITUTED_ID"})
+            continue
+        mismatched = [key for key, value in identity.items() if row.get(key) != value]
+        if mismatched:
+            errors.append({"index": index, "episode_id": episode_id, "error": "FIELD_SUBSTITUTION", "fields": mismatched})
+        precheck_input = row.get("precheck_input")
+        receipt = row.get("precheck_receipt")
+        if not isinstance(precheck_input, Mapping) or set(precheck_input) != REALIZATION_KEYS:
+            errors.append({"index": index, "episode_id": episode_id, "error": "REALIZATION_SCHEMA"})
+        elif any((precheck_input.get("episode_id") != episode_id, precheck_input.get("scenario_id") != identity["scenario_id"], precheck_input.get("seed") != identity["seed"], precheck_input.get("stage") != "OUTCOME")):
+            errors.append({"index": index, "episode_id": episode_id, "error": "REALIZATION_IDENTITY"})
+        if not isinstance(receipt, Mapping) or not receipt.get("architecture_independent") or receipt.get("realization_sha256") != (precheck_input or {}).get("parameter_sha256"):
+            errors.append({"index": index, "episode_id": episode_id, "error": "PRECHECK_BINDING"})
+        approval = str(row.get("approval_report_sha256", ""))
+        if len(approval) != 64:
+            errors.append({"index": index, "episode_id": episode_id, "error": "APPROVAL_BINDING"})
+        approval_hashes.add(approval)
+    missing = sorted(set(expected) - seen)
+    if missing:
+        errors.append({"error": "MISSING", "count": len(missing), "first": missing[:3]})
+    if len(approval_hashes) != 1:
+        errors.append({"error": "APPROVAL_SUBSTITUTION", "count": len(approval_hashes)})
+    passed = not errors and len(rows) == 360
+    return {"passed": passed, "expected_count": 360, "actual_count": len(rows), "paired_count": len(paired_rows(rows)) if passed else 0, "errors": errors}
 
 
 def _success(row: Mapping[str, object]) -> int:
@@ -46,30 +117,72 @@ def paired_rows(rows: Sequence[Mapping[str, object]]) -> list[dict[str, object]]
 
 def realization_bootstrap(pairs: Sequence[Mapping[str, object]]) -> dict[str, object]:
     selected = [row for row in pairs if row["scenario_id"] in DOMAINS["MOTION"] + DOMAINS["SEMANTIC"]]
-    values = np.asarray([int(row["r3_success"]) - int(row["r0_success"]) for row in selected], dtype=np.float64)
+    seeds = sorted({int(row["seed"]) for row in selected})
+    templates = sorted({str(row["scenario_id"]) for row in selected})
+    clusters = [{
+        "seed": seed,
+        "rows": [row for row in selected if int(row["seed"]) == seed],
+    } for seed in seeds]
+    if len(clusters) != 10 or any(len(cluster["rows"]) != 4 for cluster in clusters):
+        raise ValueError("realization bootstrap requires 10 seed clusters carrying four template rows")
+    cluster_values = np.asarray([
+        np.mean([int(row["r3_success"]) - int(row["r0_success"]) for row in cluster["rows"]])
+        for cluster in clusters
+    ], dtype=np.float64)
     rng = np.random.Generator(np.random.PCG64(BOOTSTRAP_SEED))
-    indices = rng.integers(0, len(values), size=(BOOTSTRAP_DRAWS, len(values))) if len(values) else np.zeros((BOOTSTRAP_DRAWS, 0), dtype=np.int64)
-    draws = np.zeros(BOOTSTRAP_DRAWS) if not len(values) else np.mean(values[indices], axis=1)
-    template_means = {
-        scenario: float(np.mean([int(row["r3_success"]) - int(row["r0_success"]) for row in selected if row["scenario_id"] == scenario]))
-        for scenario in sorted({str(row["scenario_id"]) for row in selected})
-    }
+    indices = rng.integers(0, len(clusters), size=(BOOTSTRAP_DRAWS, len(clusters)))
+    draws = np.mean(cluster_values[indices], axis=1)
+    template_values = np.asarray([
+        np.mean([int(row["r3_success"]) - int(row["r0_success"]) for row in selected if row["scenario_id"] == scenario])
+        for scenario in templates
+    ], dtype=np.float64)
+    template_rng = np.random.Generator(np.random.PCG64(BOOTSTRAP_SEED + 1))
+    template_indices = template_rng.integers(0, len(templates), size=(BOOTSTRAP_DRAWS, len(templates)))
+    template_draws = np.mean(template_values[template_indices], axis=1)
     return {
         "schema_version": 1,
         "draw_seed": BOOTSTRAP_SEED,
         "draw_count": BOOTSTRAP_DRAWS,
+        "effective_n": 10,
+        "effective_n_unit": "seed_realization_clusters",
         "effective_n_realizations_per_template": 10,
         "templates_per_domain": 2,
         "input_sha256": sha256_bytes(canonical_bytes(selected)),
-        "estimate": float(np.mean(values)) if len(values) else 0.0,
+        "cluster_inputs": clusters,
+        "cluster_indices": indices.tolist(),
+        "estimate": float(np.mean(cluster_values)),
         "percentile_2_5": float(np.quantile(draws, 0.025)),
         "percentile_97_5": float(np.quantile(draws, 0.975)),
         "draws": draws.tolist(),
-        "template_cluster_sensitivity": template_means,
+        "template_cluster_sensitivity": {
+            "draw_seed": BOOTSTRAP_SEED + 1,
+            "cluster_unit": "template_with_all_10_realizations",
+            "templates": templates,
+            "cluster_indices": template_indices.tolist(),
+            "draws": template_draws.tolist(),
+            "estimate": float(np.mean(template_values)),
+            "percentile_2_5": float(np.quantile(template_draws, 0.025)),
+            "percentile_97_5": float(np.quantile(template_draws, 0.975)),
+        },
     }
 
 
 def evaluate_outcome_gates(rows: Sequence[Mapping[str, object]], *, construct_integrity: Mapping[str, bool]) -> dict[str, object]:
+    matrix = matrix_identity_audit(rows)
+    valid_dispositions = all(
+        row.get("disposition") in {"TERMINAL", "NOT_RUN"}
+        and isinstance(row.get("precheck_input"), Mapping)
+        and isinstance(row.get("precheck_receipt"), Mapping)
+        and bool(row["precheck_receipt"].get("architecture_independent"))
+        for row in rows
+    )
+    if not matrix["passed"] or matrix["paired_count"] != 80 or not valid_dispositions or not all(construct_integrity.values()):
+        return {
+            "scientific_result": "INVALID_EXPERIMENT",
+            "gates": [{"gate": index, "passed": False, "status": "NOT_RUN_INVALID_CONSTRUCT" if index < 8 else "FAILED"} for index in range(1, 9)],
+            "paired_row_count": 0, "matrix_identity": matrix, "fixed_best_comparator": None,
+            "comparator_totals": {}, "counterfactual_events": {"matched": 0, "total": 0},
+        }
     pairs = paired_rows(rows)
     primary = [row for row in rows if row["controller_id"] == PRIMARY_CONTROLLER_ID]
     r3 = [row for row in primary if row["architecture"] == "R3"]
@@ -80,34 +193,36 @@ def evaluate_outcome_gates(rows: Sequence[Mapping[str, object]], *, construct_in
     template_diffs = {scenario: sum(int(row["r3_success"]) - int(row["r0_success"]) for row in ms if row["scenario_id"] == scenario) for scenario in DOMAINS["MOTION"] + DOMAINS["SEMANTIC"]}
     g2 = sum(int(row["r3_success"]) - int(row["r0_success"]) for row in ms) > 0 and all(value >= 0 for value in template_diffs.values())
     semantic = [row for row in pairs if row["scenario_id"] in DOMAINS["SEMANTIC"]]
-    g3 = all(int(row["r3_success"]) >= int(row["r1_success"]) for row in semantic) and sum(int(row["r3_semantic"]) for row in semantic) < sum(int(row["r1_semantic"]) for row in semantic)
+    g3 = sum(int(row["r3_success"]) - int(row["r1_success"]) for row in semantic) >= 0 and sum(int(row["r3_semantic"]) for row in semantic) < sum(int(row["r1_semantic"]) for row in semantic)
     control = [row for row in pairs if row["scenario_id"] in DOMAINS["CONTROL"]]
-    g4 = all(int(row["r3_success"]) >= max(int(row["r1_success"]), int(row["r2_success"])) for row in control) and sum(int(row["r3_semantic"]) for row in control) < sum(int(row["r1_semantic"]) for row in control) and sum(int(row["r3_motion"]) for row in control) < sum(int(row["r2_motion"]) for row in control)
+    g4 = all(sum(int(row["r3_success"]) - int(row[f"{arch.lower()}_success"]) for row in control) >= 0 for arch in ("R0", "R1", "R2")) and sum(int(row["r3_semantic"]) for row in control) < sum(int(row["r1_semantic"]) for row in control) and sum(int(row["r3_motion"]) for row in control) < sum(int(row["r2_motion"]) for row in control)
     counterfactual = [row for row in r3 if row.get("disposition") == "TERMINAL"]
-    g5 = bool(counterfactual) and sum(bool(row.get("lowest_sufficient_correct")) for row in counterfactual) / len(counterfactual) >= 0.8 and all(sum(int(row[key]) for row in r3) == 0 for key in ("loop", "reset"))
-    g6 = all(sum(int(row["r3_success"]) - max(int(row["r0_success"]), int(row["r1_success"]), int(row["r2_success"])) for row in pairs if row["scenario_id"] in scenarios) >= 0 for scenarios in DOMAINS.values())
+    event_total = sum(int(row.get("counterfactual_event_audit", {}).get("event_count", 0)) for row in counterfactual)
+    event_matched = sum(int(row.get("counterfactual_event_audit", {}).get("matched_event_count", 0)) for row in counterfactual)
+    g5 = event_total > 0 and event_matched / event_total >= 0.8 and all(sum(int(row[key]) for row in r3) == 0 for key in ("loop", "reset"))
+    comparator_totals = {arch: sum(int(row[f"{arch.lower()}_success"]) for row in pairs if row["scenario_id"] in sum(DOMAINS.values(), ())) for arch in ("R0", "R1", "R2")}
+    fixed_best = max(("R0", "R1", "R2"), key=lambda arch: (comparator_totals[arch], -int(arch[1])))
+    g6 = all(sum(int(row["r3_success"]) - int(row[f"{fixed_best.lower()}_success"]) for row in pairs if row["scenario_id"] in scenarios) >= 0 for scenarios in DOMAINS.values())
     disturbed = [row for row in r3 if row["scenario_id"] not in ("anchor-nominal", "anchor-slow-policy")]
     diversity = all(len({str(row.get("physical_trace_sha256")) for row in disturbed if row["scenario_id"] == scenario}) >= 8 and len({str(row.get("parameter_use_sha256")) for row in disturbed if row["scenario_id"] == scenario}) >= 8 for scenario in sum(DOMAINS.values(), ()))
     g7 = diversity
-    valid_dispositions = all(
-        row.get("disposition") in {"TERMINAL", "NOT_RUN"}
-        and isinstance(row.get("precheck_input"), Mapping)
-        and isinstance(row.get("precheck_receipt"), Mapping)
-        and bool(row["precheck_receipt"].get("architecture_independent"))
-        for row in rows
-    )
-    g8 = len(rows) == 360 and len({str(row["episode_id"]) for row in rows}) == 360 and valid_dispositions and all(construct_integrity.values())
+    g8 = True
     gates = [g1, g2, g3, g4, g5, g6, g7, g8]
     result = "SUPPORTS_CONSTRUCT_VALID_LAYER_MATCHED_HIERARCHY" if all(gates) else "INVALID_EXPERIMENT" if not g8 else "DOES_NOT_SUPPORT_CONSTRUCT_VALID_LAYER_MATCHED_HIERARCHY"
-    return {"scientific_result": result, "gates": [{"gate": index + 1, "passed": value} for index, value in enumerate(gates)], "paired_row_count": len(pairs)}
+    return {"scientific_result": result, "gates": [{"gate": index + 1, "passed": value} for index, value in enumerate(gates)], "paired_row_count": len(pairs), "matrix_identity": matrix, "fixed_best_comparator": fixed_best, "comparator_totals": comparator_totals, "counterfactual_events": {"matched": event_matched, "total": event_total}}
 
 
 def outcome_payloads(rows: Sequence[Mapping[str, object]], *, construct_integrity: Mapping[str, bool]) -> dict[str, bytes]:
-    pairs = paired_rows(rows)
-    bootstrap = realization_bootstrap(pairs)
     decision = evaluate_outcome_gates(rows, construct_integrity=construct_integrity)
+    construct_valid = bool(decision["gates"][7]["passed"])
+    pairs = paired_rows(rows) if construct_valid else []
+    bootstrap = realization_bootstrap(pairs) if construct_valid else {
+        "schema_version": 1, "status": "NOT_RUN_INVALID_CONSTRUCT", "draw_count": 0,
+        "effective_n": 0, "cluster_inputs": [], "cluster_indices": [], "draws": [],
+        "template_cluster_sensitivity": {"status": "NOT_RUN_INVALID_CONSTRUCT", "draws": []},
+    }
     aggregate = []
-    for architecture in ("R0", "R1", "R2", "R3"):
+    for architecture in (("R0", "R1", "R2", "R3") if construct_valid else ()):
         for domain, scenarios in DOMAINS.items():
             selected = [row for row in rows if row["controller_id"] == PRIMARY_CONTROLLER_ID and row["architecture"] == architecture and row["scenario_id"] in scenarios]
             aggregate.append({"architecture": architecture, "domain": domain, "successes": sum(_success(row) for row in selected), "episodes": len(selected)})

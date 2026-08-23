@@ -233,11 +233,7 @@ def precheck(spec: V3EpisodeSpec | PrecheckControlSpec) -> PrecheckReceipt:
         obstacle_xy = realization.obstacle_xy
         radius = realization.obstacle_radius_m
         input_sha256 = realization.parameter_sha256
-        input_record = {
-            "episode_id": spec.episode_id, "scenario_id": spec.scenario_id, "seed": spec.seed, "stage": spec.stage.value,
-            "q0": q0_tuple, "target_a_xy": target_a_xy, "target_b_xy": target_b_xy,
-            "obstacle_xy": obstacle_xy, "obstacle_radius_m": radius,
-        }
+        input_record = {"episode_id": spec.episode_id, **json.loads(canonical_bytes(realization))}
     elif isinstance(spec, PrecheckControlSpec):
         q0_tuple = spec.q0
         target_a_xy = spec.target_a_xy
