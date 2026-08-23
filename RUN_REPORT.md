@@ -6,7 +6,7 @@ The bounded Experiment 00 source-compatibility gate passed locally. No comparati
 
 ## Environment
 
-- Implementation/evidence-base Git SHA: `461647b03849660b91043163e0d032a483a9d960`
+- Implementation/evidence-base Git SHA: `709bb90f13e5c3729748a0ce95fe6e82fa370ee0`
 - Workspace: repository root
 - Branch: `integration/autonomous-run`
 - Platform contract: `darwin-arm64`
@@ -15,7 +15,7 @@ The bounded Experiment 00 source-compatibility gate passed locally. No comparati
 
 ## Commands
 
-Exact report command: `python scripts/write_p3_report.py --evidence-base-sha 461647b03849660b91043163e0d032a483a9d960`. The reporter executed only fixed local Git identity/blob reads; it ran no source operation, network request, or installation.
+Exact report command: `python scripts/write_p3_report.py --evidence-base-sha 709bb90f13e5c3729748a0ce95fe6e82fa370ee0`. The reporter executed only fixed local Git identity/blob reads; it ran no source operation, network request, or installation.
 
 ## Tests
 
@@ -30,7 +30,7 @@ P3 evidence validation: PASS. The report deterministically reconstructed the com
 - `experiments/00_source_audit/INTERFACE_FINDINGS.md`: Git blob `e778bc3ac774f2f3a547d21444868e3eeaa761e2`, SHA-256 `f62b70c8545140c0a0622f376a607e62d39cbea9f2483a159cf16c1da42d37c1`
 - `experiments/00_source_audit/MANIFEST_AMENDMENT.yaml`: Git blob `100c4268bfd55a89d4b75de1fd46707b315a7ee3`, SHA-256 `58a18736dbdee83081228a8ce3cc44c537c3c5bbbb56e2b9fe75c692ec95a67e`
 - `experiments/00_source_audit/MANIFEST_AMENDMENT_R2.yaml`: Git blob `72c841dc9da3236fd93298fcc9fae1095895daa7`, SHA-256 `7d998f508d069e66b8742210700e3d09ac006626f3e9bf42650c79c46bd74c06`
-- `experiments/00_source_audit/MANIFEST_AMENDMENT_R3.yaml`: Git blob `4927679d6ffcb6d345c7a61afdd927dc5c4f189a`, SHA-256 `0e33fd2d4b94a08788bd0c0990343e69db0950355bd0de0fef2bd15293a7b06c`
+- `experiments/00_source_audit/MANIFEST_AMENDMENT_R3.yaml`: Git blob `00e018eda407806453e58d87b9fee77dd7ba0ace`, SHA-256 `7b6462f77201262bc7d81083987551ca8c7323d8fbfdcce7c2fd9ec3640c9266`
 - `experiments/00_source_audit/RESULTS.md`: Git blob `943522ace97642be115e19e7cb1028953508e2c1`, SHA-256 `843a621453835d5d7826ec44f47172c10a688329c4e1374433196f1b72cf02a6`
 - `experiments/00_source_audit/configs/lerobot-contained-symlinks-v1.json`: Git blob `04f230d94c5d6b5cedac8159833420c443b5d5a7`, SHA-256 `4ce69394bc36198ec39372b250804f341453a96b1778377fc2a2c8a23292b02f`
 - `experiments/00_source_audit/configs/operation-manifest.yaml`: Git blob `36e74b023dad8ef66ac81b146bbfdbb1247c1586`, SHA-256 `00bbb8f33d5000302d76994a57933d3f29ed590f18df559b739e616b9d94ec26`

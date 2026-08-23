@@ -47,13 +47,3 @@ phase_records:
     report_sha256: 1756bb3d1dc43d2900fd62e9d991a2510a8f2c84d864ddffafbf1ddbf1c964ad
     bound_evidence_git_sha: 8a88575f3dcee186a620bfdd151d1adc08504623
     artifact_ledger_sha256: 8bb236b2b878b350df4f539ef91a0b696d3cc647e383d8afcdef7e1b8df40898
-  p3:
-    phase_id: p3
-    lifecycle_state: complete
-    implementation_evidence_git_sha: 461647b03849660b91043163e0d032a483a9d960
-    report_commit_git_sha: 85cd5c35f270dde6ad2a8df9d06b8a5fe6b99bb8
-    report_path: RUN_REPORT.md
-    report_git_blob_id: 8c8b231960b88fa145e22f20ec3bd2c40bd602bf
-    report_sha256: 50abbd2ffc84ef8f26a64cf632d0d47d9073df928eca5d712183744c2fe7bd0a
-    bound_evidence_git_sha: 461647b03849660b91043163e0d032a483a9d960
-    artifact_ledger_sha256: 194608571329e0bd2021384db41dd1f4af9f915f708bd36ae9ede6947dc529f1

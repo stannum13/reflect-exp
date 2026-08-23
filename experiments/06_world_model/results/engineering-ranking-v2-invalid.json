@@ -1,1 +1,0 @@
-{"authority":"NONE","evidence_root":"experiments/06_world_model/results/engineering-ranking-v2","invalid_reason_codes":["CANDIDATE_HASH_INCLUDED_LABEL_NOT_ACTION_ONLY","PARTIAL_MUJOCO_ANCHOR_STATE","RECONSTRUCTION_DID_NOT_REPLAY_PHYSICS"],"manifest_sha256":"6eaa6ab43980619ceb50211dfd9543f0fe98f17385519a877afa33e55067bb06","schema_version":1,"status":"INVALID_PRE_FIX"}

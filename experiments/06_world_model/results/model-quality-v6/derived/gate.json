@@ -1,1 +1,0 @@
-{"authority":"ENGINEERING_NONCONFIRMATORY","checks":{"beats_all_in_four_of_five_strata":false,"beats_all_overall":false,"latency":false,"nontrivial_coverage":true},"comparators":["W1V2","W3R","W0","DIRECT"],"passed":false,"residual_use_fraction":0.5625,"selected_selector":"W5","strata_beaten":0,"strata_observed":["ID","MASS_OOD","FRICTION_OOD","GEOMETRY_OOD","OBSTACLE_OOD"]}
