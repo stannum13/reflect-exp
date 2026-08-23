@@ -1,0 +1,1016 @@
+registry_sha256: eb72b501a177ee9dcf93a77444536e07dd532d9ac92950c61a063b8a8d1a4a3d
+generated_at: '2026-08-23T02:09:11Z'
+entries:
+- name: mujoco
+  url: https://github.com/google-deepmind/mujoco
+  default_branch: main
+  commit_sha: a7255075b003506ff5f34b512d88e02df12a73c6
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/google-deepmind/mujoco/git/commits/a7255075b003506ff5f34b512d88e02df12a73c6
+    ls_remote: git ls-remote --symref https://github.com/google-deepmind/mujoco HEAD
+    tree: https://api.github.com/repos/google-deepmind/mujoco/git/trees/41ddce91c4e4c6097a76c84d1828e615f2b6c674?recursive=1
+  license_spdx: Apache-2.0
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/google-deepmind/mujoco/license?ref=a7255075b003506ff5f34b512d88e02df12a73c6
+  path_statuses:
+    model: EXISTS
+    python: EXISTS
+    sample: EXISTS
+    test: EXISTS
+  path_evidence_urls:
+    model: https://api.github.com/repos/google-deepmind/mujoco/git/trees/41ddce91c4e4c6097a76c84d1828e615f2b6c674?recursive=1
+    python: https://api.github.com/repos/google-deepmind/mujoco/git/trees/41ddce91c4e4c6097a76c84d1828e615f2b6c674?recursive=1
+    sample: https://api.github.com/repos/google-deepmind/mujoco/git/trees/41ddce91c4e4c6097a76c84d1828e615f2b6c674?recursive=1
+    test: https://api.github.com/repos/google-deepmind/mujoco/git/trees/41ddce91c4e4c6097a76c84d1828e615f2b6c674?recursive=1
+  metadata_status: RESOLVED
+- name: mujoco_mpc
+  url: https://github.com/google-deepmind/mujoco_mpc
+  default_branch: main
+  commit_sha: ff572a21e7c2bf9fda62e1862a758da7e9a8719b
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/google-deepmind/mujoco_mpc/git/commits/ff572a21e7c2bf9fda62e1862a758da7e9a8719b
+    ls_remote: git ls-remote --symref https://github.com/google-deepmind/mujoco_mpc
+      HEAD
+    tree: https://api.github.com/repos/google-deepmind/mujoco_mpc/git/trees/906213009bc8bd5524f78f9093e31d343f7f62fc?recursive=1
+  license_spdx: Apache-2.0
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/google-deepmind/mujoco_mpc/license?ref=ff572a21e7c2bf9fda62e1862a758da7e9a8719b
+  path_statuses:
+    mjpc/planners: EXISTS
+    mjpc/tasks: EXISTS
+    python/mujoco_mpc: EXISTS
+    python/mujoco_mpc/demos/predictive_sampling: EXISTS
+  path_evidence_urls:
+    mjpc/planners: https://api.github.com/repos/google-deepmind/mujoco_mpc/git/trees/906213009bc8bd5524f78f9093e31d343f7f62fc?recursive=1
+    mjpc/tasks: https://api.github.com/repos/google-deepmind/mujoco_mpc/git/trees/906213009bc8bd5524f78f9093e31d343f7f62fc?recursive=1
+    python/mujoco_mpc: https://api.github.com/repos/google-deepmind/mujoco_mpc/git/trees/906213009bc8bd5524f78f9093e31d343f7f62fc?recursive=1
+    python/mujoco_mpc/demos/predictive_sampling: https://api.github.com/repos/google-deepmind/mujoco_mpc/git/trees/906213009bc8bd5524f78f9093e31d343f7f62fc?recursive=1
+  metadata_status: RESOLVED
+- name: mujoco_menagerie
+  url: https://github.com/google-deepmind/mujoco_menagerie
+  default_branch: main
+  commit_sha: da76818e269b82289eba39808e2fb91d679d6994
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/google-deepmind/mujoco_menagerie/git/commits/da76818e269b82289eba39808e2fb91d679d6994
+    ls_remote: git ls-remote --symref https://github.com/google-deepmind/mujoco_menagerie
+      HEAD
+    tree: https://api.github.com/repos/google-deepmind/mujoco_menagerie/git/trees/91ec6a76b84ba69e6850ecca9445ce6286039537?recursive=1
+  license_spdx: null
+  license_status: UNKNOWN
+  license_evidence_url: https://api.github.com/repos/google-deepmind/mujoco_menagerie/license?ref=da76818e269b82289eba39808e2fb91d679d6994
+  path_statuses:
+    README.md: EXISTS
+    franka_emika_panda: EXISTS
+    panda: MISSING
+    universal_robots_ur5e: EXISTS
+  path_evidence_urls:
+    README.md: https://api.github.com/repos/google-deepmind/mujoco_menagerie/git/trees/91ec6a76b84ba69e6850ecca9445ce6286039537?recursive=1
+    franka_emika_panda: https://api.github.com/repos/google-deepmind/mujoco_menagerie/git/trees/91ec6a76b84ba69e6850ecca9445ce6286039537?recursive=1
+    panda: https://api.github.com/repos/google-deepmind/mujoco_menagerie/git/trees/91ec6a76b84ba69e6850ecca9445ce6286039537?recursive=1
+    universal_robots_ur5e: https://api.github.com/repos/google-deepmind/mujoco_menagerie/git/trees/91ec6a76b84ba69e6850ecca9445ce6286039537?recursive=1
+  metadata_status: RESOLVED
+- name: mink
+  url: https://github.com/kevinzakka/mink
+  default_branch: main
+  commit_sha: ab45779fea46933832dee1c240f94103633347a1
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/kevinzakka/mink/git/commits/ab45779fea46933832dee1c240f94103633347a1
+    ls_remote: git ls-remote --symref https://github.com/kevinzakka/mink HEAD
+    tree: https://api.github.com/repos/kevinzakka/mink/git/trees/fad7ff08c31a795d807d0bb964a97b2eb59348cd?recursive=1
+  license_spdx: Apache-2.0
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/kevinzakka/mink/license?ref=ab45779fea46933832dee1c240f94103633347a1
+  path_statuses:
+    examples: EXISTS
+    mink: MISSING
+    tests: EXISTS
+  path_evidence_urls:
+    examples: https://api.github.com/repos/kevinzakka/mink/git/trees/fad7ff08c31a795d807d0bb964a97b2eb59348cd?recursive=1
+    mink: https://api.github.com/repos/kevinzakka/mink/git/trees/fad7ff08c31a795d807d0bb964a97b2eb59348cd?recursive=1
+    tests: https://api.github.com/repos/kevinzakka/mink/git/trees/fad7ff08c31a795d807d0bb964a97b2eb59348cd?recursive=1
+  metadata_status: RESOLVED
+- name: mjctrl
+  url: https://github.com/kevinzakka/mjctrl
+  default_branch: main
+  commit_sha: f1c82c257248e2e52b0e6c1beaf23c6a2026e4f2
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/kevinzakka/mjctrl/git/commits/f1c82c257248e2e52b0e6c1beaf23c6a2026e4f2
+    ls_remote: git ls-remote --symref https://github.com/kevinzakka/mjctrl HEAD
+    tree: https://api.github.com/repos/kevinzakka/mjctrl/git/trees/ad1d6db94f19575bfee28f39105c1b1da07d542d?recursive=1
+  license_spdx: Apache-2.0
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/kevinzakka/mjctrl/license?ref=f1c82c257248e2e52b0e6c1beaf23c6a2026e4f2
+  path_statuses:
+    '*.py': EXISTS
+    README.md: EXISTS
+  path_evidence_urls:
+    '*.py': https://api.github.com/repos/kevinzakka/mjctrl/git/trees/ad1d6db94f19575bfee28f39105c1b1da07d542d?recursive=1
+    README.md: https://api.github.com/repos/kevinzakka/mjctrl/git/trees/ad1d6db94f19575bfee28f39105c1b1da07d542d?recursive=1
+  metadata_status: RESOLVED
+- name: hydrax
+  url: https://github.com/vincekurtz/hydrax
+  default_branch: main
+  commit_sha: bd53d43d414e19557d38ee6c72613bf2e39fe834
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/vincekurtz/hydrax/git/commits/bd53d43d414e19557d38ee6c72613bf2e39fe834
+    ls_remote: git ls-remote --symref https://github.com/vincekurtz/hydrax HEAD
+    tree: https://api.github.com/repos/vincekurtz/hydrax/git/trees/5ab56fc57663943c30d5fd8fc1a27effa0a3ef0d?recursive=1
+  license_spdx: MIT
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/vincekurtz/hydrax/license?ref=bd53d43d414e19557d38ee6c72613bf2e39fe834
+  path_statuses:
+    examples: EXISTS
+    hydrax: EXISTS
+    tests: EXISTS
+  path_evidence_urls:
+    examples: https://api.github.com/repos/vincekurtz/hydrax/git/trees/5ab56fc57663943c30d5fd8fc1a27effa0a3ef0d?recursive=1
+    hydrax: https://api.github.com/repos/vincekurtz/hydrax/git/trees/5ab56fc57663943c30d5fd8fc1a27effa0a3ef0d?recursive=1
+    tests: https://api.github.com/repos/vincekurtz/hydrax/git/trees/5ab56fc57663943c30d5fd8fc1a27effa0a3ef0d?recursive=1
+  metadata_status: RESOLVED
+- name: curobo
+  url: https://github.com/NVlabs/curobo
+  default_branch: main
+  commit_sha: 8e734f3ced1df898990bcd92de40abce475907db
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/NVlabs/curobo/git/commits/8e734f3ced1df898990bcd92de40abce475907db
+    ls_remote: git ls-remote --symref https://github.com/NVlabs/curobo HEAD
+    tree: https://api.github.com/repos/NVlabs/curobo/git/trees/e1859ac2b4c780060f6c7ce7cec31cccf563eb00?recursive=1
+  license_spdx: null
+  license_status: UNKNOWN
+  license_evidence_url: https://api.github.com/repos/NVlabs/curobo/license?ref=8e734f3ced1df898990bcd92de40abce475907db
+  path_statuses:
+    docs: EXISTS
+    examples: MISSING
+    src/curobo: MISSING
+  path_evidence_urls:
+    docs: https://api.github.com/repos/NVlabs/curobo/git/trees/e1859ac2b4c780060f6c7ce7cec31cccf563eb00?recursive=1
+    examples: https://api.github.com/repos/NVlabs/curobo/git/trees/e1859ac2b4c780060f6c7ce7cec31cccf563eb00?recursive=1
+    src/curobo: https://api.github.com/repos/NVlabs/curobo/git/trees/e1859ac2b4c780060f6c7ce7cec31cccf563eb00?recursive=1
+  metadata_status: RESOLVED
+- name: moveit2
+  url: https://github.com/moveit/moveit2
+  default_branch: main
+  commit_sha: 8fcb5d2327767af3c764b1348a69a9b74c5efd18
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/moveit/moveit2/git/commits/8fcb5d2327767af3c764b1348a69a9b74c5efd18
+    ls_remote: git ls-remote --symref https://github.com/moveit/moveit2 HEAD
+    tree: https://api.github.com/repos/moveit/moveit2/git/trees/bb1c39a73d313b373d4b90b8ed2dfcf05988682e?recursive=1
+  license_spdx: BSD-3-Clause
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/moveit/moveit2/license?ref=8fcb5d2327767af3c764b1348a69a9b74c5efd18
+  path_statuses:
+    moveit_core: EXISTS
+    moveit_planners: EXISTS
+    moveit_ros/moveit_servo: EXISTS
+  path_evidence_urls:
+    moveit_core: https://api.github.com/repos/moveit/moveit2/git/trees/bb1c39a73d313b373d4b90b8ed2dfcf05988682e?recursive=1
+    moveit_planners: https://api.github.com/repos/moveit/moveit2/git/trees/bb1c39a73d313b373d4b90b8ed2dfcf05988682e?recursive=1
+    moveit_ros/moveit_servo: https://api.github.com/repos/moveit/moveit2/git/trees/bb1c39a73d313b373d4b90b8ed2dfcf05988682e?recursive=1
+  metadata_status: RESOLVED
+- name: ros2_control
+  url: https://github.com/ros-controls/ros2_control
+  default_branch: master
+  commit_sha: 45dc561a2bfedc562119e4c5ce0542135bd0267b
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/ros-controls/ros2_control/git/commits/45dc561a2bfedc562119e4c5ce0542135bd0267b
+    ls_remote: git ls-remote --symref https://github.com/ros-controls/ros2_control
+      HEAD
+    tree: https://api.github.com/repos/ros-controls/ros2_control/git/trees/b1d7f0d57846786055def7450803e18f41e2f614?recursive=1
+  license_spdx: Apache-2.0
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/ros-controls/ros2_control/license?ref=45dc561a2bfedc562119e4c5ce0542135bd0267b
+  path_statuses:
+    controller_interface: EXISTS
+    controller_manager: EXISTS
+    hardware_interface: EXISTS
+  path_evidence_urls:
+    controller_interface: https://api.github.com/repos/ros-controls/ros2_control/git/trees/b1d7f0d57846786055def7450803e18f41e2f614?recursive=1
+    controller_manager: https://api.github.com/repos/ros-controls/ros2_control/git/trees/b1d7f0d57846786055def7450803e18f41e2f614?recursive=1
+    hardware_interface: https://api.github.com/repos/ros-controls/ros2_control/git/trees/b1d7f0d57846786055def7450803e18f41e2f614?recursive=1
+  metadata_status: RESOLVED
+- name: ros2_controllers
+  url: https://github.com/ros-controls/ros2_controllers
+  default_branch: master
+  commit_sha: 94e74de35f9d04f313aca8f29df66c3a76004aa7
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/ros-controls/ros2_controllers/git/commits/94e74de35f9d04f313aca8f29df66c3a76004aa7
+    ls_remote: git ls-remote --symref https://github.com/ros-controls/ros2_controllers
+      HEAD
+    tree: https://api.github.com/repos/ros-controls/ros2_controllers/git/trees/d4ed899a352ca76615710ccdbddc54089aa4f3b1?recursive=1
+  license_spdx: Apache-2.0
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/ros-controls/ros2_controllers/license?ref=94e74de35f9d04f313aca8f29df66c3a76004aa7
+  path_statuses:
+    admittance_controller: EXISTS
+    joint_trajectory_controller: EXISTS
+    pid_controller: EXISTS
+  path_evidence_urls:
+    admittance_controller: https://api.github.com/repos/ros-controls/ros2_controllers/git/trees/d4ed899a352ca76615710ccdbddc54089aa4f3b1?recursive=1
+    joint_trajectory_controller: https://api.github.com/repos/ros-controls/ros2_controllers/git/trees/d4ed899a352ca76615710ccdbddc54089aa4f3b1?recursive=1
+    pid_controller: https://api.github.com/repos/ros-controls/ros2_controllers/git/trees/d4ed899a352ca76615710ccdbddc54089aa4f3b1?recursive=1
+  metadata_status: RESOLVED
+- name: mujoco_ros2_control
+  url: https://github.com/moveit/mujoco_ros2_control
+  default_branch: main
+  commit_sha: c811dcca2039cf6a88af3077e3f3dbbbd9c37a66
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/moveit/mujoco_ros2_control/git/commits/c811dcca2039cf6a88af3077e3f3dbbbd9c37a66
+    ls_remote: git ls-remote --symref https://github.com/moveit/mujoco_ros2_control
+      HEAD
+    tree: https://api.github.com/repos/moveit/mujoco_ros2_control/git/trees/83f2db0f1d3655c56a51e1b48d34cfc7480c5cf4?recursive=1
+  license_spdx: MIT
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/moveit/mujoco_ros2_control/license?ref=c811dcca2039cf6a88af3077e3f3dbbbd9c37a66
+  path_statuses:
+    README.md: EXISTS
+    mujoco_ros2_control: EXISTS
+  path_evidence_urls:
+    README.md: https://api.github.com/repos/moveit/mujoco_ros2_control/git/trees/83f2db0f1d3655c56a51e1b48d34cfc7480c5cf4?recursive=1
+    mujoco_ros2_control: https://api.github.com/repos/moveit/mujoco_ros2_control/git/trees/83f2db0f1d3655c56a51e1b48d34cfc7480c5cf4?recursive=1
+  metadata_status: RESOLVED
+- name: act
+  url: https://github.com/tonyzhaozh/act
+  default_branch: main
+  commit_sha: 742c753c0d4a5d87076c8f69e5628c79a8cc5488
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/tonyzhaozh/act/git/commits/742c753c0d4a5d87076c8f69e5628c79a8cc5488
+    ls_remote: git ls-remote --symref https://github.com/tonyzhaozh/act HEAD
+    tree: https://api.github.com/repos/tonyzhaozh/act/git/trees/d86d0895394f11a7a6c09b6478804c540c6d334a?recursive=1
+  license_spdx: MIT
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/tonyzhaozh/act/license?ref=742c753c0d4a5d87076c8f69e5628c79a8cc5488
+  path_statuses:
+    detr: EXISTS
+    imitate_episodes.py: EXISTS
+    policy.py: EXISTS
+    sim_env.py: EXISTS
+  path_evidence_urls:
+    detr: https://api.github.com/repos/tonyzhaozh/act/git/trees/d86d0895394f11a7a6c09b6478804c540c6d334a?recursive=1
+    imitate_episodes.py: https://api.github.com/repos/tonyzhaozh/act/git/trees/d86d0895394f11a7a6c09b6478804c540c6d334a?recursive=1
+    policy.py: https://api.github.com/repos/tonyzhaozh/act/git/trees/d86d0895394f11a7a6c09b6478804c540c6d334a?recursive=1
+    sim_env.py: https://api.github.com/repos/tonyzhaozh/act/git/trees/d86d0895394f11a7a6c09b6478804c540c6d334a?recursive=1
+  metadata_status: RESOLVED
+- name: lerobot
+  url: https://github.com/huggingface/lerobot
+  default_branch: main
+  commit_sha: 7427f31801f944f5ec9ce53cda02862ce7d1638b
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/huggingface/lerobot/git/commits/7427f31801f944f5ec9ce53cda02862ce7d1638b
+    ls_remote: git ls-remote --symref https://github.com/huggingface/lerobot HEAD
+    tree: https://api.github.com/repos/huggingface/lerobot/git/trees/bc9686e9b1fcb89a4b3bef398655150675f14406?recursive=1
+  license_spdx: Apache-2.0
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/huggingface/lerobot/license?ref=7427f31801f944f5ec9ce53cda02862ce7d1638b
+  path_statuses:
+    docs/source/async.mdx: EXISTS
+    docs/source/inference.mdx: EXISTS
+    docs/source/rtc.mdx: EXISTS
+    src/lerobot/async_inference: EXISTS
+    src/lerobot/policies/act: EXISTS
+    src/lerobot/policies/rtc: EXISTS
+    src/lerobot/policies/smolvla: EXISTS
+  path_evidence_urls:
+    docs/source/async.mdx: https://api.github.com/repos/huggingface/lerobot/git/trees/bc9686e9b1fcb89a4b3bef398655150675f14406?recursive=1
+    docs/source/inference.mdx: https://api.github.com/repos/huggingface/lerobot/git/trees/bc9686e9b1fcb89a4b3bef398655150675f14406?recursive=1
+    docs/source/rtc.mdx: https://api.github.com/repos/huggingface/lerobot/git/trees/bc9686e9b1fcb89a4b3bef398655150675f14406?recursive=1
+    src/lerobot/async_inference: https://api.github.com/repos/huggingface/lerobot/git/trees/bc9686e9b1fcb89a4b3bef398655150675f14406?recursive=1
+    src/lerobot/policies/act: https://api.github.com/repos/huggingface/lerobot/git/trees/bc9686e9b1fcb89a4b3bef398655150675f14406?recursive=1
+    src/lerobot/policies/rtc: https://api.github.com/repos/huggingface/lerobot/git/trees/bc9686e9b1fcb89a4b3bef398655150675f14406?recursive=1
+    src/lerobot/policies/smolvla: https://api.github.com/repos/huggingface/lerobot/git/trees/bc9686e9b1fcb89a4b3bef398655150675f14406?recursive=1
+  metadata_status: RESOLVED
+- name: openpi
+  url: https://github.com/Physical-Intelligence/openpi
+  default_branch: main
+  commit_sha: 15a9616a00943ada6c20a0f158e3adb39df2ccac
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/Physical-Intelligence/openpi/git/commits/15a9616a00943ada6c20a0f158e3adb39df2ccac
+    ls_remote: git ls-remote --symref https://github.com/Physical-Intelligence/openpi
+      HEAD
+    tree: https://api.github.com/repos/Physical-Intelligence/openpi/git/trees/a7f18af2745255b5fa98c86d6031f858bf73d1be?recursive=1
+  license_spdx: null
+  license_status: UNKNOWN
+  license_evidence_url: https://api.github.com/repos/Physical-Intelligence/openpi/license?ref=15a9616a00943ada6c20a0f158e3adb39df2ccac
+  path_statuses:
+    examples: EXISTS
+    packages/openpi-client: EXISTS
+    packages/openpi-client/src/openpi_client/action_chunk_broker.py: EXISTS
+    scripts/serve_policy.py: EXISTS
+    src/openpi/policies: EXISTS
+  path_evidence_urls:
+    examples: https://api.github.com/repos/Physical-Intelligence/openpi/git/trees/a7f18af2745255b5fa98c86d6031f858bf73d1be?recursive=1
+    packages/openpi-client: https://api.github.com/repos/Physical-Intelligence/openpi/git/trees/a7f18af2745255b5fa98c86d6031f858bf73d1be?recursive=1
+    packages/openpi-client/src/openpi_client/action_chunk_broker.py: https://api.github.com/repos/Physical-Intelligence/openpi/git/trees/a7f18af2745255b5fa98c86d6031f858bf73d1be?recursive=1
+    scripts/serve_policy.py: https://api.github.com/repos/Physical-Intelligence/openpi/git/trees/a7f18af2745255b5fa98c86d6031f858bf73d1be?recursive=1
+    src/openpi/policies: https://api.github.com/repos/Physical-Intelligence/openpi/git/trees/a7f18af2745255b5fa98c86d6031f858bf73d1be?recursive=1
+  metadata_status: RESOLVED
+- name: diffusion_policy
+  url: https://github.com/real-stanford/diffusion_policy
+  default_branch: main
+  commit_sha: 5ba07ac6661db573af695b419a7947ecb704690f
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/real-stanford/diffusion_policy/git/commits/5ba07ac6661db573af695b419a7947ecb704690f
+    ls_remote: git ls-remote --symref https://github.com/real-stanford/diffusion_policy
+      HEAD
+    tree: https://api.github.com/repos/real-stanford/diffusion_policy/git/trees/5a8bd7058d1dce44312e2e1a78949237884dab32?recursive=1
+  license_spdx: MIT
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/real-stanford/diffusion_policy/license?ref=5ba07ac6661db573af695b419a7947ecb704690f
+  path_statuses:
+    diffusion_policy/config/task/pusht_image.yaml: EXISTS
+    diffusion_policy/dataset/pusht_image_dataset.py: EXISTS
+    diffusion_policy/env/pusht: EXISTS
+    diffusion_policy/env_runner/pusht_image_runner.py: EXISTS
+  path_evidence_urls:
+    diffusion_policy/config/task/pusht_image.yaml: https://api.github.com/repos/real-stanford/diffusion_policy/git/trees/5a8bd7058d1dce44312e2e1a78949237884dab32?recursive=1
+    diffusion_policy/dataset/pusht_image_dataset.py: https://api.github.com/repos/real-stanford/diffusion_policy/git/trees/5a8bd7058d1dce44312e2e1a78949237884dab32?recursive=1
+    diffusion_policy/env/pusht: https://api.github.com/repos/real-stanford/diffusion_policy/git/trees/5a8bd7058d1dce44312e2e1a78949237884dab32?recursive=1
+    diffusion_policy/env_runner/pusht_image_runner.py: https://api.github.com/repos/real-stanford/diffusion_policy/git/trees/5a8bd7058d1dce44312e2e1a78949237884dab32?recursive=1
+  metadata_status: RESOLVED
+- name: behaviortree_cpp
+  url: https://github.com/BehaviorTree/BehaviorTree.CPP
+  default_branch: master
+  commit_sha: c88a9f429a421b312599a07fa8902524b09bf90a
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/BehaviorTree/BehaviorTree.CPP/git/commits/c88a9f429a421b312599a07fa8902524b09bf90a
+    ls_remote: git ls-remote --symref https://github.com/BehaviorTree/BehaviorTree.CPP
+      HEAD
+    tree: https://api.github.com/repos/BehaviorTree/BehaviorTree.CPP/git/trees/5fcba8d474acd5bc4a77650f5b5b990cd55c10a9?recursive=1
+  license_spdx: MIT
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/BehaviorTree/BehaviorTree.CPP/license?ref=c88a9f429a421b312599a07fa8902524b09bf90a
+  path_statuses:
+    examples: EXISTS
+    include/behaviortree_cpp: EXISTS
+    tests: EXISTS
+  path_evidence_urls:
+    examples: https://api.github.com/repos/BehaviorTree/BehaviorTree.CPP/git/trees/5fcba8d474acd5bc4a77650f5b5b990cd55c10a9?recursive=1
+    include/behaviortree_cpp: https://api.github.com/repos/BehaviorTree/BehaviorTree.CPP/git/trees/5fcba8d474acd5bc4a77650f5b5b990cd55c10a9?recursive=1
+    tests: https://api.github.com/repos/BehaviorTree/BehaviorTree.CPP/git/trees/5fcba8d474acd5bc4a77650f5b5b990cd55c10a9?recursive=1
+  metadata_status: RESOLVED
+- name: navigation2
+  url: https://github.com/ros-navigation/navigation2
+  default_branch: main
+  commit_sha: a3a97043ee93d92fe8d70ec56d183933169beb1c
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/ros-navigation/navigation2/git/commits/a3a97043ee93d92fe8d70ec56d183933169beb1c
+    ls_remote: git ls-remote --symref https://github.com/ros-navigation/navigation2
+      HEAD
+    tree: https://api.github.com/repos/ros-navigation/navigation2/git/trees/f3ed478de20adba20664e3cf5364616715f59462?recursive=1
+  license_spdx: null
+  license_status: UNKNOWN
+  license_evidence_url: https://api.github.com/repos/ros-navigation/navigation2/license?ref=a3a97043ee93d92fe8d70ec56d183933169beb1c
+  path_statuses:
+    nav2_behavior_tree: EXISTS
+    nav2_behaviors: EXISTS
+    nav2_bt_navigator: EXISTS
+  path_evidence_urls:
+    nav2_behavior_tree: https://api.github.com/repos/ros-navigation/navigation2/git/trees/f3ed478de20adba20664e3cf5364616715f59462?recursive=1
+    nav2_behaviors: https://api.github.com/repos/ros-navigation/navigation2/git/trees/f3ed478de20adba20664e3cf5364616715f59462?recursive=1
+    nav2_bt_navigator: https://api.github.com/repos/ros-navigation/navigation2/git/trees/f3ed478de20adba20664e3cf5364616715f59462?recursive=1
+  metadata_status: RESOLVED
+- name: spark_dsg
+  url: https://github.com/MIT-SPARK/Spark-DSG
+  default_branch: main
+  commit_sha: 3c40997e4ae739c56ed3cdd6ef5e882d403d8b64
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/MIT-SPARK/Spark-DSG/git/commits/3c40997e4ae739c56ed3cdd6ef5e882d403d8b64
+    ls_remote: git ls-remote --symref https://github.com/MIT-SPARK/Spark-DSG HEAD
+    tree: https://api.github.com/repos/MIT-SPARK/Spark-DSG/git/trees/2c090ec13361fd2eb75f9b19bb3b4cd17521285b?recursive=1
+  license_spdx: BSD-2-Clause
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/MIT-SPARK/Spark-DSG/license?ref=3c40997e4ae739c56ed3cdd6ef5e882d403d8b64
+  path_statuses:
+    python: EXISTS
+    spark_dsg: MISSING
+    tests: EXISTS
+  path_evidence_urls:
+    python: https://api.github.com/repos/MIT-SPARK/Spark-DSG/git/trees/2c090ec13361fd2eb75f9b19bb3b4cd17521285b?recursive=1
+    spark_dsg: https://api.github.com/repos/MIT-SPARK/Spark-DSG/git/trees/2c090ec13361fd2eb75f9b19bb3b4cd17521285b?recursive=1
+    tests: https://api.github.com/repos/MIT-SPARK/Spark-DSG/git/trees/2c090ec13361fd2eb75f9b19bb3b4cd17521285b?recursive=1
+  metadata_status: RESOLVED
+- name: hydra_scene_graph
+  url: https://github.com/MIT-SPARK/Hydra
+  default_branch: main
+  commit_sha: 2e58a35baea629eee8838409771876acff015daf
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/MIT-SPARK/Hydra/git/commits/2e58a35baea629eee8838409771876acff015daf
+    ls_remote: git ls-remote --symref https://github.com/MIT-SPARK/Hydra HEAD
+    tree: https://api.github.com/repos/MIT-SPARK/Hydra/git/trees/0825bbbc807f30038217fc1823d7083ec7a264a0?recursive=1
+  license_spdx: BSD-2-Clause
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/MIT-SPARK/Hydra/license?ref=2e58a35baea629eee8838409771876acff015daf
+  path_statuses:
+    config: EXISTS
+    include: EXISTS
+    python: EXISTS
+    src: EXISTS
+  path_evidence_urls:
+    config: https://api.github.com/repos/MIT-SPARK/Hydra/git/trees/0825bbbc807f30038217fc1823d7083ec7a264a0?recursive=1
+    include: https://api.github.com/repos/MIT-SPARK/Hydra/git/trees/0825bbbc807f30038217fc1823d7083ec7a264a0?recursive=1
+    python: https://api.github.com/repos/MIT-SPARK/Hydra/git/trees/0825bbbc807f30038217fc1823d7083ec7a264a0?recursive=1
+    src: https://api.github.com/repos/MIT-SPARK/Hydra/git/trees/0825bbbc807f30038217fc1823d7083ec7a264a0?recursive=1
+  metadata_status: RESOLVED
+- name: kimera
+  url: https://github.com/MIT-SPARK/Kimera
+  default_branch: master
+  commit_sha: fc33760636068ea0b2dca5e9d7958ee9a03888b1
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/MIT-SPARK/Kimera/git/commits/fc33760636068ea0b2dca5e9d7958ee9a03888b1
+    ls_remote: git ls-remote --symref https://github.com/MIT-SPARK/Kimera HEAD
+    tree: https://api.github.com/repos/MIT-SPARK/Kimera/git/trees/6162b586e0ccca18409b776713fd68cbeffb9e29?recursive=1
+  license_spdx: BSD-2-Clause
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/MIT-SPARK/Kimera/license?ref=fc33760636068ea0b2dca5e9d7958ee9a03888b1
+  path_statuses:
+    README.md: EXISTS
+  path_evidence_urls:
+    README.md: https://api.github.com/repos/MIT-SPARK/Kimera/git/trees/6162b586e0ccca18409b776713fd68cbeffb9e29?recursive=1
+  metadata_status: RESOLVED
+- name: conceptgraphs
+  url: https://github.com/concept-graphs/concept-graphs
+  default_branch: main
+  commit_sha: 93277a02bd89171f8121e84203121cf7af9ebb5d
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/concept-graphs/concept-graphs/git/commits/93277a02bd89171f8121e84203121cf7af9ebb5d
+    ls_remote: git ls-remote --symref https://github.com/concept-graphs/concept-graphs
+      HEAD
+    tree: https://api.github.com/repos/concept-graphs/concept-graphs/git/trees/4ea489f1882366aa5ddd6ad89287523ee2266457?recursive=1
+  license_spdx: MIT
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/concept-graphs/concept-graphs/license?ref=93277a02bd89171f8121e84203121cf7af9ebb5d
+  path_statuses:
+    README.md: EXISTS
+    conceptgraph/scenegraph: EXISTS
+    conceptgraph/slam: EXISTS
+    scripts: MISSING
+  path_evidence_urls:
+    README.md: https://api.github.com/repos/concept-graphs/concept-graphs/git/trees/4ea489f1882366aa5ddd6ad89287523ee2266457?recursive=1
+    conceptgraph/scenegraph: https://api.github.com/repos/concept-graphs/concept-graphs/git/trees/4ea489f1882366aa5ddd6ad89287523ee2266457?recursive=1
+    conceptgraph/slam: https://api.github.com/repos/concept-graphs/concept-graphs/git/trees/4ea489f1882366aa5ddd6ad89287523ee2266457?recursive=1
+    scripts: https://api.github.com/repos/concept-graphs/concept-graphs/git/trees/4ea489f1882366aa5ddd6ad89287523ee2266457?recursive=1
+  metadata_status: RESOLVED
+- name: rerun
+  url: https://github.com/rerun-io/rerun
+  default_branch: main
+  commit_sha: b5dbd319a7c99b81607d7320a9b50cb806a8a1c0
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/rerun-io/rerun/git/commits/b5dbd319a7c99b81607d7320a9b50cb806a8a1c0
+    ls_remote: git ls-remote --symref https://github.com/rerun-io/rerun HEAD
+    tree: https://api.github.com/repos/rerun-io/rerun/git/trees/43d7f33499c51043929f80e9003406ae2337a103?recursive=1
+  license_spdx: null
+  license_status: UNKNOWN
+  license_evidence_url: https://api.github.com/repos/rerun-io/rerun/license?ref=b5dbd319a7c99b81607d7320a9b50cb806a8a1c0
+  path_statuses:
+    examples/python: EXISTS
+    rerun_py: EXISTS
+  path_evidence_urls:
+    examples/python: https://api.github.com/repos/rerun-io/rerun/git/trees/43d7f33499c51043929f80e9003406ae2337a103?recursive=1
+    rerun_py: https://api.github.com/repos/rerun-io/rerun/git/trees/43d7f33499c51043929f80e9003406ae2337a103?recursive=1
+  metadata_status: RESOLVED
+- name: openusd
+  url: https://github.com/PixarAnimationStudios/OpenUSD
+  default_branch: dev
+  commit_sha: 6792941c5d5b42778e6875c5ed5a3279e6936981
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/PixarAnimationStudios/OpenUSD/git/commits/6792941c5d5b42778e6875c5ed5a3279e6936981
+    ls_remote: git ls-remote --symref https://github.com/PixarAnimationStudios/OpenUSD
+      HEAD
+    tree: https://api.github.com/repos/PixarAnimationStudios/OpenUSD/git/trees/d528731773be762b287d8456dc1c2d7c095f551d?recursive=1
+  license_spdx: null
+  license_status: UNKNOWN
+  license_evidence_url: https://api.github.com/repos/PixarAnimationStudios/OpenUSD/license?ref=6792941c5d5b42778e6875c5ed5a3279e6936981
+  path_statuses:
+    docs: EXISTS
+    extras: EXISTS
+    pxr/usd: EXISTS
+  path_evidence_urls:
+    docs: https://api.github.com/repos/PixarAnimationStudios/OpenUSD/git/trees/d528731773be762b287d8456dc1c2d7c095f551d?recursive=1
+    extras: https://api.github.com/repos/PixarAnimationStudios/OpenUSD/git/trees/d528731773be762b287d8456dc1c2d7c095f551d?recursive=1
+    pxr/usd: https://api.github.com/repos/PixarAnimationStudios/OpenUSD/git/trees/d528731773be762b287d8456dc1c2d7c095f551d?recursive=1
+  metadata_status: RESOLVED
+- name: ifcopenshell
+  url: https://github.com/IfcOpenShell/IfcOpenShell
+  default_branch: v0.9.0
+  commit_sha: 9089a20ce3f25040baac4f1f303336c70026cb67
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/IfcOpenShell/IfcOpenShell/git/commits/9089a20ce3f25040baac4f1f303336c70026cb67
+    ls_remote: git ls-remote --symref https://github.com/IfcOpenShell/IfcOpenShell
+      HEAD
+    tree: https://api.github.com/repos/IfcOpenShell/IfcOpenShell/git/trees/befe8645180bcbd1d39c7ff932f7e882f9930969?recursive=1
+  license_spdx: null
+  license_status: UNKNOWN
+  license_evidence_url: https://api.github.com/repos/IfcOpenShell/IfcOpenShell/license?ref=9089a20ce3f25040baac4f1f303336c70026cb67
+  path_statuses:
+    docs: EXISTS
+    examples: MISSING
+    src/ifcopenshell-python: EXISTS
+  path_evidence_urls:
+    docs: https://api.github.com/repos/IfcOpenShell/IfcOpenShell/git/trees/befe8645180bcbd1d39c7ff932f7e882f9930969?recursive=1
+    examples: https://api.github.com/repos/IfcOpenShell/IfcOpenShell/git/trees/befe8645180bcbd1d39c7ff932f7e882f9930969?recursive=1
+    src/ifcopenshell-python: https://api.github.com/repos/IfcOpenShell/IfcOpenShell/git/trees/befe8645180bcbd1d39c7ff932f7e882f9930969?recursive=1
+  metadata_status: RESOLVED
+- name: ifcopenshell_test_files
+  url: https://github.com/IfcOpenShell/files
+  default_branch: master
+  commit_sha: 9fc2267d7f1ff35284c5b0fc28cc97bff7ace8e7
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/IfcOpenShell/files/git/commits/9fc2267d7f1ff35284c5b0fc28cc97bff7ace8e7
+    ls_remote: git ls-remote --symref https://github.com/IfcOpenShell/files HEAD
+    tree: https://api.github.com/repos/IfcOpenShell/files/git/trees/dee4e4b3824af99664affd99fb0aef34d0ac19f0?recursive=1
+  license_spdx: null
+  license_status: UNKNOWN
+  license_evidence_url: https://api.github.com/repos/IfcOpenShell/files/license?ref=9fc2267d7f1ff35284c5b0fc28cc97bff7ace8e7
+  path_statuses:
+    ifc: MISSING
+  path_evidence_urls:
+    ifc: https://api.github.com/repos/IfcOpenShell/files/git/trees/dee4e4b3824af99664affd99fb0aef34d0ac19f0?recursive=1
+  metadata_status: RESOLVED
+- name: tdmpc2
+  url: https://github.com/nicklashansen/tdmpc2
+  default_branch: main
+  commit_sha: e9f59321933cbc8e11a002b842adc7d4ffae8ff1
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/nicklashansen/tdmpc2/git/commits/e9f59321933cbc8e11a002b842adc7d4ffae8ff1
+    ls_remote: git ls-remote --symref https://github.com/nicklashansen/tdmpc2 HEAD
+    tree: https://api.github.com/repos/nicklashansen/tdmpc2/git/trees/6c20d5b0327d939ce99561184b645d9ddfae1d9e?recursive=1
+  license_spdx: MIT
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/nicklashansen/tdmpc2/license?ref=e9f59321933cbc8e11a002b842adc7d4ffae8ff1
+  path_statuses:
+    cfgs: MISSING
+    datasets: EXISTS
+    tdmpc2: EXISTS
+  path_evidence_urls:
+    cfgs: https://api.github.com/repos/nicklashansen/tdmpc2/git/trees/6c20d5b0327d939ce99561184b645d9ddfae1d9e?recursive=1
+    datasets: https://api.github.com/repos/nicklashansen/tdmpc2/git/trees/6c20d5b0327d939ce99561184b645d9ddfae1d9e?recursive=1
+    tdmpc2: https://api.github.com/repos/nicklashansen/tdmpc2/git/trees/6c20d5b0327d939ce99561184b645d9ddfae1d9e?recursive=1
+  metadata_status: RESOLVED
+- name: dino_wm
+  url: https://github.com/gaoyuezhou/dino_wm
+  default_branch: main
+  commit_sha: 0a9492fa12044b852ae9e001cc74604b79c8bb0c
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/gaoyuezhou/dino_wm/git/commits/0a9492fa12044b852ae9e001cc74604b79c8bb0c
+    ls_remote: git ls-remote --symref https://github.com/gaoyuezhou/dino_wm HEAD
+    tree: https://api.github.com/repos/gaoyuezhou/dino_wm/git/trees/79f5c852d721ae99bfaec95c069acbf6bf87d51e?recursive=1
+  license_spdx: MIT
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/gaoyuezhou/dino_wm/license?ref=0a9492fa12044b852ae9e001cc74604b79c8bb0c
+  path_statuses:
+    conf: EXISTS
+    env: EXISTS
+    models: EXISTS
+    plan.py: EXISTS
+    planning: EXISTS
+  path_evidence_urls:
+    conf: https://api.github.com/repos/gaoyuezhou/dino_wm/git/trees/79f5c852d721ae99bfaec95c069acbf6bf87d51e?recursive=1
+    env: https://api.github.com/repos/gaoyuezhou/dino_wm/git/trees/79f5c852d721ae99bfaec95c069acbf6bf87d51e?recursive=1
+    models: https://api.github.com/repos/gaoyuezhou/dino_wm/git/trees/79f5c852d721ae99bfaec95c069acbf6bf87d51e?recursive=1
+    plan.py: https://api.github.com/repos/gaoyuezhou/dino_wm/git/trees/79f5c852d721ae99bfaec95c069acbf6bf87d51e?recursive=1
+    planning: https://api.github.com/repos/gaoyuezhou/dino_wm/git/trees/79f5c852d721ae99bfaec95c069acbf6bf87d51e?recursive=1
+  metadata_status: RESOLVED
+- name: vjepa2
+  url: https://github.com/facebookresearch/vjepa2
+  default_branch: main
+  commit_sha: 204698b45b3712590f06245fbfba32d3be539812
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/facebookresearch/vjepa2/git/commits/204698b45b3712590f06245fbfba32d3be539812
+    ls_remote: git ls-remote --symref https://github.com/facebookresearch/vjepa2 HEAD
+    tree: https://api.github.com/repos/facebookresearch/vjepa2/git/trees/dd6cfc1e792158510b983d827cb2e84f47fd5706?recursive=1
+  license_spdx: null
+  license_status: UNKNOWN
+  license_evidence_url: https://api.github.com/repos/facebookresearch/vjepa2/license?ref=204698b45b3712590f06245fbfba32d3be539812
+  path_statuses:
+    app/vjepa_droid: EXISTS
+    configs: EXISTS
+    notebooks: EXISTS
+    src: EXISTS
+  path_evidence_urls:
+    app/vjepa_droid: https://api.github.com/repos/facebookresearch/vjepa2/git/trees/dd6cfc1e792158510b983d827cb2e84f47fd5706?recursive=1
+    configs: https://api.github.com/repos/facebookresearch/vjepa2/git/trees/dd6cfc1e792158510b983d827cb2e84f47fd5706?recursive=1
+    notebooks: https://api.github.com/repos/facebookresearch/vjepa2/git/trees/dd6cfc1e792158510b983d827cb2e84f47fd5706?recursive=1
+    src: https://api.github.com/repos/facebookresearch/vjepa2/git/trees/dd6cfc1e792158510b983d827cb2e84f47fd5706?recursive=1
+  metadata_status: RESOLVED
+- name: lawam
+  url: https://github.com/RLinf/LaWAM
+  default_branch: main
+  commit_sha: 4ea6fdadce6c9b8746028307a246b79ee2c4fd55
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/RLinf/LaWAM/git/commits/4ea6fdadce6c9b8746028307a246b79ee2c4fd55
+    ls_remote: git ls-remote --symref https://github.com/RLinf/LaWAM HEAD
+    tree: https://api.github.com/repos/RLinf/LaWAM/git/trees/220e4bb86cbdca6a22cde44c236d068e609689b2?recursive=1
+  license_spdx: null
+  license_status: UNKNOWN
+  license_evidence_url: https://api.github.com/repos/RLinf/LaWAM/license?ref=4ea6fdadce6c9b8746028307a246b79ee2c4fd55
+  path_statuses:
+    deployment: EXISTS
+    examples/LIBERO: EXISTS
+    examples/Robotwin: EXISTS
+    latent_action_model: EXISTS
+    starVLA: EXISTS
+  path_evidence_urls:
+    deployment: https://api.github.com/repos/RLinf/LaWAM/git/trees/220e4bb86cbdca6a22cde44c236d068e609689b2?recursive=1
+    examples/LIBERO: https://api.github.com/repos/RLinf/LaWAM/git/trees/220e4bb86cbdca6a22cde44c236d068e609689b2?recursive=1
+    examples/Robotwin: https://api.github.com/repos/RLinf/LaWAM/git/trees/220e4bb86cbdca6a22cde44c236d068e609689b2?recursive=1
+    latent_action_model: https://api.github.com/repos/RLinf/LaWAM/git/trees/220e4bb86cbdca6a22cde44c236d068e609689b2?recursive=1
+    starVLA: https://api.github.com/repos/RLinf/LaWAM/git/trees/220e4bb86cbdca6a22cde44c236d068e609689b2?recursive=1
+  metadata_status: RESOLVED
+- name: libero
+  url: https://github.com/Lifelong-Robot-Learning/LIBERO
+  default_branch: master
+  commit_sha: 8f1084e3132a39270c3a13ebe37270a43ece2a01
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/Lifelong-Robot-Learning/LIBERO/git/commits/8f1084e3132a39270c3a13ebe37270a43ece2a01
+    ls_remote: git ls-remote --symref https://github.com/Lifelong-Robot-Learning/LIBERO
+      HEAD
+    tree: https://api.github.com/repos/Lifelong-Robot-Learning/LIBERO/git/trees/99f4ada3f1d62e026fc9ff2390eb4ff8a1760e60?recursive=1
+  license_spdx: MIT
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/Lifelong-Robot-Learning/LIBERO/license?ref=8f1084e3132a39270c3a13ebe37270a43ece2a01
+  path_statuses:
+    benchmark_scripts: EXISTS
+    libero: EXISTS
+  path_evidence_urls:
+    benchmark_scripts: https://api.github.com/repos/Lifelong-Robot-Learning/LIBERO/git/trees/99f4ada3f1d62e026fc9ff2390eb4ff8a1760e60?recursive=1
+    libero: https://api.github.com/repos/Lifelong-Robot-Learning/LIBERO/git/trees/99f4ada3f1d62e026fc9ff2390eb4ff8a1760e60?recursive=1
+  metadata_status: RESOLVED
+- name: unitree_rl_mjlab
+  url: https://github.com/unitreerobotics/unitree_rl_mjlab
+  default_branch: main
+  commit_sha: 1425b15f73bd4095f0df53709d7c389c3eb9e790
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/unitreerobotics/unitree_rl_mjlab/git/commits/1425b15f73bd4095f0df53709d7c389c3eb9e790
+    ls_remote: git ls-remote --symref https://github.com/unitreerobotics/unitree_rl_mjlab
+      HEAD
+    tree: https://api.github.com/repos/unitreerobotics/unitree_rl_mjlab/git/trees/6561166450e3ccff4ab58d2c2ea99528a6d67d39?recursive=1
+  license_spdx: Apache-2.0
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/unitreerobotics/unitree_rl_mjlab/license?ref=1425b15f73bd4095f0df53709d7c389c3eb9e790
+  path_statuses:
+    README.md: EXISTS
+    deploy: EXISTS
+    doc: EXISTS
+    scripts: EXISTS
+    simulate: EXISTS
+    src: EXISTS
+  path_evidence_urls:
+    README.md: https://api.github.com/repos/unitreerobotics/unitree_rl_mjlab/git/trees/6561166450e3ccff4ab58d2c2ea99528a6d67d39?recursive=1
+    deploy: https://api.github.com/repos/unitreerobotics/unitree_rl_mjlab/git/trees/6561166450e3ccff4ab58d2c2ea99528a6d67d39?recursive=1
+    doc: https://api.github.com/repos/unitreerobotics/unitree_rl_mjlab/git/trees/6561166450e3ccff4ab58d2c2ea99528a6d67d39?recursive=1
+    scripts: https://api.github.com/repos/unitreerobotics/unitree_rl_mjlab/git/trees/6561166450e3ccff4ab58d2c2ea99528a6d67d39?recursive=1
+    simulate: https://api.github.com/repos/unitreerobotics/unitree_rl_mjlab/git/trees/6561166450e3ccff4ab58d2c2ea99528a6d67d39?recursive=1
+    src: https://api.github.com/repos/unitreerobotics/unitree_rl_mjlab/git/trees/6561166450e3ccff4ab58d2c2ea99528a6d67d39?recursive=1
+  metadata_status: RESOLVED
+- name: unitree_mujoco
+  url: https://github.com/unitreerobotics/unitree_mujoco
+  default_branch: main
+  commit_sha: ae6a8403e272733e9996ef59990880330496177f
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/unitreerobotics/unitree_mujoco/git/commits/ae6a8403e272733e9996ef59990880330496177f
+    ls_remote: git ls-remote --symref https://github.com/unitreerobotics/unitree_mujoco
+      HEAD
+    tree: https://api.github.com/repos/unitreerobotics/unitree_mujoco/git/trees/d1dea107874936e629a3af543b9d96904c28630d?recursive=1
+  license_spdx: BSD-3-Clause
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/unitreerobotics/unitree_mujoco/license?ref=ae6a8403e272733e9996ef59990880330496177f
+  path_statuses:
+    example: EXISTS
+    simulate: EXISTS
+    simulate_python: EXISTS
+    unitree_robots: EXISTS
+  path_evidence_urls:
+    example: https://api.github.com/repos/unitreerobotics/unitree_mujoco/git/trees/d1dea107874936e629a3af543b9d96904c28630d?recursive=1
+    simulate: https://api.github.com/repos/unitreerobotics/unitree_mujoco/git/trees/d1dea107874936e629a3af543b9d96904c28630d?recursive=1
+    simulate_python: https://api.github.com/repos/unitreerobotics/unitree_mujoco/git/trees/d1dea107874936e629a3af543b9d96904c28630d?recursive=1
+    unitree_robots: https://api.github.com/repos/unitreerobotics/unitree_mujoco/git/trees/d1dea107874936e629a3af543b9d96904c28630d?recursive=1
+  metadata_status: RESOLVED
+- name: unitree_sdk2
+  url: https://github.com/unitreerobotics/unitree_sdk2
+  default_branch: main
+  commit_sha: 9754cd153af3da471b0fe5f3aa535e426fb11db3
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/unitreerobotics/unitree_sdk2/git/commits/9754cd153af3da471b0fe5f3aa535e426fb11db3
+    ls_remote: git ls-remote --symref https://github.com/unitreerobotics/unitree_sdk2
+      HEAD
+    tree: https://api.github.com/repos/unitreerobotics/unitree_sdk2/git/trees/467fd4fbc04d8f34277a4035f95c27c73249cb23?recursive=1
+  license_spdx: BSD-3-Clause
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/unitreerobotics/unitree_sdk2/license?ref=9754cd153af3da471b0fe5f3aa535e426fb11db3
+  path_statuses:
+    example: EXISTS
+    include: EXISTS
+    thirdparty: EXISTS
+  path_evidence_urls:
+    example: https://api.github.com/repos/unitreerobotics/unitree_sdk2/git/trees/467fd4fbc04d8f34277a4035f95c27c73249cb23?recursive=1
+    include: https://api.github.com/repos/unitreerobotics/unitree_sdk2/git/trees/467fd4fbc04d8f34277a4035f95c27c73249cb23?recursive=1
+    thirdparty: https://api.github.com/repos/unitreerobotics/unitree_sdk2/git/trees/467fd4fbc04d8f34277a4035f95c27c73249cb23?recursive=1
+  metadata_status: RESOLVED
+- name: unifolm_vla
+  url: https://github.com/unitreerobotics/unifolm-vla
+  default_branch: main
+  commit_sha: ff6c39aeb0454cfb95418c66aef40ca777f935c1
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/unitreerobotics/unifolm-vla/git/commits/ff6c39aeb0454cfb95418c66aef40ca777f935c1
+    ls_remote: git ls-remote --symref https://github.com/unitreerobotics/unifolm-vla
+      HEAD
+    tree: https://api.github.com/repos/unitreerobotics/unifolm-vla/git/trees/b3568a5273892c1c79033ba3310378bafce95a92?recursive=1
+  license_spdx: null
+  license_status: UNKNOWN
+  license_evidence_url: https://api.github.com/repos/unitreerobotics/unifolm-vla/license?ref=ff6c39aeb0454cfb95418c66aef40ca777f935c1
+  path_statuses:
+    deployment/model_server: EXISTS
+    experiments: EXISTS
+    prepare_data: EXISTS
+    src/unifolm_vla: EXISTS
+  path_evidence_urls:
+    deployment/model_server: https://api.github.com/repos/unitreerobotics/unifolm-vla/git/trees/b3568a5273892c1c79033ba3310378bafce95a92?recursive=1
+    experiments: https://api.github.com/repos/unitreerobotics/unifolm-vla/git/trees/b3568a5273892c1c79033ba3310378bafce95a92?recursive=1
+    prepare_data: https://api.github.com/repos/unitreerobotics/unifolm-vla/git/trees/b3568a5273892c1c79033ba3310378bafce95a92?recursive=1
+    src/unifolm_vla: https://api.github.com/repos/unitreerobotics/unifolm-vla/git/trees/b3568a5273892c1c79033ba3310378bafce95a92?recursive=1
+  metadata_status: RESOLVED
+- name: unifolm_wma
+  url: https://github.com/unitreerobotics/unifolm-world-model-action
+  default_branch: main
+  commit_sha: 3e198de68de55f93f24b3ad623dd499390aaee45
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/unitreerobotics/unifolm-world-model-action/git/commits/3e198de68de55f93f24b3ad623dd499390aaee45
+    ls_remote: git ls-remote --symref https://github.com/unitreerobotics/unifolm-world-model-action
+      HEAD
+    tree: https://api.github.com/repos/unitreerobotics/unifolm-world-model-action/git/trees/56e04e7aa97f4297bb553318f2993dffafcc4972?recursive=1
+  license_spdx: null
+  license_status: UNKNOWN
+  license_evidence_url: https://api.github.com/repos/unitreerobotics/unifolm-world-model-action/license?ref=3e198de68de55f93f24b3ad623dd499390aaee45
+  path_statuses:
+    configs: EXISTS
+    examples: EXISTS
+    external: EXISTS
+    prepare_data: EXISTS
+    scripts: EXISTS
+    src/unifolm_wma: EXISTS
+    unitree_deploy: EXISTS
+  path_evidence_urls:
+    configs: https://api.github.com/repos/unitreerobotics/unifolm-world-model-action/git/trees/56e04e7aa97f4297bb553318f2993dffafcc4972?recursive=1
+    examples: https://api.github.com/repos/unitreerobotics/unifolm-world-model-action/git/trees/56e04e7aa97f4297bb553318f2993dffafcc4972?recursive=1
+    external: https://api.github.com/repos/unitreerobotics/unifolm-world-model-action/git/trees/56e04e7aa97f4297bb553318f2993dffafcc4972?recursive=1
+    prepare_data: https://api.github.com/repos/unitreerobotics/unifolm-world-model-action/git/trees/56e04e7aa97f4297bb553318f2993dffafcc4972?recursive=1
+    scripts: https://api.github.com/repos/unitreerobotics/unifolm-world-model-action/git/trees/56e04e7aa97f4297bb553318f2993dffafcc4972?recursive=1
+    src/unifolm_wma: https://api.github.com/repos/unitreerobotics/unifolm-world-model-action/git/trees/56e04e7aa97f4297bb553318f2993dffafcc4972?recursive=1
+    unitree_deploy: https://api.github.com/repos/unitreerobotics/unifolm-world-model-action/git/trees/56e04e7aa97f4297bb553318f2993dffafcc4972?recursive=1
+  metadata_status: RESOLVED
+- name: isaac_sim
+  url: https://github.com/isaac-sim/IsaacSim
+  default_branch: main
+  commit_sha: 987015050efebfd0cd5d3736ae47fffe5adee308
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/isaac-sim/IsaacSim/git/commits/987015050efebfd0cd5d3736ae47fffe5adee308
+    ls_remote: git ls-remote --symref https://github.com/isaac-sim/IsaacSim HEAD
+    tree: https://api.github.com/repos/isaac-sim/IsaacSim/git/trees/7530065964b0bfbb3e6c102ffa20456870079d7e?recursive=1
+  license_spdx: null
+  license_status: UNKNOWN
+  license_evidence_url: https://api.github.com/repos/isaac-sim/IsaacSim/license?ref=987015050efebfd0cd5d3736ae47fffe5adee308
+  path_statuses:
+    README.md: EXISTS
+    apps: MISSING
+    source: EXISTS
+    tools: EXISTS
+  path_evidence_urls:
+    README.md: https://api.github.com/repos/isaac-sim/IsaacSim/git/trees/7530065964b0bfbb3e6c102ffa20456870079d7e?recursive=1
+    apps: https://api.github.com/repos/isaac-sim/IsaacSim/git/trees/7530065964b0bfbb3e6c102ffa20456870079d7e?recursive=1
+    source: https://api.github.com/repos/isaac-sim/IsaacSim/git/trees/7530065964b0bfbb3e6c102ffa20456870079d7e?recursive=1
+    tools: https://api.github.com/repos/isaac-sim/IsaacSim/git/trees/7530065964b0bfbb3e6c102ffa20456870079d7e?recursive=1
+  metadata_status: RESOLVED
+- name: isaac_lab
+  url: https://github.com/isaac-sim/IsaacLab
+  default_branch: release/3.0.0-beta2
+  commit_sha: 8436eae13aaabd3a42c33c78435b3de44e6a36b2
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/isaac-sim/IsaacLab/git/commits/8436eae13aaabd3a42c33c78435b3de44e6a36b2
+    ls_remote: git ls-remote --symref https://github.com/isaac-sim/IsaacLab HEAD
+    tree: https://api.github.com/repos/isaac-sim/IsaacLab/git/trees/d720f3ba221c36b02f23659a444160bd4d30d0b9?recursive=1
+  license_spdx: null
+  license_status: UNKNOWN
+  license_evidence_url: https://api.github.com/repos/isaac-sim/IsaacLab/license?ref=8436eae13aaabd3a42c33c78435b3de44e6a36b2
+  path_statuses:
+    apps: EXISTS
+    docs: EXISTS
+    scripts: EXISTS
+    source: EXISTS
+  path_evidence_urls:
+    apps: https://api.github.com/repos/isaac-sim/IsaacLab/git/trees/d720f3ba221c36b02f23659a444160bd4d30d0b9?recursive=1
+    docs: https://api.github.com/repos/isaac-sim/IsaacLab/git/trees/d720f3ba221c36b02f23659a444160bd4d30d0b9?recursive=1
+    scripts: https://api.github.com/repos/isaac-sim/IsaacLab/git/trees/d720f3ba221c36b02f23659a444160bd4d30d0b9?recursive=1
+    source: https://api.github.com/repos/isaac-sim/IsaacLab/git/trees/d720f3ba221c36b02f23659a444160bd4d30d0b9?recursive=1
+  metadata_status: RESOLVED
+- name: isaac_launchable
+  url: https://github.com/isaac-sim/isaac-launchable
+  default_branch: main
+  commit_sha: d884909d03d27bdb52d27d516790a4c3a8f82354
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/isaac-sim/isaac-launchable/git/commits/d884909d03d27bdb52d27d516790a4c3a8f82354
+    ls_remote: git ls-remote --symref https://github.com/isaac-sim/isaac-launchable
+      HEAD
+    tree: https://api.github.com/repos/isaac-sim/isaac-launchable/git/trees/3dc5f5b4f5b8780b47433a61973e52f500011036?recursive=1
+  license_spdx: null
+  license_status: UNKNOWN
+  license_evidence_url: https://api.github.com/repos/isaac-sim/isaac-launchable/license?ref=d884909d03d27bdb52d27d516790a4c3a8f82354
+  path_statuses:
+    README.md: EXISTS
+    docker: MISSING
+    scripts: MISSING
+  path_evidence_urls:
+    README.md: https://api.github.com/repos/isaac-sim/isaac-launchable/git/trees/3dc5f5b4f5b8780b47433a61973e52f500011036?recursive=1
+    docker: https://api.github.com/repos/isaac-sim/isaac-launchable/git/trees/3dc5f5b4f5b8780b47433a61973e52f500011036?recursive=1
+    scripts: https://api.github.com/repos/isaac-sim/isaac-launchable/git/trees/3dc5f5b4f5b8780b47433a61973e52f500011036?recursive=1
+  metadata_status: RESOLVED
+- name: isaac_lab_arena
+  url: https://github.com/isaac-sim/IsaacLab-Arena
+  default_branch: main
+  commit_sha: 8039fbdb9afd5e99784808fd907c29467a956688
+  retrieved_at: '2026-08-23T02:09:09Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/isaac-sim/IsaacLab-Arena/git/commits/8039fbdb9afd5e99784808fd907c29467a956688
+    ls_remote: git ls-remote --symref https://github.com/isaac-sim/IsaacLab-Arena
+      HEAD
+    tree: https://api.github.com/repos/isaac-sim/IsaacLab-Arena/git/trees/61545466c0dc6bfe12725cc72c65b4f5e0767539?recursive=1
+  license_spdx: null
+  license_status: UNKNOWN
+  license_evidence_url: https://api.github.com/repos/isaac-sim/IsaacLab-Arena/license?ref=8039fbdb9afd5e99784808fd907c29467a956688
+  path_statuses:
+    docs: EXISTS
+    scripts: MISSING
+    source: MISSING
+  path_evidence_urls:
+    docs: https://api.github.com/repos/isaac-sim/IsaacLab-Arena/git/trees/61545466c0dc6bfe12725cc72c65b4f5e0767539?recursive=1
+    scripts: https://api.github.com/repos/isaac-sim/IsaacLab-Arena/git/trees/61545466c0dc6bfe12725cc72c65b4f5e0767539?recursive=1
+    source: https://api.github.com/repos/isaac-sim/IsaacLab-Arena/git/trees/61545466c0dc6bfe12725cc72c65b4f5e0767539?recursive=1
+  metadata_status: RESOLVED
+- name: uv
+  url: https://github.com/astral-sh/uv
+  default_branch: main
+  commit_sha: 26a9dd4b2125bc271b47855e1fa0c49af3365db5
+  retrieved_at: '2026-08-23T02:09:11Z'
+  metadata_evidence:
+    bootstrap_artifact.authority: EXACT_BOOTSTRAP_BINARY_USE_ONLY
+    bootstrap_artifact.commit_sha: 2b5d65e61d829bc81ce116388f849174d56a84ca
+    bootstrap_artifact.embedded_executable_path: uv-0.9.17.data/scripts/uv
+    bootstrap_artifact.executable_sha256: ee694042316fcb760b176ea8d3fb673790fd8d573ed06f28a4d52a01066c358d
+    bootstrap_artifact.executable_size: '43403808'
+    bootstrap_artifact.host_executable_path: /Users/shiva/.local/bin/uv
+    bootstrap_artifact.license_expression: MIT OR Apache-2.0
+    bootstrap_artifact.license_files_json: '[{"path":"uv-0.9.17.dist-info/licenses/LICENSE-APACHE","sha256":"c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"},{"path":"uv-0.9.17.dist-info/licenses/LICENSE-MIT","sha256":"860e3d7a86b84e6a7012c7a635fc64df475cebc6cce34dfeb73a5982ec58176c"}]'
+    bootstrap_artifact.metadata_sha256: 4dc196d498b19f48f17b17777d6531eefbe0c825c2f6b10b5f3cc6643a93ca7a
+    bootstrap_artifact.package_manifest_path: crates/uv/Cargo.toml
+    bootstrap_artifact.package_manifest_sha256: d7e5bd11533e9cd4b9233f5c83b62ccbc34b57ce86ed04821f7b7830dcaf1ade
+    bootstrap_artifact.package_manifest_url: https://raw.githubusercontent.com/astral-sh/uv/2b5d65e61d829bc81ce116388f849174d56a84ca/crates/uv/Cargo.toml
+    bootstrap_artifact.package_name: uv
+    bootstrap_artifact.package_version: 0.9.17
+    bootstrap_artifact.record_sha256: be65b9b969ae57a8c672257c5e0019adab536197945f90aac8616211c3d40591
+    bootstrap_artifact.repository_url: https://github.com/astral-sh/uv
+    bootstrap_artifact.sdist_filename: uv-0.9.17.tar.gz
+    bootstrap_artifact.sdist_sha256: 6d93ab9012673e82039cfa7f9f66f69b388bc3f910f9e8a2ebee211353f620aa
+    bootstrap_artifact.sdist_size: '3815957'
+    bootstrap_artifact.sdist_url: https://files.pythonhosted.org/packages/52/1a/cb0c37ae8513b253bcbc13d42392feb7d95ea696eb398b37535a28df9040/uv-0.9.17.tar.gz
+    bootstrap_artifact.tag: 0.9.17
+    bootstrap_artifact.version_output: uv 0.9.17 (2b5d65e61 2025-12-09)
+    bootstrap_artifact.wheel_filename: uv-0.9.17-py3-none-macosx_11_0_arm64.whl
+    bootstrap_artifact.wheel_sha256: 4b8e5513d48a267bfa180ca7fefaf6f27b1267e191573b3dba059981143e88ef
+    bootstrap_artifact.wheel_size: '18924624'
+    bootstrap_artifact.wheel_url: https://files.pythonhosted.org/packages/de/30/b3a343893681a569cbb74f8747a1c24e5f18ca9e07de0430aceaf9389ef4/uv-0.9.17-py3-none-macosx_11_0_arm64.whl
+    bootstrap_artifact.workspace_manifest_path: Cargo.toml
+    bootstrap_artifact.workspace_manifest_sha256: bea4b08b14e4ee2d0dbb51acfa300a33c319d8b98c717d18d9969f13892d1eb5
+    bootstrap_artifact.workspace_manifest_url: https://raw.githubusercontent.com/astral-sh/uv/2b5d65e61d829bc81ce116388f849174d56a84ca/Cargo.toml
+    commit: https://api.github.com/repos/astral-sh/uv/git/commits/26a9dd4b2125bc271b47855e1fa0c49af3365db5
+    ls_remote: git ls-remote --symref https://github.com/astral-sh/uv HEAD
+    tree: https://api.github.com/repos/astral-sh/uv/git/trees/412fa3ca5e0902c989275d7f977be0e365af02e8?recursive=1
+  license_spdx: null
+  license_status: UNKNOWN
+  license_evidence_url: https://api.github.com/repos/astral-sh/uv/license?ref=26a9dd4b2125bc271b47855e1fa0c49af3365db5
+  path_statuses: {}
+  path_evidence_urls: {}
+  metadata_status: RESOLVED
+- name: hatchling
+  url: https://github.com/pypa/hatch
+  default_branch: master
+  commit_sha: ed8e30bebf98f2fe4d70c18a32a50a8160c391cb
+  retrieved_at: '2026-08-23T02:09:11Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/pypa/hatch/git/commits/ed8e30bebf98f2fe4d70c18a32a50a8160c391cb
+    ls_remote: git ls-remote --symref https://github.com/pypa/hatch HEAD
+    tree: https://api.github.com/repos/pypa/hatch/git/trees/e2ef668f9ef8b1ed6bee105384b384c4c3dfc738?recursive=1
+  license_spdx: MIT
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/pypa/hatch/license?ref=ed8e30bebf98f2fe4d70c18a32a50a8160c391cb
+  path_statuses: {}
+  path_evidence_urls: {}
+  metadata_status: RESOLVED
+- name: pyyaml
+  url: https://github.com/yaml/pyyaml
+  default_branch: main
+  commit_sha: 34a9bf82357f4952d8f194a5a31f1c39743652d0
+  retrieved_at: '2026-08-23T02:09:11Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/yaml/pyyaml/git/commits/34a9bf82357f4952d8f194a5a31f1c39743652d0
+    ls_remote: git ls-remote --symref https://github.com/yaml/pyyaml HEAD
+    tree: https://api.github.com/repos/yaml/pyyaml/git/trees/68d200790c86f417001438fadcfafc48e4cea85d?recursive=1
+  license_spdx: MIT
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/yaml/pyyaml/license?ref=34a9bf82357f4952d8f194a5a31f1c39743652d0
+  path_statuses: {}
+  path_evidence_urls: {}
+  metadata_status: RESOLVED
+- name: numpy
+  url: https://github.com/numpy/numpy
+  default_branch: main
+  commit_sha: 1f90bbb55e65e7de68921bc3f1a2d94492fdf689
+  retrieved_at: '2026-08-23T02:09:11Z'
+  metadata_evidence:
+    artifact_license.authority: EXACT_WHEEL_INSTALL_ONLY
+    artifact_license.license_expression: BSD-3-Clause AND 0BSD AND MIT AND Zlib AND
+      CC0-1.0
+    artifact_license.license_files_json: '[{"path":"numpy-2.4.6.dist-info/licenses/LICENSE.txt","sha256":"649a589ab31076e79e9ce62ba24eae9959598124176640dbc95f87bd10f34fcf"},{"path":"numpy-2.4.6.dist-info/licenses/numpy/_core/include/numpy/libdivide/LICENSE.txt","sha256":"fbc539f47d0cf83bc61378080fb873d5c14630126cacbfe754035c3926daa5ec"},{"path":"numpy-2.4.6.dist-info/licenses/numpy/_core/src/common/pythoncapi-compat/COPYING","sha256":"3f2c1ffa76383a55ae0aac01c9737cd70050dff63e1f026694fbe9d662573c98"},{"path":"numpy-2.4.6.dist-info/licenses/numpy/_core/src/highway/LICENSE","sha256":"e340270d4f64384569a91d546acb5b094d69ce47f0c015db77abb74dc6f815af"},{"path":"numpy-2.4.6.dist-info/licenses/numpy/_core/src/multiarray/dragon4_LICENSE.txt","sha256":"f7b14309e5f54e5022b26448eefd419988ada2aec01d3c1162d84a0ea8f21f2c"},{"path":"numpy-2.4.6.dist-info/licenses/numpy/_core/src/npysort/x86-simd-sort/LICENSE.md","sha256":"211e7d737d6179a08f791ebb0a99897ce7cd2457410c542876d125576edfe910"},{"path":"numpy-2.4.6.dist-info/licenses/numpy/_core/src/umath/svml/LICENSE","sha256":"c17011467b4fe6e20fbfbeda4df09e58c2bca5480a063e55735a4000a379aad9"},{"path":"numpy-2.4.6.dist-info/licenses/numpy/fft/pocketfft/LICENSE.md","sha256":"a85ca13fdf90160b64a0698215868c13b74d835ad0a4e2ba44713b8c5058a056"},{"path":"numpy-2.4.6.dist-info/licenses/numpy/linalg/lapack_lite/LICENSE.txt","sha256":"a14cc25e10d40a3aa705b7de2fb764a6535d8ee9b2db4e1724900585457dfd55"},{"path":"numpy-2.4.6.dist-info/licenses/numpy/ma/LICENSE","sha256":"05f3b88351988ecfad10abe92c0c50e5875c6452d5009a0084cc291551ffcca6"},{"path":"numpy-2.4.6.dist-info/licenses/numpy/random/LICENSE.md","sha256":"103166b62b80443afb9eb3488e052ea06be0cff566b908f199e561fde49af19f"},{"path":"numpy-2.4.6.dist-info/licenses/numpy/random/src/distributions/LICENSE.md","sha256":"469778be8f33d54e1bcaab28c281cc472916d2d273f835e55bc487d30503face"},{"path":"numpy-2.4.6.dist-info/licenses/numpy/random/src/mt19937/LICENSE.md","sha256":"0e111337b25494a773106695f0e799f642b8567aaacca4f116a74a8177179156"},{"path":"numpy-2.4.6.dist-info/licenses/numpy/random/src/pcg64/LICENSE.md","sha256":"e7d4f4fb20358f314210a892ae17351e04993813646f697ec387385ca2a36918"},{"path":"numpy-2.4.6.dist-info/licenses/numpy/random/src/philox/LICENSE.md","sha256":"6f5828a57223d4cc7f8ea505a2623e7b978b242752c1515e355f46ba2cec1800"},{"path":"numpy-2.4.6.dist-info/licenses/numpy/random/src/sfc64/LICENSE.md","sha256":"9d4098846018319cd68e228ee6220361787f73bccbf00237a85e4fc9621b998f"},{"path":"numpy-2.4.6.dist-info/licenses/numpy/random/src/splitmix64/LICENSE.md","sha256":"268b0ca06759d31ea3ca68dd35f20e877916e927b1c2a835e4592a3c4354b1f9"}]'
+    artifact_license.metadata_path: numpy-2.4.6.dist-info/METADATA
+    artifact_license.metadata_sha256: b082c52ccbe3b880bae177c35171b52ed6c947f3ad71e3762f2723f60a411de0
+    artifact_license.package_name: numpy
+    artifact_license.package_version: 2.4.6
+    artifact_license.record_path: numpy-2.4.6.dist-info/RECORD
+    artifact_license.record_sha256: fb6ba2cf9bb704ded012f69f1bd040c5d50a183628257f094656e4ac763ddc19
+    artifact_license.wheel_filename: numpy-2.4.6-cp311-cp311-macosx_14_0_arm64.whl
+    artifact_license.wheel_sha256: 4cfe66903cc32a9921a6733d96b19bb6abf310397581bbad89c228f5abaf0ee8
+    artifact_license.wheel_url: https://files.pythonhosted.org/packages/ad/40/40a40ee0ddf7ceb782c49af278894b686e586d65d8c1889c8b5da01a3d7d/numpy-2.4.6-cp311-cp311-macosx_14_0_arm64.whl
+    commit: https://api.github.com/repos/numpy/numpy/git/commits/1f90bbb55e65e7de68921bc3f1a2d94492fdf689
+    ls_remote: git ls-remote --symref https://github.com/numpy/numpy HEAD
+    tree: https://api.github.com/repos/numpy/numpy/git/trees/8fd4e2e7a4deaf710084153f54ec9df6529ad8b1?recursive=1
+  license_spdx: null
+  license_status: UNKNOWN
+  license_evidence_url: https://api.github.com/repos/numpy/numpy/license?ref=1f90bbb55e65e7de68921bc3f1a2d94492fdf689
+  path_statuses: {}
+  path_evidence_urls: {}
+  metadata_status: RESOLVED
+- name: pyarrow
+  url: https://github.com/apache/arrow
+  default_branch: main
+  commit_sha: 515410b2a14ac766258e00b07eab9e5ee2692a62
+  retrieved_at: '2026-08-23T02:09:11Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/apache/arrow/git/commits/515410b2a14ac766258e00b07eab9e5ee2692a62
+    ls_remote: git ls-remote --symref https://github.com/apache/arrow HEAD
+    tree: https://api.github.com/repos/apache/arrow/git/trees/79fb52842e70730ce9131c4eecbd6383917c9cd7?recursive=1
+  license_spdx: Apache-2.0
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/apache/arrow/license?ref=515410b2a14ac766258e00b07eab9e5ee2692a62
+  path_statuses: {}
+  path_evidence_urls: {}
+  metadata_status: RESOLVED
+- name: pytest
+  url: https://github.com/pytest-dev/pytest
+  default_branch: main
+  commit_sha: df87db7b0462fb764ef73fa00561adf8ad047572
+  retrieved_at: '2026-08-23T02:09:11Z'
+  metadata_evidence:
+    commit: https://api.github.com/repos/pytest-dev/pytest/git/commits/df87db7b0462fb764ef73fa00561adf8ad047572
+    ls_remote: git ls-remote --symref https://github.com/pytest-dev/pytest HEAD
+    tree: https://api.github.com/repos/pytest-dev/pytest/git/trees/aa9326445d40ef16da9a674b0c34b64137b908a7?recursive=1
+  license_spdx: MIT
+  license_status: DISCOVERED
+  license_evidence_url: https://api.github.com/repos/pytest-dev/pytest/license?ref=df87db7b0462fb764ef73fa00561adf8ad047572
+  path_statuses: {}
+  path_evidence_urls: {}
+  metadata_status: RESOLVED

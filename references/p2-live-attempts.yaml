@@ -1,5 +1,5 @@
 schema_version: 1
-registry_sha256: d1598b83070b5c8578e79a64142ee24941a59743cdf9420efa8b3b9d588fb8af
+registry_sha256: eb72b501a177ee9dcf93a77444536e07dd532d9ac92950c61a063b8a8d1a4a3d
 attempts:
   - id: mujoco_probe
     command:
@@ -1293,3 +1293,118 @@ attempts:
       but reports SPDX NOASSERTION, which the preregistered P2 policy records as
       UNKNOWN and forbids for a DIRECT_DEPENDENCY. This is a substantive license
       approval blocker, not an unresolved metadata or environment-test failure.
+
+  - id: all_metadata_window_10_live_refresh
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --all-metadata-only
+    started_at_utc: 2026-08-23T02:00:20Z
+    finished_at_utc: 2026-08-23T02:00:59Z
+    exit_code: 1
+    published_lock: false
+    completed_entries:
+      - mujoco
+      - mujoco_mpc
+      - mujoco_menagerie
+      - mink
+      - mjctrl
+      - hydrax
+      - curobo
+      - moveit2
+      - ros2_control
+      - ros2_controllers
+      - mujoco_ros2_control
+      - act
+      - lerobot
+      - openpi
+      - diffusion_policy
+      - behaviortree_cpp
+      - navigation2
+    incomplete_entry: spark_dsg
+    error: >-
+      GitHub rate limit exhausted for https://api.github.com/repos/MIT-SPARK/Spark-DSG/git/trees/2c090ec13361fd2eb75f9b19bb3b4cd17521285b?recursive=1; reset 1787453823
+    rate_limit_reset_utc: 2026-08-23T02:57:03Z
+    lock_absence_verified: true
+    cache_validation: >-
+      The live refresh began from the revised 45-entry registry after Rerun was
+      truthfully deferred and the exact host uv bootstrap binary had been validated
+      independently. It refreshed the canonical prefix through Navigation2, stopped
+      before completing Spark-DSG, and atomically published no partial lock.
+
+  - id: all_metadata_window_10_cache_publication
+    command:
+      - env
+      - UV_CACHE_DIR=.cache/uv
+      - uv
+      - run
+      - python
+      - scripts/fetch_reference.py
+      - --all-metadata-only
+    started_at_utc: 2026-08-23T02:09:08Z
+    finished_at_utc: 2026-08-23T02:09:12Z
+    exit_code: 0
+    published_lock: true
+    completed_entries:
+      - mujoco
+      - mujoco_mpc
+      - mujoco_menagerie
+      - mink
+      - mjctrl
+      - hydrax
+      - curobo
+      - moveit2
+      - ros2_control
+      - ros2_controllers
+      - mujoco_ros2_control
+      - act
+      - lerobot
+      - openpi
+      - diffusion_policy
+      - behaviortree_cpp
+      - navigation2
+      - spark_dsg
+      - hydra_scene_graph
+      - kimera
+      - conceptgraphs
+      - rerun
+      - openusd
+      - ifcopenshell
+      - ifcopenshell_test_files
+      - tdmpc2
+      - dino_wm
+      - vjepa2
+      - lawam
+      - libero
+      - unitree_rl_mjlab
+      - unitree_mujoco
+      - unitree_sdk2
+      - unifolm_vla
+      - unifolm_wma
+      - isaac_sim
+      - isaac_lab
+      - isaac_launchable
+      - isaac_lab_arena
+      - uv
+      - hatchling
+      - pyyaml
+      - numpy
+      - pyarrow
+      - pytest
+    lock_sha256_after: 9a21b203bca93429384bafe78fe8a561922c215d82f6bd7dec629b88c6780538
+    summary: >-
+      The single cache replay resolved all 45 registry entries in canonical order
+      and atomically published the complete lock generated at 2026-08-23T02:09:11Z.
+      Rerun remained DEFERRED with no adapter authority; uv remained GitHub UNKNOWN
+      while its separately sealed exact bootstrap-binary-use evidence authorized only
+      execution of the byte-identical host uv 0.9.17 binary.
+    cache_validation: >-
+      The published lock binds registry SHA-256
+      eb72b501a177ee9dcf93a77444536e07dd532d9ac92950c61a063b8a8d1a4a3d
+      and exact lock SHA-256
+      9a21b203bca93429384bafe78fe8a561922c215d82f6bd7dec629b88c6780538;
+      the complete offline audit returned no errors.

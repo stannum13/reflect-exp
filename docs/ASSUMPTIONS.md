@@ -85,3 +85,13 @@ does not infer from wheel classifiers and does not authorize installation, sourc
 copying, adapters, or any other `uv` binary. GitHub remains `UNKNOWN`; any identity,
 hash, manifest, `RECORD`, license-inventory, version, or commit-prefix mismatch is
 a hard P2 failure.
+
+## A-014 — P2 metadata boundary and P3 handoff
+
+P2 is complete only as a metadata gate: the canonical registry is the 39 program
+repositories plus six bootstrap entries, and selected root globs are interpreted
+literally against root tree entries. GitHub license fields remain factual upstream
+observations rather than legal conclusions. P2 creates no source checkout and grants
+no authority beyond each entry's validated mode or artifact-scoped exception. P3 is
+the first stage allowed to evaluate compatibility operations against the immutable
+P2 registry, lock, attempt history, report, and phase record.
