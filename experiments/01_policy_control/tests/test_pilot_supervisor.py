@@ -299,3 +299,8 @@ def test_real_p1_base_shard_runs_all_three_declared_conditions(
     assert completion["state"] == "COMPLETE"
     assert len(completion["completed_output_identities"]) == 3
     assert len(completion["rollout_sha256s"]) == 3
+    assert artifacts.publish_shard_disposition(
+        base_pilot[0], base_pilot[3], output,
+    ) == "CONTINUE"
+    with pytest.raises(artifacts.ArtifactError, match="incomplete"):
+        artifacts.publish_stage_disposition(base_pilot[0], output)

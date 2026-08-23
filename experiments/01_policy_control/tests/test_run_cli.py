@@ -94,17 +94,31 @@ def test_shard_execution_maps_closed_supervisor_result_to_exit_status(
     manifest = tmp_path / "manifest.json"
     manifest.write_text("{}\n", encoding="utf-8")
     observed = {}
+    bucket = tmp_path / "resource-bucket"
+    predecessor = artifacts.ResourceArtifactPath(
+        tmp_path / "prior.json", tmp_path / "prior-results", "pilot", 1,
+    )
 
-    def supervise(*_args, **kwargs):
+    def supervise(*positional, **kwargs):
+        observed["output_dir"] = positional[2]
         observed.update(kwargs)
         return result
 
-    monkeypatch.setattr(artifacts, "run_supervised_shard", supervise, raising=False)
+    monkeypatch.setattr(
+        artifacts, "resource_execution_context",
+        lambda *_args: (bucket, (predecessor,), None),
+    )
+    monkeypatch.setattr(artifacts, "run_supervised_shard", supervise)
     assert run.main(_args(
         tmp_path, "--manifest", str(manifest), "--shard-id", "P1:base:000",
         "--max-episodes", "3",
     )) == expected
-    assert observed == {"repo_root": tmp_path}
+    assert observed == {
+        "output_dir": bucket,
+        "repo_root": tmp_path,
+        "prior_artifacts": (predecessor,),
+        "confirmation_wave": None,
+    }
 
 
 def test_shard_execution_maps_unsafe_or_drift_failure_to_exit_two(
@@ -117,6 +131,10 @@ def test_shard_execution_maps_unsafe_or_drift_failure_to_exit_two(
     def unsafe(*_args, **_kwargs):
         raise artifacts.ImplementationDriftError("drift")
 
+    monkeypatch.setattr(
+        artifacts, "resource_execution_context",
+        lambda *_args: (tmp_path / "bucket", (), None),
+    )
     monkeypatch.setattr(artifacts, "run_supervised_shard", unsafe)
     assert run.main(_args(
         tmp_path, "--manifest", str(manifest), "--shard-id", "P1:base:000",
@@ -135,10 +153,14 @@ def test_pilot_disposition_commands_print_only_closed_status(
     manifest = tmp_path / "manifest.json"
     manifest.write_text("{}\n", encoding="utf-8")
     monkeypatch.setattr(
-        artifacts, "publish_shard_disposition", lambda *_args: status, raising=False,
+        artifacts, "resource_execution_context",
+        lambda *_args: (tmp_path / "bucket", (), None),
     )
     monkeypatch.setattr(
-        artifacts, "publish_stage_disposition", lambda *_args: status, raising=False,
+        artifacts, "publish_shard_disposition", lambda *_args, **_kwargs: status,
+    )
+    monkeypatch.setattr(
+        artifacts, "publish_stage_disposition", lambda *_args, **_kwargs: status,
     )
     extra = (mode, "P1:base:000") if mode == "--shard-disposition" else (mode,)
     assert run.main(_args(tmp_path, "--manifest", str(manifest), *extra)) == 0

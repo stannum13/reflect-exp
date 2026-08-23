@@ -139,9 +139,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.shard_id is not None:
             if manifest_path is None or args.max_episodes is None:
                 return 1
+            resource_output, prior_artifacts, confirmation_wave = artifacts.resource_execution_context(
+                manifest_path, output_dir, args.shard_id,
+            )
             result = artifacts.run_supervised_shard(
-                manifest_path, args.shard_id, output_dir, config_path, gate_path,
+                manifest_path, args.shard_id, resource_output, config_path, gate_path,
                 args.max_episodes, repo_root=REPO_ROOT,
+                prior_artifacts=prior_artifacts, confirmation_wave=confirmation_wave,
             )
             if result in _SUCCESSFUL_SHARD_RESULTS:
                 return 0
@@ -151,8 +155,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.shard_disposition is not None:
             if args.phase != "pilot" or manifest_path is None:
                 return 1
+            resource_output, prior_artifacts, confirmation_wave = artifacts.resource_execution_context(
+                manifest_path, output_dir, args.shard_disposition,
+            )
             result = artifacts.publish_shard_disposition(
-                manifest_path, args.shard_disposition, output_dir,
+                manifest_path, args.shard_disposition, resource_output,
+                prior_artifacts=prior_artifacts, confirmation_wave=confirmation_wave,
             )
             if result not in _SHARD_DISPOSITION_RESULTS:
                 raise artifacts.ArtifactError("shard disposition returned an unknown status")
@@ -161,7 +169,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.stage_disposition:
             if args.phase != "pilot" or manifest_path is None:
                 return 1
-            result = artifacts.publish_stage_disposition(manifest_path, output_dir)
+            resource_output, prior_artifacts, confirmation_wave = artifacts.resource_execution_context(
+                manifest_path, output_dir,
+            )
+            result = artifacts.publish_stage_disposition(
+                manifest_path, resource_output, prior_artifacts=prior_artifacts,
+                confirmation_wave=confirmation_wave,
+            )
             if result not in _STAGE_DISPOSITION_RESULTS:
                 raise artifacts.ArtifactError("stage disposition returned an unknown status")
             print(result)

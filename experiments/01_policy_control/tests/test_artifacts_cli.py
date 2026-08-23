@@ -116,6 +116,10 @@ def test_prepare_revision_publishes_seed_partition_then_runnable_six_stack_base(
     assert artifacts.prepare_manifest(
         "revision", None, destination, config, gate, implementation_sha=G40,
     ) == destination
+    with pytest.raises(artifacts.ArtifactError, match="confirmation"):
+        artifacts.bind_preregistration(
+            destination.with_name("pilot-seeds.json"), tmp_path / "binding.json",
+        )
     seed_path = destination.with_name("pilot-seeds.json")
     seed = artifacts.load_seed_manifest(seed_path)
     assert seed["partition"] == {
@@ -375,6 +379,7 @@ def test_resource_lifecycle_chain_is_exact_typed_path_prefix(tmp_path: Path) -> 
 
     pilot_1 = ref("pilot", 1)
     pilot_2 = ref("pilot", 2)
+    confirmation_r1_1 = ref("confirmation", 1, 1)
     confirmation_1 = ref("confirmation", 2, 1)
     assert artifacts._validate_resource_chain_keys((), "pilot", 1, None) == ()
     assert artifacts._validate_resource_chain_keys(
@@ -384,12 +389,35 @@ def test_resource_lifecycle_chain_is_exact_typed_path_prefix(tmp_path: Path) -> 
         (pilot_1, pilot_2), "confirmation", 2, 1,
     ) == (("pilot", 1, None), ("pilot", 2, None))
     assert artifacts._validate_resource_chain_keys(
+        (pilot_1,), "confirmation", 1, 1,
+    ) == (("pilot", 1, None),)
+    assert artifacts._validate_resource_chain_keys(
+        (pilot_1, confirmation_r1_1), "confirmation", 1, 2,
+    )[-1] == ("confirmation", 1, 1)
+    assert artifacts._validate_resource_chain_keys(
         (pilot_1, pilot_2, confirmation_1), "confirmation", 2, 2,
     )[-1] == ("confirmation", 2, 1)
     with pytest.raises(artifacts.ArtifactError, match="exact|chain|prefix"):
         artifacts._validate_resource_chain_keys((pilot_2,), "confirmation", 2, 1)
     with pytest.raises(artifacts.ArtifactError, match="path|descriptor|typed"):
         artifacts._validate_resource_chain_keys((object(),), "pilot", 2, None)
+
+
+def test_resource_execution_context_uses_revision_bucket_below_results(
+    tmp_path: Path,
+) -> None:
+    config = Path(__file__).parents[1] / "configs/base.yaml"
+    gate = tmp_path / "p3-gate.yaml"
+    gate.write_text("schema_version: 1\n", encoding="utf-8")
+    revision = tmp_path / "protocol" / "pilot-r1" / "revision-manifest.json"
+    manifest = revision.with_name("base-manifest.json")
+    artifacts.prepare_manifest("revision", None, revision, config, gate, implementation_sha=G40)
+    artifacts.prepare_manifest("base", revision, manifest, config, gate, implementation_sha=G40)
+    output, prior, wave = artifacts.resource_execution_context(
+        manifest, tmp_path / "results", "P1:base:000",
+    )
+    assert output == tmp_path / "results" / "resource-ledgers" / "pilot-r1"
+    assert prior == () and wave is None
 
 
 def test_confirmation_wave_domain_is_exact_disjoint_16_seed_partition() -> None:

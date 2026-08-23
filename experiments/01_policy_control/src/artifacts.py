@@ -440,17 +440,34 @@ _SEED_REJECTION_KEYS = frozenset({"candidate_seed", "proposal_index", "reason"})
 
 def load_seed_manifest(path: Path) -> dict[str, Any]:
     value = load_canonical_json(path, _SEED_MANIFEST_KEYS)
-    if _exact_int(value["schema_version"], "schema_version") != 1 or value["study_id"] != STUDY_ID or value["phase"] != "pilot":
+    if (
+        _exact_int(value["schema_version"], "schema_version") != 1
+        or value["study_id"] != STUDY_ID
+        or value["phase"] not in {"pilot", "confirmation"}
+    ):
         raise ArtifactError("seed manifest identity is invalid")
-    _exact_int(value["revision"], "revision")
+    revision = _exact_int(value["revision"], "revision")
+    if revision not in {1, 2}:
+        raise ArtifactError("seed manifest revision is invalid")
     if value["rng_algorithm"] != "PCG64_SHA256_NAMESPACED_V1":
         raise ArtifactError("seed manifest RNG contract is invalid")
     _hash(value["rng_root"], "rng_root")
-    partition = _closed(value["partition"], frozenset({"tuning_seed_ids", "evaluation_seed_ids"}), "pilot partition")
-    tuning = tuple(_exact_int(item, "tuning seed") for item in partition["tuning_seed_ids"])
-    evaluation = tuple(_exact_int(item, "evaluation seed") for item in partition["evaluation_seed_ids"])
-    if tuning != tuple(sorted(set(tuning))) or evaluation != tuple(sorted(set(evaluation))) or len(tuning) != 4 or len(evaluation) != 4 or set(tuning) & set(evaluation):
-        raise ArtifactError("pilot seed partition must contain two disjoint sorted four-seed sets")
+    if value["phase"] == "pilot":
+        partition = _closed(value["partition"], frozenset({"tuning_seed_ids", "evaluation_seed_ids"}), "pilot partition")
+        tuning = tuple(_exact_int(item, "tuning seed") for item in partition["tuning_seed_ids"])
+        evaluation = tuple(_exact_int(item, "evaluation seed") for item in partition["evaluation_seed_ids"])
+        if tuning != tuple(sorted(set(tuning))) or evaluation != tuple(sorted(set(evaluation))) or len(tuning) != 4 or len(evaluation) != 4 or set(tuning) & set(evaluation):
+            raise ArtifactError("pilot seed partition must contain two disjoint sorted four-seed sets")
+        expected_seeds = set(tuning) | set(evaluation)
+    else:
+        partition = _closed(value["partition"], frozenset({"confirmation_seed_ids"}), "confirmation partition")
+        confirmation = tuple(
+            _exact_int(item, "confirmation seed")
+            for item in partition["confirmation_seed_ids"]
+        )
+        if confirmation != tuple(sorted(set(confirmation))) or len(confirmation) != 32:
+            raise ArtifactError("confirmation partition must contain 32 sorted unique seeds")
+        expected_seeds = set(confirmation)
     candidate_count = _exact_int(value["candidate_count"], "candidate_count")
     accepted_count = _exact_int(value["accepted_count"], "accepted_count")
     if not isinstance(value["rejections"], list) or not isinstance(value["scenarios"], list):
@@ -474,8 +491,8 @@ def load_seed_manifest(path: Path) -> dict[str, Any]:
         digest = _hash(row["scenario_sha256"], "scenario_sha256")
         if hashlib.sha256(canonical_json_bytes({key: item for key, item in row.items() if key != "scenario_sha256"}, newline=False)).hexdigest() != digest:
             raise ArtifactError("scenario hash does not bind its exact scenario fields")
-    if scenario_seeds != sorted(set(scenario_seeds)) or set(scenario_seeds) != set(tuning) | set(evaluation):
-        raise ArtifactError("seed scenarios do not exactly cover the pilot partition")
+    if scenario_seeds != sorted(set(scenario_seeds)) or set(scenario_seeds) != expected_seeds:
+        raise ArtifactError("seed scenarios do not exactly cover the declared partition")
     if accepted_count != len(scenario_seeds) or candidate_count != accepted_count + len(rejection_keys):
         raise ArtifactError("seed candidate accounting is inconsistent")
     return value
@@ -612,6 +629,100 @@ def prepare_manifest(
     return destination
 
 
+_PREREGISTRATION_KEYS = frozenset({
+    "schema_version", "study_id", "preregistration_git_sha",
+    "seed_manifest_path", "seed_git_blob_sha1", "seed_sha256",
+    "protocol_manifest_path", "protocol_git_blob_sha1", "protocol_sha256",
+    "frozen_sha256", "implementation_sha",
+})
+
+
+def _repository_root(path: Path) -> Path:
+    for candidate in (path, *path.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    raise ArtifactError("artifact is not below a Git repository")
+
+
+def bind_preregistration(seed_manifest_path: Path, destination: Path) -> str:
+    """Bind confirmation protocol bytes to their first unchanged Git commit."""
+    seed_manifest_path = Path(seed_manifest_path)
+    destination = Path(destination)
+    seed = load_seed_manifest(seed_manifest_path)
+    if seed["phase"] != "confirmation":
+        raise ArtifactError("preregistration binding requires a confirmation seed manifest")
+    protocol_path = seed_manifest_path.with_name("protocol-manifest.json")
+    protocol = load_protocol_manifest(protocol_path)
+    if (
+        protocol["phase"] != "confirmation"
+        or protocol["revision"] != seed["revision"]
+        or protocol["seed_manifest_sha256"] != hashlib.sha256(seed_manifest_path.read_bytes()).hexdigest()
+    ):
+        raise ArtifactError("confirmation protocol does not bind its exact seed manifest")
+    root = _repository_root(seed_manifest_path.resolve())
+    relative_seed = seed_manifest_path.resolve().relative_to(root).as_posix()
+    relative_protocol = protocol_path.resolve().relative_to(root).as_posix()
+    seed_bytes = seed_manifest_path.read_bytes()
+    protocol_bytes = protocol_path.read_bytes()
+    head = _git(root, "rev-parse", "HEAD").decode().strip()
+    _hash(head, "HEAD", _GIT_SHA)
+    if (
+        _git(root, "show", f"{head}:{relative_seed}") != seed_bytes
+        or _git(root, "show", f"{head}:{relative_protocol}") != protocol_bytes
+    ):
+        raise ArtifactError("confirmation manifests are not unchanged tracked HEAD blobs")
+    commits = tuple(filter(None, _git(
+        root, "rev-list", "--first-parent", "--reverse", "--max-count=2048",
+        "HEAD", "--", relative_seed, relative_protocol,
+    ).decode().splitlines()))
+    first = None
+    for commit in commits:
+        _hash(commit, "preregistration commit", _GIT_SHA)
+        try:
+            if (
+                _git(root, "show", f"{commit}:{relative_seed}") == seed_bytes
+                and _git(root, "show", f"{commit}:{relative_protocol}") == protocol_bytes
+            ):
+                first = commit
+                break
+        except ImplementationDriftError:
+            continue
+    if first is None:
+        raise ArtifactError("no bounded first-parent commit seals both confirmation manifests")
+    protocol_root = next(
+        (parent for parent in seed_manifest_path.parents if parent.name == "protocol"), None,
+    )
+    if protocol_root is None:
+        raise ArtifactError("confirmation manifests are not below the protocol root")
+    frozen_path = protocol_root / "frozen-config.sha256"
+    frozen_line = frozen_path.read_text(encoding="utf-8")
+    frozen_match = re.fullmatch(r"([0-9a-f]{64})  experiments/01_policy_control/configs/frozen\.yaml\n", frozen_line)
+    if frozen_match is None:
+        raise ArtifactError("frozen config digest record is invalid")
+    row = {
+        "schema_version": 1, "study_id": STUDY_ID,
+        "preregistration_git_sha": first,
+        "seed_manifest_path": relative_seed,
+        "seed_git_blob_sha1": _git(root, "rev-parse", f"{first}:{relative_seed}").decode().strip(),
+        "seed_sha256": hashlib.sha256(seed_bytes).hexdigest(),
+        "protocol_manifest_path": relative_protocol,
+        "protocol_git_blob_sha1": _git(root, "rev-parse", f"{first}:{relative_protocol}").decode().strip(),
+        "protocol_sha256": hashlib.sha256(protocol_bytes).hexdigest(),
+        "frozen_sha256": frozen_match.group(1),
+        "implementation_sha": protocol["implementation_sha"],
+    }
+    _hash(row["seed_git_blob_sha1"], "seed Git blob", _GIT_SHA)
+    _hash(row["protocol_git_blob_sha1"], "protocol Git blob", _GIT_SHA)
+    payload = canonical_json_bytes(row)
+    if destination.exists():
+        existing = load_canonical_json(destination, _PREREGISTRATION_KEYS)
+        if canonical_json_bytes(existing) != payload:
+            raise FileExistsError("preregistration binding conflicts")
+        return "validated-and-skipped"
+    _publish_identical_or_create(destination, payload)
+    return "published"
+
+
 _RESOURCE_REASONS = frozenset({
     "PHASE_BYTES_EXCEEDED", "TEMP_BYTES_EXCEEDED", "QUARANTINE_BYTES_EXCEEDED",
     "INSUFFICIENT_FREE_BYTES", "WALL_TIME_EXCEEDED", "CPU_TIME_EXCEEDED",
@@ -664,6 +775,70 @@ class ResourceArtifactPath:
         object.__setattr__(self, "results_root", Path(self.results_root))
 
 
+def _pilot_resource_manifest(protocol_root: Path, revision: int) -> Path:
+    directory = protocol_root / f"pilot-r{revision}"
+    candidates: list[tuple[int, Path]] = []
+    if not directory.is_dir() or directory.is_symlink():
+        raise ArtifactError(f"pilot revision {revision} protocol directory is unavailable")
+    for path in sorted(directory.glob("*-manifest.json")):
+        if path.is_symlink() or not path.is_file():
+            raise ArtifactError("pilot protocol inventory contains an unsafe manifest")
+        manifest = load_protocol_manifest(path)
+        if manifest["phase"] != "pilot" or manifest["revision"] != revision:
+            raise ArtifactError("pilot protocol inventory crosses phase/revision")
+        candidates.append((_PILOT_STAGES.index(manifest["stage"]), path))
+    if not candidates:
+        raise ArtifactError(f"pilot revision {revision} has no protocol manifest")
+    highest = max(index for index, _ in candidates)
+    matches = tuple(path for index, path in candidates if index == highest)
+    if len(matches) != 1:
+        raise ArtifactError("pilot resource predecessor manifest is ambiguous")
+    return matches[0]
+
+
+def resource_execution_context(
+    manifest_path: Path, output_dir: Path, shard_id: str | None = None,
+) -> tuple[Path, tuple[ResourceArtifactPath, ...], int | None]:
+    """Derive the exact disjoint resource bucket and its frozen predecessor chain."""
+    manifest_path = Path(manifest_path)
+    manifest = load_protocol_manifest(manifest_path)
+    protocol_roots = tuple(parent for parent in manifest_path.parents if parent.name == "protocol")
+    if len(protocol_roots) != 1:
+        raise ArtifactError("protocol manifest is not below one protocol root")
+    protocol_root = protocol_roots[0]
+    resource_root = Path(output_dir) / "resource-ledgers"
+    revision = manifest["revision"]
+    prior: list[ResourceArtifactPath] = []
+    prior_pilot_revisions = range(1, revision) if manifest["phase"] == "pilot" else range(1, revision + 1)
+    for pilot_revision in prior_pilot_revisions:
+        prior.append(ResourceArtifactPath(
+            _pilot_resource_manifest(protocol_root, pilot_revision),
+            resource_root / f"pilot-r{pilot_revision}",
+            "pilot", pilot_revision,
+        ))
+    if manifest["phase"] == "pilot":
+        return resource_root / f"pilot-r{revision}", tuple(prior), None
+    seeds = tuple(sorted({int(row["seed"]) for row in manifest["shards"]}))
+    if len(seeds) != 32:
+        raise ArtifactError("confirmation execution requires the exact 32-seed protocol")
+    if shard_id is None:
+        wave = 2
+    else:
+        matches = tuple(row for row in manifest["shards"] if row["shard_id"] == shard_id)
+        if len(matches) != 1:
+            raise ArtifactError("confirmation shard is not uniquely declared")
+        wave = 1 if int(matches[0]["seed"]) in set(seeds[:16]) else 2
+    if wave == 2:
+        prior.append(ResourceArtifactPath(
+            manifest_path, resource_root / f"confirmation-r{revision}-wave-1",
+            "confirmation", revision, 1,
+        ))
+    return (
+        resource_root / f"confirmation-r{revision}-wave-{wave}",
+        tuple(prior), wave,
+    )
+
+
 def _validate_resource_chain_keys(
     prior_artifacts: Sequence[ResourceArtifactPath],
     phase: str, revision: int, confirmation_wave: int | None,
@@ -674,6 +849,10 @@ def _validate_resource_chain_keys(
     exact_prefixes = {
         ("pilot", 1, None): (),
         ("pilot", 2, None): (("pilot", 1, None),),
+        ("confirmation", 1, 1): (("pilot", 1, None),),
+        ("confirmation", 1, 2): (
+            ("pilot", 1, None), ("confirmation", 1, 1),
+        ),
         ("confirmation", 2, 1): (("pilot", 1, None), ("pilot", 2, None)),
         ("confirmation", 2, 2): (
             ("pilot", 1, None), ("pilot", 2, None), ("confirmation", 2, 1),
@@ -799,6 +978,15 @@ _RESOURCE_TERMINAL_KEYS = frozenset({
     "resource_ledger_sha256", "preflight_sha256", "reasons", "lifecycle_state",
     "scientific_result",
 })
+_STAGE_TERMINAL_KEYS = frozenset({
+    "schema_version", "study_id", "phase", "revision", "stage",
+    "manifest_sha256", "trigger_shard_id", "trigger_completion_sha256",
+    "reason", "lifecycle_state", "scientific_result",
+})
+_SCIENTIFIC_TERMINAL_REASONS = frozenset({
+    "DIMENSIONAL_MISMATCH", "NONFINITE_REFERENCE_OR_STATE",
+    "JOINT_LIMIT_ESCAPE", "UNSTABLE_DIVERGENCE", "EASIEST_RECOVERY_FAILURE",
+})
 _PREFLIGHT_KEYS = frozenset(field.name for field in fields(ResourceDisposition))
 _WORKER_REFUSAL_KEYS = _PREFLIGHT_KEYS | frozenset({"shard_id"})
 
@@ -834,6 +1022,128 @@ def _canonical_jsonl_at(directory_descriptor: int, name: str) -> tuple[tuple[dic
             raise ArtifactError(f"noncanonical JSONL row in {name}")
         rows.append(value)
     return tuple(rows), raw
+
+
+def _stage_terminal_path(manifest_path: Path, stage: str) -> Path:
+    return Path(manifest_path).with_name(f"{stage}-terminal.json")
+
+
+def _load_stage_terminal(manifest_path: Path, manifest: Mapping[str, object]) -> dict[str, Any] | None:
+    path = _stage_terminal_path(manifest_path, str(manifest["stage"]))
+    if not path.exists():
+        return None
+    row = load_canonical_json(path, _STAGE_TERMINAL_KEYS)
+    if (
+        row["schema_version"] != 1 or row["study_id"] != STUDY_ID
+        or row["phase"] != "pilot" or row["revision"] != manifest["revision"]
+        or row["stage"] != manifest["stage"]
+        or row["manifest_sha256"] != hashlib.sha256(Path(manifest_path).read_bytes()).hexdigest()
+        or row["reason"] not in _SCIENTIFIC_TERMINAL_REASONS
+        or row["lifecycle_state"] != "STOPPED"
+        or row["scientific_result"] != "INCONCLUSIVE"
+    ):
+        raise ArtifactError("stage-terminal disposition does not bind the exact pilot stage")
+    _hash(row["trigger_completion_sha256"], "trigger completion hash")
+    _text(row["trigger_shard_id"], "trigger shard id")
+    return row
+
+
+def _p1_scientific_failure(
+    manifest: Mapping[str, object], shard: Mapping[str, object], results_root: Path,
+) -> str | None:
+    directory = Path(results_root) / _shard_directory_name(str(shard["shard_id"]))
+    for output_identity in shard["output_identities"]:
+        artifact = validate_rollout(directory / str(output_identity))
+        metrics = artifact.metrics
+        numeric = tuple(
+            metrics.get(key) for key in (
+                "final_error_m", "mean_error_m", "p95_error_m", "age_p95_s",
+                "jerk_p95", "discontinuity_mean", "discontinuity_p95",
+            )
+        )
+        if metrics.get("valid") is not True or any(
+            type(value) not in {int, float} or not math.isfinite(float(value))
+            for value in numeric
+        ):
+            return "NONFINITE_REFERENCE_OR_STATE"
+        if type(metrics.get("unsafe_count")) is not int or metrics["unsafe_count"] > 0:
+            return "JOINT_LIMIT_ESCAPE"
+        if float(metrics["final_error_m"]) > 1.0:
+            return "UNSTABLE_DIVERGENCE"
+        if (
+            manifest["stage"] == "final_four"
+            and metrics.get("condition_id") == "core-20-000-1"
+            and metrics.get("recovered_events") != metrics.get("displacement_events")
+        ):
+            return "EASIEST_RECOVERY_FAILURE"
+    return None
+
+
+def publish_shard_disposition(
+    manifest_path: Path, shard_id: str, results_root: Path, *,
+    prior_artifacts: Sequence[ResourceArtifactPath] = (),
+    confirmation_wave: int | None = None,
+) -> str:
+    manifest_path = Path(manifest_path)
+    manifest = load_protocol_manifest(manifest_path)
+    if manifest["phase"] != "pilot":
+        raise ArtifactError("scientific shard dispositions are pilot-only")
+    matches = tuple(row for row in manifest["shards"] if row["shard_id"] == shard_id)
+    if len(matches) != 1 or matches[0]["stack_id"] != "P1":
+        raise ArtifactError("shard disposition requires one declared P1 shard")
+    evidence = load_resource_completion_evidence(
+        manifest_path, results_root, prior_artifacts=prior_artifacts,
+        confirmation_wave=confirmation_wave,
+    )
+    expected_p1 = tuple(
+        row["shard_id"] for row in manifest["shards"] if row["stack_id"] == "P1"
+    )
+    index = expected_p1.index(shard_id)
+    if tuple(evidence.completed_shard_ids[:index + 1]) != expected_p1[:index + 1]:
+        raise ArtifactError("P1 shard disposition requires the exact completed P1 prefix")
+    existing = _load_stage_terminal(manifest_path, manifest)
+    if existing is not None:
+        if existing["trigger_shard_id"] != shard_id:
+            raise ArtifactError("a later shard cannot supersede the first terminal P1 shard")
+        return "TERMINAL_STOPPED"
+    reason = _p1_scientific_failure(manifest, matches[0], results_root)
+    if reason is None:
+        return "CONTINUE"
+    completion_path = Path(results_root) / _shard_directory_name(shard_id) / "completion.json"
+    row = {
+        "schema_version": 1, "study_id": STUDY_ID, "phase": "pilot",
+        "revision": manifest["revision"], "stage": manifest["stage"],
+        "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+        "trigger_shard_id": shard_id,
+        "trigger_completion_sha256": hashlib.sha256(completion_path.read_bytes()).hexdigest(),
+        "reason": reason, "lifecycle_state": "STOPPED",
+        "scientific_result": "INCONCLUSIVE",
+    }
+    _publish_identical_or_create(
+        _stage_terminal_path(manifest_path, str(manifest["stage"])), canonical_json_bytes(row),
+    )
+    return "TERMINAL_STOPPED"
+
+
+def publish_stage_disposition(
+    manifest_path: Path, results_root: Path, *,
+    prior_artifacts: Sequence[ResourceArtifactPath] = (),
+    confirmation_wave: int | None = None,
+) -> str:
+    manifest_path = Path(manifest_path)
+    manifest = load_protocol_manifest(manifest_path)
+    if manifest["phase"] != "pilot":
+        raise ArtifactError("stage dispositions are pilot-only")
+    terminal = _load_stage_terminal(manifest_path, manifest)
+    evidence = load_resource_completion_evidence(
+        manifest_path, results_root, prior_artifacts=prior_artifacts,
+        confirmation_wave=confirmation_wave,
+    )
+    if terminal is not None or evidence.resource_state == "STOPPED":
+        return "TERMINAL_STOPPED"
+    if not evidence.complete:
+        raise ArtifactError("pilot stage is incomplete")
+    return "ADVANCE"
 
 
 def _load_worker_refusal(
@@ -2935,6 +3245,8 @@ def run_supervised_shard(
     max_episodes: int,
     *,
     repo_root: Path,
+    prior_artifacts: Sequence[ResourceArtifactPath] = (),
+    confirmation_wave: int | None = None,
     deadline_s: float = 3_600.0,
     term_grace_s: float = 5.0,
     worker_argv: Sequence[str] | None = None,
@@ -2942,6 +3254,19 @@ def run_supervised_shard(
     """Run one manifest shard in an isolated process and publish its marker last."""
     manifest_path = Path(manifest_path)
     manifest = load_protocol_manifest(manifest_path)
+    _validate_resource_chain_keys(
+        prior_artifacts, manifest["phase"], manifest["revision"], confirmation_wave,
+    )
+    validated_prior = []
+    for index, artifact_path in enumerate(prior_artifacts):
+        evidence = load_resource_completion_evidence(
+            artifact_path.protocol_path, artifact_path.results_root,
+            prior_artifacts=prior_artifacts[:index],
+            confirmation_wave=artifact_path.confirmation_wave,
+        )
+        if not evidence.complete:
+            raise ArtifactError("supervisor resource predecessor is not complete")
+        validated_prior.append(evidence)
     matches = tuple(row for row in manifest["shards"] if row["shard_id"] == shard_id)
     if len(matches) != 1:
         raise ArtifactError("supervisor shard identity is not uniquely declared")
@@ -2970,16 +3295,27 @@ def run_supervised_shard(
             os.close(parent_descriptor)
             raise ArtifactError("existing shard publication is not a directory")
         try:
-            evidence = load_resource_completion_evidence(manifest_path, output_dir)
+            evidence = load_resource_completion_evidence(
+                manifest_path, output_dir, prior_artifacts=prior_artifacts,
+                confirmation_wave=confirmation_wave,
+            )
             if shard_id not in evidence.completed_shard_ids:
                 raise ArtifactError("existing shard is not in validated completion evidence")
             return "validated-and-skipped"
         finally:
             os.close(parent_descriptor)
+    stable_chain, stable_handles = _stable_protocol_manifest_chain(manifest_path)
+    try:
+        protocol_rows = tuple(
+            (row["shard_id"], row, hashlib.sha256(raw).hexdigest())
+            for _, stage_manifest, raw in stable_chain
+            for row in stage_manifest["shards"]
+        )
+    finally:
+        _close_stable_protocol_files(stable_handles)
     phase_rollouts = sum(
-        int(row["episode_count"])
-        for _, stage_manifest in _protocol_manifest_chain(manifest_path)
-        for row in stage_manifest["shards"]
+        int(row[1]["episode_count"])
+        for row in _resource_wave_rows(protocol_rows, manifest["phase"], confirmation_wave)
     )
     try:
         os.stat("preflight.json", dir_fd=parent_descriptor, follow_symlinks=False)
