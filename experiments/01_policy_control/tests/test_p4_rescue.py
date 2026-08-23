@@ -7,6 +7,7 @@ import inspect
 import json
 from dataclasses import replace
 from pathlib import Path
+import subprocess
 
 import numpy as np
 import pytest
@@ -155,6 +156,51 @@ def test_p4_rescue_v2_supersedes_v1_and_binds_repaired_reconstruction() -> None:
     assert supersession["v1"]["raw_bytes_rewritten"] is False
     assert supersession["v1"]["manifest_sha256"]==old["evidence"]["manifest_sha256"]
     assert supersession["v2"]["manifest_sha256"]==new["evidence"]["manifest_sha256"]
+    repair_sha="18d03fb698cef4c35b6e47cdfcd48044ae73c870"
+    assert new["repair_commit"]==supersession["repair_commit"]==repair_sha
+    recorded_commits={
+        supersession["v1"]["execution_implementation_sha"],
+        supersession["v2"]["execution_implementation_sha"],
+        new["source_commit"],
+        new["repair_commit"],
+        *(row["execution_commit"] for row in supersession["invalid_attempts"]),
+    }
+    for commit in recorded_commits:
+        assert subprocess.run(
+            ["git","cat-file","-e",f"{commit}^{{commit}}"],cwd=rescue.ROOT,
+            capture_output=True,check=False,
+        ).returncode==0
+    attempt_roots=sorted(Path(rescue.ROOT).glob(
+        "experiments/01_policy_control/results/engineering-p4-rescue-v2-invalid-attempt-*"
+    ))
+    assert [path.relative_to(rescue.ROOT).as_posix() for path in attempt_roots]==[
+        row["relative_path"] for row in supersession["invalid_attempts"]
+    ]
+    assert supersession["invalid_attempts"]==new["invalid_attempts"]
+    for path,row in zip(attempt_roots,supersession["invalid_attempts"],strict=True):
+        files=[]
+        for item in sorted(candidate for candidate in path.rglob("*") if candidate.is_file()):
+            payload=item.read_bytes();files.append({
+                "path":item.relative_to(path).as_posix(),"bytes":len(payload),
+                "sha256":hashlib.sha256(payload).hexdigest(),
+            })
+        marker=json.loads((path/"INVALID_ATTEMPT.json").read_text())
+        metrics=[item for item in files if item["path"].endswith("/metrics.json")]
+        metric_payloads=[json.loads((path/item["path"]).read_text()) for item in metrics]
+        variants={Path(item["path"]).parts[2] for item in metrics}
+        assert row["status"]==marker["disposition"]
+        assert row["files"]==len(files) and row["bytes"]==sum(item["bytes"] for item in files)
+        assert row["inventory_sha256"]==hashlib.sha256(rescue.canonical(files)).hexdigest()
+        assert row["marker_sha256"]==hashlib.sha256((path/"INVALID_ATTEMPT.json").read_bytes()).hexdigest()
+        assert row["marker_inventory_matches_retained_tree"] is False
+        assert row["cell_counts"]=={"tuning":len(metrics),"selection":0,"evaluation":0,"fault":0}
+        assert row["domain_counts"]=={
+            "tuning_variants":len(variants),
+            "conditions":len({item["condition_id"] for item in metric_payloads}),
+            "seeds":len({item["seed"] for item in metric_payloads}),
+        }
+        assert row["reached_selection"] is row["reached_evaluation"] is False
+        assert row["outcome_impact"]=="NONE"
     assert new["repair_commit"]==supersession["repair_commit"]
     assert new["disposition"]=="PRELIMINARY_MECHANISM_RESCUE_V2_CANDIDATE_FOR_FORMAL_P4_PILOT_NO_PROMOTION"
     assert new["aggregates"]["P4-lookahead1-dqon"]["working"]==88 and new["aggregates"]["P6-res0p5-slew48"]["working"]==96

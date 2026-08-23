@@ -2,7 +2,7 @@
 
 Status: `HISTORICAL_V1_SUPERSEDED_FOR_SAFETY_CLOSED_CLAIMS`.
 
-This v1 screen remains an authentic historical execution, but its implementation did not suppress outward velocity when a reference was already exactly on a joint limit. It is therefore invalid as evidence for the current safety-closed P4 mechanism or formal-pilot candidacy. The immutable raw tree is preserved; `ENGINEERING_P4_RESCUE_SUPERSESSION.json` binds this v1 evidence to the repaired v2 rerun and `ENGINEERING_P4_RESCUE_V2.md` contains the current preliminary conclusion. No v1 raw bytes were rewritten.
+This v1 screen remains an authentic historical execution, but its implementation did not suppress outward velocity when a reference was already exactly on a joint limit. It is therefore invalid as evidence for the current safety-closed P4 mechanism or formal-pilot candidacy. The immutable raw tree is preserved; `ENGINEERING_P4_RESCUE_SUPERSESSION.json` binds this v1 evidence to the repaired v2 rerun at exact repair commit `18d03fb698cef4c35b6e47cdfcd48044ae73c870`, and `ENGINEERING_P4_RESCUE_V2.md` contains the current preliminary conclusion. No v1 raw bytes were rewritten.
 
 ## Outcome
 

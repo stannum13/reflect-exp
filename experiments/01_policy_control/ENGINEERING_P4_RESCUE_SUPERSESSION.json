@@ -1,1 +1,82 @@
-{"disposition":"HISTORICAL_V1_INVALID_FOR_SAFETY_CLOSED_CLAIMS_SUPERSEDED_BY_V2","reason_ids":["EXACT_JOINT_LIMIT_OUTWARD_DQ_WAS_NOT_SUPPRESSED"],"repair_commit":"18d03fbdbf0b09d30a4262198d3c15bbd778e190","schema_version":1,"v1":{"evidence_relative_path":"experiments/01_policy_control/results/engineering-p4-rescue","execution_implementation_sha":"1404aa01858ba52c0a8920804e7856a6e452fd0b","inventory_sha256":"2af796634353b880ab965cf5d9a54ea465a44c1b9ad536b391bfc316ac901960","manifest_sha256":"61cd7f96f966d4417272304fa50e6d16cf627fa6ec226811368d035dc5d608d0","raw_bytes_rewritten":false,"scientific_disposition":"AUTHENTIC_HISTORICAL_SCREEN_NOT_ADMISSIBLE_FOR_CURRENT_SAFETY_OR_PILOT_CANDIDACY","selection_sha256":"dafa30f82e67fcdb54a6f6c777775f4fd82c976d45078d97d932681cfa6ef02f","summary_sha256":"d9af286d5eb27c7fdd59da2c7aa9537b01737e125eaf4f628857bcdfc12dc835"},"v2":{"claim_projection_sha256":"289d75fc8190210317fea1eb8aa67ef00f4549c7c85106735796b25e7ed43125","evidence_relative_path":"experiments/01_policy_control/results/engineering-p4-rescue-v2","execution_implementation_sha":"4307f6eb30504976d8250d240cb2ae9b1c7026b4","inventory_sha256":"072026fc7897fec69e098dca218036c6489c8a7db576e074a38da94426bd4ece","manifest_sha256":"0a0562b71deb6cf94dac2e1c924a3d4df8ef1ebd8c7ccb25d6231c92b17845aa","scientific_disposition":"PRELIMINARY_SAFETY_REPAIRED_MECHANISM_RESCUE_NO_PROMOTION","selection_sha256":"0a3e59fee45555917bcdc5b382626abf4fa6d081bfde7fbbca5b69a35fdaaee5","summary_sha256":"f184dc33dc6ee9daed0a8627e6105780309d9ea041cc9e22e8591becb468e89d"}}
+{
+    "disposition": "HISTORICAL_V1_INVALID_FOR_SAFETY_CLOSED_CLAIMS_SUPERSEDED_BY_V2",
+    "reason_ids": [
+        "EXACT_JOINT_LIMIT_OUTWARD_DQ_WAS_NOT_SUPPRESSED"
+    ],
+    "repair_commit": "18d03fb698cef4c35b6e47cdfcd48044ae73c870",
+    "schema_version": 1,
+    "v1": {
+        "evidence_relative_path": "experiments/01_policy_control/results/engineering-p4-rescue",
+        "execution_implementation_sha": "1404aa01858ba52c0a8920804e7856a6e452fd0b",
+        "inventory_sha256": "2af796634353b880ab965cf5d9a54ea465a44c1b9ad536b391bfc316ac901960",
+        "manifest_sha256": "61cd7f96f966d4417272304fa50e6d16cf627fa6ec226811368d035dc5d608d0",
+        "raw_bytes_rewritten": false,
+        "scientific_disposition": "AUTHENTIC_HISTORICAL_SCREEN_NOT_ADMISSIBLE_FOR_CURRENT_SAFETY_OR_PILOT_CANDIDACY",
+        "selection_sha256": "dafa30f82e67fcdb54a6f6c777775f4fd82c976d45078d97d932681cfa6ef02f",
+        "summary_sha256": "d9af286d5eb27c7fdd59da2c7aa9537b01737e125eaf4f628857bcdfc12dc835"
+    },
+    "v2": {
+        "claim_projection_sha256": "289d75fc8190210317fea1eb8aa67ef00f4549c7c85106735796b25e7ed43125",
+        "evidence_relative_path": "experiments/01_policy_control/results/engineering-p4-rescue-v2",
+        "execution_implementation_sha": "4307f6eb30504976d8250d240cb2ae9b1c7026b4",
+        "inventory_sha256": "072026fc7897fec69e098dca218036c6489c8a7db576e074a38da94426bd4ece",
+        "manifest_sha256": "0a0562b71deb6cf94dac2e1c924a3d4df8ef1ebd8c7ccb25d6231c92b17845aa",
+        "scientific_disposition": "PRELIMINARY_SAFETY_REPAIRED_MECHANISM_RESCUE_NO_PROMOTION",
+        "selection_sha256": "0a3e59fee45555917bcdc5b382626abf4fa6d081bfde7fbbca5b69a35fdaaee5",
+        "summary_sha256": "f184dc33dc6ee9daed0a8627e6105780309d9ea041cc9e22e8591becb468e89d"
+    },
+    "invalid_attempts": [
+        {
+            "relative_path": "experiments/01_policy_control/results/engineering-p4-rescue-v2-invalid-attempt-1",
+            "status": "INVALID_SOURCE_LEDGER_DRIFT_DURING_TUNING",
+            "execution_commit": "18d03fb698cef4c35b6e47cdfcd48044ae73c870",
+            "marker_attempted_execution_identifier": "18d03fbdbf0b09d30a4262198d3c15bbd778e190",
+            "marker_identifier_status": "NONRESOLVING_TYPO_CORRECTED_BY_EXACT_REPAIR_COMMIT",
+            "cell_counts": {"tuning": 96, "selection": 0, "evaluation": 0, "fault": 0},
+            "domain_counts": {"tuning_variants": 8, "conditions": 3, "seeds": 4},
+            "files": 673,
+            "bytes": 168656934,
+            "marker_sha256": "6291f78cc36be01f0c850391184b37e90b19ea89575147ed97e8ba921b6bfaae",
+            "inventory_sha256": "0b58bc344f86612d26082559dab0aa5c2a96c709ad6b8282567007ecfd7f7aac",
+            "marker_inventory_matches_retained_tree": false,
+            "reached_selection": false,
+            "reached_evaluation": false,
+            "outcome_impact": "NONE"
+        },
+        {
+            "relative_path": "experiments/01_policy_control/results/engineering-p4-rescue-v2-invalid-attempt-2",
+            "status": "INVALID_OPERATOR_ABORTED_FOR_CONCURRENT_SOURCE_EDIT_WINDOW",
+            "execution_commit": "d3da155927f7e769549c98a49e9132635620e878",
+            "marker_attempted_execution_identifier": "d3da155927f7e769549c98a49e9132635620e878",
+            "marker_identifier_status": "RESOLVES",
+            "cell_counts": {"tuning": 20, "selection": 0, "evaluation": 0, "fault": 0},
+            "domain_counts": {"tuning_variants": 2, "conditions": 3, "seeds": 4},
+            "files": 141,
+            "bytes": 34921047,
+            "marker_sha256": "6a7e10033ddac3b61dce0b61f34a17c63318f1197390aec5842795912bec5682",
+            "inventory_sha256": "8051b3922e41e620b25784bdcf9b7f46f48edf4bd6562f630b57a7647cb33dd1",
+            "marker_inventory_matches_retained_tree": false,
+            "reached_selection": false,
+            "reached_evaluation": false,
+            "outcome_impact": "NONE"
+        },
+        {
+            "relative_path": "experiments/01_policy_control/results/engineering-p4-rescue-v2-invalid-attempt-3",
+            "status": "INVALID_SOURCE_LEDGER_DRIFT_DURING_TUNING",
+            "execution_commit": "4307f6eb30504976d8250d240cb2ae9b1c7026b4",
+            "marker_attempted_execution_identifier": "4307f6eb30504976d8250d240cb2ae9b1c7026b4",
+            "marker_identifier_status": "RESOLVES",
+            "cell_counts": {"tuning": 96, "selection": 0, "evaluation": 0, "fault": 0},
+            "domain_counts": {"tuning_variants": 8, "conditions": 3, "seeds": 4},
+            "files": 673,
+            "bytes": 168656989,
+            "marker_sha256": "043fb423532fad25850e3910fa2fbdf6b6ffcff8fb433a33f7eb4a542a255a6a",
+            "inventory_sha256": "f37539886cc391efb747077bc1362a4401ecff1fc4e1e55efd40e871bfcfdf62",
+            "marker_inventory_matches_retained_tree": false,
+            "reached_selection": false,
+            "reached_evaluation": false,
+            "outcome_impact": "NONE"
+        }
+    ],
+    "invalid_attempts_disposition": "RETAINED_INVALID_PROVENANCE_ONLY_NONE_REACHED_SELECTION_OR_EVALUATION_NO_OUTCOME_IMPACT"
+}
