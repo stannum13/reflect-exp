@@ -662,8 +662,14 @@ def _controller_binding(spec: V3EpisodeSpec, arm_module: object) -> Mapping[str,
     })
 
 
-def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
+def run_episode(
+    spec: V3EpisodeSpec, *, counterfactual_level: DecisionLevel | None = None,
+) -> V3EpisodeRaw:
     """Execute one calibration episode and return immutable raw evidence inputs."""
+    if counterfactual_level is not None:
+        counterfactual_level = DecisionLevel(counterfactual_level)
+        if counterfactual_level not in {DecisionLevel.CONTROL, DecisionLevel.MOTION, DecisionLevel.SEMANTIC}:
+            raise ValueError("counterfactual replay requires a manipulable decision level")
     realization = make_realization(spec.scenario_id, spec.seed, stage=spec.stage)
     receipt = precheck(spec)
     if receipt.disposition != "READY":
@@ -842,12 +848,33 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
             forced_hold_tick = tick
         attempt = _Attempt(decision.level, tick, tick + REOBSERVE_TICKS, old, new)
 
+    def choose_decision(observable: ObservableState, before: BudgetState) -> DecisionEvent:
+        if counterfactual_level is None:
+            return decide(spec.architecture, observable, before)
+        replay_architecture = {
+            DecisionLevel.CONTROL: Architecture.R0,
+            DecisionLevel.MOTION: Architecture.R2,
+            DecisionLevel.SEMANTIC: Architecture.R1,
+        }[counterfactual_level]
+        candidate = decide(replay_architecture, observable, before)
+        if candidate.level in {DecisionLevel.NONE, DecisionLevel.SAFE_ABORT}:
+            return replace(candidate, architecture=spec.architecture, reason=f"COUNTERFACTUAL_{candidate.reason}")
+        if candidate.level is counterfactual_level:
+            return replace(
+                candidate, architecture=spec.architecture,
+                reason=f"COUNTERFACTUAL_FORCED_{counterfactual_level.value}",
+            )
+        return DecisionEvent(
+            spec.architecture, DecisionLevel.SAFE_ABORT, "COUNTERFACTUAL_LEVEL_EXHAUSTED",
+            observable.tick, observable.sha256, candidate.budget_before, candidate.budget_before,
+        )
+
     def handle_decision(observable: ObservableState) -> None:
         nonlocal budget, aborted
         if budget is None:
             active_sha = ZERO_SHA256 if active is None else str(active.record["content_sha256"])
             budget = initial_budget(active_sha)
-        event = decide(spec.architecture, observable, budget)
+        event = choose_decision(observable, budget)
         observations.append(observable)
         decisions.append(event)
         budget = event.budget_after
@@ -1118,7 +1145,7 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
             )
             attempt = None
             reobserve_index += 1
-            event = decide(spec.architecture, observable, before)
+            event = choose_decision(observable, before)
             observations.append(observable)
             decisions.append(event)
             if event.budget_before.active_content_sha256 != before.active_content_sha256:
@@ -1159,7 +1186,10 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
         tuple(action_envelopes),
         tuple(contact_envelopes),
         _readonly_trace(trace_rows),
-        MappingProxyType({"aborted": aborted, "executed_ticks": executed_ticks}),
+        MappingProxyType({
+            "aborted": aborted, "executed_ticks": executed_ticks,
+            "counterfactual_level": None if counterfactual_level is None else counterfactual_level.value,
+        }),
     )
 
 

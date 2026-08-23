@@ -146,6 +146,34 @@ def test_structured_reviewer_approval_requires_zero_blocking_findings(tmp_path: 
     assert "decision" not in verified
 
 
+def test_live_canonical_qualification_accepts_exact_unmocked_approval(tmp_path: Path) -> None:
+    qualification = Path(__file__).resolve().parents[3] / "results/hierarchical-recovery-v3-qualification"
+    freeze_payload = (qualification / "qualification-freeze.json").read_bytes()
+    raw_payload = (qualification / "raw/manifest.json").read_bytes()
+    derived_payload = (qualification / "derived/manifest.json").read_bytes()
+    freeze = json.loads(freeze_payload.decode("ascii"))
+    hashes = {
+        "qualified_source_commit": freeze["source_commit"],
+        "source_closure_sha256": freeze["source_closure_sha256"],
+        "qualification_freeze_sha256": hashlib.sha256(freeze_payload).hexdigest(),
+        "qualification_raw_manifest_sha256": hashlib.sha256(raw_payload).hexdigest(),
+        "qualification_derived_manifest_sha256": hashlib.sha256(derived_payload).hexdigest(),
+    }
+    report = tmp_path / "approval-report.json"
+    report.write_bytes(contracts.canonical_bytes({
+        "schema_version": 1, "verdict": "APPROVED_FOR_OUTCOME",
+        "critical_findings": [], "important_findings": [], **hashes,
+    }))
+    binding = tmp_path / "approval-binding.json"
+    binding.write_bytes(contracts.canonical_bytes({
+        "schema_version": 1, **hashes,
+        "approval_report_sha256": hashlib.sha256(report.read_bytes()).hexdigest(),
+    }))
+    verified = outcome.verify_outcome_approval(qualification, binding, report)
+    assert verified["reviewer_verdict"] == "APPROVED_FOR_OUTCOME"
+    assert not (tmp_path / "hierarchical-recovery-v3").exists()
+
+
 def test_accepted_approval_dry_run_is_side_effect_free_and_does_not_sample(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     qualification, binding, report = _approval_fixture(tmp_path, monkeypatch, "APPROVED_FOR_OUTCOME")
     monkeypatch.setattr(contracts, "make_realization", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("sampled")))
@@ -357,6 +385,24 @@ def test_counterfactual_oracle_rejects_wrong_object_and_missing_execution_or_res
     observations[1] = replace(observations[1], geometry_feasible=False)
     still_failing = replace(raw, observations=tuple(observations))
     assert outcome.counterfactual_event_audit(still_failing)["matched_event_count"] == 0
+
+
+@pytest.mark.parametrize(("scenario", "lowest"), (
+    ("control-impulse", "CONTROL"),
+    ("motion-target-shift", "MOTION"),
+    ("semantic-object-unavailable", "SEMANTIC"),
+))
+def test_counterfactual_oracle_uses_independently_scored_forced_replays(scenario: str, lowest: str) -> None:
+    runtime = importlib.import_module("experiments.03_recovery.src.v3_runtime")
+    raw = runtime.run_episode(runtime.V3EpisodeSpec(
+        contracts.Architecture.R3, scenario, 20261891, contracts.PRIMARY_CONTROLLER_ID,
+    ))
+    audit = outcome.counterfactual_event_audit(raw)
+    assert audit["oracle"] == "DETERMINISTIC_FORCED_REPLAY_V1"
+    assert [item["level"] for item in audit["counterfactual_candidates"]] == ["CONTROL", "MOTION", "SEMANTIC"]
+    assert audit["lowest_sufficient_level"] == lowest
+    assert all(len(item["replay_sha256"]) == 64 for item in audit["counterfactual_candidates"])
+    assert all(item["independently_scored"] is True for item in audit["counterfactual_candidates"])
 
 
 def test_create_only_members_resume_exact_bytes_and_reject_tamper(tmp_path: Path) -> None:

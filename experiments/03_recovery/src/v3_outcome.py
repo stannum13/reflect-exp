@@ -116,7 +116,7 @@ def verify_outcome_approval(
         raise OutcomeAuthorizationError("qualified source closure drifted before outcomes")
     current = _freeze_record(qualification_specs())
     for key in ("configuration", "configuration_sha256", "environment", "environment_sha256"):
-        if freeze.get(key) != current[key]:
+        if canonical_bytes(freeze.get(key)) != canonical_bytes(current[key]):
             raise OutcomeAuthorizationError(f"qualified {key} drifted before outcomes")
     return {**binding, "reviewer_verdict": str(report["verdict"]), "critical_findings": [], "important_findings": []}
 
@@ -264,7 +264,70 @@ def dry_run_outcomes(*, qualification_root: Path, approval_binding: Path, approv
 
 
 def counterfactual_event_audit(raw: object) -> dict[str, object]:
-    """Bind each observable failure to its minimal causal intervention and verified effect."""
+    """Measure the lowest sufficient intervention with independent forced replays."""
+    triggers = [item for item in raw.observations if item.failure_detected]
+    if raw.spec.architecture is not Architecture.R3 or raw.spec.controller_id != PRIMARY_CONTROLLER_ID or not triggers:
+        return {
+            "oracle": "DETERMINISTIC_FORCED_REPLAY_V1", "event_count": 0,
+            "matched_event_count": 0, "fraction": 1.0, "lowest_sufficient_level": None,
+            "counterfactual_candidates": [], "events": [],
+        }
+
+    candidates = []
+    for level in ("CONTROL", "MOTION", "SEMANTIC"):
+        counterfactual = run_episode(raw.spec, counterfactual_level=level)
+        counterfactual_score = score_episode(counterfactual)
+        decisions_cf = [item for item in counterfactual.decisions if item.level.value != "NONE"]
+        first = decisions_cf[0] if decisions_cf else None
+        post = next(
+            (item for item in counterfactual.observations if first is not None and item.tick > first.observed_tick),
+            None,
+        )
+        receipt_hashes = set()
+        for receipt in counterfactual.execution_receipts:
+            binding = {
+                "content_sha256": receipt["content_sha256"],
+                "start_tick": receipt["start_tick"], "end_tick": receipt["end_tick"],
+            }
+            if (
+                receipt["receipt_sha256"] == sha256_bytes(canonical_bytes(binding))
+                and 0 < int(receipt["executed_valid_ticks"]) <= int(receipt["end_tick"]) - int(receipt["start_tick"])
+            ):
+                receipt_hashes.add(str(receipt["receipt_sha256"]))
+        content_progress = bool(receipt_hashes)
+        if level in {"MOTION", "SEMANTIC"}:
+            content_progress = any(
+                item["old_content_sha256"] != item["new_content_sha256"]
+                and item["successful_execution_content_sha256"] == item["new_content_sha256"]
+                and item["execution_receipt_sha256"] in receipt_hashes
+                for item in counterfactual.budget_resets
+            )
+        safety_passed = all(int(value) == 0 for value in counterfactual_score.violation_counts.values())
+        domain_cleared = bool(post is not None and not post.failure_detected and post.controller_safe)
+        passed = bool(
+            first is not None and first.level.value == level and domain_cleared and content_progress
+            and safety_passed and counterfactual_score.terminal == "SUCCESS"
+        )
+        physical_trace_sha256 = sha256_bytes(b"".join(
+            counterfactual.trace[name].tobytes()
+            for name in ("q", "dq", "eef_xy", "actuator_cmd_nm", "applied_force_nm")
+        ))
+        replay = {
+            "level": level, "episode_id": counterfactual.spec.episode_id,
+            "parameter_sha256": counterfactual.realization.parameter_sha256,
+            "physical_trace_sha256": physical_trace_sha256,
+            "decision_sha256s": [sha256_bytes(canonical_bytes(item)) for item in decisions_cf],
+            "terminal": counterfactual_score.terminal,
+            "violation_counts": dict(counterfactual_score.violation_counts),
+            "domain_cleared": domain_cleared, "content_progress": content_progress,
+            "safety_passed": safety_passed, "passed": passed,
+        }
+        candidates.append({
+            **replay, "independently_scored": True,
+            "replay_sha256": sha256_bytes(canonical_bytes(replay)),
+        })
+    lowest = next((item["level"] for item in candidates if item["passed"]), None)
+
     score = score_episode(raw)
     scorer_rows = {int(item["tick"]): item for item in score.rows}
     commands = {str(item["content_sha256"]): item for item in raw.commands}
@@ -273,22 +336,17 @@ def counterfactual_event_audit(raw: object) -> dict[str, object]:
         binding = {"content_sha256": item["content_sha256"], "start_tick": item["start_tick"], "end_tick": item["end_tick"]}
         if item["receipt_sha256"] == sha256_bytes(canonical_bytes(binding)):
             receipts.setdefault(str(item["content_sha256"]), []).append(item)
-    triggers = [item for item in raw.observations if item.failure_detected]
     decisions = {item.observable_sha256: item for item in raw.decisions}
     events = []
     for index, observable in enumerate(triggers):
         next_tick = triggers[index + 1].tick if index + 1 < len(triggers) else len(raw.action_envelopes)
-        if not observable.controller_safe:
-            expected = "SAFE_ABORT"
-        elif not observable.semantic_preconditions_valid:
-            expected = "SEMANTIC"
-        elif not observable.action_valid or not observable.geometry_feasible:
-            expected = "MOTION"
-        else:
-            expected = "CONTROL"
         decision = decisions.get(observable.sha256)
-        causal = bool(decision is not None and decision.observed_tick == observable.tick and decision.level.value == expected)
-        if expected in {"CONTROL", "MOTION", "SEMANTIC"}:
+        decision_level = None if decision is None else decision.level.value
+        causal = bool(
+            decision is not None and decision.observed_tick == observable.tick
+            and decision_level == ("SAFE_ABORT" if lowest is None else lowest)
+        )
+        if decision_level in {"CONTROL", "MOTION", "SEMANTIC"}:
             valid_actions = []
             for item in raw.action_envelopes:
                 tick = int(item["tick"])
@@ -321,12 +379,10 @@ def counterfactual_event_audit(raw: object) -> dict[str, object]:
             post = next((item for item in raw.observations if observable.tick < item.tick <= next_tick), None)
             domain_resolved = bool(
                 post is not None and not post.failure_detected and post.controller_safe
-                and (expected != "MOTION" or (post.action_valid and post.geometry_feasible))
-                and (expected != "SEMANTIC" or post.semantic_preconditions_valid)
             )
             post_valid = bool(post is not None and domain_resolved)
             changed_contents = {content for content in contents if content != decision.budget_before.active_content_sha256} if decision is not None else set()
-            if expected in {"MOTION", "SEMANTIC"}:
+            if decision_level in {"MOTION", "SEMANTIC"}:
                 reset_valid = any(
                     item["old_content_sha256"] == decision.budget_before.active_content_sha256
                     and item["new_content_sha256"] in changed_contents
@@ -338,7 +394,7 @@ def counterfactual_event_audit(raw: object) -> dict[str, object]:
                 post_valid = post_valid and post.successful_execution_content_sha256 in changed_contents
             else:
                 reset_valid = True
-            semantic_guard = True if expected != "SEMANTIC" else any(
+            semantic_guard = True if decision_level != "SEMANTIC" else any(
                 item["event"] == "AUTHORIZED_ALTERNATIVE_SELECTED" and observable.tick <= int(item["tick"]) < next_tick
                 for item in raw.world_ledger
             )
@@ -347,13 +403,19 @@ def counterfactual_event_audit(raw: object) -> dict[str, object]:
             effect = bool(decision is not None and decision.level.value == "SAFE_ABORT")
         events.append({
             "observable_sha256": observable.sha256, "observed_tick": observable.tick,
-            "next_event_tick": next_tick, "minimal_sufficient_level": expected,
+            "next_event_tick": next_tick, "minimal_sufficient_level": lowest,
             "decision_level": None if decision is None else decision.level.value,
             "causal_assignment": causal, "verified_effect_before_next_event": bool(effect),
             "matched": bool(causal and effect),
         })
     matched = sum(bool(item["matched"]) for item in events)
-    return {"event_count": len(events), "matched_event_count": matched, "fraction": 1.0 if not events else matched / len(events), "events": events}
+    return {
+        "oracle": "DETERMINISTIC_FORCED_REPLAY_V1",
+        "event_count": len(events), "matched_event_count": matched,
+        "fraction": 1.0 if not events else matched / len(events),
+        "lowest_sufficient_level": lowest,
+        "counterfactual_candidates": candidates, "events": events,
+    }
 
 
 def _matrix_fields(spec: V3EpisodeSpec) -> dict[str, object]:
