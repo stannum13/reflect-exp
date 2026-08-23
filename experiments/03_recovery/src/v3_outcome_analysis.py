@@ -75,7 +75,7 @@ def evaluate_outcome_gates(rows: Sequence[Mapping[str, object]], *, construct_in
     r3 = [row for row in primary if row["architecture"] == "R3"]
     comparators = {arch: [row for row in primary if row["architecture"] == arch] for arch in ("R0", "R1", "R2")}
     violation_keys = ("unsafe", "forbidden", "collision", "invalid_action", "stale", "loop", "reset")
-    g1 = all(sum(int(row[key]) for row in r3) <= sum(int(row[key]) for row in values) for values in comparators.values() for key in violation_keys)
+    g1 = all(sum(int(row.get(key, 1)) for row in r3) <= sum(int(row.get(key, 1)) for row in values) for values in comparators.values() for key in violation_keys)
     ms = [row for row in pairs if row["scenario_id"] in DOMAINS["MOTION"] + DOMAINS["SEMANTIC"]]
     template_diffs = {scenario: sum(int(row["r3_success"]) - int(row["r0_success"]) for row in ms if row["scenario_id"] == scenario) for scenario in DOMAINS["MOTION"] + DOMAINS["SEMANTIC"]}
     g2 = sum(int(row["r3_success"]) - int(row["r0_success"]) for row in ms) > 0 and all(value >= 0 for value in template_diffs.values())
@@ -89,7 +89,14 @@ def evaluate_outcome_gates(rows: Sequence[Mapping[str, object]], *, construct_in
     disturbed = [row for row in r3 if row["scenario_id"] not in ("anchor-nominal", "anchor-slow-policy")]
     diversity = all(len({str(row.get("physical_trace_sha256")) for row in disturbed if row["scenario_id"] == scenario}) >= 8 and len({str(row.get("parameter_use_sha256")) for row in disturbed if row["scenario_id"] == scenario}) >= 8 for scenario in sum(DOMAINS.values(), ()))
     g7 = diversity
-    g8 = len(rows) == 360 and len({str(row["episode_id"]) for row in rows}) == 360 and all(construct_integrity.values())
+    valid_dispositions = all(
+        row.get("disposition") in {"TERMINAL", "NOT_RUN"}
+        and isinstance(row.get("precheck_input"), Mapping)
+        and isinstance(row.get("precheck_receipt"), Mapping)
+        and bool(row["precheck_receipt"].get("architecture_independent"))
+        for row in rows
+    )
+    g8 = len(rows) == 360 and len({str(row["episode_id"]) for row in rows}) == 360 and valid_dispositions and all(construct_integrity.values())
     gates = [g1, g2, g3, g4, g5, g6, g7, g8]
     result = "SUPPORTS_CONSTRUCT_VALID_LAYER_MATCHED_HIERARCHY" if all(gates) else "INVALID_EXPERIMENT" if not g8 else "DOES_NOT_SUPPORT_CONSTRUCT_VALID_LAYER_MATCHED_HIERARCHY"
     return {"scientific_result": result, "gates": [{"gate": index + 1, "passed": value} for index, value in enumerate(gates)], "paired_row_count": len(pairs)}

@@ -162,11 +162,18 @@ def test_complete_outcome_analysis_bundle_is_frozen_without_sampling(monkeypatch
             "lowest_sufficient_correct": True,
             "physical_trace_sha256": hashlib.sha256(spec.episode_id.encode()).hexdigest(),
             "parameter_use_sha256": hashlib.sha256((spec.episode_id + "parameter").encode()).hexdigest(),
+            "precheck_input": {"episode_id": spec.episode_id},
+            "precheck_receipt": {"architecture_independent": True},
         })
     payloads = analysis.outcome_payloads(rows, construct_integrity={name: True for name in ("approval", "inventory", "freeze", "cause", "replay", "reconstruction")})
     assert {"decision.json", "paired-rows.csv", "bootstrap.json", "template-cluster-sensitivity.json", "graph-table.csv", "outcome-by-domain.svg", "outcome-by-domain.png", "examples.json"} <= set(payloads)
     assert json.loads(payloads["bootstrap.json"])["draw_count"] == 10_000
     assert payloads["outcome-by-domain.png"].startswith(b"\x89PNG\r\n\x1a\n")
+    damaged = [dict(item) for item in rows]
+    damaged[0] = {"episode_id": damaged[0]["episode_id"], "architecture": damaged[0]["architecture"], "scenario_id": damaged[0]["scenario_id"], "seed": damaged[0]["seed"], "controller_id": damaged[0]["controller_id"], "disposition": "INVALID"}
+    invalid = analysis.evaluate_outcome_gates(damaged, construct_integrity={"reconstruction": True})
+    assert invalid["scientific_result"] == "INVALID_EXPERIMENT"
+    assert invalid["gates"][7]["passed"] is False
 
 
 def test_interrupted_outcome_attempt_retains_create_only_invalid_disposition_without_sampling(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
