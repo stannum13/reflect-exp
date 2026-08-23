@@ -95,6 +95,9 @@ class CheckoutEvidence:
     blocker: str | None
     content_hashes: tuple[tuple[str, str], ...]
     evidence_sha256: str
+    symlink_policy: str = "REJECT_ALL"
+    recursive_tree_sha: str | None = None
+    contained_symlinks: tuple[tuple[tuple[str, object], ...], ...] = ()
 
     @classmethod
     def create(
@@ -112,9 +115,13 @@ class CheckoutEvidence:
         outcome: str,
         blocker: str | None,
         content_hashes: Mapping[str, str],
+        symlink_policy: str = "REJECT_ALL",
+        recursive_tree_sha: str | None = None,
+        contained_symlinks: Sequence[Mapping[str, object]] = (),
     ) -> "CheckoutEvidence":
+        version = 2 if symlink_policy != "REJECT_ALL" else 1
         record = cls(
-            schema_version=1,
+            schema_version=version,
             evidence_type="CHECKOUT",
             registry_sha256=_sha(registry_sha256, "registry_sha256", length=64),
             repository=_string(repository, "repository"),
@@ -132,6 +139,11 @@ class CheckoutEvidence:
             blocker=blocker,
             content_hashes=tuple(sorted(content_hashes.items())),
             evidence_sha256="0" * 64,
+            symlink_policy=symlink_policy,
+            recursive_tree_sha=recursive_tree_sha,
+            contained_symlinks=tuple(
+                tuple(sorted(row.items())) for row in contained_symlinks
+            ),
         )
         record._validate(include_hash=False)
         digest = canonical_sha256(record.to_dict(include_hash=False))
@@ -145,6 +157,8 @@ class CheckoutEvidence:
             "download_bytes", "disk_bytes", "outcome", "blocker",
             "content_hashes", "evidence_sha256",
         }
+        if raw.get("schema_version") == 2:
+            required |= {"symlink_policy", "recursive_tree_sha", "contained_symlinks"}
         if set(raw) != required:
             raise ValueError("checkout evidence has missing or extra keys")
         hashes: dict[str, str] = {}
@@ -156,6 +170,14 @@ class CheckoutEvidence:
             if item["path"] in hashes:
                 raise ValueError("checkout content hash path is duplicated")
             hashes[item["path"]] = item["sha256"]
+        symlink_rows: list[tuple[tuple[str, object], ...]] = []
+        if raw.get("schema_version") == 2:
+            if not isinstance(raw["contained_symlinks"], list):
+                raise ValueError("contained symlink evidence must be a list")
+            for row in raw["contained_symlinks"]:
+                if not isinstance(row, Mapping):
+                    raise ValueError("contained symlink evidence row is invalid")
+                symlink_rows.append(tuple(sorted(row.items())))
         record = cls(
             schema_version=raw["schema_version"], evidence_type=raw["evidence_type"],
             registry_sha256=raw["registry_sha256"], repository=raw["repository"],
@@ -166,13 +188,42 @@ class CheckoutEvidence:
             disk_bytes=raw["disk_bytes"], outcome=raw["outcome"],
             blocker=raw["blocker"], content_hashes=tuple(sorted(hashes.items())),
             evidence_sha256=raw["evidence_sha256"],
+            symlink_policy=raw.get("symlink_policy", "REJECT_ALL"),
+            recursive_tree_sha=raw.get("recursive_tree_sha"),
+            contained_symlinks=tuple(symlink_rows),
         )
         record._validate()
         return record
 
     def _validate(self, *, include_hash: bool = True) -> None:
-        if self.schema_version != 1 or self.evidence_type != "CHECKOUT":
+        if self.schema_version not in {1, 2} or self.evidence_type != "CHECKOUT":
             raise ValueError("checkout evidence schema/type is invalid")
+        if self.schema_version == 1:
+            if self.symlink_policy != "REJECT_ALL" or self.recursive_tree_sha is not None or self.contained_symlinks:
+                raise ValueError("checkout evidence v1 cannot carry symlink authority")
+        else:
+            if self.symlink_policy != "CONTAINED_GIT_SYMLINKS_V1":
+                raise ValueError("checkout evidence symlink policy is invalid")
+            _sha(self.recursive_tree_sha, "recursive_tree_sha", length=40)
+            keys = {
+                "path", "link_blob_sha1", "link_bytes", "link_sha256", "target",
+                "target_path", "target_blob_sha1", "target_bytes", "target_sha256",
+            }
+            rows = [dict(row) for row in self.contained_symlinks]
+            if any(set(row) != keys for row in rows) or (self.outcome == "PASS" and not rows):
+                raise ValueError("contained symlink evidence schema is invalid")
+            if len({row["path"] for row in rows}) != len(rows):
+                raise ValueError("contained symlink evidence paths must be unique")
+            for row in rows:
+                for field in ("path", "target", "target_path"):
+                    _string(row[field], field)
+                for field in ("link_blob_sha1", "target_blob_sha1"):
+                    _sha(row[field], field, length=40)
+                for field in ("link_sha256", "target_sha256"):
+                    _sha(row[field], field, length=64)
+                for field in ("link_bytes", "target_bytes"):
+                    if type(row[field]) is not int or row[field] < 0:
+                        raise ValueError(f"{field} must be a nonnegative integer")
         _sha(self.registry_sha256, "registry_sha256", length=64)
         _sha(self.locked_sha, "locked_sha", length=40)
         if not self.patterns or len(set(self.patterns)) != len(self.patterns):
@@ -231,6 +282,10 @@ class CheckoutEvidence:
         }
         if include_hash:
             result["evidence_sha256"] = self.evidence_sha256
+        if self.schema_version == 2:
+            result["symlink_policy"] = self.symlink_policy
+            result["recursive_tree_sha"] = self.recursive_tree_sha
+            result["contained_symlinks"] = [dict(row) for row in self.contained_symlinks]
         return result
 
     def canonical_bytes(self) -> bytes:

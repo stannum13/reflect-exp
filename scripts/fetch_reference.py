@@ -19,6 +19,7 @@ from reflect.package_license import (
 from reflect.source_checkout import (
     SparseCheckoutError,
     SubprocessCheckoutRunner,
+    apply_contained_symlink_contract,
     checkout_sparse,
     cleanup_new_checkout,
     eligible_checkout_specs,
@@ -60,6 +61,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--metadata-only", action="store_true")
     parser.add_argument("--sparse-checkout", action="store_true")
     parser.add_argument("--fragment-dir")
+    parser.add_argument("--contained-symlink-contract")
+    parser.add_argument("--contained-symlink-contract-sha256")
     return parser
 
 
@@ -95,6 +98,18 @@ def main(
         parser.error("--sparse-checkout requires --fragment-dir")
     if not arguments.sparse_checkout and arguments.fragment_dir is not None:
         parser.error("--fragment-dir requires --sparse-checkout")
+    contract_values = (
+        arguments.contained_symlink_contract,
+        arguments.contained_symlink_contract_sha256,
+    )
+    if any(value is not None for value in contract_values) and not all(
+        value is not None for value in contract_values
+    ):
+        parser.error("contained-symlink contract path and SHA-256 are required together")
+    if arguments.contained_symlink_contract is not None and (
+        not arguments.sparse_checkout or arguments.name != "lerobot"
+    ):
+        parser.error("contained-symlink authority is restricted to the named lerobot checkout")
 
     # The guard intentionally precedes registry/cache reads and all transport calls.
     SafetyConfig.from_mapping(os.environ).require_simulation_only()
@@ -119,6 +134,15 @@ def main(
             name=arguments.name,
             experiment=arguments.experiment,
         )
+        if arguments.contained_symlink_contract is not None:
+            contract_path = Path(arguments.contained_symlink_contract)
+            if not contract_path.is_absolute():
+                contract_path = project_root / contract_path
+            specs = (
+                apply_contained_symlink_contract(
+                    specs[0], contract_path, arguments.contained_symlink_contract_sha256
+                ),
+            )
         fragment_dir = Path(arguments.fragment_dir)
         if not fragment_dir.is_absolute():
             fragment_dir = project_root / fragment_dir
@@ -144,6 +168,8 @@ def main(
                     outcome="FAIL",
                     blocker=str(exc),
                     content_hashes={},
+                    symlink_policy=spec.symlink_policy,
+                    recursive_tree_sha=spec.recursive_tree_sha,
                 )
                 write_evidence_create_only(evidence_path, failure)
                 raise
@@ -160,6 +186,22 @@ def main(
                 outcome="PASS",
                 blocker=None,
                 content_hashes=checkout.content_hashes,
+                symlink_policy=checkout.symlink_policy,
+                recursive_tree_sha=checkout.recursive_tree_sha,
+                contained_symlinks=(
+                    {
+                        "path": row.path,
+                        "link_blob_sha1": row.link_blob_sha1,
+                        "link_bytes": row.link_bytes,
+                        "link_sha256": row.link_sha256,
+                        "target": row.target,
+                        "target_path": row.target_path,
+                        "target_blob_sha1": row.target_blob_sha1,
+                        "target_bytes": row.target_bytes,
+                        "target_sha256": row.target_sha256,
+                    }
+                    for row in checkout.contained_symlinks
+                ),
             )
             try:
                 write_evidence_create_only(evidence_path, evidence)

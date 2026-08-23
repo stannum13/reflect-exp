@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "policy": "CONTAINED_GIT_SYMLINKS_V1",
+  "registry_sha256": "eb72b501a177ee9dcf93a77444536e07dd532d9ac92950c61a063b8a8d1a4a3d",
+  "repository": "lerobot",
+  "url": "https://github.com/huggingface/lerobot",
+  "commit_sha": "7427f31801f944f5ec9ce53cda02862ce7d1638b",
+  "recursive_tree_sha": "bc9686e9b1fcb89a4b3bef398655150675f14406",
+  "symlinks": [
+    {
+      "path": "src/lerobot/policies/act/README.md",
+      "link_blob_sha1": "04602009852778a28be44647b6e7ba445dae3a95",
+      "target": "../../../../docs/source/policy_act_README.md",
+      "target_path": "docs/source/policy_act_README.md",
+      "target_blob_sha1": "371a9136fe7aa3a69b496739a46d9946240eaed2"
+    },
+    {
+      "path": "src/lerobot/policies/rtc/README.md",
+      "link_blob_sha1": "75d01b125197be8fe0d8eea695755c8598f6df51",
+      "target": "../../../../docs/source/policy_rtc_README.md",
+      "target_path": "docs/source/policy_rtc_README.md",
+      "target_blob_sha1": "926d4e8c469fbf249803330a062b78d791bf37c0"
+    },
+    {
+      "path": "src/lerobot/policies/smolvla/README.md",
+      "link_blob_sha1": "f8de40269b8c6c93dc9d7c048102932c5e26cfa3",
+      "target": "../../../../docs/source/policy_smolvla_README.md",
+      "target_path": "docs/source/policy_smolvla_README.md",
+      "target_blob_sha1": "ee567ee83613785c4b3f1a1d07eeb3dde520fbe4"
+    }
+  ]
+}

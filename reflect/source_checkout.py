@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import ctypes
 import errno
 import hashlib
+import json
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -17,7 +18,7 @@ import stat
 import subprocess
 import threading
 import time
-from typing import Protocol
+from typing import Any, Protocol
 from urllib.parse import urlsplit
 
 from reflect._rollout_io import FileIdentity, cleanup_exact_directory, open_directory_at
@@ -38,6 +39,7 @@ _SHA40 = re.compile(r"[0-9a-f]{40}\Z")
 _MAX_DISK_BYTES = 512 * 1024 * 1024
 _MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024
 _GIT_TIMEOUT = 600.0
+_CONTAINED_SYMLINK_POLICY = "CONTAINED_GIT_SYMLINKS_V1"
 
 
 class SparseCheckoutError(RuntimeError):
@@ -58,6 +60,28 @@ class SparseCheckoutError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class ContainedGitSymlink:
+    path: str
+    link_blob_sha1: str
+    target: str
+    target_path: str
+    target_blob_sha1: str
+
+
+@dataclass(frozen=True)
+class ContainedGitSymlinkAudit:
+    path: str
+    link_blob_sha1: str
+    link_bytes: int
+    link_sha256: str
+    target: str
+    target_path: str
+    target_blob_sha1: str
+    target_bytes: int
+    target_sha256: str
+
+
+@dataclass(frozen=True)
 class CheckoutSpec:
     registry_sha256: str
     name: str
@@ -65,6 +89,9 @@ class CheckoutSpec:
     commit_sha: str
     requested_paths: tuple[str, ...]
     patterns: tuple[str, ...]
+    symlink_policy: str = "REJECT_ALL"
+    recursive_tree_sha: str | None = None
+    contained_symlinks: tuple[ContainedGitSymlink, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -89,6 +116,9 @@ class CheckoutResult:
     content_hashes: Mapping[str, str]
     reused: bool
     destination_identity: tuple[int, int]
+    symlink_policy: str = "REJECT_ALL"
+    recursive_tree_sha: str | None = None
+    contained_symlinks: tuple[ContainedGitSymlinkAudit, ...] = ()
 
 
 class CheckoutRunner(Protocol):
@@ -102,6 +132,95 @@ class CheckoutRunner(Protocol):
         input_bytes: bytes | None = None,
         max_download_bytes: int = _MAX_DOWNLOAD_BYTES,
     ) -> CheckoutCommandResult: ...
+
+
+def _json_object_no_duplicates(data: bytes) -> Mapping[str, Any]:
+    def unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise SparseCheckoutError(f"duplicate symlink-contract key: {key}")
+            result[key] = value
+        return result
+
+    try:
+        raw = json.loads(data, object_pairs_hook=unique)
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise SparseCheckoutError("contained-symlink contract is not strict JSON") from exc
+    if not isinstance(raw, Mapping):
+        raise SparseCheckoutError("contained-symlink contract root must be an object")
+    return raw
+
+
+def apply_contained_symlink_contract(
+    spec: CheckoutSpec,
+    contract_path: Path,
+    expected_sha256: str,
+) -> CheckoutSpec:
+    """Bind one exact checkout spec to a create-time, hash-sealed link contract."""
+    if re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is None:
+        raise SparseCheckoutError("contained-symlink contract SHA-256 is invalid")
+    try:
+        parent = open_directory_chain(contract_path.parent, create=False)
+        try:
+            descriptor = os.open(
+                contract_path.name,
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
+                dir_fd=parent,
+            )
+        finally:
+            os.close(parent)
+        try:
+            value = os.fstat(descriptor)
+            if not stat.S_ISREG(value.st_mode) or value.st_nlink != 1 or value.st_size > 64 * 1024:
+                raise SparseCheckoutError("contained-symlink contract must be one bounded regular file")
+            data = os.read(descriptor, value.st_size + 1)
+            if len(data) != value.st_size:
+                raise SparseCheckoutError("contained-symlink contract changed during read")
+        finally:
+            os.close(descriptor)
+    except (OSError, ValueError) as exc:
+        raise SparseCheckoutError("contained-symlink contract path is unsafe") from exc
+    if hashlib.sha256(data).hexdigest() != expected_sha256:
+        raise SparseCheckoutError("contained-symlink contract SHA-256 does not match")
+    raw = _json_object_no_duplicates(data)
+    keys = {
+        "schema_version", "policy", "registry_sha256", "repository", "url",
+        "commit_sha", "recursive_tree_sha", "symlinks",
+    }
+    if set(raw) != keys or raw["schema_version"] != 1 or raw["policy"] != _CONTAINED_SYMLINK_POLICY:
+        raise SparseCheckoutError("contained-symlink contract schema or policy is invalid")
+    if (
+        raw["registry_sha256"] != spec.registry_sha256
+        or raw["repository"] != spec.name
+        or raw["url"] != spec.url
+        or raw["commit_sha"] != spec.commit_sha
+        or _SHA40.fullmatch(raw["recursive_tree_sha"] if type(raw["recursive_tree_sha"]) is str else "") is None
+    ):
+        raise SparseCheckoutError("contained-symlink contract does not bind checkout identity")
+    if not isinstance(raw["symlinks"], list):
+        raise SparseCheckoutError("contained-symlink contract rows must be a list")
+    row_keys = {"path", "link_blob_sha1", "target", "target_path", "target_blob_sha1"}
+    rows = []
+    for row in raw["symlinks"]:
+        if not isinstance(row, Mapping) or set(row) != row_keys:
+            raise SparseCheckoutError("contained-symlink contract row schema is invalid")
+        item = ContainedGitSymlink(**row)
+        _validate_pattern(item.path)
+        _validate_pattern(item.target_path)
+        if _SHA40.fullmatch(item.link_blob_sha1) is None or _SHA40.fullmatch(item.target_blob_sha1) is None:
+            raise SparseCheckoutError("contained-symlink contract blob identity is invalid")
+        if _normalized_link_target(item.path, item.target) != item.target_path:
+            raise SparseCheckoutError("contained-symlink contract target does not normalize exactly")
+        rows.append(item)
+    if not rows or len({item.path for item in rows}) != len(rows):
+        raise SparseCheckoutError("contained-symlink contract rows must be nonempty and unique")
+    return replace(
+        spec,
+        symlink_policy=_CONTAINED_SYMLINK_POLICY,
+        recursive_tree_sha=raw["recursive_tree_sha"],
+        contained_symlinks=tuple(rows),
+    )
 
 
 class _ConnectTunnel:
@@ -531,6 +650,154 @@ def _path_matches_root(path: Path, identity: tuple[int, int]) -> bool:
     return stat.S_ISDIR(value.st_mode) and (value.st_dev, value.st_ino) == identity
 
 
+def _git_blob_sha1(content: bytes) -> str:
+    header = b"blob " + str(len(content)).encode("ascii") + b"\0"
+    return hashlib.sha1(header + content).hexdigest()
+
+
+def _normalized_link_target(link_path: str, target: str) -> str:
+    if (
+        type(target) is not str
+        or not target
+        or target.startswith("/")
+        or "\\" in target
+        or "\0" in target
+        or "\n" in target
+        or "\r" in target
+    ):
+        raise SparseCheckoutError("contained Git symlink target must be relative")
+    parts = list(PurePosixPath(link_path).parent.parts)
+    for part in PurePosixPath(target).parts:
+        if part in {"", "."}:
+            continue
+        if part == "..":
+            if not parts:
+                raise SparseCheckoutError("contained Git symlink target escapes locked tree")
+            parts.pop()
+        else:
+            parts.append(part)
+    if not parts:
+        raise SparseCheckoutError("contained Git symlink target is not a file")
+    return PurePosixPath(*parts).as_posix()
+
+
+def _read_regular_beneath(root: Path, relative: str, label: str) -> bytes:
+    _validate_pattern(relative)
+    root_descriptor = os.open(
+        root,
+        os.O_RDONLY
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_CLOEXEC", 0),
+    )
+    descriptor = root_descriptor
+    try:
+        parts = PurePosixPath(relative).parts
+        for part in parts[:-1]:
+            child = os.open(
+                part,
+                os.O_RDONLY
+                | getattr(os, "O_DIRECTORY", 0)
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_CLOEXEC", 0),
+                dir_fd=descriptor,
+            )
+            if descriptor != root_descriptor:
+                os.close(descriptor)
+            descriptor = child
+        file_descriptor = os.open(
+            parts[-1],
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
+            dir_fd=descriptor,
+        )
+        try:
+            before = os.fstat(file_descriptor)
+            if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+                raise SparseCheckoutError(f"{label} must be a regular descriptor file")
+            if before.st_size > _MAX_DISK_BYTES:
+                raise SparseCheckoutError(f"{label} exceeds the bounded byte limit")
+            content = os.read(file_descriptor, before.st_size + 1)
+            after = os.fstat(file_descriptor)
+            if len(content) != before.st_size or (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns):
+                raise SparseCheckoutError(f"{label} changed during inspection")
+            return content
+        finally:
+            os.close(file_descriptor)
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, SparseCheckoutError):
+            raise
+        raise SparseCheckoutError(f"{label} target is missing or unsafe") from exc
+    finally:
+        if descriptor != root_descriptor:
+            os.close(descriptor)
+        os.close(root_descriptor)
+
+
+def audit_contained_git_symlinks(
+    checkout: Path,
+    contracts: Sequence[ContainedGitSymlink],
+    *,
+    git_objects: Mapping[str, tuple[str, str, str]],
+) -> tuple[ContainedGitSymlinkAudit, ...]:
+    """Validate declared Git symlink objects without following filesystem links."""
+    if not contracts or len({item.path for item in contracts}) != len(contracts):
+        raise SparseCheckoutError("contained Git symlink contract must be nonempty and unique")
+    expected_paths = {item.path for item in contracts} | {item.target_path for item in contracts}
+    if set(git_objects) != expected_paths:
+        raise SparseCheckoutError("contained Git symlink Git inventory is incomplete or extra")
+    rows = []
+    for item in contracts:
+        _validate_pattern(item.path)
+        _validate_pattern(item.target_path)
+        if _SHA40.fullmatch(item.link_blob_sha1) is None or _SHA40.fullmatch(item.target_blob_sha1) is None:
+            raise SparseCheckoutError("contained Git symlink blob identity is invalid")
+        normalized = _normalized_link_target(item.path, item.target)
+        if normalized != item.target_path:
+            raise SparseCheckoutError("contained Git symlink target path does not normalize exactly")
+        if git_objects[item.path] != ("120000", "blob", item.link_blob_sha1):
+            raise SparseCheckoutError("contained Git symlink object mode or blob differs from contract")
+        target_object = git_objects[item.target_path]
+        if target_object[0] not in {"100644", "100755"} or target_object[1:] != ("blob", item.target_blob_sha1):
+            raise SparseCheckoutError("contained Git symlink target must be one regular locked blob")
+        link_content = _read_regular_beneath(checkout, item.path, "contained Git symlink")
+        target_content = _read_regular_beneath(checkout, item.target_path, "contained Git symlink target")
+        if link_content != item.target.encode("utf-8") or _git_blob_sha1(link_content) != item.link_blob_sha1:
+            raise SparseCheckoutError("contained Git symlink descriptor does not match locked blob")
+        if _git_blob_sha1(target_content) != item.target_blob_sha1:
+            raise SparseCheckoutError("contained Git symlink target content does not match locked blob")
+        rows.append(
+            ContainedGitSymlinkAudit(
+                path=item.path,
+                link_blob_sha1=item.link_blob_sha1,
+                link_bytes=len(link_content),
+                link_sha256=hashlib.sha256(link_content).hexdigest(),
+                target=item.target,
+                target_path=item.target_path,
+                target_blob_sha1=item.target_blob_sha1,
+                target_bytes=len(target_content),
+                target_sha256=hashlib.sha256(target_content).hexdigest(),
+            )
+        )
+    return tuple(rows)
+
+
+def _parse_ls_tree(data: bytes) -> dict[str, tuple[str, str, str]]:
+    result: dict[str, tuple[str, str, str]] = {}
+    for record in data.split(b"\0"):
+        if not record:
+            continue
+        try:
+            header, encoded_path = record.split(b"\t", 1)
+            mode, kind, digest = header.decode("ascii").split(" ")
+            path = encoded_path.decode("utf-8")
+        except (UnicodeError, ValueError) as exc:
+            raise SparseCheckoutError("Git tree inventory is malformed") from exc
+        if path in result:
+            raise SparseCheckoutError("Git tree inventory contains duplicate paths")
+        result[path] = (mode, kind, digest)
+    return result
+
+
 def _tree_facts(path: Path) -> tuple[int, dict[str, str]]:
     total = 0
     hashes: dict[str, str] = {}
@@ -573,6 +840,21 @@ def _materialized(path: Path, patterns: Sequence[str]) -> None:
                 raise SparseCheckoutError("materialized path escaped checkout") from exc
             if match.is_symlink():
                 raise SparseCheckoutError("materialized path is symlinked")
+
+
+def _materialized_patterns(spec: CheckoutSpec) -> tuple[str, ...]:
+    if spec.symlink_policy == "REJECT_ALL":
+        if spec.recursive_tree_sha is not None or spec.contained_symlinks:
+            raise SparseCheckoutError("REJECT_ALL cannot carry a contained-symlink contract")
+        return spec.patterns
+    if spec.symlink_policy != _CONTAINED_SYMLINK_POLICY:
+        raise SparseCheckoutError("checkout symlink policy is invalid")
+    if _SHA40.fullmatch(spec.recursive_tree_sha or "") is None:
+        raise SparseCheckoutError("contained-symlink policy requires the locked recursive tree")
+    target_paths = tuple(item.target_path for item in spec.contained_symlinks)
+    if not target_paths or len(set(target_paths)) != len(target_paths):
+        raise SparseCheckoutError("contained-symlink target paths must be nonempty and unique")
+    return (*spec.patterns, *target_paths)
 
 
 def _publish_no_replace(root_descriptor: int, source: str, destination: str) -> None:
@@ -643,7 +925,7 @@ def _validate_checkout(
     runner: CheckoutRunner,
     environment: dict[str, str],
     download_budget: int = _MAX_DOWNLOAD_BYTES,
-) -> tuple[list[tuple[str, ...]], list[int], int, int, dict[str, str]]:
+) -> tuple[list[tuple[str, ...]], list[int], int, int, dict[str, str], tuple[ContainedGitSymlinkAudit, ...]]:
     commands: list[tuple[str, ...]] = []
     statuses: list[int] = []
     download = 0
@@ -688,17 +970,34 @@ def _validate_checkout(
         listed = run((*prefix, "sparse-checkout", "list")).stdout.decode("utf-8", errors="strict").splitlines()
     except UnicodeError as exc:
         raise SparseCheckoutError("checkout sparse output is malformed", commands=commands, statuses=statuses, download_bytes=download) from exc
-    if tuple(listed) != spec.patterns:
+    materialized_patterns = _materialized_patterns(spec)
+    if tuple(listed) != materialized_patterns:
         raise SparseCheckoutError("checkout sparse patterns do not match lock", commands=commands, statuses=statuses, download_bytes=download)
     checkout = root / checkout_name
     try:
         _materialized(checkout, spec.patterns)
+        audits: tuple[ContainedGitSymlinkAudit, ...] = ()
+        if spec.symlink_policy == _CONTAINED_SYMLINK_POLICY:
+            tree = run((*prefix, "rev-parse", "HEAD^{tree}")).stdout.decode("ascii", errors="strict").strip()
+            if tree != spec.recursive_tree_sha:
+                raise SparseCheckoutError("checkout tree does not match locked recursive tree")
+            object_paths = tuple(
+                path
+                for item in spec.contained_symlinks
+                for path in (item.path, item.target_path)
+            )
+            inventory = _parse_ls_tree(
+                run((*prefix, "ls-tree", "-z", "HEAD", "--", *object_paths)).stdout
+            )
+            audits = audit_contained_git_symlinks(
+                checkout, spec.contained_symlinks, git_objects=inventory
+            )
         disk, hashes = _tree_facts(checkout)
     except SparseCheckoutError as exc:
         raise SparseCheckoutError(
             str(exc), commands=commands, statuses=statuses, download_bytes=download
         ) from exc
-    return commands, statuses, download, disk, hashes
+    return commands, statuses, download, disk, hashes, audits
 
 
 def checkout_sparse(
@@ -711,6 +1010,7 @@ def checkout_sparse(
     _validate_pattern(spec.name)
     for pattern in spec.patterns:
         _validate_pattern(pattern)
+    materialized_patterns = _materialized_patterns(spec)
     try:
         root_descriptor = open_directory_chain(root, create=True)
     except (OSError, ValueError) as exc:
@@ -730,13 +1030,13 @@ def checkout_sparse(
                 raise SparseCheckoutError("checkout destination is not a safe directory")
             if stat.S_IMODE(existing.st_mode) != 0o700:
                 raise SparseCheckoutError("reused checkout directory mode must be 0700")
-            commands, statuses, download, disk, hashes = _validate_checkout(
+            commands, statuses, download, disk, hashes, audits = _validate_checkout(
                 spec, spec.name, root=root, runner=runner, environment=environment,
                 download_budget=_MAX_DOWNLOAD_BYTES,
             )
             if not _path_matches_root(root, root_identity):
                 raise SparseCheckoutError("checkout root changed during operation", commands=commands, statuses=statuses, download_bytes=download)
-            return CheckoutResult(spec.name, root / spec.name, spec.commit_sha, spec.patterns, tuple(commands), tuple(statuses), download, disk, hashes, True, (existing.st_dev, existing.st_ino))
+            return CheckoutResult(spec.name, root / spec.name, spec.commit_sha, spec.patterns, tuple(commands), tuple(statuses), download, disk, hashes, True, (existing.st_dev, existing.st_ino), spec.symlink_policy, spec.recursive_tree_sha, audits)
 
         def run(argv: tuple[str, ...], input_bytes: bytes | None = None) -> None:
             nonlocal download
@@ -790,9 +1090,11 @@ def checkout_sparse(
         run((*prefix, "remote", "add", "origin", spec.url))
         run((*prefix, "fetch", "--quiet", "--depth=1", "--filter=blob:none", "origin", spec.commit_sha))
         run((*prefix, "sparse-checkout", "init", "--no-cone"))
-        run((*prefix, "sparse-checkout", "set", "--no-cone", "--stdin"), ("\n".join(spec.patterns) + "\n").encode())
+        if spec.symlink_policy == _CONTAINED_SYMLINK_POLICY:
+            run((*prefix, "config", "core.symlinks", "false"))
+        run((*prefix, "sparse-checkout", "set", "--no-cone", "--stdin"), ("\n".join(materialized_patterns) + "\n").encode())
         run((*prefix, "checkout", "--quiet", "--detach", spec.commit_sha))
-        checked_commands, checked_statuses, checked_download, disk, hashes = _validate_checkout(
+        checked_commands, checked_statuses, checked_download, disk, hashes, audits = _validate_checkout(
             spec, partial, root=root, runner=runner, environment=environment,
             download_budget=_MAX_DOWNLOAD_BYTES - download,
         )
@@ -823,7 +1125,7 @@ def checkout_sparse(
             raise SparseCheckoutError("published checkout identity or mode is invalid", commands=commands, statuses=statuses, download_bytes=download)
         partial_created = False
         os.fsync(root_descriptor)
-        return CheckoutResult(spec.name, root / spec.name, spec.commit_sha, spec.patterns, tuple(commands), tuple(statuses), download, disk, hashes, False, partial_identity)
+        return CheckoutResult(spec.name, root / spec.name, spec.commit_sha, spec.patterns, tuple(commands), tuple(statuses), download, disk, hashes, False, partial_identity, spec.symlink_policy, spec.recursive_tree_sha, audits)
     except BaseException as exc:
         if partial_created and partial_identity is not None:
             _cleanup_owned_directory(root_descriptor, partial, partial_identity)

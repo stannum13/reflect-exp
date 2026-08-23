@@ -18,8 +18,11 @@ import reflect.source_evidence as evidence_module
 from reflect.source_checkout import (
     CheckoutCommandResult,
     CheckoutSpec,
+    ContainedGitSymlink,
     SparseCheckoutError,
     SubprocessCheckoutRunner,
+    apply_contained_symlink_contract,
+    audit_contained_git_symlinks,
     checkout_sparse,
     eligible_checkout_specs,
 )
@@ -32,6 +35,7 @@ from reflect.sources import (
     PathStatus,
     SourceLock,
     load_registry,
+    load_lock,
 )
 from scripts.fetch_reference import main as fetch_main
 
@@ -47,6 +51,158 @@ ELIGIBLE = {
     "behaviortree_cpp",
     "navigation2",
 }
+
+
+def _git_blob_sha1(payload: bytes) -> str:
+    return hashlib.sha1(b"blob " + str(len(payload)).encode() + b"\0" + payload).hexdigest()
+
+
+def test_contained_git_symlink_audit_accepts_regular_descriptor_and_target(
+    tmp_path: Path,
+) -> None:
+    link_path = "src/pkg/README.md"
+    target = "../../docs/pkg.md"
+    target_path = "docs/pkg.md"
+    descriptor = target.encode()
+    content = b"locked target\n"
+    (tmp_path / "src/pkg").mkdir(parents=True)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / link_path).write_bytes(descriptor)
+    (tmp_path / target_path).write_bytes(content)
+    contract = ContainedGitSymlink(
+        path=link_path,
+        link_blob_sha1=_git_blob_sha1(descriptor),
+        target=target,
+        target_path=target_path,
+        target_blob_sha1=_git_blob_sha1(content),
+    )
+
+    rows = audit_contained_git_symlinks(
+        tmp_path,
+        (contract,),
+        git_objects={
+            link_path: ("120000", "blob", contract.link_blob_sha1),
+            target_path: ("100644", "blob", contract.target_blob_sha1),
+        },
+    )
+
+    assert rows[0].target_sha256 == hashlib.sha256(content).hexdigest()
+    assert rows[0].link_bytes == len(descriptor)
+    assert not (tmp_path / link_path).is_symlink()
+
+
+@pytest.mark.parametrize(
+    ("target", "target_path", "message"),
+    [
+        ("/etc/passwd", "etc/passwd", "relative"),
+        ("../../../../escape", "escape", "escapes"),
+        ("../../docs/missing.md", "docs/missing.md", "target"),
+    ],
+)
+def test_contained_git_symlink_audit_rejects_absolute_escape_and_dangling(
+    tmp_path: Path, target: str, target_path: str, message: str
+) -> None:
+    link_path = "src/pkg/README.md"
+    descriptor = target.encode()
+    (tmp_path / "src/pkg").mkdir(parents=True)
+    (tmp_path / link_path).write_bytes(descriptor)
+    contract = ContainedGitSymlink(
+        path=link_path,
+        link_blob_sha1=_git_blob_sha1(descriptor),
+        target=target,
+        target_path=target_path,
+        target_blob_sha1="1" * 40,
+    )
+    with pytest.raises(SparseCheckoutError, match=message):
+        audit_contained_git_symlinks(
+            tmp_path,
+            (contract,),
+            git_objects={
+                link_path: ("120000", "blob", contract.link_blob_sha1),
+                target_path: ("100644", "blob", contract.target_blob_sha1),
+            },
+        )
+
+
+def test_contained_git_symlink_audit_never_follows_output_links(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.write_bytes(b"secret")
+    link_path = "src/pkg/README.md"
+    target = "../../docs/pkg.md"
+    (tmp_path / "src/pkg").mkdir(parents=True)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / link_path).symlink_to(outside)
+    (tmp_path / "docs/pkg.md").write_bytes(b"locked\n")
+    contract = ContainedGitSymlink(
+        path=link_path,
+        link_blob_sha1=_git_blob_sha1(target.encode()),
+        target=target,
+        target_path="docs/pkg.md",
+        target_blob_sha1=_git_blob_sha1(b"locked\n"),
+    )
+    with pytest.raises(SparseCheckoutError, match="missing or unsafe|regular descriptor"):
+        audit_contained_git_symlinks(
+            tmp_path,
+            (contract,),
+            git_objects={
+                link_path: ("120000", "blob", contract.link_blob_sha1),
+                "docs/pkg.md": ("100644", "blob", contract.target_blob_sha1),
+            },
+        )
+
+
+def test_lerobot_contract_binds_exact_locked_tree_and_objects() -> None:
+    registry = load_registry(Path("references/repos.yaml"))
+    lock = load_lock(Path("references/repos.lock.yaml"))
+    spec = eligible_checkout_specs(registry, lock, name="lerobot")[0]
+    contract = Path("experiments/00_source_audit/configs/lerobot-contained-symlinks-v1.json")
+    digest = hashlib.sha256(contract.read_bytes()).hexdigest()
+
+    bound = apply_contained_symlink_contract(spec, contract, digest)
+
+    assert bound.symlink_policy == "CONTAINED_GIT_SYMLINKS_V1"
+    assert bound.recursive_tree_sha == "bc9686e9b1fcb89a4b3bef398655150675f14406"
+    assert tuple(item.path for item in bound.contained_symlinks) == (
+        "src/lerobot/policies/act/README.md",
+        "src/lerobot/policies/rtc/README.md",
+        "src/lerobot/policies/smolvla/README.md",
+    )
+    with pytest.raises(SparseCheckoutError, match="SHA-256"):
+        apply_contained_symlink_contract(spec, contract, "0" * 64)
+
+
+def test_checkout_evidence_v2_seals_contained_git_symlink_audit() -> None:
+    row = {
+        "path": "src/pkg/README.md",
+        "link_blob_sha1": "1" * 40,
+        "link_bytes": 17,
+        "link_sha256": "2" * 64,
+        "target": "../../docs/pkg.md",
+        "target_path": "docs/pkg.md",
+        "target_blob_sha1": "3" * 40,
+        "target_bytes": 23,
+        "target_sha256": "4" * 64,
+    }
+    evidence = CheckoutEvidence.create(
+        registry_sha256="9" * 64,
+        repository="example",
+        url="https://github.com/example/project",
+        locked_sha=SHA,
+        patterns=("src/pkg",),
+        commands=(("git", "checkout"),),
+        statuses=(0,),
+        download_bytes=1,
+        disk_bytes=2,
+        outcome="PASS",
+        blocker=None,
+        content_hashes={"src/pkg/README.md": "5" * 64},
+        symlink_policy="CONTAINED_GIT_SYMLINKS_V1",
+        recursive_tree_sha="6" * 40,
+        contained_symlinks=(row,),
+    )
+    reloaded = CheckoutEvidence.from_dict(json.loads(evidence.canonical_bytes()))
+    assert reloaded.schema_version == 2
+    assert dict(reloaded.contained_symlinks[0]) == row
 
 
 def complete_lock(*, missing: tuple[str, str] | None = None) -> tuple[Any, SourceLock]:
