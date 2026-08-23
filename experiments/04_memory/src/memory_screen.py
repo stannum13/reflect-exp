@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
-import inspect
 import json
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -23,6 +22,12 @@ QUERY_IDS = (
     "LAST_FAILURE_REASON", "REACHABLE_VALVE", "CHANGES_SINCE",
     "ROUTE_BLOCKER", "DUPLICATE_IDENTITY", "CONFLICTS_UNKNOWN",
 )
+BASE_CONFIG = {
+    "confidence_threshold": 0.70, "context_bytes": 4096, "context_facts": 16,
+    "contradiction_delta": 0.20, "hash_dimension": 256, "retained_event_cap": 128,
+    "retained_input_bytes": 65536, "retained_input_facts": 256, "retrieval_r": 8,
+    "ttl_multiplier": 1.0,
+}
 ACTION_QUERIES = {"POSE_USABLE", "REACHABLE_VALVE", "ROUTE_BLOCKER", "DUPLICATE_IDENTITY"}
 IDENTITY_QUERIES = {"REACHABLE_VALVE", "DUPLICATE_IDENTITY"}
 
@@ -250,7 +255,7 @@ def _write(path: Path, content: bytes) -> None:
     path.write_bytes(content)
 
 
-def _bundle_files(variant: str, seed: int, observations: Sequence[Mapping[str, object]], truths: Sequence[Mapping[str, object]]) -> dict[str, bytes]:
+def _bundle_files(variant: str, seed: int, observations: Sequence[Mapping[str, object]], truths: Sequence[Mapping[str, object]], *, implementation_git_sha: str, implementation_source_sha256: str, protocol_config_sha256: str) -> dict[str, bytes]:
     facts, decisions = run_variant(variant, seed, observations)
     metrics = _score(decisions, truths, facts)
     files = {
@@ -262,8 +267,10 @@ def _bundle_files(variant: str, seed: int, observations: Sequence[Mapping[str, o
     replay = _sha(b"".join(files[name] for name in sorted(files) if name != "metrics.json"))
     manifest = {
         "claim_status": "ENGINEERING_NONCONFIRMATORY", "disposition": "COMPLETE", "files": inventory,
+        "implementation_git_sha": implementation_git_sha, "implementation_source_sha256": implementation_source_sha256,
         "observation_trace_sha256": _sha(files["observation-trace.jsonl"]), "replay_sha256": replay,
-        "schema_version": "exp04-engineering-bundle-manifest-v1", "seed": seed, "variant_id": variant,
+        "protocol_config_sha256": protocol_config_sha256, "schema_version": "exp04-engineering-bundle-manifest-v1",
+        "seed": seed, "variant_id": variant,
     }
     files["bundle-manifest.json"] = _canonical(manifest)
     return files
@@ -286,6 +293,9 @@ def _derive(raw: Path) -> dict[str, bytes]:
         if _sha(manifest_bytes) != entry["manifest_sha256"]:
             raise ScreenError("bundle manifest hash mismatch")
         manifest = json.loads(manifest_bytes)
+        for name in ("implementation_git_sha", "implementation_source_sha256", "protocol_config_sha256"):
+            if manifest.get(name) != root_manifest.get(name):
+                raise ScreenError("bundle source/config identity mismatch")
         for item in manifest["files"]:
             content = (bundle / item["path"]).read_bytes()
             if len(content) != item["bytes"] or _sha(content) != item["sha256"]:
@@ -331,7 +341,7 @@ def _derive(raw: Path) -> dict[str, bytes]:
     aggregate = {"bundle_count": len(metric_rows), "case_answer_count": len(samples), "claim_status": "ENGINEERING_NONCONFIRMATORY", "schema_version": "exp04-engineering-aggregate-v1", "variants": variants}
     annotations = {"samples": selected, "schema_version": "exp04-engineering-annotations-v1", "selection_rule": "FIRST_CANONICAL_WORKING_AND_NONWORKING_PER_VARIANT_WHEN_OBSERVED"}
     recipe = {
-        "code_sha256": _sha(inspect.getsource(inspect.getmodule(run_screen)).encode("utf-8")),
+        "code_sha256": root_manifest["implementation_source_sha256"],
         "inputs": {"raw_manifest_sha256": _sha(root_manifest_bytes)},
         "operation": "validate every bundle hash; replay run_variant from observation-trace without scorer truth; join scorer truth; recompute metrics, aggregate, annotations, and report",
         "schema_version": "exp04-engineering-recipe-v1", "seeds": list(SEEDS), "variants": list(VARIANTS),
@@ -350,9 +360,13 @@ def _derive(raw: Path) -> dict[str, bytes]:
     return {"RESULTS.md": report, "aggregate.json": _canonical(aggregate), "annotations.json": _canonical(annotations), "recipe.json": _canonical(recipe)}
 
 
-def run_screen(output: Path, *, seeds: Sequence[int]) -> None:
+def run_screen(output: Path, *, seeds: Sequence[int], implementation_git_sha: str) -> None:
     if output.exists() or tuple(seeds) != SEEDS:
         raise ScreenError("output must be absent and seeds must equal the frozen engineering set")
+    if len(implementation_git_sha) != 40 or any(character not in "0123456789abcdef" for character in implementation_git_sha):
+        raise ScreenError("implementation_git_sha must be lowercase SHA-1")
+    source_sha256 = _sha(Path(__file__).read_bytes())
+    config_sha256 = _sha(_canonical({"base_config": BASE_CONFIG, "queries": QUERY_IDS, "seeds": SEEDS, "variants": VARIANTS}))
     bundles = output / "raw" / "bundles"; derived = output / "derived"
     bundles.mkdir(parents=True); derived.mkdir()
     inventory = []
@@ -360,10 +374,10 @@ def run_screen(output: Path, *, seeds: Sequence[int]) -> None:
         for seed in SEEDS:
             observations, truths = generate_seed(seed)
             bundle_id = f"{variant}.seed-{seed}"; destination = bundles / bundle_id; destination.mkdir()
-            files = _bundle_files(variant, seed, observations, truths)
+            files = _bundle_files(variant, seed, observations, truths, implementation_git_sha=implementation_git_sha, implementation_source_sha256=source_sha256, protocol_config_sha256=config_sha256)
             for name, content in files.items(): _write(destination / name, content)
             inventory.append({"bundle_id": bundle_id, "manifest_sha256": _sha(files["bundle-manifest.json"])})
-    raw_manifest = {"bundles": inventory, "claim_status": "ENGINEERING_NONCONFIRMATORY", "schema_version": "exp04-engineering-raw-manifest-v1"}
+    raw_manifest = {"bundles": inventory, "claim_status": "ENGINEERING_NONCONFIRMATORY", "implementation_git_sha": implementation_git_sha, "implementation_source_sha256": source_sha256, "protocol_config_sha256": config_sha256, "schema_version": "exp04-engineering-raw-manifest-v1"}
     _write(output / "raw" / "raw-manifest.json", _canonical(raw_manifest))
     for name, content in _derive(output / "raw").items(): _write(derived / name, content)
 

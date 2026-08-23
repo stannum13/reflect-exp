@@ -17,7 +17,12 @@ def _rows(path: Path) -> list[dict[str, object]]:
 def test_screen_writes_exact_matrix_with_equal_information_and_real_comparators(tmp_path: Path) -> None:
     screen = _screen()
     output = tmp_path / "screen"
-    screen.run_screen(output, seeds=(20260871, 20260872, 20260873, 20260874))
+    screen.run_screen(output, seeds=(20260871, 20260872, 20260873, 20260874), implementation_git_sha="0" * 40)
+
+    root_manifest = json.loads((output / "raw" / "raw-manifest.json").read_text(encoding="ascii"))
+    assert root_manifest["implementation_git_sha"] == "0" * 40
+    assert len(root_manifest["implementation_source_sha256"]) == 64
+    assert len(root_manifest["protocol_config_sha256"]) == 64
 
     bundles = sorted((output / "raw" / "bundles").iterdir())
     assert len(bundles) == 36
@@ -26,6 +31,9 @@ def test_screen_writes_exact_matrix_with_equal_information_and_real_comparators(
         manifest = json.loads((bundle / "bundle-manifest.json").read_text(encoding="ascii"))
         assert manifest["disposition"] == "COMPLETE"
         assert manifest["claim_status"] == "ENGINEERING_NONCONFIRMATORY"
+        assert manifest["implementation_git_sha"] == root_manifest["implementation_git_sha"]
+        assert manifest["implementation_source_sha256"] == root_manifest["implementation_source_sha256"]
+        assert manifest["protocol_config_sha256"] == root_manifest["protocol_config_sha256"]
         assert len(_rows(bundle / "observation-trace.jsonl")) == 10
         assert len(_rows(bundle / "compiled-facts.jsonl")) >= 1
         assert len(_rows(bundle / "query-decisions.jsonl")) == 10
@@ -52,7 +60,7 @@ def test_runner_has_no_truth_input_and_reconstruction_is_byte_equal(tmp_path: Pa
     assert tuple(inspect.signature(screen.run_variant).parameters) == ("variant_id", "seed", "observations")
     output = tmp_path / "screen"
     clean = tmp_path / "clean"
-    screen.run_screen(output, seeds=screen.SEEDS)
+    screen.run_screen(output, seeds=screen.SEEDS, implementation_git_sha="0" * 40)
     screen.reconstruct_screen(output / "raw", clean)
 
     for name in ("aggregate.json", "annotations.json", "recipe.json", "RESULTS.md"):
@@ -66,7 +74,7 @@ def test_runner_has_no_truth_input_and_reconstruction_is_byte_equal(tmp_path: Pa
 def test_manifest_tamper_and_truth_leak_fail_closed(tmp_path: Path) -> None:
     screen = _screen()
     output = tmp_path / "screen"
-    screen.run_screen(output, seeds=screen.SEEDS)
+    screen.run_screen(output, seeds=screen.SEEDS, implementation_git_sha="0" * 40)
     bundle = output / "raw" / "bundles" / f"M4.seed-{screen.SEEDS[0]}"
     decisions = bundle / "query-decisions.jsonl"
     decisions.write_bytes(decisions.read_bytes() + b"{}\n")
