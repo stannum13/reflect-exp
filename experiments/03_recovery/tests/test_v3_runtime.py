@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import json
 
 import numpy as np
 import pytest
@@ -9,6 +10,7 @@ import pytest
 
 contracts = importlib.import_module("experiments.03_recovery.src.v3_contracts")
 runtime = importlib.import_module("experiments.03_recovery.src.v3_runtime")
+v1_contracts = importlib.import_module("experiments.03_recovery.src.contracts")
 
 
 Architecture = contracts.Architecture
@@ -88,7 +90,7 @@ def test_observable_call_interface_rejects_injector_taint() -> None:
 
 def test_full_500hz_state_reference_action_torque_contact_and_envelopes(anchor_episode: object) -> None:
     required = {
-        "tick", "q", "dq", "eef_xy", "q_ref", "dq_ref", "actuator_cmd_nm",
+            "tick", "q_before", "dq_before", "q", "dq", "eef_xy", "q_ref", "dq_ref", "actuator_cmd_nm",
         "applied_force_nm", "contact_count", "obstacle_contact", "target_xy",
         "contact_force_norm_n", "contact_torque_norm_nm", "target_error_m", "safe_hold", "action_valid",
         "world_authorized",
@@ -123,11 +125,36 @@ def test_all_realized_disturbances_change_intended_retained_bytes() -> None:
     for name in ("semantic-object-unavailable", "semantic-restriction-change"):
         episode = episodes[name]
         delivery = episode.realization.injection_tick + episode.realization.semantic_delay_ticks
-        assert all(item["version"] == 1 for item in episode.memory_ledger if item["tick"] < delivery)
-        assert any(item["version"] == 2 and item["tick"] == delivery for item in episode.memory_ledger)
+        assert all(item["snapshot"]["version"] == 1 for item in episode.memory_ledger if item["tick"] < delivery)
+        assert any(item["snapshot"]["version"] == 2 and item["tick"] == delivery for item in episode.memory_ledger)
         assert episode.action_envelopes[delivery]["mode"] == "HOLD"
         assert episode.action_envelopes[delivery]["object_id"] is None
         assert any(item["object_id"] == "object-b" for item in episode.commands)
+
+
+def test_memory_is_exact_t3_live_belief_v1_with_authenticated_evidence(anchor_episode: object) -> None:
+    row = anchor_episode.memory_ledger[0]
+    assert set(row) == {"tick", "snapshot", "snapshot_sha256"}
+    snapshot = row["snapshot"]
+    assert set(snapshot) == {"schema_id", "version", "facts", "observation_tick", "evidence_ledger_sha256"}
+    assert snapshot["schema_id"] == "T3_LIVE_BELIEF_V1"
+    assert len(snapshot["facts"]) == 2
+    assert set(snapshot["facts"][0]) == {
+        "object_id", "semantic_label", "affordance", "restrictions", "pose_xy", "available",
+        "observed_tick", "confidence", "provenance", "stale", "unknown",
+    }
+    reconstructed = v1_contracts.MemorySnapshot(
+        snapshot["schema_id"],
+        snapshot["version"],
+        tuple(v1_contracts.MemoryFact(**(dict(fact) | {
+            "restrictions": tuple(fact["restrictions"]), "pose_xy": tuple(fact["pose_xy"]),
+        })) for fact in snapshot["facts"]),
+        snapshot["observation_tick"],
+        snapshot["evidence_ledger_sha256"],
+    )
+    assert json.loads(reconstructed.to_bytes()) == snapshot
+    assert reconstructed.sha256 == row["snapshot_sha256"]
+    assert contracts.sha256_bytes(b"".join(contracts.canonical_bytes(item) for item in anchor_episode.memory_events)) == snapshot["evidence_ledger_sha256"]
 
 
 def test_architectures_execute_distinct_observable_driven_sequences_and_advance_time() -> None:
@@ -143,7 +170,8 @@ def test_architectures_execute_distinct_observable_driven_sequences_and_advance_
     r3 = episodes[Architecture.R3]
     assert r3.budget_resets
     assert all(item["old_content_sha256"] != item["new_content_sha256"] for item in r3.budget_resets)
-    assert all(item["successful_execution_receipt_sha256"] == item["new_content_sha256"] for item in r3.budget_resets)
+    assert all(item["successful_execution_content_sha256"] == item["new_content_sha256"] for item in r3.budget_resets)
+    assert all(item["execution_receipt_sha256"] in {receipt["receipt_sha256"] for receipt in r3.execution_receipts} for item in r3.budget_resets)
 
 
 def test_existing_p6_and_repaired_p4_paths_have_distinct_bound_bytes() -> None:

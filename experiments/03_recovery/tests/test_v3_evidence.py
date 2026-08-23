@@ -30,6 +30,7 @@ def test_complete_local_import_closure_is_frozen() -> None:
     paths = {item["path"] for item in closure}
     assert {
         "experiments/03_recovery/run_v3_qualification.py",
+        "experiments/03_recovery/src/contracts.py",
         "experiments/03_recovery/src/v3_contracts.py",
         "experiments/03_recovery/src/v3_policy.py",
         "experiments/03_recovery/src/v3_runtime.py",

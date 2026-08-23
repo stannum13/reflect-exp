@@ -36,6 +36,7 @@ from .v3_scorer import ScoreResult, positive_control_audit, score_episode
 _SEED_MODULES = (
     "experiments.03_recovery.run_v3_qualification",
     "experiments.03_recovery.src.v3_evidence",
+    "experiments.03_recovery.src.contracts",
     "experiments.01_policy_control.src.arm",
     "experiments.01_policy_control.src.contracts",
     "experiments.01_policy_control.src.kinematics",
@@ -242,6 +243,7 @@ def episode_payloads(raw: V3EpisodeRaw) -> dict[str, bytes]:
         "world-ledger.jsonl": _jsonl(raw.world_ledger),
         "semantic-events.jsonl": _jsonl(raw.semantic_events),
         "memory-ledger.jsonl": _jsonl(raw.memory_ledger),
+        "memory-events.jsonl": _jsonl(raw.memory_events),
         "observations.jsonl": _jsonl(raw.observations),
         "decisions.jsonl": _jsonl(raw.decisions),
         "budget-resets.jsonl": _jsonl(raw.budget_resets),

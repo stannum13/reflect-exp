@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from functools import lru_cache
 import importlib
+import json
 import math
 from pathlib import Path
 from types import MappingProxyType
@@ -94,6 +95,7 @@ class V3EpisodeRaw:
     world_ledger: tuple[Mapping[str, object], ...]
     semantic_events: tuple[Mapping[str, object], ...]
     memory_ledger: tuple[Mapping[str, object], ...]
+    memory_events: tuple[Mapping[str, object], ...]
     observations: tuple[ObservableState, ...]
     decisions: tuple[DecisionEvent, ...]
     budget_resets: tuple[Mapping[str, object], ...]
@@ -296,6 +298,7 @@ class _World:
         self.data.ctrl[:] = np.asarray(torque)
         self.data.qfrc_applied[:3] = np.asarray(external)
         mujoco.mj_step(self.model, self.data)
+        mujoco.mj_forward(self.model, self.data)
 
 
 def _skill(object_id: str, target: np.ndarray, version: int) -> SkillSpec:
@@ -311,17 +314,66 @@ def _skill(object_id: str, target: np.ndarray, version: int) -> SkillSpec:
     )
 
 
+def _t3_contracts() -> tuple[type, type]:
+    module = importlib.import_module("experiments.03_recovery.src.contracts")
+    return module.MemoryFact, module.MemorySnapshot
+
+
+def _fact_authorized(fact: Mapping[str, object]) -> bool:
+    restrictions = set(str(item) for item in fact["restrictions"])
+    return bool(
+        fact["available"]
+        and not fact["stale"]
+        and not fact["unknown"]
+        and fact["affordance"] == "inspect"
+        and "AUTHORIZED" in restrictions
+        and "FORBIDDEN" not in restrictions
+    )
+
+
+def _t3_snapshot_row(
+    memory: Mapping[str, Mapping[str, object]],
+    version: int,
+    tick: int,
+    memory_events: list[Mapping[str, object]],
+) -> Mapping[str, object]:
+    memory_fact_type, memory_snapshot_type = _t3_contracts()
+    facts = tuple(memory_fact_type(
+        str(fact["object_id"]),
+        str(fact["semantic_label"]),
+        str(fact["affordance"]),
+        tuple(str(item) for item in fact["restrictions"]),
+        tuple(float(item) for item in fact["pose_xy"]),
+        bool(fact["available"]),
+        int(fact["observed_tick"]),
+        float(fact["confidence"]),
+        str(fact["provenance"]),
+        bool(fact["stale"]),
+        bool(fact["unknown"]),
+    ) for _, fact in sorted(memory.items()))
+    evidence_sha256 = sha256_bytes(b"".join(canonical_bytes(item) for item in memory_events))
+    snapshot = memory_snapshot_type("T3_LIVE_BELIEF_V1", version, facts, tick, evidence_sha256)
+    snapshot_wire = json.loads(snapshot.to_bytes())
+    return MappingProxyType({"tick": tick, "snapshot": snapshot_wire, "snapshot_sha256": snapshot.sha256})
+
+
 def _memory_beliefs(memory: Mapping[str, Mapping[str, object]]) -> tuple[ObjectBelief, ...]:
     return tuple(
         ObjectBelief(
             object_id,
             "service-panel",
-            np.asarray(fact["target_xy"]),
-            1.0,
-            {"available": fact["available"], "authorized": fact["authorized"]},
-            1.0,
+            np.asarray(fact["pose_xy"]),
+            float(fact["confidence"]),
+            {
+                "affordance": fact["affordance"],
+                "available": fact["available"],
+                "restrictions": tuple(fact["restrictions"]),
+                "stale": fact["stale"],
+                "unknown": fact["unknown"],
+            },
+            float(fact["confidence"]),
             int(fact["observed_tick"]) * 2_000_000,
-            ("v3-memory-ledger",),
+            (str(fact["provenance"]),),
         )
         for object_id, fact in sorted(memory.items())
     )
@@ -358,7 +410,7 @@ def _generate_command(
 ) -> tuple[_ActiveCommand, bytes]:
     target = np.asarray(path[segment_index])
     q_target = kinematics.absolute_ik(target, q, config.arm.link_lengths_m, config.controller.ik_damping_candidates[0], config)
-    initial_target = kinematics.absolute_ik(np.asarray(memory[object_id]["target_xy"]), q0, config.arm.link_lengths_m, config.controller.ik_damping_candidates[0], config)
+    initial_target = kinematics.absolute_ik(np.asarray(memory[object_id]["pose_xy"]), q0, config.arm.link_lengths_m, config.controller.ik_damping_candidates[0], config)
     observation = Observation(
         sequence,
         tick * 2_000_000,
@@ -384,12 +436,23 @@ def _generate_command(
     content_sha = sha256_bytes(content)
     actions = np.asarray(chunk.actions, dtype="<f8")
     trajectory = canonical_bytes({
+        "chunk_id": chunk.chunk_id,
+        "skill_id": chunk.skill_id,
+        "source_observation_id": chunk.source_observation_id,
+        "source_observation_time_ns": chunk.source_observation_time_ns,
+        "generated_time_ns": chunk.generated_time_ns,
+        "valid_from_ns": chunk.valid_from_ns,
+        "expires_at_ns": chunk.expires_at_ns,
+        "dt_s": chunk.dt_s,
         "controller_id": spec.controller_id,
         "object_id": object_id,
         "path_xy": path,
         "segment_index": segment_index,
         "actions_shape": actions.shape,
+        "actions_dtype": "<f8",
         "representation": chunk.representation,
+        "expected_phase": chunk.expected_phase,
+        "metadata": dict(chunk.metadata),
     }) + actions.tobytes(order="C")
     trajectory_sha = sha256_bytes(trajectory)
     record = {
@@ -531,11 +594,30 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
     previous_q_ref = np.array(q0, copy=True)
     hold_q = np.array(q0, copy=True)
     memory: dict[str, dict[str, object]] = {
-        "object-a": {"target_xy": list(realization.target_a_xy), "available": True, "authorized": True, "observed_tick": 0},
-        "object-b": {"target_xy": list(realization.target_b_xy), "available": True, "authorized": True, "observed_tick": 0},
+        object_id: {
+            "object_id": object_id,
+            "semantic_label": "service-panel",
+            "affordance": "inspect",
+            "restrictions": ("AUTHORIZED",),
+            "pose_xy": list(target),
+            "available": True,
+            "observed_tick": 0,
+            "confidence": 1.0,
+            "provenance": "v3-initial-world-observation",
+            "stale": False,
+            "unknown": False,
+        }
+        for object_id, target in (("object-a", realization.target_a_xy), ("object-b", realization.target_b_xy))
     }
     memory_version = 1
-    memory_ledger: list[Mapping[str, object]] = [MappingProxyType({"tick": 0, "version": 1, "facts": {key: dict(value) for key, value in memory.items()}})]
+    memory_events: list[Mapping[str, object]] = [MappingProxyType({
+        "event_id": f"initial-{object_id}",
+        "tick": 0,
+        "event": "OBSERVED_OBJECT",
+        "object_id": object_id,
+        "fact": dict(fact),
+    }) for object_id, fact in sorted(memory.items())]
+    memory_ledger: list[Mapping[str, object]] = [_t3_snapshot_row(memory, memory_version, 0, memory_events)]
     semantic_events: list[Mapping[str, object]] = []
     world_ledger: list[Mapping[str, object]] = [MappingProxyType({
         "tick": 0,
@@ -569,7 +651,7 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
     parameter_use["receipt_sha256"] = sha256_bytes(canonical_bytes(parameter_use))
 
     trace_rows: dict[str, list[object]] = {name: [] for name in (
-        "tick", "q", "dq", "eef_xy", "q_ref", "dq_ref", "actuator_cmd_nm", "applied_force_nm",
+        "tick", "q_before", "dq_before", "q", "dq", "eef_xy", "q_ref", "dq_ref", "actuator_cmd_nm", "applied_force_nm",
         "contact_count", "obstacle_contact", "contact_force_norm_n", "contact_torque_norm_nm",
         "target_xy", "target_error_m", "safe_hold", "action_valid", "world_authorized",
     )}
@@ -596,7 +678,7 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
     current_object_id = "object-a"
 
     def current_target() -> np.ndarray:
-        return np.asarray(memory[current_object_id]["target_xy"], dtype=np.float64)
+        return np.asarray(memory[current_object_id]["pose_xy"], dtype=np.float64)
 
     def make_command(tick: int, object_id: str, path: tuple[tuple[float, float], ...], segment_index: int = 0) -> None:
         nonlocal active, command_sequence, previous_q_ref
@@ -627,13 +709,13 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
         if active is None:
             return True
         fact = memory[active.record["object_id"]]
-        expected = np.asarray(fact["target_xy"])
+        expected = np.asarray(fact["pose_xy"])
         final = np.asarray(active.path[-1])
-        return bool(fact["available"] and fact["authorized"] and np.allclose(final, expected, atol=0.0, rtol=0.0))
+        return bool(_fact_authorized(fact) and np.allclose(final, expected, atol=0.0, rtol=0.0))
 
     def semantic_valid() -> bool:
         fact = memory[current_object_id]
-        return bool(fact["available"] and fact["authorized"])
+        return _fact_authorized(fact)
 
     def start_attempt(decision: DecisionEvent, tick: int) -> None:
         nonlocal attempt, current_object_id, forced_hold_tick, hold_q
@@ -651,7 +733,7 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
             make_command(tick, current_object_id, path)
             new = str(active.record["content_sha256"])
         elif decision.level is DecisionLevel.SEMANTIC:
-            candidates = [name for name, fact in sorted(memory.items()) if fact["available"] and fact["authorized"]]
+            candidates = [name for name, fact in sorted(memory.items()) if _fact_authorized(fact)]
             if not candidates:
                 forced_hold_tick = tick
             else:
@@ -667,6 +749,13 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
                 else:
                     path = (tuple(float(item) for item in target),)
                 make_command(tick, current_object_id, path)
+                world_ledger.append(MappingProxyType({
+                    "tick": tick,
+                    "event": "AUTHORIZED_ALTERNATIVE_SELECTED",
+                    "target_object_id": current_object_id,
+                    "target_xy": list(target),
+                    "obstacle_active": obstacle_active,
+                }))
                 new = str(active.record["content_sha256"])
             forced_hold_tick = tick
         attempt = _Attempt(decision.level, tick, tick + REOBSERVE_TICKS, old, new)
@@ -707,7 +796,20 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
                 dropout_start = tick
             elif spec.scenario_id == "motion-target-shift":
                 shifted = np.asarray(realization.target_a_xy) + np.asarray(realization.target_shift_xy)
-                memory["object-a"]["target_xy"] = [float(item) for item in shifted]
+                memory["object-a"]["pose_xy"] = [float(item) for item in shifted]
+                memory["object-a"]["observed_tick"] = tick
+                memory["object-a"]["provenance"] = "v3-target-pose-observation"
+                memory_version += 1
+                memory_events.append(MappingProxyType({
+                    "event_id": f"target-pose-{tick}",
+                    "tick": tick,
+                    "event": "OBSERVED_POSE",
+                    "object_id": "object-a",
+                    "pose_xy": list(shifted),
+                    "confidence": 1.0,
+                    "provenance": "v3-target-pose-observation",
+                }))
+                memory_ledger.append(_t3_snapshot_row(memory, memory_version, tick, memory_events))
                 world_ledger.append(MappingProxyType({"tick": tick, "event": "TARGET_SHIFT", "target_object_id": "object-a", "target_xy": list(shifted), "obstacle_active": False}))
             elif spec.scenario_id == "motion-path-infeasible":
                 world.activate_obstacle(realization)
@@ -735,10 +837,24 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
             if spec.scenario_id == "semantic-object-unavailable":
                 memory["object-a"]["available"] = False
             else:
-                memory["object-a"]["authorized"] = False
+                memory["object-a"]["restrictions"] = ("FORBIDDEN",)
             memory["object-a"]["observed_tick"] = tick
+            memory["object-a"]["confidence"] = 1.0
+            memory["object-a"]["provenance"] = "v3-semantic-observation"
+            memory["object-a"]["stale"] = False
+            memory["object-a"]["unknown"] = False
             memory_version += 1
-            memory_ledger.append(MappingProxyType({"tick": tick, "version": memory_version, "facts": {key: dict(value) for key, value in memory.items()}}))
+            memory_events.append(MappingProxyType({
+                "event_id": f"semantic-{tick}",
+                "tick": tick,
+                "event": "OBSERVED_AVAILABILITY" if spec.scenario_id == "semantic-object-unavailable" else "OBSERVED_RESTRICTION",
+                "object_id": "object-a",
+                "available": memory["object-a"]["available"],
+                "restrictions": list(memory["object-a"]["restrictions"]),
+                "confidence": 1.0,
+                "provenance": "v3-semantic-observation",
+            }))
+            memory_ledger.append(_t3_snapshot_row(memory, memory_version, tick, memory_events))
             semantic_events.append(MappingProxyType({"event": "DELIVERED_OBSERVATION", "delivery_tick": tick, "memory_version": memory_version, "object_id": "object-a"}))
             forced_hold_tick = tick
 
@@ -838,13 +954,15 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
         )
         eef = world.site_xy()
         target = current_target()
-        world_authorized = object_for_action is None or bool(memory[object_for_action]["available"] and memory[object_for_action]["authorized"])
+        world_authorized = object_for_action is None or _fact_authorized(memory[object_for_action])
         geometry_for_envelope = _path_clear(active, obstacle_active, realization, world.site_xy())
         valid_envelope = mode == "HOLD" or (command_is_valid() and geometry_for_envelope and world_authorized)
         if attempt is not None and mode == "EXECUTE" and valid_envelope and not obstacle_contact:
             attempt.executed_valid_ticks += 1
 
         trace_rows["tick"].append(tick)
+        trace_rows["q_before"].append(q.tolist())
+        trace_rows["dq_before"].append(dq.tolist())
         trace_rows["q"].append(q_after.tolist())
         trace_rows["dq"].append(dq_after.tolist())
         trace_rows["eef_xy"].append(eef.tolist())
@@ -887,13 +1005,18 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
         if attempt is not None and tick + 1 >= attempt.end_tick:
             completed_level = attempt.level
             successful_sha = attempt.new_content_sha256 if attempt.new_content_sha256 != attempt.old_content_sha256 and attempt.executed_valid_ticks > 0 else ZERO_SHA256
+            execution_receipt_sha = ZERO_SHA256
             if successful_sha != ZERO_SHA256:
-                execution_receipts.append(MappingProxyType({
+                receipt_binding = {
                     "content_sha256": successful_sha,
                     "start_tick": attempt.start_tick,
                     "end_tick": tick + 1,
+                }
+                execution_receipt_sha = sha256_bytes(canonical_bytes(receipt_binding))
+                execution_receipts.append(MappingProxyType({
+                    **receipt_binding,
                     "executed_valid_ticks": attempt.executed_valid_ticks,
-                    "receipt_sha256": sha256_bytes(canonical_bytes((successful_sha, attempt.start_tick, tick + 1, attempt.executed_valid_ticks))),
+                    "receipt_sha256": execution_receipt_sha,
                 }))
             if completed_level is DecisionLevel.CONTROL and active is not None:
                 make_command(tick + 1, str(active.record["object_id"]), active.path, active.segment_index)
@@ -920,7 +1043,8 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
                     "tick": observable.tick,
                     "old_content_sha256": before.active_content_sha256,
                     "new_content_sha256": event.budget_before.active_content_sha256,
-                    "successful_execution_receipt_sha256": successful_sha,
+                    "successful_execution_content_sha256": successful_sha,
+                    "execution_receipt_sha256": execution_receipt_sha,
                 }))
             budget = event.budget_after
             if event.level is DecisionLevel.SAFE_ABORT:
@@ -942,6 +1066,7 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
         tuple(world_ledger),
         tuple(semantic_events),
         tuple(memory_ledger),
+        tuple(memory_events),
         tuple(observations),
         tuple(decisions),
         tuple(resets),
