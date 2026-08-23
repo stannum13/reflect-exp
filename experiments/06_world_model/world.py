@@ -77,6 +77,9 @@ class Candidate:
     candidate_id: str
     strategy_id: str
     commands: np.ndarray
+    generation_counter: int
+    perturbation_magnitude: float
+    pre_perturbation_sha256: str
     action_sha256: str
 
 
@@ -216,6 +219,35 @@ def _commands(start: np.ndarray, phases: Iterable[tuple[float,np.ndarray]], mult
     return np.asarray(out,dtype="<f8")
 
 
+def action_preimage(commands: np.ndarray) -> bytes:
+    array = np.asarray(commands)
+    if array.dtype != np.dtype("<f8") or array.shape != (50, 2) or not np.isfinite(array).all():
+        raise ValueError("candidate commands have invalid dtype, shape, or values")
+    return canonical([array.dtype.str, list(array.shape), COMMAND_DT]) + b"\0" + array.tobytes(order="C")
+
+
+def _unique_commands(strategy_index: int, commands: np.ndarray, occupied: set[bytes]) -> tuple[np.ndarray, int, float]:
+    original = np.asarray(commands, dtype="<f8")
+    if action_preimage(original) not in occupied:
+        return original, 0, 0.0
+    limit = float(CONFIG["command_limit_m_s"])
+    tick = (43 + 7 * strategy_index) % 50
+    axis = strategy_index % 2
+    for counter in range(1, 9):
+        magnitude = counter * 1e-9
+        candidate = original.copy()
+        value = float(candidate[tick, axis])
+        preferred = 1.0 if strategy_index % 2 == 0 else -1.0
+        if value + preferred * magnitude > limit or value + preferred * magnitude < -limit:
+            preferred *= -1.0
+        candidate[tick, axis] = value + preferred * magnitude
+        if np.max(np.abs(candidate)) > limit or np.max(np.abs(candidate - original)) > 8e-9:
+            continue
+        if action_preimage(candidate) not in occupied:
+            return candidate, counter, magnitude
+    raise ValueError("candidate action collision cannot be resolved within frozen perturbation bound")
+
+
 def compile_candidates(scene: Scene, anchor: Anchor) -> tuple[Candidate, ...]:
     c=np.array(anchor.object_state[:2]);g=np.array(scene.target_xy);e0=np.array(anchor.eef_xy);delta=g-c;u=np.array((1.0,0.0)) if np.linalg.norm(delta)==0 else delta/np.linalg.norm(delta);v=np.array((-u[1],u[0]));hu=_support(scene,u);hv=_support(scene,v);contact=lambda n,off:c-(_support(scene,n)+.01)*n+off
     table={
@@ -228,11 +260,18 @@ def compile_candidates(scene: Scene, anchor: Anchor) -> tuple[Candidate, ...]:
         "SLOW_CONSERVATIVE":(((.35,contact(u,0*v)),(1.,g-(hu-.02)*u)),.5),
         "HOLD":(((1.,e0),),0.),
     }
+    generated = {strategy: _commands(e0, *table[strategy]) for strategy in STRATEGIES}
+    occupied: set[bytes] = {action_preimage(generated["HOLD"])}
+    resolved: dict[str, tuple[np.ndarray, int, float]] = {"HOLD": (generated["HOLD"], 0, 0.0)}
+    for strategy_index, strategy in enumerate(STRATEGIES[:-1]):
+        commands, counter, magnitude = _unique_commands(strategy_index, generated[strategy], occupied)
+        occupied.add(action_preimage(commands)); resolved[strategy] = (commands, counter, magnitude)
     result=[]
     for strategy in STRATEGIES:
-        commands=_commands(e0,*table[strategy]);cid=f"{anchor.anchor_id}/candidate/{strategy}";action_hash=sha(canonical([cid,strategy,[50,2],"<f8",COMMAND_DT])+b"\0"+commands.tobytes())
-        result.append(Candidate(cid,strategy,commands,action_hash))
-    if len({x.action_sha256 for x in result})!=8:raise ValueError("candidate commands are not distinct")
+        commands,counter,magnitude=resolved[strategy];cid=f"{anchor.anchor_id}/candidate/{strategy}"
+        pre_hash=sha(action_preimage(generated[strategy]));action_hash=sha(action_preimage(commands))
+        result.append(Candidate(cid,strategy,commands,counter,magnitude,pre_hash,action_hash))
+    if len({action_preimage(x.commands) for x in result})!=8 or len({x.action_sha256 for x in result})!=8:raise ValueError("candidate command preimages are not distinct")
     return tuple(result)
 
 
