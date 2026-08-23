@@ -17,3 +17,11 @@ The stale ignored canonical root will be renamed to a uniquely named superseded 
 - Only ignored `__pycache__` directories and `.pyc`/`.pyo` files inside the governed Experiment 03 worktree may be removed before final validation.
 - Validate recursive inventories, source/config/environment binding, structured report authentication, canonical reconstruction, archive extraction, focused tests, V3 selection, and the complete Experiment 03 suite.
 - Keep the superseded evidence and disposition receipt recoverable and outside the canonical active root.
+
+## Eighth-review closure amendment
+
+The live approval check will compare configuration and environment through their canonical JSON bytes, not Python container identity. A real approval fixture built from the canonical qualification root must pass without replacing `_freeze_record`; genuine drift must still fail.
+
+The report verifier will semantically derive every visible mutable fact from retained freeze/raw/derived/archive/authentication records. The companion report digest remains a byte-integrity seal, while exactly-once semantic matchers independently reject false or duplicate counts, IDs, statuses, hashes, reconstruction claims, and test receipts even if that digest is recomputed.
+
+Gate 5 will no longer infer a minimal level from observable predicates. The runtime will expose a counterfactual-only forced-level replay mode that deterministically reruns the same frozen realization and controller while forcing CONTROL, MOTION, or SEMANTIC at failure decisions. An independent scorer will evaluate each candidate continuation for safety, valid execution/progress, domain clearance, and successful terminal completion. The first passing candidate in CONTROL→MOTION→SEMANTIC order is the oracle; R3 matches only when its retained choice equals that independently measured result. Counterfactual traces and candidate hashes are retained in the audit result. Normal execution remains unchanged.
