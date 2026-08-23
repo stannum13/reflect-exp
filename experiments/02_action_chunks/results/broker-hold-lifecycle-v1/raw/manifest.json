@@ -1,0 +1,1 @@
+{"files":[{"bytes":29112,"path":"events.jsonl","sha256":"f3bb47b50d61073a695e49880b0cb7d1c45e31af2c734b3a591635a6996df37e"},{"bytes":19552,"path":"trials.jsonl","sha256":"40480664f6079fefb0cc15078aad8063c23881f7c1ede553cf18ecc004306ab9"}],"implementation_git_sha":"79d23b5","schema_version":"exp02-broker-hold-manifest-v1"}
