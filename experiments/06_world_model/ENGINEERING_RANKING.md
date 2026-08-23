@@ -17,17 +17,17 @@ ID tuning scenes, then produced predictions once for 24 untouched evaluation sce
 
 | Selector | Role | Regret | Spearman | Top-1 | Success |
 |---|---|---:|---:|---:|---:|
-| DIRECT | reactive control | .735735 | n/a | .1250 | .1042 |
-| W0 | deterministic random control | .414228 | n/a | .1458 | .1667 |
-| W1 | progress heuristic | 1.101642 | -.2841 | .0000 | .0417 |
+| DIRECT | reactive control | .736582 | n/a | .1250 | .1042 |
+| W0 | deterministic random control | .419266 | n/a | .1458 | .1667 |
+| W1 | progress heuristic | 1.100933 | -.2826 | .0000 | .0417 |
 | W2 | exact-rollout oracle | .000000 | n/a | 1.0000 | .2292 |
-| W3 | learned progress/cost ridge | .688052 | .1851 | .1250 | .1042 |
-| W4 | learned full-chunk dynamics ridge | .701108 | .1197 | .1875 | .1042 |
+| W3 | learned progress/cost ridge | .689378 | .1798 | .1250 | .1042 |
+| W4 | learned full-chunk dynamics ridge | .701020 | .1141 | .1875 | .1042 |
 
-W3 reduced regret by .413590 (37.5%) relative to W1 and .047683 (6.5%)
-relative to DIRECT. W4 reduced it by .400534 (36.4%) relative to W1 and
-.034627 (4.7%) relative to DIRECT. These descriptive overall improvements do not
-survive the stronger comparisons: W0 regret was .414228, while the W2 oracle shows a
+W3 reduced regret by .411555 (37.4%) relative to W1 and .047204 (6.4%)
+relative to DIRECT. W4 reduced it by .399913 (36.3%) relative to W1 and
+.035562 (4.8%) relative to DIRECT. These descriptive overall improvements do not
+survive the stronger comparisons: W0 regret was .419266, while the W2 oracle shows a
 large remaining gap. The learned models also selected successful candidates only 5 of
 48 anchor decisions each, versus 11 of 48 for W2.
 
@@ -37,11 +37,11 @@ Values are mean selection regret; lower is better.
 
 | Stratum | DIRECT | W0 | W1 | W2 oracle | W3 | W4 |
 |---|---:|---:|---:|---:|---:|---:|
-| ID | .671816 | .359410 | .402701 | 0 | .344224 | .721154 |
-| MASS_OOD | 1.285073 | 1.287394 | 2.538303 | 0 | 1.893997 | 1.885173 |
-| FRICTION_OOD | .681729 | .015586 | 1.361229 | 0 | .666188 | .651413 |
-| GEOMETRY_OOD | .747278 | .226178 | 1.542209 | 0 | .802766 | .001604 |
-| OBSTACLE_OOD | .356698 | .237390 | .362710 | 0 | .076912 | .226148 |
+| ID | .676255 | .363850 | .397416 | 0 | .348662 | .722104 |
+| MASS_OOD | 1.285328 | 1.287392 | 2.537982 | 0 | 1.894232 | 1.885173 |
+| FRICTION_OOD | .681768 | .015580 | 1.366539 | 0 | .666227 | .651407 |
+| GEOMETRY_OOD | .743571 | .245924 | 1.541477 | 0 | .802445 | .002078 |
+| OBSTACLE_OOD | .356312 | .239003 | .364766 | 0 | .076037 | .223252 |
 
 Both learned models beat W1 in every stratum, but W1 itself has negative mean rank
 correlation in every stratum. Against DIRECT, W3 fails MASS_OOD and GEOMETRY_OOD;
@@ -83,40 +83,56 @@ DIRECT candidate (successful, regret .001076); its worst miss is
 (failed, regret 5.009674). These are the first canonical success/failure or maximum
 regret rows under explicit rules, not hand-picked omissions.
 
-## Evidence and reconstruction
+## Validity repair, evidence, and reconstruction
 
-- Execution Git SHA: `c35e24df30d42aaf2cb7ee1d510ed05142fa897e`.
+- V1 and V2 are retained byte-for-byte but are not valid evidence. V2 is machine-marked
+  `INVALID_PRE_FIX` by `results/engineering-ranking-v2-invalid.json` because candidate
+  hashes included labels rather than proving unique action bytes, anchors omitted part
+  of MuJoCo integration state, and reconstruction trusted recorded outcomes instead of
+  replaying physics.
+- V3 hashes every candidate from exact dtype, shape, command timestep, and command bytes.
+  All 176 anchor groups contain eight distinct action preimages; four duplicate raw
+  compilations received one frozen `1e-9` m/s perturbation, recorded with their pre/post
+  hashes and generation counters.
+- Every anchor records `mjSTATE_INTEGRATION=16383`, exact state size 38 and vector,
+  separately bound mocap position/quaternion, MuJoCo version, and an exact post-restore
+  equality check before every branch.
+- Reconstruction authenticates the exact root inventory, recorded Git source blobs and
+  frozen split, regenerates all scenes/anchors/actions, reruns all 1,408 MuJoCo branches,
+  and only then derives models and metrics.
+- Execution Git SHA: `a6a3895ae6c3e4e52061e7f5a0d72e2e59d5d727`.
 - Runtime: Python 3.11.13, NumPy 2.4.6, MuJoCo 3.12.0.
 - Config SHA-256: `0f17dbe6d350547941a249c1c10735a3e966ea4fac3ac54159f46aaaabdceff3`.
-- World SHA-256: `d0a22352d5c06aca4b618e7babb23c0255337f45fb504c61b46e4d8b2dda1737`.
+- World SHA-256: `78b3acf1524a84c3106dfc57ea74410c65995c69100e07ab0423a7e65d610415`.
 - Model SHA-256: `51f1cb70aa42432dc64e1d3cdaa3792606ce2d7669a8fb6967fe0e763d4c8d8e`.
-- Runner SHA-256: `37e96314e5702faef5f42fdf41613596859d55d9fea0ab4d2cbff3109a317a95`.
+- Runner SHA-256: `2de459bc48159d8a8918b2a5b5d5f58081df820037be69e8379a00c2c655ecaf`.
 - Result manifest SHA-256:
-  `6eaa6ab43980619ceb50211dfd9543f0fe98f17385519a877afa33e55067bb06`.
-- Complete evidence: 13 files, 4,221,874 bytes; canonical inventory SHA-256
-  `761d7a1ea9c44810f287ee6ae657955ef3243265db4df9348e5549829f795cab`.
+  `696f498793c2820a9ebd6dafc38515d39edfe3bb9eed1546a00612dac363ec86`.
+- Complete evidence: 13 files, 4,620,124 bytes; canonical inventory SHA-256
+  `7939cb59d24d8f1e3a6dcc2e6fcfc53ca9ea49503dd381abca5bad88aca50648`.
 
 Ignored evidence is at
-`experiments/06_world_model/results/engineering-ranking-v2/`. It contains exact
+`experiments/06_world_model/results/engineering-ranking-v3/`. It contains exact
 scene and anchor records, all 1,408 command arrays and hashes, all branch outcomes and
 cost components, valid-attempt ledger, fitted coefficients and ancestry, untouched
 evaluation predictions, rankings, metrics, recipe, and file manifest.
 
 The derived directory was reconstructed from sealed raw evidence into
-`experiments/06_world_model/results/engineering-ranking-v2-reconstructed/`; `diff -rq`
+`experiments/06_world_model/results/engineering-ranking-v3-reconstructed/`; `diff -rq`
 returned no output. The exact command is:
 
 ```text
 .venv/bin/python -m experiments.06_world_model.run \
-  --reconstruct-from experiments/06_world_model/results/engineering-ranking-v2/raw \
-  --reconstructed-output experiments/06_world_model/results/engineering-ranking-v2-reconstructed
+  --reconstruct-from experiments/06_world_model/results/engineering-ranking-v3/raw \
+  --reconstructed-output experiments/06_world_model/results/engineering-ranking-v3-reconstructed
 ```
 
 The original v1 root remains byte-for-byte preserved. Its manifest SHA-256 is
 `156ca7601421f5a4f7287c4b5c533f2f0a9963ff0f35eee5bf64b5e9ce54c75d`; its ambiguous
 `collision_fraction` label is superseded for interpretation, not silently rewritten.
-V2 reran every MuJoCo branch under the committed metric correction and is the sole
-result reported here.
+The preserved V2 manifest SHA-256 is
+`6eaa6ab43980619ceb50211dfd9543f0fe98f17385519a877afa33e55067bb06`.
+V3 is the sole valid result reported here.
 
 This bounded run did not measure inference latency, fit calibration/fallbacks, or run a
 confirmatory bootstrap. It cannot grant runtime authority. The highest-information
