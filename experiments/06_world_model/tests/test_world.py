@@ -31,15 +31,18 @@ def test_split_domain_is_exact_and_disjoint() -> None:
     assert len({row.scene_id for row in rows}) == 144
 
 
-def test_v5_evaluation_namespace_is_disjoint_from_all_v3_v4_scenes() -> None:
+def test_v6_namespace_is_disjoint_from_all_v3_v4_v5_scenes() -> None:
     prior = set()
-    for relative in ("results/engineering-ranking-v3/raw/scenes.jsonl", "results/model-quality-v4/raw/scenes.jsonl"):
+    for relative in (
+        "results/engineering-ranking-v3/raw/scenes.jsonl",
+        "results/model-quality-v4/raw/scenes.jsonl",
+        "results/model-quality-v5/raw/scenes.jsonl",
+    ):
         for line in (Path(world.HERE) / relative).read_text().splitlines():
             spec = json.loads(line)["spec"]
             prior.add((spec["scene_id"], spec["seed"]))
-    current = [row for row in world.scene_rows() if row.partition == "evaluation"]
-    assert len(current) == 48
-    assert all(row.scene_id.startswith("exp06-v5/evaluation/") for row in current)
+    current = world.scene_rows()
+    assert all(row.scene_id.startswith(f"exp06-v6/{row.partition}/") for row in current)
     assert not {(row.scene_id, row.seed) for row in current} & prior
 
 
