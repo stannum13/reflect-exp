@@ -1,0 +1,10 @@
+{"case_id":"case/00","expected_answer":"UNKNOWN","expected_decision":"RESCAN","query_id":"LOCATION","schema_version":"exp04-engineering-scorer-truth-v1","seed":20260874}
+{"case_id":"case/01","expected_answer":"tick/0","expected_decision":"REPORT","query_id":"LAST_OBSERVED","schema_version":"exp04-engineering-scorer-truth-v1","seed":20260874}
+{"case_id":"case/02","expected_answer":"STALE","expected_decision":"RESCAN","query_id":"POSE_USABLE","schema_version":"exp04-engineering-scorer-truth-v1","seed":20260874}
+{"case_id":"case/03","expected_answer":"YES","expected_decision":"REPORT","query_id":"PRIOR_ATTEMPT","schema_version":"exp04-engineering-scorer-truth-v1","seed":20260874}
+{"case_id":"case/04","expected_answer":"BLOCKED","expected_decision":"REPORT","query_id":"LAST_FAILURE_REASON","schema_version":"exp04-engineering-scorer-truth-v1","seed":20260874}
+{"case_id":"case/05","expected_answer":"valve/0002","expected_decision":"CHOOSE_ALTERNATIVE","query_id":"REACHABLE_VALVE","schema_version":"exp04-engineering-scorer-truth-v1","seed":20260874}
+{"case_id":"case/06","expected_answer":"tool/0002:ON:asset/0003","expected_decision":"REPORT","query_id":"CHANGES_SINCE","schema_version":"exp04-engineering-scorer-truth-v1","seed":20260874}
+{"case_id":"case/07","expected_answer":"door/0002","expected_decision":"CHOOSE_ALTERNATIVE","query_id":"ROUTE_BLOCKER","schema_version":"exp04-engineering-scorer-truth-v1","seed":20260874}
+{"case_id":"case/08","expected_answer":"AMBIGUOUS","expected_decision":"REIDENTIFY","query_id":"DUPLICATE_IDENTITY","schema_version":"exp04-engineering-scorer-truth-v1","seed":20260874}
+{"case_id":"case/09","expected_answer":"CONTRADICTED","expected_decision":"REPORT_UNKNOWN","query_id":"CONFLICTS_UNKNOWN","schema_version":"exp04-engineering-scorer-truth-v1","seed":20260874}
