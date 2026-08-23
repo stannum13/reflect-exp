@@ -84,3 +84,13 @@ def test_manifest_tamper_and_truth_leak_fail_closed(tmp_path: Path) -> None:
         assert "hash" in str(error) or "manifest" in str(error)
     else:
         raise AssertionError("tampered bundle reconstructed")
+
+
+def test_m6_and_v0_use_real_deterministic_hashed_retrieval() -> None:
+    screen = _screen()
+    observations, _ = screen.generate_seed(screen.SEEDS[0])
+    for variant in ("M6", "V0"):
+        _, decisions = screen.run_variant(variant, screen.SEEDS[0], observations)
+        duplicate = next(row for row in decisions if row["query_id"] == "DUPLICATE_IDENTITY")
+        assert duplicate["retrieval_channel"] == "HASHED_BM25_V1"
+        assert set(duplicate["retrieval_fact_ids"]) >= {"08-a", "08-b"}

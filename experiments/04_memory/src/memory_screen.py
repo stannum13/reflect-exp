@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -30,6 +31,18 @@ BASE_CONFIG = {
 }
 ACTION_QUERIES = {"POSE_USABLE", "REACHABLE_VALVE", "ROUTE_BLOCKER", "DUPLICATE_IDENTITY"}
 IDENTITY_QUERIES = {"REACHABLE_VALVE", "DUPLICATE_IDENTITY"}
+QUERY_RETRIEVAL_TEXT = {
+    "LOCATION": "location entity tool 0001 predicate in on near held by observed at",
+    "LAST_OBSERVED": "last observed entity valve 0001 predicate observed at pose visibility",
+    "POSE_USABLE": "pose usable entity asset 0002 now predicate pose visibility observed at",
+    "PRIOR_ATTEMPT": "prior attempt entity door 0003 action open door predicate attempt outcome",
+    "LAST_FAILURE_REASON": "last failure reason entity door 0003 action open door predicate attempt outcome",
+    "REACHABLE_VALVE": "reachable valve robot 0001 valve class predicate reachable restricted by blocks connects affordance operational state",
+    "CHANGES_SINCE": "changes since room 0004 predicate observed at in on blocks connects reachable restricted by pose visibility door state battery level operational state attempt outcome",
+    "ROUTE_BLOCKER": "route blocker robot 0001 destination room 0003 predicate connects blocks reachable restricted by door state",
+    "DUPLICATE_IDENTITY": "duplicate identity label service valve predicate label alias entity class observed at visibility",
+    "CONFLICTS_UNKNOWN": "conflicts unknown entity asset 0001 predicate operational state",
+}
 
 
 class ScreenError(ValueError):
@@ -149,6 +162,51 @@ def _facts_for(variant_id: str, observation: Mapping[str, object]) -> list[dict[
     raise ScreenError("unknown variant")
 
 
+def _tokens(value: str) -> tuple[str, ...]:
+    normalized = "".join(character.casefold() if character.isalnum() else " " for character in value)
+    return tuple(token for token in normalized.split() if token)
+
+
+def _hashed_retrieve(query_id: str, facts: Sequence[Mapping[str, object]]) -> tuple[dict[str, object], ...]:
+    """Frozen local signed-hash BM25/cosine retrieval used only by M6/V0."""
+    if not facts:
+        return ()
+    documents = [
+        _tokens(f"subject {row['subject_id']} predicate {row['predicate']} object {row['value']} provenance {row['source_event_id']}")
+        for row in facts
+    ]
+    query = _tokens(QUERY_RETRIEVAL_TEXT[query_id])
+    count = len(documents); average_length = sum(map(len, documents)) / count
+    frequencies = {token: sum(token in document for document in documents) for token in set().union(*map(set, documents))}
+    idf = {token: math.log(1.0 + (count - frequency + 0.5) / (frequency + 0.5)) for token, frequency in frequencies.items()}
+
+    def component(token: str) -> tuple[int, float]:
+        integer = int.from_bytes(hashlib.sha256(token.encode("utf-8")).digest(), "big")
+        return integer & 255, 1.0 if ((integer >> 8) & 1) == 0 else -1.0
+
+    query_vector = np.zeros(256, dtype=np.float64)
+    for token in set(query):
+        if token in idf:
+            index, sign = component(token); query_vector[index] += sign * idf[token] * query.count(token)
+    query_norm = float(np.linalg.norm(query_vector))
+    if query_norm == 0.0:
+        return ()
+    query_vector /= query_norm
+    ranked = []
+    for row, document in zip(facts, documents):
+        vector = np.zeros(256, dtype=np.float64)
+        for token in set(document):
+            frequency = document.count(token)
+            weight = idf[token] * frequency * 2.2 / (frequency + 1.2 * (0.25 + 0.75 * len(document) / average_length))
+            index, sign = component(token); vector[index] += sign * weight
+        norm = float(np.linalg.norm(vector))
+        cosine = 0.0 if norm == 0.0 else float(np.dot(query_vector, vector / norm))
+        if cosine > 0.0:
+            ranked.append((cosine, -int(row["received_tick"]), str(row["fact_id"]), dict(row)))
+    ranked.sort(key=lambda item: (-item[0], item[1], item[2]))
+    return tuple(item[3] for item in ranked[: int(BASE_CONFIG["retrieval_r"])])
+
+
 def _answer(variant: str, query: str, facts: Sequence[Mapping[str, object]], now: int) -> tuple[str, str, tuple[str, ...]]:
     predicates: dict[str, list[Mapping[str, object]]] = {}
     for row in facts:
@@ -217,11 +275,16 @@ def run_variant(variant_id: str, seed: int, observations: Sequence[Mapping[str, 
             raise ScreenError("observation identity is invalid")
         facts = _facts_for(variant_id, observation)
         compiled.extend({"case_id": observation["case_id"], "variant_id": variant_id, **row} for row in facts)
-        answer, decision, cited = _answer(variant_id, str(observation["query_id"]), facts, int(observation["query_tick"]))
+        query_id = str(observation["query_id"])
+        retrieved = _hashed_retrieve(query_id, facts) if variant_id in {"M6", "V0"} else ()
+        answer_facts = retrieved if variant_id == "V0" else facts
+        answer, decision, cited = _answer(variant_id, query_id, answer_facts, int(observation["query_tick"]))
         context_bytes = len(_canonical([row for row in facts if str(row["fact_id"]) in cited]))
         decisions.append({
             "answer": answer, "case_id": observation["case_id"], "cited_fact_ids": cited,
             "context_bytes": context_bytes, "decision": decision, "query_id": observation["query_id"],
+            "retrieval_channel": "HASHED_BM25_V1" if variant_id in {"M6", "V0"} else None,
+            "retrieval_fact_ids": tuple(str(row["fact_id"]) for row in retrieved),
             "schema_version": "exp04-engineering-query-decision-v1", "seed": seed,
             "variant_id": variant_id,
         })
