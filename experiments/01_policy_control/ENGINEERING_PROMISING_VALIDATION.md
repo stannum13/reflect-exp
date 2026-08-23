@@ -71,8 +71,8 @@ The same index matrix is reused for every comparator and metric.
 | Comparator | Δ working fraction (95%) | Δ clamp (95%) | Δ saturation (95%) | Δ p95 error m (95%) |
 |---|---:|---:|---:|---:|
 | P5 5/.5 slew 6 | +0.2083 [+0.1042,+0.3333] | -0.005353 [-0.005980,-0.004740] | 0 [0,0] | -0.000029 [-0.000052,-0.000006] |
-| P5 7.5/.75 slew 6 | -0.0417 [-0.1875,+0.1042] | +0.000680 [-0.002207,+0.003907] | +0.088053 [+0.058987,+0.120147] | +0.002332 [-0.000225,+0.005314] |
-| P1 5/.5 slew 6 | -0.3333 [-0.4583,-0.2083] | +0.025533 [+0.021840,+0.029280] | 0 [0,0] | -0.020872 [-0.025051,-0.016833] |
+| P5 7.5/.75 slew 6 | -0.0417 [-0.1875,+0.1042] | +0.000680 [-0.002220,+0.003880] | +0.088053 [+0.058980,+0.120253] | +0.002332 [-0.000197,+0.005260] |
+| P1 5/.5 slew 6 | -0.3333 [-0.4583,-0.2083] | +0.025533 [+0.021793,+0.029213] | 0 [0,0] | -0.020872 [-0.025057,-0.016802] |
 
 ## Reconstructable exemplars
 
@@ -91,6 +91,13 @@ The same index matrix is reused for every comparator and metric.
 - Probe script SHA-256: `cdadd079b94b88bbc6fa1727a3e06487408a2022be8212142d08fc0a34f26f00`.
 - Canonical summary: 86,442,742 bytes, SHA-256
   `06b8901208ae85d20fa69d98c6bc82821c956dcd290d272ae6cbcfcf13adb833`.
+- Exact paired-bootstrap reconstruction artifact:
+  `ENGINEERING_PROMISING_VALIDATION_BOOTSTRAP.json`, 28,500 bytes, internal
+  canonical SHA-256
+  `74dba84ab530e1165ec932bead2e2e480e50583f040431062907c0b89d927a51`.
+  It retains all 144 paired-difference rows and closes the cell/contrast/metric
+  order, PCG64 seed and draw reuse, 10,000-by-48 sample domain, and sorted
+  nearest-rank endpoint indices 249/9749.
 - Full bundles: 192 directories, 1,344 files, 319,488,595 bytes.
 - Complete ignored evidence: 1,346 files, 405,943,484 bytes. SHA-256
   `07a6055017b0aa79fe60ca679b50b66bf5c17b8933a5463ce8199d2d9a93cab6`
