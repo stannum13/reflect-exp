@@ -73,3 +73,15 @@ the adapter requires a separate approval. This mode change intentionally changes
 the exact `references/repos.yaml` SHA-256, so every P2 lock, report, phase record,
 and downstream P3 binding derived from the prior registry bytes is stale and must be
 regenerated rather than edited or reused.
+
+## A-013 — Exact host uv bootstrap identity
+
+The host `uv 0.9.17` executable may be used only when separately sealed bootstrap
+evidence proves that it is byte-identical to the executable in the exact
+macOS-arm64 PyPI wheel, binds that wheel and the matching sdist to their published
+hashes, binds version/tag to one full upstream commit, and mechanically obtains a
+valid SPDX expression from that commit's Cargo workspace/package manifests. This
+does not infer from wheel classifiers and does not authorize installation, source
+copying, adapters, or any other `uv` binary. GitHub remains `UNKNOWN`; any identity,
+hash, manifest, `RECORD`, license-inventory, version, or commit-prefix mismatch is
+a hard P2 failure.

@@ -168,6 +168,31 @@ wheel install boundary above, using the wheel publisher's complete
 multiple license files, remain recorded for P3 review rather than being collapsed
 into a locally inferred legal conclusion.
 
+### Exact bootstrap-binary use evidence
+
+The host-provided `uv` executable is a bootstrap tool rather than an artifact in
+the project `uv.lock`. Its GitHub `NOASSERTION` may cross only a separately sealed
+`EXACT_BOOTSTRAP_BINARY_USE_ONLY` boundary. The bootstrap source fixes package
+name `uv`, version/tag `0.9.17`, the unique full tag commit, exact PyPI sdist and
+macOS-arm64 wheel filenames, URLs, byte sizes, and SHA-256 digests. Resolution
+must verify the tag without ambiguity, require `uv --version` to report the same
+version and an unambiguous prefix of that commit, and bind the resolved absolute
+executable path, size, and digest.
+
+The verifier checks the sdist and the exact-commit raw blobs for the workspace
+and `uv` package Cargo manifests. It mechanically resolves the package's
+`license = { workspace = true }` to the workspace's explicit valid SPDX
+expression; it never interprets classifiers or license text. It also verifies the
+wheel's exact `METADATA`, `RECORD`, complete two-file license inventory, embedded
+executable path/hash/size, and byte equality with the invoked host executable.
+Every archive path is safe and distinct, every file is size-bounded, and every
+expected hash and identity is closed. A missing or unresolvable license,
+tag/version/commit disagreement, altered manifest/blob, malformed archive or
+`RECORD`, executable mismatch, symlink/non-regular host executable, or ambiguous
+prefix fails closed. This authority permits execution of only that exact binary;
+it grants no package installation, repository copying, adapter use, or source
+reuse authority, and the GitHub observation remains `UNKNOWN`.
+
 ## Audit behavior
 
 The offline audit rejects:
@@ -179,7 +204,8 @@ The offline audit rejects:
 - missing license observations for direct and adapter dependencies;
 - adapter entries with an unknown repository license status;
 - direct entries with neither discovered repository SPDX evidence nor complete,
-  exact-wheel `EXACT_WHEEL_INSTALL_ONLY` evidence;
+  exact-wheel `EXACT_WHEEL_INSTALL_ONLY` evidence nor, for `uv` alone, complete
+  `EXACT_BOOTSTRAP_BINARY_USE_ONLY` evidence;
 - artifact evidence on a non-direct entry, a wheel absent from `uv.lock`, a
   package/version/platform mismatch, an unverified wheel digest, malformed Core
   Metadata/RECORD, an incomplete license-file inventory, or any attempt to use

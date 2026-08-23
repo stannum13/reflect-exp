@@ -127,6 +127,16 @@ bad-digest/bad-ZIP/ambiguous, or incomplete wheel fails closed without publicati
 The backward-compatible P2 representation intentionally leaves P3 rendering as a
 separate explicitly owned seam.
 
+For the host-provided `uv` bootstrap only, add a disjoint closed
+`bootstrap_artifact.*` evidence namespace sourced from
+`references/bootstrap-artifacts.yaml`. Bind the exact version/tag/full commit,
+PyPI sdist and compatible wheel URLs/sizes/SHA-256 values, exact-commit Cargo
+manifest URLs/blob hashes/content hashes, mechanically inherited valid SPDX
+expression, wheel `METADATA`/`RECORD`/two-license inventory, embedded executable,
+absolute invoked executable, byte equality, and exact version output with commit
+prefix. The only authority value is `EXACT_BOOTSTRAP_BINARY_USE_ONLY`; reject all
+ambiguity and never treat it as install, copy, adapter, or source authority.
+
 **Interfaces:**
 - Consumes: `SourceRegistry`, exact registry selectors, an injected `Runner.run_ls_remote(url)`, an injected `Transport.get(url)`, and an injected UTC clock.
 - Produces: `GitHubIdentity`, `HttpResponse`, `MetadataEvidence`, `resolve_entry(entry, transport, clock) -> LockedEntry`, `resolve_registry(registry, names, transport, clock) -> SourceLock`, `CacheStore`, and `atomic_write_lock(path, lock) -> None`.
