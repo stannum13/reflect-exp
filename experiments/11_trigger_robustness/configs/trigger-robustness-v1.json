@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "study_id": "EXP11_TRIGGER_ROBUSTNESS_DOSE_RESPONSE_V1",
+  "claim_scope": "SYNTHETIC_TYPED_ORACLE_TRIGGER_ENGINEERING_NOT_VLA",
+  "planner_id": "DETERMINISTIC_TYPED_ORACLE_V1",
+  "storage_variants": ["LIVE_BELIEF", "LIVE_EPISODIC"],
+  "trigger_policies": ["PERIODIC_ONLY", "FAILURE_THRESHOLD", "EVENT_DRIVEN", "HYBRID"],
+  "disturbance_families": ["POSE_SHIFT", "AVAILABILITY_LOSS", "RESTRICTION_CHANGE", "CONTROL_FAILURE"],
+  "severities": ["LOW", "HIGH"],
+  "mission_horizons": [4, 8, 12],
+  "prompt_envelopes": ["COMPACT_TYPED", "VERBOSE_TYPED"],
+  "recovery_allowance_ticks": 4,
+  "period_ticks": 3,
+  "failure_threshold": 2,
+  "bootstrap_draws": 10000,
+  "bootstrap_seed": 20266199,
+  "quality_profiles": [
+    {"id":"Q00_CLEAN","recall":1.0,"delay":0,"false_burst":0,"duplicate":0,"out_of_order":0,"cooldown":0,"hysteresis":1},
+    {"id":"Q01_RECALL75","recall":0.75,"delay":0,"false_burst":0,"duplicate":0,"out_of_order":0,"cooldown":0,"hysteresis":1},
+    {"id":"Q02_RECALL50","recall":0.5,"delay":0,"false_burst":0,"duplicate":0,"out_of_order":0,"cooldown":0,"hysteresis":1},
+    {"id":"Q03_RECALL25","recall":0.25,"delay":0,"false_burst":0,"duplicate":0,"out_of_order":0,"cooldown":0,"hysteresis":1},
+    {"id":"Q04_DELAY1","recall":1.0,"delay":1,"false_burst":0,"duplicate":0,"out_of_order":0,"cooldown":0,"hysteresis":1},
+    {"id":"Q05_DELAY3","recall":1.0,"delay":3,"false_burst":0,"duplicate":0,"out_of_order":0,"cooldown":0,"hysteresis":1},
+    {"id":"Q06_FALSE3","recall":1.0,"delay":0,"false_burst":3,"duplicate":0,"out_of_order":0,"cooldown":0,"hysteresis":1},
+    {"id":"Q07_DUP_OOO","recall":1.0,"delay":1,"false_burst":0,"duplicate":2,"out_of_order":1,"cooldown":0,"hysteresis":1},
+    {"id":"Q08_GUARDED","recall":0.75,"delay":1,"false_burst":1,"duplicate":1,"out_of_order":1,"cooldown":2,"hysteresis":2},
+    {"id":"Q09_HOSTILE","recall":0.5,"delay":3,"false_burst":3,"duplicate":2,"out_of_order":1,"cooldown":4,"hysteresis":3}
+  ],
+  "calibration_seeds": [20266991, 20266992]
+}
