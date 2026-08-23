@@ -6,7 +6,7 @@ Branch: `feat/hierarchy-recovery-probe`
 
 Base: `3c2f5a3`
 
-Qualified source commit: `bc34193e2653af0643a6e104f76fd45c544ccc29`
+Qualified source commit: `32a258539555a83a38a490217653514c604008e0`
 
 Status: **READY FOR FRESH READ-ONLY REVIEW**
 
@@ -48,6 +48,7 @@ GREEN commits:
 - `1cc81bc` — force invalid/interrupted retained outcome dispositions to invalidate construct Gate 8
 - `f20a1dd` — bind the exact 360-cell matrix, causal per-event sufficiency, clustered bootstraps, fixed estimators, invalid lifecycle, and approval provenance
 - `bc34193` — authenticate per-event object/action/execution/reset effects, restrict Gate 7 to verified COMPLETE physical runs, and make every outcome publication boundary exact-byte crash-resumable
+- `32a2585` — require exact post-effect failure clearance, make sealed deletion fail closed with durable fsync ordering, authenticate outcome archive publication, and verify report facts from derived evidence
 
 Review-fix RED/GREEN evidence included five authority-tamper failures (trace target/action flags, reported reset count, retained EEF, matched qref/torque envelope tampering, and T3 provenance/evidence hash), a last-object-only mission structural failure, missing spec/environment/PNG/archive failures, and independent gate failures. Focused GREEN runs were **18 scorer tests passed in 47.38s**, **1 full qualification/publication/reconstruction test passed in 211.46s**, and **1 durable archive extraction test passed in 140.09s**.
 
@@ -80,6 +81,10 @@ Final third-review verification: V3 selection **62 passed, 60 deselected in 486.
 Fourth-review RED/GREEN coverage includes forged wrong-object EXECUTE, missing execution receipt, missing reset receipt, seven COMPLETE plus three NOT_RUN diversity, exact-byte retries across header/episode/aggregate/raw-manifest/derived/archive boundaries, and sealed-raw tampering. The focused outcome-path suite was **14 passed in 5.51s**; the durable archive resume/tamper round trip was **1 passed in 146.12s**.
 
 Final fourth-review verification: V3 selection **63 passed, 60 deselected in 493.53s**; complete Experiment 03 regression **123 passed in 530.70s**. Canonical qualification regeneration retained **18 calibration episodes, 17 SUCCESS, 1 expected FAILURE, 10/10 gates**, and clean reconstruction replayed all 18 byte-exactly.
+
+Fifth-review RED/GREEN coverage includes a still-failing domain predicate after an otherwise authenticated intervention; deleted members under sealed raw/derived/archive manifests; directory and file fsync ordering; arbitrary one-file archive input; unapproved and approved-but-unsealed archive requests; and stale report controller/control facts. Focused verification was **17 outcome-path tests passed in 5.93s**, **2 report/archive validation tests passed in 0.14s**, and the full archive deletion/tamper round trip was **1 passed in 148.63s**.
+
+Final fifth-review verification: V3 selection **68 passed, 60 deselected in 495.12s**; complete Experiment 03 regression **128 passed in 538.49s**. The report verifier authenticated **13 derived/archive facts**, and canonical regeneration again retained **18 calibration episodes, 17 SUCCESS, 1 expected FAILURE, 10/10 gates** with byte-exact reconstruction.
 
 ## Qualification episodes
 
@@ -126,8 +131,8 @@ The existing P6 and repaired P4 sensitivity paths are both actually called, and 
 
 | Controller | Call path | Trajectory SHA-256 | q_ref SHA-256 | torque SHA-256 |
 |---|---|---|---|---|
-| P6 | `emit_chunk:P6 -> reference_for_tick:P6 -> bounded_pd` | `e7d44319c53d2322f94a4648ff0da34cc8fa84bd4d0027fcd3ee49cf39a8b20a` | `4b15de7f2ae423c793ee21c7ce4afb3bae41b225e41ff779aaecef6ce88de803` | `0a14099f48d8aab7ca82945a28240af29a37179755f5f57f69729dd059cfafdf` |
-| repaired P4 | `emit_chunk:P4 -> with_p4_executor_tuning:1:dqon -> reference_for_tick:P4 -> bounded_pd` | `890e6188f28e84731dd77fee96564bbb183667c9fc32f86a1c0cfee7c77a4d61` | `a03f3e9d70e73586b78be19e8fff3ef9344b597d1175c479be2a66b964bd7ce4` | `743638fe0054d0826d2893e3c2e2b99eb16becdb8a0620d1a3494f347f010232` |
+| P6 | `emit_chunk:P6 -> reference_for_tick:P6 -> bounded_pd` | `d541bdfa927db8c405e5dfa7bd0816b0cdb47f33dd94dc6bc008b5a39b4c66f3` | `4b15de7f2ae423c793ee21c7ce4afb3bae41b225e41ff779aaecef6ce88de803` | `0a14099f48d8aab7ca82945a28240af29a37179755f5f57f69729dd059cfafdf` |
+| repaired P4 | `emit_chunk:P4 -> with_p4_executor_tuning:1:dqon -> reference_for_tick:P4 -> bounded_pd` | `5301a17c41747cdf2ae8960d9f8e1cb928be5068aa1dd428102542bab443c483` | `a03f3e9d70e73586b78be19e8fff3ef9344b597d1175c479be2a66b964bd7ce4` | `743638fe0054d0826d2893e3c2e2b99eb16becdb8a0620d1a3494f347f010232` |
 
 ## Independent scoring and controls
 
@@ -139,7 +144,7 @@ Each single-authority positive control independently closes the terminal to FAIL
 |---|---:|
 | collision | 1 |
 | forbidden execution | 9 |
-| invalid action/trajectory | 1 |
+| invalid action/trajectory | 17 |
 | loop/no progress | 1 |
 | missed dwell | 1 |
 | invalid reset | 1 |
@@ -159,19 +164,19 @@ Bytes: **50,009,565**
 
 | Artifact | SHA-256 |
 |---|---|
-| qualification freeze | `dfbe666bf23a7702807a3c96f2e56e0227bdeb4f857f46aabb78d3761899a089` |
+| qualification freeze | `72cc68feb90f6801c97311177c7fd5ca3fd90d3398fc1da7d13bb54a167eabc1` |
 | raw manifest / raw reconstruction | `561397e27fb82e4368b5b254bd06dd8f7947a1b878718a21be62aa708af90169` |
-| derived manifest / derived reconstruction | `8e6ed831e9effa4600341aa0a70f799d0ea8aa7a940a14888f0098dcd3d98cc1` |
+| derived manifest / derived reconstruction | `7f49b6f128bdae1410c9d3cb0de1a8b3b9fbf0f91bdadb3452a64cf15d89359e` |
 | qualification summary | `1372bb6421ff5ef0aae9aa64b398dd58df81daf46c639a25c9c28710304b32ca` |
 | gate audit receipts | `432804155b58920b7379795079d5dd5c5b219075c51c1a4a047ab346f139bdab` |
 | replay receipt | `4d9f103ebb42021f7ef888f88dc4f7069bb366114dedb7dbd125a16225ef7a2f` |
-| source/spec/import closure | `b979c49368aa943ef2eec49a0d4d3110b50d8b393c7db56cbf301f2cabd879ce` |
+| source/spec/import closure | `d0d214cc69e3ba791b5ef849795b4c23ca275c5c8b355813ec69a89054261a4e` |
 | frozen qualification/outcome configuration | `1e5fec9533ad61eced4a485ef5b8615586050e470167b8f373b79e55d1860672` |
 | frozen environment | `d6e2926ed735b6049ca7752e318f32206af0926e6745fbd2d52f9886669d1b5f` |
-| durable qualification tree | `41d1689ee6a75d44e8fe06062c6bb78fa562e89ca6c2c66b2ef4dfb423bb76d3` |
-| durable archive | `2528a59e7758c21c9812b82294d3287884218ad70e5bea80a7c7866d6e4311ea` |
+| durable qualification tree | `9cc90483f3b757b669578d433c3b2cf34283ef3e18c3f61eb8af185fcbc69fb1` |
+| durable archive | `df9615ac8cd6fdad079e3577ff7f1b9d0029fdae55594aa4d1572b5223c14aae` |
 
-Clean reconstruction destination: `/private/tmp/hierarchy-v3-fourth-review-reconstruction`. It independently replayed all **18** episodes with `matched=true`; the regenerated raw and derived manifest hashes exactly equal the hashes above. Reconstruction reads raw episode inputs and does not trust the original summaries.
+Clean reconstruction destination: `/private/tmp/hierarchy-v3-fifth-review-reconstruction`. It independently replayed all **18** episodes with `matched=true`; the regenerated raw and derived manifest hashes exactly equal the hashes above. Reconstruction reads raw episode inputs and does not trust the original summaries.
 
 The canonical diagnostic bundle includes tables plus deterministic SVG and exact SVG-rasterized PNG companions for injection timing/disturbance realization, P6/P4 controller byte differences, time-advanced budgets/retries, and scorer-positive controls. All companions are authenticated by the derived manifest. `gate-audits.json` retains separate injection receipts, matched-anchor domain effects, exact decision-budget transitions, transitive typed cause closure, every qualification precheck, the frozen precheck-before-execution outcome plan, and recomputed geometric NOT_RUN receipts. `examples.json` binds:
 
@@ -179,7 +184,7 @@ The canonical diagnostic bundle includes tables plus deterministic SVG and exact
 - nonworking: `qualification-P6-R0-semantic-object-unavailable-20261893`
 - NOT_RUN: `architecture-independent-unreachable-geometry-v1`
 
-The ignored working bundle is durably retained as the tracked, deterministic, content-addressed archive `reports/evidence/hierarchical-recovery-v3-qualification/2528a59e7758c21c9812b82294d3287884218ad70e5bea80a7c7866d6e4311ea.tar.gz` (**8,759,578 bytes; 437 members**) with a tracked manifest and byte-exact extraction test.
+The ignored working bundle is durably retained as the tracked, deterministic, content-addressed archive `reports/evidence/hierarchical-recovery-v3-qualification/df9615ac8cd6fdad079e3577ff7f1b9d0029fdae55594aa4d1572b5223c14aae.tar.gz` (**8,759,551 bytes; 437 members**) with a tracked manifest and byte-exact extraction test.
 
 The 10 registered hard gates all pass in the qualification bundle: exact sampled-tick injection, six realized disturbances, distinct observable policy sequences, real/different P6 and P4 paths, time-advanced guarded budgets, closed cause boundary, independent raw scorer, nine terminal-positive controls, byte-exact replay/reconstruction, and architecture-independent NOT_RUN handling.
 
@@ -188,7 +193,7 @@ The 10 registered hard gates all pass in the qualification bundle: exact sampled
 - This is representative calibration qualification, not an outcome sample, power result, or scientific claim.
 - The one R0 failure is intended evidence for a nonworking architecture under semantic change; it is not silently excluded.
 - Outcome execution is frozen but approval-gated: the verifier parses a canonical reviewer report, requires exact `APPROVED_FOR_OUTCOME` with zero Critical/Important findings, binds all qualification/source/report hashes, and rechecks configuration/environment identities. The frozen post-approval path includes resumable create-only execution, full dispositions, paired analysis, 10,000-draw realization bootstrap, eight gates, graphs, reconstruction, and archive publication.
-- The ignored evidence is create-only and source-bound to commit `bc34193`; any source change requires regeneration and another review.
+- The ignored evidence is create-only and source-bound to commit `32a2585`; any source change requires regeneration and another review.
 - No outcome evidence root exists at report time.
 
 Reviewer decision: **PENDING — approve or reject; this implementation does not self-authorize.**
