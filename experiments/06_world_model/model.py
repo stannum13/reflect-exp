@@ -82,7 +82,7 @@ class Selection:
     collision: bool
 
 
-def _scene_features(scene: world.Scene, anchor: world.Anchor) -> tuple[float, ...]:
+def scene_features(scene: world.Scene, anchor: world.Anchor) -> tuple[float, ...]:
     geometry = (1.0, 0.0) if scene.geometry == "disk" else (0.0, 1.0)
     obstacle = (0.0,) * 5 if scene.obstacle is None else (1.0, *scene.obstacle)
     return tuple(float(x) for x in (*anchor.eef_xy, *anchor.object_state, *scene.target_xy, scene.target_yaw, scene.mass, scene.friction, *geometry, *scene.dimensions, *obstacle))
@@ -95,7 +95,7 @@ def dataset_rows(scene: world.Scene, anchors: Sequence[world.Anchor], candidates
     result=[]
     for outcome in outcomes:
         anchor=anchor_by_id[outcome.anchor_id];candidate=candidate_by_id[outcome.candidate_id]
-        result.append(DatasetRow(scene.spec.partition,scene.spec.stratum,scene.spec.scene_id,anchor.anchor_id,candidate.candidate_id,candidate.strategy_id,_scene_features(scene,anchor),candidate.commands,candidate.action_sha256,outcome.terminal_state,outcome.position_error_m,outcome.orientation_error_rad,outcome.collision,outcome.action_energy,outcome.unsafe,outcome.success,outcome.terminal_failure,outcome.actual_cost,outcome.outcome_sha256))
+        result.append(DatasetRow(scene.spec.partition,scene.spec.stratum,scene.spec.scene_id,anchor.anchor_id,candidate.candidate_id,candidate.strategy_id,scene_features(scene,anchor),candidate.commands,candidate.action_sha256,outcome.terminal_state,outcome.position_error_m,outcome.orientation_error_rad,outcome.collision,outcome.action_energy,outcome.unsafe,outcome.success,outcome.terminal_failure,outcome.actual_cost,outcome.outcome_sha256))
     return tuple(result)
 
 
