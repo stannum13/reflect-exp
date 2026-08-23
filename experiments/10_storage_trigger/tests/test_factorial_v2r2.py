@@ -142,13 +142,26 @@ def test_v2r2_raw_schema_rejects_declared_extra_and_symlink(tmp_path: Path) -> N
         module.reconstruct_fixture(output2 / "raw", tmp_path / "linked")
 
 
-def test_v2r2_retired_invalid_root_has_exact_schema() -> None:
+def test_v2r2_retired_invalid_root_has_exact_tracked_schema(tmp_path: Path) -> None:
     module = _module()
-    retired = module.RETIRED_INVALID_ROOT
+    retired = tmp_path / "retired"
+    retired.mkdir()
+    (retired / "INVALID_ATTEMPT.json").write_bytes(
+        (module.RETIRED_INVALID_ROOT / "INVALID_ATTEMPT.json").read_bytes()
+    )
     module.validate_retired_invalid_root(retired)
-    assert {path.name for path in retired.iterdir()} == {"INVALID_ATTEMPT.json", "raw", "derived"}
-    assert not any((retired / "raw").iterdir())
-    assert not any((retired / "derived").iterdir())
+    assert {path.name for path in retired.iterdir()} == {"INVALID_ATTEMPT.json"}
+
+    (retired / "raw").mkdir()
+    with pytest.raises(module.FactorialV2R2Error, match="schema"):
+        module.validate_retired_invalid_root(retired)
+
+
+def test_published_v2r2_freeze_remains_valid_after_validator_fix() -> None:
+    module = _module()
+    module.validate_result_root(
+        module.ROOT / "results/storage-trigger-factorial-v2r2"
+    )
 
 
 def test_v2r2_reconstruction_is_byte_exact(tmp_path: Path) -> None:

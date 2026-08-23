@@ -191,6 +191,16 @@ def _validate_freeze(freeze: Mapping[str, Any], *, allow_fixture: bool) -> None:
     if len(commit) != 40 or any(character not in "0123456789abcdef" for character in commit):
         raise FactorialV2R2Error("freeze implementation identity is invalid")
     expected = _freeze(cells, commit, fixture=fixture)
+    if not fixture:
+        frozen_closure = freeze.get("source_closure")
+        if not isinstance(frozen_closure, list):
+            raise FactorialV2R2Error("freeze source closure schema mismatch")
+        if [member.get("path") for member in frozen_closure] != list(SOURCE_PATHS):
+            raise FactorialV2R2Error("freeze source closure paths mismatch")
+        if any(set(member) != {"bytes", "path", "sha256"} for member in frozen_closure):
+            raise FactorialV2R2Error("freeze source closure member schema mismatch")
+        expected["source_closure"] = frozen_closure
+        expected["source_closure_sha256"] = _sha(canonical_bytes(frozen_closure))
     if dict(freeze) != expected:
         raise FactorialV2R2Error("freeze canonical identity mismatch")
     if commit != _head():
@@ -199,8 +209,9 @@ def _validate_freeze(freeze: Mapping[str, Any], *, allow_fixture: bool) -> None:
         except subprocess.CalledProcessError as exc:
             raise FactorialV2R2Error("freeze implementation commit is not an ancestor") from exc
     if not fixture:
-        for member in source_closure():
-            if _sha(_git_blob(commit, str(member["path"]))) != member["sha256"]:
+        for member in freeze["source_closure"]:
+            payload = _git_blob(commit, str(member["path"]))
+            if len(payload) != member["bytes"] or _sha(payload) != member["sha256"]:
                 raise FactorialV2R2Error("implementation source commit closure mismatch")
 
 
@@ -251,18 +262,7 @@ def _validate_inventory(root: Path, manifest: Mapping[str, Any]) -> None:
 
 
 def validate_retired_invalid_root(root: Path) -> None:
-    if root.is_symlink() or not root.is_dir():
-        raise FactorialV2R2Error("retired-invalid root must be a regular directory")
-    children = {path.name: path for path in root.iterdir()}
-    if set(children) != {"INVALID_ATTEMPT.json", "raw", "derived"}:
-        raise FactorialV2R2Error("retired-invalid exact schema mismatch")
-    if any(path.is_symlink() for path in children.values()):
-        raise FactorialV2R2Error("retired-invalid symlink is forbidden")
-    if not children["INVALID_ATTEMPT.json"].is_file():
-        raise FactorialV2R2Error("retired-invalid disposition must be regular")
-    for name in ("raw", "derived"):
-        if not children[name].is_dir() or any(children[name].iterdir()):
-            raise FactorialV2R2Error("retired-invalid empty directory schema mismatch")
+    _exact_files(root, frozenset({"INVALID_ATTEMPT.json"}), label="retired-invalid root")
     payload = (root / "INVALID_ATTEMPT.json").read_bytes()
     record = json.loads(payload)
     if canonical_bytes(record) != payload or record.get("scientific_disposition") != "INVALID_ATTEMPT_NO_RESULT":

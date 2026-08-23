@@ -7,7 +7,7 @@ This result describes only the exact behavior of `ORACLE_TYPED_SEMANTIC_V2` unde
 ## Predecessor disposition and preservation
 
 - V1: **INVALID for independent scientific reconstruction**. Its retained result tree is byte-exact with Git tree `aff133adccf7e7c04f9b83a0895c3fdec1119ea3` at both `6a94954` and the V2R2 source commit.
-- V2 (`20265101..20265120`): **INVALID ATTEMPT — NO RESULT**. The namespace remains retired; its canonical disposition SHA-256 is `b7764a5b6b5a3f30c1e68959043bc4a126ec7e7c7328bc2e7d5f61f82c64db1f` and its exact empty `raw/` and `derived/` directories remain closed.
+- V2 (`20265101..20265120`): **INVALID ATTEMPT — NO RESULT**. The namespace remains retired; its canonical disposition SHA-256 is `b7764a5b6b5a3f30c1e68959043bc4a126ec7e7c7328bc2e7d5f61f82c64db1f`. Its tracked schema contains only `INVALID_ATTEMPT.json`; `raw/` and `derived/` must be absent.
 - V2R1 (`20265201..20265220`): **REJECTED after fresh review** for incomplete tick-domain, dependency-closure, allowed-schema, and canonical-freeze authentication. Its retained result tree is byte-exact with Git tree `b9e83e973353927ba0f73ef2f1ee8a712bc09de8` at both `9de19d0` and the V2R2 source commit. Its report SHA-256 remains `90241fd1e4c3c4416ba2b37de88814795f396dda4a33f2ac649a22a86b591922`.
 
 No V1, V2, or V2R1 tracked byte was rewritten.
