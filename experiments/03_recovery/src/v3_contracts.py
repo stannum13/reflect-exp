@@ -33,6 +33,7 @@ SENSITIVITY_CONTROLLER_ID = "P4-lookahead1-dqon"
 TIMESTEP_S = 0.002
 REOBSERVE_TICKS = 25
 EPISODE_TICKS = 3125
+EXTERNAL_LOAD_THRESHOLD_NM = 0.17
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -211,7 +212,7 @@ class ObservableState:
     def failure_detected(self) -> bool:
         return (
             (self.tracking_error_mean_m > 0.10 and self.tracking_error_slope_m_per_tick >= -1e-5)
-            or self.external_load_mean_nm > 0.05
+            or self.external_load_mean_nm > EXTERNAL_LOAD_THRESHOLD_NM
             or self.command_gap_ticks > 0
             or not self.controller_safe
             or not self.action_valid
@@ -267,6 +268,7 @@ __all__ = [
     "DecisionEvent",
     "DecisionLevel",
     "EPISODE_TICKS",
+    "EXTERNAL_LOAD_THRESHOLD_NM",
     "ObservableState",
     "PRIMARY_CONTROLLER_ID",
     "REOBSERVE_TICKS",

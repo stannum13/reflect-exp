@@ -7,6 +7,7 @@ retained state, action, geometry, and causally delivered memory bytes.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from functools import lru_cache
 import importlib
 import math
 from pathlib import Path
@@ -427,7 +428,6 @@ def _observable(
     memory_version: int,
     command_content_sha256: str,
     successful_execution_content_sha256: str,
-    current_external_force_nm: np.ndarray,
     command_gap_ticks: int,
     reobserve_index: int,
 ) -> ObservableState:
@@ -437,13 +437,19 @@ def _observable(
     mean = float(np.mean(errors)) if tracking_active else 0.0
     slope = 0.0 if not tracking_active or len(errors) < 2 else float((errors[-1] - errors[0]) / (len(errors) - 1))
     recent_torques = np.asarray(trace_rows["actuator_cmd_nm"][-REOBSERVE_TICKS:], dtype=np.float64)
-    safe = bool((not len(recent_torques) or np.isfinite(recent_torques).all()) and np.isfinite(current_external_force_nm).all())
+    recent_q = np.asarray(trace_rows["q"][-REOBSERVE_TICKS:], dtype=np.float64)
+    recent_dq = np.asarray(trace_rows["dq"][-REOBSERVE_TICKS:], dtype=np.float64)
+    safe = bool(
+        (not len(recent_torques) or np.isfinite(recent_torques).all())
+        and (not len(recent_q) or np.isfinite(recent_q).all())
+        and (not len(recent_dq) or np.isfinite(recent_dq).all())
+    )
     return ObservableState(
         tick,
         max(0, tick - max(0, len(errors) - 1)),
         mean,
         slope,
-        float(np.linalg.norm(current_external_force_nm)),
+        retained_load_estimate_nm(trace_rows, tick),
         command_gap_ticks,
         safe,
         action_valid,
@@ -454,6 +460,36 @@ def _observable(
         successful_execution_content_sha256,
         reobserve_index,
     )
+
+
+@lru_cache(maxsize=1)
+def _nominal_observer_model() -> mujoco.MjModel:
+    """Return the frozen nominal plant used only for retained-state inverse dynamics."""
+    _, arm_module, _, _ = _modules()
+    return mujoco.MjModel.from_xml_string(arm_module.MJCF_BYTES.decode("utf-8"))
+
+
+def retained_load_estimate_nm(trace: Mapping[str, object], observed_tick: int) -> float:
+    """Estimate generalized load from retained states/actions before a decision."""
+    ticks = np.asarray(trace["tick"], dtype=np.int64)
+    eligible = np.flatnonzero(ticks < observed_tick)
+    if len(eligible) < 2:
+        return 0.0
+    previous_index, current_index = int(eligible[-2]), int(eligible[-1])
+    q_previous = np.asarray(trace["q"][previous_index], dtype=np.float64)
+    dq_previous = np.asarray(trace["dq"][previous_index], dtype=np.float64)
+    dq_current = np.asarray(trace["dq"][current_index], dtype=np.float64)
+    applied_torque = np.asarray(trace["actuator_cmd_nm"][current_index], dtype=np.float64)
+    if not all(np.isfinite(item).all() for item in (q_previous, dq_previous, dq_current, applied_torque)):
+        return float("inf")
+    model = _nominal_observer_model()
+    data = mujoco.MjData(model)
+    data.qpos[:3] = q_previous
+    data.qvel[:3] = dq_previous
+    data.qacc[:3] = (dq_current - dq_previous) / TIMESTEP_S
+    mujoco.mj_inverse(model, data)
+    residual = np.asarray(data.qfrc_inverse[:3]) - applied_torque
+    return float(np.mean(np.abs(residual)))
 
 
 def _readonly_trace(rows: Mapping[str, list[object]]) -> Mapping[str, np.ndarray]:
@@ -733,7 +769,6 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
                 memory_version=memory_version,
                 command_content_sha256=ZERO_SHA256 if active is None else str(active.record["content_sha256"]),
                 successful_execution_content_sha256=ZERO_SHA256,
-                current_external_force_nm=external_force,
                 command_gap_ticks=observable_gap,
                 reobserve_index=reobserve_index,
             )
@@ -787,6 +822,7 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
         q_ref, torque, _ = arm_module.bounded_pd(q, dq, requested_q, prior, 5.0, 0.5, config, desired_dq=requested_dq)
         previous_q_ref = np.array(q_ref, copy=True)
         world.step(torque, external_force)
+        q_after, dq_after = world.state()
         contacts = world.contacts()
         obstacle_contact = any(
             {contact["geom1_name"], contact["geom2_name"]} == {"v3-obstacle", "v3-eef-contact"}
@@ -809,8 +845,8 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
             attempt.executed_valid_ticks += 1
 
         trace_rows["tick"].append(tick)
-        trace_rows["q"].append(q.tolist())
-        trace_rows["dq"].append(dq.tolist())
+        trace_rows["q"].append(q_after.tolist())
+        trace_rows["dq"].append(dq_after.tolist())
         trace_rows["eef_xy"].append(eef.tolist())
         trace_rows["q_ref"].append(np.asarray(q_ref).tolist())
         trace_rows["dq_ref"].append(np.asarray(requested_dq).tolist())
@@ -871,7 +907,6 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
                 memory_version=memory_version,
                 command_content_sha256=ZERO_SHA256 if active is None else str(active.record["content_sha256"]),
                 successful_execution_content_sha256=successful_sha,
-                current_external_force_nm=np.zeros(3),
                 command_gap_ticks=gap_ticks if gap_ticks > VALID_COMMAND_GAP_TICKS else 0,
                 reobserve_index=reobserve_index + 1,
             )

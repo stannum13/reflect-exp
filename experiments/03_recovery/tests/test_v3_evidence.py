@@ -46,6 +46,19 @@ def test_complete_local_import_closure_is_frozen() -> None:
     assert all(len(item["sha256"]) == 64 and item["bytes"] > 0 for item in closure)
 
 
+def test_structural_cause_boundary_audit_closes_observable_and_policy_call_sites() -> None:
+    audit = evidence.cause_boundary_audit()
+    assert audit["passed"] is True
+    assert audit["observable_parameters"] == [
+        "tick", "trace_rows", "action_valid", "geometry_feasible", "semantic_preconditions_valid",
+        "memory_version", "command_content_sha256", "successful_execution_content_sha256",
+        "command_gap_ticks", "reobserve_index",
+    ]
+    assert audit["forbidden_identifiers"] == []
+    assert audit["observable_call_count"] >= 2
+    assert audit["policy_call_count"] >= 1
+
+
 def test_full_qualification_publication_and_raw_reconstruction_are_byte_exact(tmp_path: Path) -> None:
     output = tmp_path / "hierarchical-recovery-v3-qualification"
     result = evidence.run_qualification(output)

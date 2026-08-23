@@ -60,7 +60,7 @@ def test_observable_and_policy_signatures_exclude_hidden_taxonomy() -> None:
 
 def test_control_signals_are_derived_observables_not_scenario_labels() -> None:
     budget = initial_budget(ZERO)
-    load = observation(external_load_mean_nm=0.12)
+    load = observation(external_load_mean_nm=contracts.EXTERNAL_LOAD_THRESHOLD_NM + 0.01)
     gap = observation(command_gap_ticks=3)
     assert decide(Architecture.R3, load, budget).level is DecisionLevel.CONTROL
     assert decide(Architecture.R3, gap, budget).level is DecisionLevel.CONTROL

@@ -43,6 +43,16 @@ _SEED_MODULES = (
 )
 _EXPLICIT_INPUTS = ("experiments/01_policy_control/configs/base.yaml",)
 _BANNED_DECISION_TOKENS = (b"scenario", b"cause", b"expected_level", b"intended_level", b"domain")
+_OBSERVABLE_PARAMETERS = (
+    "tick", "trace_rows", "action_valid", "geometry_feasible", "semantic_preconditions_valid",
+    "memory_version", "command_content_sha256", "successful_execution_content_sha256",
+    "command_gap_ticks", "reobserve_index",
+)
+_FORBIDDEN_BOUNDARY_IDENTIFIERS = {
+    "scenario_id", "realization", "hidden_cause", "external_force", "impulse_nm", "impulse_ticks",
+    "dropout_ticks", "target_shift_xy", "obstacle_xy", "obstacle_radius_m", "semantic_delay_ticks",
+    "injection_tick", "delivery_tick", "expected_level", "intended_level", "scenario_domain", "cause",
+}
 
 
 def _root() -> Path:
@@ -61,6 +71,51 @@ def qualification_specs() -> tuple[V3EpisodeSpec, ...]:
     if len(result) != 18 or len({item.episode_id for item in result}) != 18:
         raise RuntimeError("V3 qualification matrix identity error")
     return result
+
+
+def cause_boundary_audit() -> dict[str, object]:
+    """Statically close every runtime call into the observable and policy boundary."""
+    runtime_path = _root() / "experiments/03_recovery/src/v3_runtime.py"
+    policy_path = _root() / "experiments/03_recovery/src/v3_policy.py"
+    runtime_payload = runtime_path.read_bytes()
+    tree = ast.parse(runtime_payload, filename=str(runtime_path))
+    observable_definition = next(
+        node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "_observable"
+    )
+    parameters = tuple(item.arg for item in (*observable_definition.args.args, *observable_definition.args.kwonlyargs))
+    forbidden = sorted({node.id for node in ast.walk(observable_definition) if isinstance(node, ast.Name)} & _FORBIDDEN_BOUNDARY_IDENTIFIERS)
+    observable_calls = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_observable"
+    ]
+    observable_call_keywords = [tuple(item.arg for item in node.keywords) for node in observable_calls]
+    policy_calls = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "decide"
+    ]
+    policy_shapes = [
+        {"positional": len(node.args), "keywords": [item.arg for item in node.keywords]}
+        for node in policy_calls
+    ]
+    passed = bool(
+        parameters == _OBSERVABLE_PARAMETERS
+        and not forbidden
+        and len(observable_calls) >= 2
+        and all(keywords == _OBSERVABLE_PARAMETERS for keywords in observable_call_keywords)
+        and policy_calls
+        and all(item == {"positional": 3, "keywords": []} for item in policy_shapes)
+    )
+    return {
+        "passed": passed,
+        "observable_parameters": list(parameters),
+        "forbidden_identifiers": forbidden,
+        "observable_call_count": len(observable_calls),
+        "observable_call_keywords": [list(item) for item in observable_call_keywords],
+        "policy_call_count": len(policy_calls),
+        "policy_call_shapes": policy_shapes,
+        "runtime_sha256": sha256_bytes(runtime_payload),
+        "policy_sha256": sha256_bytes(policy_path.read_bytes()),
+    }
 
 
 def _module_file(module: str) -> Path | None:
@@ -381,7 +436,11 @@ def _gate_rows(
             and item["successful_execution_receipt_sha256"] == item["new_content_sha256"]
             for item in raw.budget_resets
         )
-    boundaries = all(not any(token in canonical_bytes(item).lower() for token in _BANNED_DECISION_TOKENS) for raw in raws.values() for item in (*raw.observations, *raw.decisions))
+    boundary_receipt = cause_boundary_audit()
+    boundaries = bool(boundary_receipt["passed"]) and all(
+        not any(token in canonical_bytes(item).lower() for token in _BANNED_DECISION_TOKENS)
+        for raw in raws.values() for item in (*raw.observations, *raw.decisions)
+    )
     scorer_closed = all(score_episode(raw) == scores[episode_id] for episode_id, raw in raws.items()) and b"v3_runtime" not in (_root() / "experiments/03_recovery/src/v3_scorer.py").read_bytes()
     positives = set(controls) == {"unsafe", "forbidden", "collision", "stale", "invalid_action", "wrong_object", "missed_dwell", "loop", "reset"} and all(item["terminal"] == "FAILURE" and int(item["detected_count"]) > 0 for item in controls.values())
     return [
@@ -568,6 +627,7 @@ def reconstruct(output: Path, clean: Path) -> dict[str, object]:
 
 
 __all__ = [
+    "cause_boundary_audit",
     "episode_payloads",
     "qualification_specs",
     "reconstruct",

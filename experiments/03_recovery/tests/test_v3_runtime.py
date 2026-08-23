@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 
 import numpy as np
 import pytest
@@ -51,6 +52,38 @@ def test_sampled_tick_is_reached_and_torque_impulse_changes_physical_bytes(ancho
     assert impulse_episode.trace["q"].tobytes() != anchor_episode.trace["q"].tobytes()
     assert impulse_episode.parameter_use_receipt["injection_tick"] == tick
     assert impulse_episode.parameter_use_receipt["impulse_nm"] == impulse_episode.realization.impulse_nm
+
+
+def test_impulse_recovery_observes_only_retained_post_step_effects(impulse_episode: object) -> None:
+    assert "current_external_force_nm" not in inspect.signature(runtime._observable).parameters
+    first = impulse_episode.observations[0]
+    assert first.tick > impulse_episode.realization.injection_tick
+    assert first.external_load_mean_nm == pytest.approx(
+        runtime.retained_load_estimate_nm(impulse_episode.trace, first.tick), abs=1e-12
+    )
+
+
+def test_observable_call_interface_rejects_injector_taint() -> None:
+    class HiddenTaint:
+        def __array__(self, *args: object, **kwargs: object) -> object:
+            raise AssertionError("hidden injector value crossed observable boundary")
+
+    with pytest.raises(TypeError, match="hidden_cause"):
+        runtime._observable(
+            tick=1,
+            trace_rows={
+                "q": [], "dq": [], "target_error_m": [], "safe_hold": [], "actuator_cmd_nm": [],
+            },
+            action_valid=True,
+            geometry_feasible=True,
+            semantic_preconditions_valid=True,
+            memory_version=1,
+            command_content_sha256="0" * 64,
+            successful_execution_content_sha256="0" * 64,
+            command_gap_ticks=0,
+            reobserve_index=0,
+            hidden_cause=HiddenTaint(),
+        )
 
 
 def test_full_500hz_state_reference_action_torque_contact_and_envelopes(anchor_episode: object) -> None:
