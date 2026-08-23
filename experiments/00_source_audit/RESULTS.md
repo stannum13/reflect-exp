@@ -2,7 +2,7 @@
 
 comparative_implementation_time_claim: INCONCLUSIVE
 
-operational_gate: BLOCKED
+operational_gate: PASS
 
 registry_sha256: eb72b501a177ee9dcf93a77444536e07dd532d9ac92950c61a063b8a8d1a4a3d
 
@@ -14,8 +14,8 @@ seen_operation_ids: ACT_CHECKOUT,BEHAVIORTREE_CPP_CHECKOUT,LEROBOT_CHECKOUT,MJCT
 
 missing_operation_ids: NONE
 
-nonpass_operation_ids: LEROBOT_CHECKOUT
+nonpass_operation_ids: NONE
 
 mujoco_package_smoke: PASS
 
-blockers: nonpass:LEROBOT_CHECKOUT; checkout contains a nonregular or linked file
+blockers: NONE
