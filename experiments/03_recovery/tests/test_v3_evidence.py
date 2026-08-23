@@ -12,6 +12,30 @@ import pytest
 
 contracts = importlib.import_module("experiments.03_recovery.src.v3_contracts")
 evidence = importlib.import_module("experiments.03_recovery.src.v3_evidence")
+ROOT = Path(__file__).resolve().parents[3]
+
+
+def _tracked_qualification(tmp_path: Path) -> tuple[Path, Path, Path]:
+    durable = ROOT / "reports/evidence/hierarchical-recovery-v3-qualification"
+    receipt = json.loads((durable / "manifest.json").read_text(encoding="ascii"))
+    output = tmp_path / "hierarchical-recovery-v3-qualification"
+    output.mkdir()
+    with tarfile.open(durable / receipt["archive"], "r:gz") as stream:
+        stream.extractall(output, filter="data")
+    report = tmp_path / "qualification-report.md"
+    report.write_bytes(
+        (ROOT / ".superpowers/sdd/hierarchy-v3-qualification-report.md").read_bytes()
+        + b"\nGoverned verification receipt: **69 V3 passed, 60 deselected; 129 Experiment 03 passed**.\n"
+    )
+    receipt["verification"] = {
+        "experiment_03_passed": 129,
+        "v3_deselected": 60,
+        "v3_passed": 69,
+    }
+    receipt["qualification_report_sha256"] = hashlib.sha256(report.read_bytes()).hexdigest()
+    archive_manifest = tmp_path / "archive-manifest.json"
+    archive_manifest.write_bytes(contracts.canonical_bytes(receipt))
+    return output, report, archive_manifest
 
 
 def test_qualification_matrix_is_calibration_only_and_covers_required_contrasts() -> None:
@@ -164,6 +188,11 @@ def test_qualification_report_facts_are_authenticated_from_derived_data(tmp_path
     (output / "raw").mkdir()
     (output / "raw/manifest.json").write_bytes(contracts.canonical_bytes({"schema_version": 1}))
     (output / "derived/manifest.json").write_bytes(contracts.canonical_bytes({"schema_version": 1}))
+    (output / "derived/qualification-summary.json").write_bytes(contracts.canonical_bytes({
+        "episode_count": 18,
+        "hard_gates_passed": 10,
+        "status": "READY_FOR_FRESH_READ_ONLY_REVIEW",
+    }))
     hashes = [hashlib.sha256(f"controller-{index}".encode()).hexdigest() for index in range(6)]
     (output / "derived/controller-paths.csv").write_text(
         "controller_id,trajectory_sha256,q_ref_sha256,torque_sha256\n"
@@ -176,8 +205,15 @@ def test_qualification_report_facts_are_authenticated_from_derived_data(tmp_path
         hashlib.sha256((output / name).read_bytes()).hexdigest()
         for name in ("qualification-freeze.json", "raw/manifest.json", "derived/manifest.json")
     ]
+    retained = [path for path in output.rglob("*") if path.is_file()]
+    archive_sha = "a" * 64
     report.write_text("\n".join((
         f"Qualified source commit: `{commit}`",
+        "Status: **READY FOR FRESH READ-ONLY REVIEW**",
+        f"Files: **{len(retained)}**",
+        f"Bytes: **{sum(path.stat().st_size for path in retained):,}**",
+        "The retained matrix contains exactly **18 executed episodes**, all using calibration seeds.",
+        "The 10 registered hard gates all pass in the qualification bundle:",
         "| Controller | Call path | Trajectory SHA-256 | q_ref SHA-256 | torque SHA-256 |",
         "|---|---|---|---|---|",
         f"| P6 | `p6` | `{hashes[3]}` | `{hashes[4]}` | `{hashes[5]}` |",
@@ -188,9 +224,22 @@ def test_qualification_report_facts_are_authenticated_from_derived_data(tmp_path
         f"| qualification freeze | `{freeze_hash}` |",
         f"| raw manifest / raw reconstruction | `{raw_hash}` |",
         f"| derived manifest / derived reconstruction | `{derived_hash}` |",
+        "Governed verification receipt: **1 V3 passed, 2 deselected; 3 Experiment 03 passed**.",
+        "The ignored working bundle is durably retained as the tracked, deterministic, content-addressed archive "
+        f"`reports/evidence/hierarchical-recovery-v3-qualification/{archive_sha}.tar.gz` "
+        f"(**123 bytes; {len(retained)} members**) with a tracked manifest and byte-exact extraction test.",
     )), encoding="utf-8")
+    archive_manifest = tmp_path / "archive-manifest.json"
+    archive_manifest.write_bytes(contracts.canonical_bytes({
+        "archive_bytes": 123,
+        "archive_sha256": archive_sha,
+        "member_count": len(retained),
+        "qualification_report_sha256": hashlib.sha256(report.read_bytes()).hexdigest(),
+        "tree_sha256": evidence.tree_sha256(output),
+        "verification": {"experiment_03_passed": 3, "v3_deselected": 2, "v3_passed": 1},
+    }))
     monkeypatch.setattr(evidence, "validate_publishable_evidence", lambda root: {"kind": "QUALIFICATION"})
-    assert evidence.verify_qualification_report(output, report)["matched"] is True
+    assert evidence.verify_qualification_report(output, report, archive_manifest=archive_manifest)["matched"] is True
     original = report.read_text(encoding="utf-8")
     report.write_text(
         original.replace(f"Qualified source commit: `{commit}`", "Qualified source commit: `stale`")
@@ -198,7 +247,7 @@ def test_qualification_report_facts_are_authenticated_from_derived_data(tmp_path
         encoding="utf-8",
     )
     with pytest.raises(RuntimeError, match="report consistency"):
-        evidence.verify_qualification_report(output, report)
+        evidence.verify_qualification_report(output, report, archive_manifest=archive_manifest)
     report.write_text(
         original
         .replace(hashes[3], "stale-p6-hash", 1)
@@ -207,7 +256,40 @@ def test_qualification_report_facts_are_authenticated_from_derived_data(tmp_path
         encoding="utf-8",
     )
     with pytest.raises(RuntimeError, match="report consistency"):
-        evidence.verify_qualification_report(output, report)
+        evidence.verify_qualification_report(output, report, archive_manifest=archive_manifest)
+
+
+@pytest.mark.parametrize(("old", "forged"), (
+    ("Files: **437**", "Files: **999**"),
+    ("Bytes: **50,009,565**", "Bytes: **1**"),
+    ("The 10 registered hard gates all pass", "The 0 registered hard gates all pass"),
+    ("Status: **READY FOR FRESH READ-ONLY REVIEW**", "Status: **STALE**"),
+    ("exactly **18 executed episodes**", "exactly **99 executed episodes**"),
+    ("V3 selection **69 passed, 60 deselected", "V3 selection **999 passed, 60 deselected"),
+    ("8,759,557 bytes; 437 members", "8,759,557 bytes; 999 members"),
+))
+def test_qualification_report_rejects_forged_visible_inventory_and_gate_counts(
+    tmp_path: Path, old: str, forged: str,
+) -> None:
+    output, report, archive_manifest = _tracked_qualification(tmp_path)
+    original = report.read_text(encoding="utf-8")
+    assert old in original
+    report.write_text(original.replace(old, forged, 1), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="report consistency"):
+        evidence.verify_qualification_report(output, report, archive_manifest=archive_manifest)
+
+
+@pytest.mark.parametrize("line", (
+    "Files: **437**",
+    "The 10 registered hard gates all pass in the qualification bundle:",
+))
+def test_qualification_report_rejects_duplicate_visible_mutable_fact(tmp_path: Path, line: str) -> None:
+    output, report, archive_manifest = _tracked_qualification(tmp_path)
+    original = report.read_text(encoding="utf-8")
+    matched = next(item for item in original.splitlines() if item.startswith(line))
+    report.write_text(f"{original}\n{matched}\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="report consistency"):
+        evidence.verify_qualification_report(output, report, archive_manifest=archive_manifest)
 
 
 def test_publication_is_create_only(tmp_path: Path) -> None:

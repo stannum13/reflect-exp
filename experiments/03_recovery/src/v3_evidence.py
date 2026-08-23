@@ -973,9 +973,12 @@ def validate_publishable_evidence(
 
 def verify_qualification_report(output: Path, report: Path, *, archive_manifest: Path | None = None) -> dict[str, object]:
     """Authenticate every mutable report fact against retained derived evidence."""
+    if archive_manifest is None:
+        raise RuntimeError("qualification report consistency mismatch: archive manifest required")
     validate_publishable_evidence(output)
     text = report.read_text(encoding="utf-8")
     freeze = _canonical_json(output / "qualification-freeze.json")
+    summary = _canonical_json(output / "derived/qualification-summary.json")
     controllers = list(csv.DictReader((output / "derived/controller-paths.csv").read_text(encoding="ascii").splitlines()))
     controls = list(csv.DictReader((output / "derived/scorer-controls.csv").read_text(encoding="ascii").splitlines()))
     visible_text = re.sub(r"<!--.*?(?:-->|$)", "", text, flags=re.DOTALL)
@@ -990,6 +993,29 @@ def verify_qualification_report(output: Path, report: Path, *, archive_manifest:
     expected_commit = str(freeze["source_commit"])
     if one(r"^Qualified source commit: `([0-9a-f]{40})`$") != (expected_commit,):
         raise RuntimeError("qualification report consistency mismatch: source commit")
+    retained_tree = _tree_bytes(output)
+    visible_inventory = (
+        ("files", r"^Files: \*\*([0-9,]+)\*\*$", f"{len(retained_tree):,}"),
+        ("bytes", r"^Bytes: \*\*([0-9,]+)\*\*$", f"{sum(len(payload) for payload in retained_tree.values()):,}"),
+        (
+            "status",
+            r"^Status: \*\*([^*]+)\*\*$",
+            str(summary["status"]).replace("_", " ").replace("READ ONLY", "READ-ONLY"),
+        ),
+        (
+            "executed episodes",
+            r"^The retained matrix contains exactly \*\*([0-9]+) executed episodes\*\*, all using calibration seeds\.",
+            str(summary["episode_count"]),
+        ),
+        (
+            "hard gates",
+            r"^The ([0-9]+) registered hard gates all pass in the qualification bundle:",
+            str(summary["hard_gates_passed"]),
+        ),
+    )
+    for label, pattern, expected in visible_inventory:
+        if one(pattern) != (expected,):
+            raise RuntimeError(f"qualification report consistency mismatch: {label}")
     controller_by_id = {row["controller_id"]: row for row in controllers}
     p6 = one(r"^\| P6 \|.*\| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \|$")
     p4 = one(r"^\| repaired P4 \|.*\| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \|$")
@@ -1011,9 +1037,12 @@ def verify_qualification_report(output: Path, report: Path, *, archive_manifest:
         expected_hash = sha256_bytes((output / relative).read_bytes())
         if one(rf"^\| {re.escape(label)} \| `([0-9a-f]{{64}})` \|$") != (expected_hash,):
             raise RuntimeError(f"qualification report consistency mismatch: {label}")
-    fact_count = 10
+    fact_count = 15
     if archive_manifest is not None:
         archive = _canonical_json(archive_manifest)
+        expected_report_sha256 = archive.get("qualification_report_sha256")
+        if expected_report_sha256 != sha256_bytes(report.read_bytes()):
+            raise RuntimeError("qualification report consistency mismatch: report bytes")
         if archive.get("tree_sha256") != tree_sha256(output):
             raise RuntimeError("qualification report archive tree mismatch")
         archived = one(
@@ -1025,7 +1054,21 @@ def verify_qualification_report(output: Path, report: Path, *, archive_manifest:
             str(archive["archive_sha256"]), f"{archive['archive_bytes']:,}", str(archive["member_count"]),
         ):
             raise RuntimeError("qualification report consistency mismatch: archive")
-        fact_count += 3
+        verification = archive.get("verification")
+        if not isinstance(verification, dict) or set(verification) != {
+            "experiment_03_passed", "v3_deselected", "v3_passed",
+        }:
+            raise RuntimeError("qualification report consistency mismatch: verification receipt")
+        governed = one(
+            r"^Governed verification receipt: \*\*([0-9]+) V3 passed, ([0-9]+) deselected; "
+            r"([0-9]+) Experiment 03 passed\*\*\.$",
+        )
+        if governed != (
+            str(verification["v3_passed"]), str(verification["v3_deselected"]),
+            str(verification["experiment_03_passed"]),
+        ):
+            raise RuntimeError("qualification report consistency mismatch: verification receipt")
+        fact_count += 7
     return {"matched": True, "authenticated_fact_count": fact_count}
 
 
