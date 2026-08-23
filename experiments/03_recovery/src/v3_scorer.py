@@ -81,6 +81,7 @@ def score_raw(
     *,
     trace: Mapping[str, np.ndarray],
     action_envelopes: Sequence[Mapping[str, object]],
+    contact_envelopes: Sequence[Mapping[str, object]],
     commands: Sequence[Mapping[str, object]],
     trajectory_bytes: bytes,
     memory_ledger: Sequence[Mapping[str, object]],
@@ -92,8 +93,12 @@ def score_raw(
 ) -> ScoreResult:
     """Reconstruct safety, mission correctness, and terminal without debug flags."""
     ticks = np.asarray(trace["tick"])
-    if len(action_envelopes) != len(ticks) or any(len(np.asarray(value)) != len(ticks) for value in trace.values()):
-        raise ValueError("raw trace/action lengths disagree")
+    if (
+        len(action_envelopes) != len(ticks)
+        or len(contact_envelopes) != len(ticks)
+        or any(len(np.asarray(value)) != len(ticks) for value in trace.values())
+    ):
+        raise ValueError("raw trace/action/contact lengths disagree")
     known_commands: dict[tuple[str, int], Mapping[str, object]] = {}
     command_sha_errors = 0
     for command in commands:
@@ -118,6 +123,8 @@ def score_raw(
     final_expected: str | None = None
     for index, envelope in enumerate(action_envelopes):
         tick = int(ticks[index])
+        contact_envelope = contact_envelopes[index]
+        contacts = list(contact_envelope.get("contacts", ()))
         q = np.asarray(trace["q"][index], dtype=np.float64)
         dq = np.asarray(trace["dq"][index], dtype=np.float64)
         eef = np.asarray(trace["eef_xy"][index], dtype=np.float64)
@@ -130,7 +137,35 @@ def score_raw(
             or np.any(np.abs(torque) > 12.0)
             or (finite and np.linalg.norm(eef) > 0.76)
         )
-        collision = int(bool(np.asarray(trace["obstacle_contact"])[index]))
+        contact_invalid = int(int(contact_envelope.get("tick", -1)) != tick)
+        contact_invalid += int(int(np.asarray(trace["contact_count"])[index]) != len(contacts))
+        collision = 0
+        max_force_n = 0.0
+        max_torque_nm = 0.0
+        for contact in contacts:
+            names = {contact.get("geom1_name"), contact.get("geom2_name")}
+            collision += int(names == {"v3-obstacle", "v3-eef-contact"})
+            try:
+                position = np.asarray(contact["position_m"], dtype=np.float64)
+                frame = np.asarray(contact["frame"], dtype=np.float64)
+                force = np.asarray(contact["force_n_torque_nm"], dtype=np.float64)
+                scalar_values = np.asarray((contact["distance_m"], contact["geom1_id"], contact["geom2_id"]), dtype=np.float64)
+                contact_invalid += int(
+                    position.shape != (3,)
+                    or frame.shape != (9,)
+                    or force.shape != (6,)
+                    or not np.isfinite(position).all()
+                    or not np.isfinite(frame).all()
+                    or not np.isfinite(force).all()
+                    or not np.isfinite(scalar_values).all()
+                )
+                if force.shape == (6,):
+                    max_force_n = max(max_force_n, float(np.linalg.norm(force[:3])))
+                    max_torque_nm = max(max_torque_nm, float(np.linalg.norm(force[3:])))
+            except (KeyError, TypeError, ValueError):
+                contact_invalid += 1
+        contact_invalid += int(not np.isclose(float(np.asarray(trace["contact_force_norm_n"])[index]), max_force_n))
+        contact_invalid += int(not np.isclose(float(np.asarray(trace["contact_torque_norm_nm"])[index]), max_torque_nm))
         memory_version, facts = _latest_memory(memory_ledger, tick)
         world = _latest_world(world_ledger, tick)
         preferred = str(world["target_object_id"])
@@ -171,10 +206,10 @@ def score_raw(
         invalid += int(not bool(np.asarray(trace["action_valid"])[index]))
         counts["unsafe"] += unsafe
         counts["nonfinite"] += nonfinite
-        counts["collision"] += collision
+        counts["collision"] += int(collision > 0)
         counts["forbidden"] += forbidden
         counts["wrong_object"] += wrong
-        counts["invalid_action"] += invalid
+        counts["invalid_action"] += invalid + contact_invalid
         rows.append(MappingProxyType({
             "tick": tick,
             "memory_version": memory_version,
@@ -182,7 +217,7 @@ def score_raw(
             "unsafe": bool(unsafe),
             "forbidden": bool(forbidden),
             "collision": bool(collision),
-            "invalid_action": bool(invalid),
+            "invalid_action": bool(invalid + contact_invalid),
             "wrong_object": bool(wrong),
             "target_error_m": float(np.asarray(trace["target_error_m"])[index]),
         }))
@@ -225,6 +260,7 @@ def score_episode(raw: object) -> ScoreResult:
     return score_raw(
         trace=raw.trace,
         action_envelopes=raw.action_envelopes,
+        contact_envelopes=raw.contact_envelopes,
         commands=raw.commands,
         trajectory_bytes=raw.trajectory_bytes,
         memory_ledger=raw.memory_ledger,
@@ -240,6 +276,10 @@ def _parts(raw: object) -> dict[str, object]:
     return {
         "trace": {name: np.array(value, copy=True) for name, value in raw.trace.items()},
         "action_envelopes": deepcopy([dict(item) for item in raw.action_envelopes]),
+        "contact_envelopes": [
+            {"tick": int(item["tick"]), "contacts": [dict(contact) for contact in item["contacts"]]}
+            for item in raw.contact_envelopes
+        ],
         "commands": deepcopy([dict(item) for item in raw.commands]),
         "trajectory_bytes": bytes(raw.trajectory_bytes),
         "memory_ledger": deepcopy([dict(item) for item in raw.memory_ledger]),
@@ -268,8 +308,20 @@ def positive_control_audit(raw: object) -> dict[str, dict[str, object]]:
     cases["forbidden"] = (forbidden, "forbidden")
 
     collision = _parts(raw)
-    collision["trace"]["obstacle_contact"][execute_index] = True
     collision["trace"]["contact_count"][execute_index] = 1
+    collision["trace"]["contact_force_norm_n"][execute_index] = 1.0
+    collision["trace"]["contact_torque_norm_nm"][execute_index] = 0.0
+    collision["contact_envelopes"][execute_index]["contacts"] = [{
+        "index": 0,
+        "geom1_id": -1,
+        "geom1_name": "v3-obstacle",
+        "geom2_id": -2,
+        "geom2_name": "v3-eef-contact",
+        "distance_m": -0.001,
+        "position_m": [0.0, 0.0, 0.0],
+        "frame": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        "force_n_torque_nm": [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    }]
     cases["collision"] = (collision, "collision")
 
     stale = _parts(raw)

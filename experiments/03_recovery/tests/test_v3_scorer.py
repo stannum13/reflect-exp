@@ -52,6 +52,14 @@ def test_trajectory_and_action_bytes_are_authoritative() -> None:
     assert result.violation_counts["invalid_action"] > 0
 
 
+def test_contact_authority_is_full_retained_envelope_not_executor_boolean() -> None:
+    raw = episode("anchor-nominal")
+    trace = {name: value.copy() for name, value in raw.trace.items()}
+    trace["obstacle_contact"][:] = True
+    falsified_debug_trace = replace(raw, trace=trace)
+    assert scorer.score_episode(falsified_debug_trace).terminal == "SUCCESS"
+
+
 def test_all_positive_controls_independently_force_terminal_failure() -> None:
     raw = episode("semantic-object-unavailable")
     audit = scorer.positive_control_audit(raw)

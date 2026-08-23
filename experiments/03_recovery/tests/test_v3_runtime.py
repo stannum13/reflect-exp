@@ -57,11 +57,14 @@ def test_full_500hz_state_reference_action_torque_contact_and_envelopes(anchor_e
     required = {
         "tick", "q", "dq", "eef_xy", "q_ref", "dq_ref", "actuator_cmd_nm",
         "applied_force_nm", "contact_count", "obstacle_contact", "target_xy",
-        "target_error_m", "safe_hold", "action_valid", "world_authorized",
+        "contact_force_norm_n", "contact_torque_norm_nm", "target_error_m", "safe_hold", "action_valid",
+        "world_authorized",
     }
     assert required <= set(anchor_episode.trace)
     assert all(len(anchor_episode.trace[name]) == contracts.EPISODE_TICKS for name in required)
     assert len(anchor_episode.action_envelopes) == contracts.EPISODE_TICKS
+    assert len(anchor_episode.contact_envelopes) == contracts.EPISODE_TICKS
+    assert set(anchor_episode.contact_envelopes[0]) == {"tick", "contacts"}
     assert anchor_episode.executor_debug["aborted"] is False
     assert np.all(anchor_episode.trace["target_error_m"][-50:] <= 0.025)
     envelope = next(item for item in anchor_episode.action_envelopes if item["mode"] == "EXECUTE")

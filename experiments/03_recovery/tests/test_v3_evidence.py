@@ -58,6 +58,8 @@ def test_full_qualification_publication_and_raw_reconstruction_are_byte_exact(tm
     assert raw_manifest["episode_count"] == 18
     assert raw_manifest["not_run_positive_control"]["disposition"] == "NOT_RUN"
     assert all(row["seed"] in contracts.CALIBRATION_SEEDS for row in raw_manifest["episodes"])
+    first = output / "raw/episodes" / raw_manifest["episodes"][0]["episode_id"]
+    assert (first / "contact-envelopes.jsonl").is_file()
     assert (output / "derived/examples.json").is_file()
     for stem in ("injection-timing", "controller-paths", "budget-sequences", "scorer-controls"):
         assert (output / f"derived/{stem}.csv").is_file()

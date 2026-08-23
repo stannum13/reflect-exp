@@ -100,6 +100,7 @@ class V3EpisodeRaw:
     commands: tuple[Mapping[str, object], ...]
     trajectory_bytes: bytes
     action_envelopes: tuple[Mapping[str, object], ...]
+    contact_envelopes: tuple[Mapping[str, object], ...]
     trace: Mapping[str, np.ndarray]
     executor_debug: Mapping[str, object]
 
@@ -269,13 +270,26 @@ class _World:
         self.model.geom_size[self.obstacle_id, 0] = realization.obstacle_radius_m
         mujoco.mj_forward(self.model, self.data)
 
-    def contacts(self) -> tuple[int, bool]:
-        obstacle = False
+    def contacts(self) -> tuple[Mapping[str, object], ...]:
+        contacts: list[Mapping[str, object]] = []
         for index in range(self.data.ncon):
             contact = self.data.contact[index]
-            if {int(contact.geom1), int(contact.geom2)} == {self.obstacle_id, self.eef_geom_id}:
-                obstacle = True
-        return int(self.data.ncon), obstacle
+            geom1 = int(contact.geom1)
+            geom2 = int(contact.geom2)
+            force = np.zeros(6, dtype=np.float64)
+            mujoco.mj_contactForce(self.model, self.data, index, force)
+            contacts.append(MappingProxyType({
+                "index": index,
+                "geom1_id": geom1,
+                "geom1_name": mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, geom1),
+                "geom2_id": geom2,
+                "geom2_name": mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, geom2),
+                "distance_m": float(contact.dist),
+                "position_m": [float(item) for item in contact.pos],
+                "frame": [float(item) for item in contact.frame],
+                "force_n_torque_nm": [float(item) for item in force],
+            }))
+        return tuple(contacts)
 
     def step(self, torque: np.ndarray, external: np.ndarray) -> None:
         self.data.ctrl[:] = np.asarray(torque)
@@ -520,10 +534,11 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
 
     trace_rows: dict[str, list[object]] = {name: [] for name in (
         "tick", "q", "dq", "eef_xy", "q_ref", "dq_ref", "actuator_cmd_nm", "applied_force_nm",
-        "contact_count", "obstacle_contact", "target_xy", "target_error_m", "safe_hold", "action_valid",
-        "world_authorized",
+        "contact_count", "obstacle_contact", "contact_force_norm_n", "contact_torque_norm_nm",
+        "target_xy", "target_error_m", "safe_hold", "action_valid", "world_authorized",
     )}
     action_envelopes: list[Mapping[str, object]] = []
+    contact_envelopes: list[Mapping[str, object]] = []
     observations: list[ObservableState] = []
     decisions: list[DecisionEvent] = []
     resets: list[Mapping[str, object]] = []
@@ -772,7 +787,19 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
         q_ref, torque, _ = arm_module.bounded_pd(q, dq, requested_q, prior, 5.0, 0.5, config, desired_dq=requested_dq)
         previous_q_ref = np.array(q_ref, copy=True)
         world.step(torque, external_force)
-        contacts, obstacle_contact = world.contacts()
+        contacts = world.contacts()
+        obstacle_contact = any(
+            {contact["geom1_name"], contact["geom2_name"]} == {"v3-obstacle", "v3-eef-contact"}
+            for contact in contacts
+        )
+        contact_force_norm_n = max(
+            (float(np.linalg.norm(np.asarray(contact["force_n_torque_nm"][:3], dtype=np.float64))) for contact in contacts),
+            default=0.0,
+        )
+        contact_torque_norm_nm = max(
+            (float(np.linalg.norm(np.asarray(contact["force_n_torque_nm"][3:], dtype=np.float64))) for contact in contacts),
+            default=0.0,
+        )
         eef = world.site_xy()
         target = current_target()
         world_authorized = object_for_action is None or bool(memory[object_for_action]["available"] and memory[object_for_action]["authorized"])
@@ -789,8 +816,10 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
         trace_rows["dq_ref"].append(np.asarray(requested_dq).tolist())
         trace_rows["actuator_cmd_nm"].append(np.asarray(torque).tolist())
         trace_rows["applied_force_nm"].append(external_force.tolist())
-        trace_rows["contact_count"].append(contacts)
+        trace_rows["contact_count"].append(len(contacts))
         trace_rows["obstacle_contact"].append(obstacle_contact)
+        trace_rows["contact_force_norm_n"].append(contact_force_norm_n)
+        trace_rows["contact_torque_norm_nm"].append(contact_torque_norm_nm)
         trace_rows["target_xy"].append(target.tolist())
         trace_rows["target_error_m"].append(float(np.linalg.norm(eef - target)))
         trace_rows["safe_hold"].append(mode == "HOLD")
@@ -812,6 +841,7 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
             "external_force_nm": [float(item) for item in external_force],
             "hold_reason": hold_reason,
         }))
+        contact_envelopes.append(MappingProxyType({"tick": tick, "contacts": contacts}))
 
         if active is not None and len(active.path) > active.segment_index + 1 and attempt is None:
             segment_target = np.asarray(active.path[active.segment_index])
@@ -884,6 +914,7 @@ def run_episode(spec: V3EpisodeSpec) -> V3EpisodeRaw:
         tuple(commands),
         combined_trajectories,
         tuple(action_envelopes),
+        tuple(contact_envelopes),
         _readonly_trace(trace_rows),
         MappingProxyType({"aborted": aborted, "executed_ticks": executed_ticks}),
     )

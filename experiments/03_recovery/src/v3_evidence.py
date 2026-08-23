@@ -194,6 +194,7 @@ def episode_payloads(raw: V3EpisodeRaw) -> dict[str, bytes]:
         "commands.jsonl": _jsonl(raw.commands),
         "trajectories.bin": raw.trajectory_bytes,
         "action-envelopes.jsonl": _jsonl(raw.action_envelopes),
+        "contact-envelopes.jsonl": _jsonl(raw.contact_envelopes),
         "trace.npz": _npz(raw.trace),
         "scorer-rows.jsonl": _jsonl(score.rows),
         "scorer.json": canonical_bytes(_score_wire(score)),
