@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="170" viewBox="0 0 760 170">
+<rect width="760" height="170" fill="white"/><g font-family="monospace" font-size="13">
+<rect x="20" y="55" width="150" height="55" fill="#d9edf7" stroke="#31708f"/><text x="32" y="80">image+prompt+state</text>
+<path d="M170 82H240" stroke="#333" marker-end="url(#a)"/><rect x="240" y="55" width="130" height="55" fill="#fcf8e3" stroke="#8a6d3b"/><text x="267" y="80">pi0.5 flow</text><text x="265" y="98">NOT RUN</text>
+<path d="M370 82H440" stroke="#333" marker-end="url(#a)"/><rect x="440" y="55" width="130" height="55" fill="#f2dede" stroke="#a94442"/><text x="461" y="80">15x32 actions</text><text x="466" y="98">only output</text>
+<path d="M570 82H640" stroke="#a94442" stroke-dasharray="5 4"/><text x="642" y="75">semantic</text><text x="642" y="94">boundary</text><text x="642" y="113">CLOSED</text>
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8z"/></marker></defs>
+<text x="20" y="145">Measured: official source/API path. Not measured: checkpoint-backed forward pass.</text></g></svg>
