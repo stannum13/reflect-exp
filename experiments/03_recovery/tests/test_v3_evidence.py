@@ -1,0 +1,81 @@
+from __future__ import annotations
+
+import hashlib
+import importlib
+import json
+from pathlib import Path
+
+import pytest
+
+
+contracts = importlib.import_module("experiments.03_recovery.src.v3_contracts")
+evidence = importlib.import_module("experiments.03_recovery.src.v3_evidence")
+
+
+def test_qualification_matrix_is_calibration_only_and_covers_required_contrasts() -> None:
+    specs = evidence.qualification_specs()
+    assert len(specs) == 18
+    assert {item.seed for item in specs} == set(contracts.CALIBRATION_SEEDS)
+    assert all(item.seed not in range(20261801, 20261811) for item in specs)
+    assert {item.scenario_id for item in specs} == set(contracts.SCENARIO_IDS)
+    assert {item.architecture for item in specs if item.scenario_id == "semantic-object-unavailable" and item.seed == 20261893} == set(contracts.Architecture)
+    assert {item.controller_id for item in specs if item.scenario_id == "anchor-nominal" and item.seed == 20261894} == {
+        contracts.PRIMARY_CONTROLLER_ID,
+        contracts.SENSITIVITY_CONTROLLER_ID,
+    }
+
+
+def test_complete_local_import_closure_is_frozen() -> None:
+    closure = evidence.source_closure()
+    paths = {item["path"] for item in closure}
+    assert {
+        "experiments/03_recovery/run_v3_qualification.py",
+        "experiments/03_recovery/src/v3_contracts.py",
+        "experiments/03_recovery/src/v3_policy.py",
+        "experiments/03_recovery/src/v3_runtime.py",
+        "experiments/03_recovery/src/v3_scorer.py",
+        "experiments/03_recovery/src/v3_evidence.py",
+        "experiments/01_policy_control/configs/base.yaml",
+        "experiments/01_policy_control/src/arm.py",
+        "experiments/01_policy_control/src/contracts.py",
+        "experiments/01_policy_control/src/kinematics.py",
+        "experiments/01_policy_control/src/representations.py",
+        "reflect/types.py",
+    } <= paths
+    assert evidence.verify_source_closure(closure) == closure
+    assert all(len(item["sha256"]) == 64 and item["bytes"] > 0 for item in closure)
+
+
+def test_full_qualification_publication_and_raw_reconstruction_are_byte_exact(tmp_path: Path) -> None:
+    output = tmp_path / "hierarchical-recovery-v3-qualification"
+    result = evidence.run_qualification(output)
+    assert result["status"] == "READY_FOR_FRESH_READ_ONLY_REVIEW"
+    assert result["episode_count"] == 18
+    assert result["hard_gates_passed"] == 10
+    assert not (tmp_path / "hierarchical-recovery-v3").exists()
+
+    raw_manifest = json.loads((output / "raw/manifest.json").read_text(encoding="ascii"))
+    assert raw_manifest["episode_count"] == 18
+    assert raw_manifest["not_run_positive_control"]["disposition"] == "NOT_RUN"
+    assert all(row["seed"] in contracts.CALIBRATION_SEEDS for row in raw_manifest["episodes"])
+    assert (output / "derived/examples.json").is_file()
+    for stem in ("injection-timing", "controller-paths", "budget-sequences", "scorer-controls"):
+        assert (output / f"derived/{stem}.csv").is_file()
+        assert (output / f"derived/{stem}.svg").is_file()
+
+    clean = tmp_path / "clean-reconstruction"
+    replay = evidence.reconstruct(output, clean)
+    assert replay["matched"] is True
+    assert replay["episodes_replayed"] == 18
+    assert replay["raw_tree_sha256"] == hashlib.sha256((output / "raw/manifest.json").read_bytes()).hexdigest()
+    expected = sorted(path.relative_to(output).as_posix() for path in output.rglob("*") if path.is_file())
+    actual = sorted(path.relative_to(clean).as_posix() for path in clean.rglob("*") if path.is_file())
+    assert actual == expected
+    assert all((output / name).read_bytes() == (clean / name).read_bytes() for name in expected)
+
+
+def test_publication_is_create_only(tmp_path: Path) -> None:
+    output = tmp_path / "hierarchical-recovery-v3-qualification"
+    output.mkdir()
+    with pytest.raises(FileExistsError):
+        evidence.run_qualification(output)

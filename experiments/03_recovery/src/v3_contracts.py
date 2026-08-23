@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
@@ -61,7 +62,7 @@ def _wire(value: object) -> Any:
         return [_wire(item) for item in value]
     if isinstance(value, list):
         return [_wire(item) for item in value]
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return {str(key): _wire(item) for key, item in value.items()}
     if isinstance(value, float) and not math.isfinite(value):
         raise ValueError("canonical bytes reject nonfinite values")
