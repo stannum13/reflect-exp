@@ -57,12 +57,12 @@ def test_exact_budgets_exhaust_to_safe_abort() -> None:
 
 
 def test_motion_then_semantic_escalates_monotonically() -> None:
-    budget = c.RecoveryBudget(2, 0, 1, "1" * 64)
+    budget = c.RecoveryBudget.initial("1" * 64)
     observable = failure(c.RecoveryLevel.SEMANTIC)
     decision = r.decide_recovery(c.Architecture.MOTION_THEN_SEMANTIC, observable, budget, "1" * 64)
-    assert decision.level is c.RecoveryLevel.SEMANTIC
-    after = c.ObservableFailure(True, True, True, True, True, c.RecoveryLevel.SEMANTIC, "1" * 64, False, 751)
-    assert r.decide_recovery(c.Architecture.MOTION_THEN_SEMANTIC, after, decision.budget, "1" * 64).level is c.RecoveryLevel.SAFE_ABORT
+    assert decision.level is c.RecoveryLevel.MOTION
+    after = c.ObservableFailure(True, True, True, True, True, c.RecoveryLevel.MOTION, "1" * 64, False, 751)
+    assert r.decide_recovery(c.Architecture.MOTION_THEN_SEMANTIC, after, decision.budget, "1" * 64).level is c.RecoveryLevel.SEMANTIC
 
 
 def test_new_command_hash_is_the_only_budget_reset() -> None:

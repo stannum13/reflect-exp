@@ -70,7 +70,7 @@ def decide_recovery(
     elif architecture is Architecture.SEMANTIC_ALWAYS:
         requested = RecoveryLevel.SEMANTIC
     elif architecture is Architecture.MOTION_THEN_SEMANTIC:
-        requested = RecoveryLevel.MOTION
+        requested = RecoveryLevel.SEMANTIC if _ORDER[observable_failure.previous_level] >= _ORDER[RecoveryLevel.MOTION] else RecoveryLevel.MOTION
     elif not observable_failure.semantic_preconditions_valid:
         requested = RecoveryLevel.SEMANTIC
     elif not observable_failure.action_valid or not observable_failure.geometry_feasible:
