@@ -12,6 +12,7 @@ import ctypes
 from dataclasses import asdict, dataclass, fields, is_dataclass
 from datetime import datetime, timezone
 import errno
+import fcntl
 import hashlib
 import json
 import math
@@ -38,7 +39,12 @@ MIB = 1024 * 1024
 ROLLOUT_RESERVATION_BYTES = 2 * MIB
 LIFECYCLE_LIMIT_BYTES = 14_576 * MIB
 PILOT_MAX_SHARD_ROLLOUTS = 27
+PILOT_REVISION_ROLLOUTS = 1_008
 CONFIRMATION_WAVE_ROLLOUTS = 2_508
+PHASE_ALLOWANCE_BYTES = 128 * MIB
+PILOT_REVISION_LIMIT_BYTES = 2_016 * MIB + PHASE_ALLOWANCE_BYTES
+CONFIRMATION_LIMIT_BYTES = 10_032 * MIB + 2 * PHASE_ALLOWANCE_BYTES
+PASS_LIMIT_BYTES = 10 * 1024 * MIB
 _RESOURCE_LIMITS = {
     "rollout_bytes": ROLLOUT_RESERVATION_BYTES,
     "shard_wall_seconds": 3_600,
@@ -179,6 +185,15 @@ _PILOT_STAGES = (
     "revision", "base", "pd_60_6", "pd_100_10", "ik_0_001", "ik_0_05",
     "p5_0_01", "p5_0_04", "final_four",
 )
+_TUNING_CONDITIONS = ("tune-05-700-2", "tune-10-300-2", "tune-20-000-1")
+_CORE_CONDITIONS = tuple(
+    f"core-{rate:02d}-{latency:03d}-{moves}"
+    for rate in (5, 10, 20) for latency in (0, 100, 300, 700) for moves in (1, 2)
+)
+_FINAL_CONDITIONS = tuple(sorted((*_CORE_CONDITIONS, "probe-drop", "probe-out-of-order")))
+_PD_VALUES = ([80.0, 8.0], [60.0, 6.0], [100.0, 10.0])
+_IK_VALUES = (0.01, 0.001, 0.05)
+_P5_VALUES = (0.02, 0.01, 0.04)
 
 
 def _parameter_hash(value: object) -> str:
@@ -193,6 +208,45 @@ def _validate_parameter_vector(value: object, digest: str) -> None:
         raise ArtifactError("parameter vector has invalid finite scalar fields")
     if _parameter_hash(row) != digest:
         raise ArtifactError("parameter hash does not bind parameter vector")
+
+
+def _validate_stage_parameter(stage: str, value: object) -> None:
+    assert isinstance(value, dict)
+    pd, ik, smoothness = value["pd"], value["ik"], value["p5_smoothness"]
+    exact = {
+        "revision": ([80.0, 8.0], 0.01, 0.02),
+        "base": ([80.0, 8.0], 0.01, 0.02),
+        "pd_60_6": ([60.0, 6.0], 0.01, 0.02),
+        "pd_100_10": ([100.0, 10.0], 0.01, 0.02),
+    }
+    if stage in exact and (pd, ik, smoothness) != exact[stage]:
+        raise ArtifactError("parameter vector differs from the frozen stage")
+    if stage == "ik_0_001" and (pd not in _PD_VALUES or ik != 0.001 or smoothness != 0.02):
+        raise ArtifactError("parameter vector differs from the frozen stage")
+    if stage == "ik_0_05" and (pd not in _PD_VALUES or ik != 0.05 or smoothness != 0.02):
+        raise ArtifactError("parameter vector differs from the frozen stage")
+    if stage == "p5_0_01" and (pd not in _PD_VALUES or ik not in _IK_VALUES or smoothness != 0.01):
+        raise ArtifactError("parameter vector differs from the frozen stage")
+    if stage == "p5_0_04" and (pd not in _PD_VALUES or ik not in _IK_VALUES or smoothness != 0.04):
+        raise ArtifactError("parameter vector differs from the frozen stage")
+    if stage == "final_four" and (pd not in _PD_VALUES or ik not in _IK_VALUES or smoothness not in _P5_VALUES):
+        raise ArtifactError("parameter vector differs from the frozen stage")
+
+
+def _configuration_hash(config_sha256: str, parameter_hash: str) -> str:
+    """Recompute the scheduler configuration from the exact experiment config bytes."""
+    del parameter_hash  # Controller selection is bound independently by parameter_hash.
+    from . import evaluate, timing
+    from .contracts import load_config
+
+    config_root = Path(__file__).resolve().parents[1] / "configs"
+    matches = [
+        candidate for candidate in (config_root / "base.yaml", config_root / "frozen.yaml")
+        if candidate.is_file() and hashlib.sha256(candidate.read_bytes()).hexdigest() == config_sha256
+    ]
+    if len(matches) != 1:
+        raise ArtifactError("config_sha256 does not resolve to one exact experiment config")
+    return evaluate.sha256_json(timing.scheduler_config(load_config(matches[0])))
 
 
 def _validate_resource_limits(value: object) -> None:
@@ -233,9 +287,11 @@ def load_protocol_manifest(path: Path) -> dict[str, Any]:
     ):
         _hash(manifest[key], key)
     _validate_parameter_vector(manifest["parameter_vector"], manifest["parameter_hash"])
+    _validate_stage_parameter(stage, manifest["parameter_vector"])
     _validate_resource_limits(manifest["resource_limits"])
     if manifest["state"] != "READY" or not isinstance(manifest["shards"], list):
         raise ArtifactError("manifest must be READY with a shard array")
+    predecessor: dict[str, Any] | None = None
     if manifest["phase"] == "pilot":
         seed_path = path.with_name("pilot-seeds.json")
         seed_manifest = load_seed_manifest(seed_path)
@@ -275,7 +331,10 @@ def load_protocol_manifest(path: Path) -> dict[str, Any]:
             raise ArtifactError("shard identities must be unique and stack-prefixed")
         seen.add(shard_id)
         ordered_keys.append((_STACK_ORDER[stack], shard_id))
-        _hash(row["configuration_hash"], "configuration_hash")
+        if row["configuration_hash"] != _configuration_hash(
+            manifest["config_sha256"], manifest["parameter_hash"],
+        ):
+            raise ArtifactError("configuration hash does not bind config and parameter hashes")
         _exact_int(row["seed"], "seed")
         conditions = _sorted_unique_strings(row["condition_ids"], "condition_ids")
         outputs = _sorted_unique_strings(row["output_identities"], "output_identities")
@@ -292,20 +351,52 @@ def load_protocol_manifest(path: Path) -> dict[str, Any]:
         assert seed_manifest is not None
         partition_key = "evaluation_seed_ids" if stage == "final_four" else "tuning_seed_ids"
         expected_seeds = tuple(seed_manifest["partition"][partition_key])
-        expected_conditions = 26 if stage == "final_four" else 3
+        expected_condition_ids = _FINAL_CONDITIONS if stage == "final_four" else _TUNING_CONDITIONS
+        expected_conditions = len(expected_condition_ids)
         by_stack: dict[str, list[dict[str, Any]]] = {}
         for row in manifest["shards"]:
             by_stack.setdefault(row["stack_id"], []).append(row)
-        if not by_stack or any(
+        empty_killed_p5 = stage in {"p5_0_01", "p5_0_04"} and not by_stack
+        if (not by_stack and not empty_killed_p5) or any(
             tuple(item["seed"] for item in rows) != expected_seeds
-            or any(item["episode_count"] != expected_conditions for item in rows)
+            or any(
+                item["episode_count"] != expected_conditions
+                or tuple(item["condition_ids"]) != expected_condition_ids
+                for item in rows
+            )
             for rows in by_stack.values()
         ):
-            raise ArtifactError("pilot stage shard domain does not match its frozen seed/condition protocol")
+            raise ArtifactError("pilot stage shard/condition domain does not match its frozen protocol")
         if stage == "base" and tuple(by_stack) != tuple(_STACK_ORDER):
             raise ArtifactError("base stage must contain all six stacks")
-        if stage in {"p5_0_01", "p5_0_04"} and tuple(by_stack) != ("P5",):
-            raise ArtifactError("P5 smoothness stage must contain only P5")
+        if stage in {"p5_0_01", "p5_0_04"} and tuple(by_stack) not in {(), ("P5",)}:
+            raise ArtifactError("P5 smoothness stage must contain only surviving P5 or be empty")
+        expected_hash = hashlib.sha256(canonical_json_bytes(list(expected_condition_ids))).hexdigest()
+        if manifest["condition_hash"] != expected_hash:
+            raise ArtifactError("condition domain hash differs from the frozen stage")
+        if predecessor is not None:
+            predecessor_stacks = tuple(dict.fromkeys(
+                row["stack_id"] for row in predecessor["shards"]
+            ))
+            current_stacks = tuple(by_stack)
+            if stage in {"pd_100_10", "ik_0_001", "ik_0_05"} and current_stacks != predecessor_stacks:
+                raise ArtifactError("adaptive survivor domain changed after base qualification")
+            if stage == "p5_0_01" and current_stacks != (("P5",) if "P5" in predecessor_stacks else ()):
+                raise ArtifactError("P5 stage does not match the frozen base-survivor domain")
+            if stage == "p5_0_04" and current_stacks != predecessor_stacks:
+                raise ArtifactError("P5 stage domain changed between scalar candidates")
+            previous_vector = predecessor["parameter_vector"]
+            if stage == "ik_0_05" and manifest["parameter_vector"]["pd"] != previous_vector["pd"]:
+                raise ArtifactError("selected PD changed between IK candidates")
+            if stage == "p5_0_04" and (
+                manifest["parameter_vector"]["pd"] != previous_vector["pd"]
+                or manifest["parameter_vector"]["ik"] != previous_vector["ik"]
+            ):
+                raise ArtifactError("selected PD/IK changed between P5 candidates")
+    elif manifest["phase"] == "pilot":
+        expected_hash = hashlib.sha256(canonical_json_bytes(list(_TUNING_CONDITIONS))).hexdigest()
+        if manifest["condition_hash"] != expected_hash:
+            raise ArtifactError("condition domain hash differs from the frozen revision")
     return manifest
 
 
@@ -567,9 +658,15 @@ def preflight_resources(
     if rollout_count is None:
         rollout_count = PILOT_MAX_SHARD_ROLLOUTS if stage == "pilot" else CONFIRMATION_WAVE_ROLLOUTS
     rollout_count = _exact_int(rollout_count, "rollout_count")
-    if rollout_count == 0 or (stage == "pilot" and rollout_count > PILOT_MAX_SHARD_ROLLOUTS) or (stage == "confirmation" and rollout_count > CONFIRMATION_WAVE_ROLLOUTS):
-        raise ArtifactError("rollout_count exceeds the complete shard/wave domain")
-    reserved_bytes = rollout_count * ROLLOUT_RESERVATION_BYTES
+    if rollout_count == 0:
+        raise ArtifactError("rollout_count must be positive")
+    if stage == "pilot" and rollout_count > PILOT_REVISION_ROLLOUTS:
+        raise ArtifactError("rollout_count exceeds the pilot revision rollout ceiling")
+    if stage == "confirmation" and rollout_count > CONFIRMATION_WAVE_ROLLOUTS:
+        raise ArtifactError("rollout_count exceeds the confirmation wave rollout ceiling")
+    reserved_bytes = rollout_count * ROLLOUT_RESERVATION_BYTES + PHASE_ALLOWANCE_BYTES
+    if reserved_bytes > PASS_LIMIT_BYTES:
+        raise ArtifactError("next autonomous pass exceeds 10 GiB")
     if config is not None:
         resources = getattr(config, "resources", None)
         if resources is None or asdict(resources) != _RESOURCE_LIMITS:
@@ -579,7 +676,8 @@ def preflight_resources(
     wall_cap = (8 if stage == "pilot" else 24) * 3600
     cpu_cap = (80 if stage == "pilot" else 240) * 3600
     reasons: list[str] = []
-    if values["retained_bytes"] + reserved_bytes > LIFECYCLE_LIMIT_BYTES:
+    phase_cap = PILOT_REVISION_LIMIT_BYTES if stage == "pilot" else CONFIRMATION_LIMIT_BYTES
+    if values["retained_bytes"] + reserved_bytes > phase_cap:
         reasons.append("PHASE_BYTES_EXCEEDED")
     if values["temp_bytes"] > temp_cap:
         reasons.append("TEMP_BYTES_EXCEEDED")
@@ -659,38 +757,10 @@ class ImplementationSnapshot:
         ).decode("utf-8").split("\0"))))
         if indexed != expected_names:
             raise ImplementationDriftError("tracked implementation inventory differs from bound commit")
-        filesystem: set[str] = set()
-        for relative in self.owned_paths:
-            root_entry = self.root / relative
-            if root_entry.is_symlink():
-                raise ImplementationDriftError(f"implementation inventory contains symlink: {relative}")
-            if root_entry.is_file():
-                filesystem.add(relative.as_posix())
-                continue
-            if not root_entry.is_dir():
-                raise ImplementationDriftError(f"implementation inventory entry is absent: {relative}")
-            for directory, directory_names, file_names in os.walk(root_entry, followlinks=False):
-                directory_path = Path(directory)
-                for name in tuple(directory_names):
-                    entry = directory_path / name
-                    if entry.is_symlink():
-                        raise ImplementationDriftError(f"implementation inventory contains symlink: {entry.relative_to(self.root)}")
-                for name in file_names:
-                    entry = directory_path / name
-                    relative_name = entry.relative_to(self.root).as_posix()
-                    value = entry.lstat()
-                    if not stat.S_ISREG(value.st_mode):
-                        raise ImplementationDriftError(f"implementation inventory contains nonregular entry: {relative_name}")
-                    filesystem.add(relative_name)
-        if tuple(sorted(filesystem)) != expected_names:
+        current = _descriptor_implementation_inventory(self.root, self.owned_paths)
+        if tuple(row[0] for row in current) != expected_names:
             raise ImplementationDriftError("filesystem implementation inventory differs from bound commit")
-        current = []
-        for name, _, _ in self.committed_files:
-            path = self.root / name
-            value = path.lstat()
-            mode = "100755" if value.st_mode & stat.S_IXUSR else "100644"
-            current.append((name, mode, hashlib.sha256(path.read_bytes()).hexdigest()))
-        return tuple(current)
+        return current
 
     def validate_before(self) -> "ImplementationSnapshot":
         if self._current() != self.committed_files:
@@ -702,6 +772,109 @@ class ImplementationSnapshot:
         if before is not None and before != self:
             raise ImplementationDriftError("implementation snapshot changed during operation")
         return self
+
+
+def _implementation_read_boundary(_path: Path) -> None:
+    """Fault-injection seam after path identity capture and before descriptor open."""
+
+
+def _read_implementation_file(
+    directory_descriptor: int, name: str, display_path: Path,
+) -> tuple[str, str]:
+    before = os.stat(name, dir_fd=directory_descriptor, follow_symlinks=False)
+    if not stat.S_ISREG(before.st_mode):
+        raise ImplementationDriftError(f"implementation inventory contains nonregular entry: {display_path}")
+    _implementation_read_boundary(display_path)
+    descriptor = os.open(
+        name,
+        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
+        dir_fd=directory_descriptor,
+    )
+    try:
+        opened = os.fstat(descriptor)
+        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
+            raise ImplementationDriftError(f"implementation file identity changed: {display_path}")
+        digest = hashlib.sha256()
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+        after_fd = os.fstat(descriptor)
+        after_path = os.stat(name, dir_fd=directory_descriptor, follow_symlinks=False)
+        if (
+            (after_fd.st_dev, after_fd.st_ino) != (opened.st_dev, opened.st_ino)
+            or (after_path.st_dev, after_path.st_ino) != (opened.st_dev, opened.st_ino)
+            or after_fd.st_size != opened.st_size
+        ):
+            raise ImplementationDriftError(f"implementation file changed during read: {display_path}")
+        return "100755" if opened.st_mode & stat.S_IXUSR else "100644", digest.hexdigest()
+    finally:
+        os.close(descriptor)
+
+
+def _descriptor_implementation_inventory(
+    root: Path, owned_paths: Sequence[Path],
+) -> tuple[tuple[str, str, str], ...]:
+    result: dict[str, tuple[str, str]] = {}
+
+    def walk(directory_descriptor: int, relative: Path) -> None:
+        for name in sorted(os.listdir(directory_descriptor)):
+            display = relative / name
+            value = os.stat(name, dir_fd=directory_descriptor, follow_symlinks=False)
+            if stat.S_ISDIR(value.st_mode):
+                child = os.open(
+                    name,
+                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                    dir_fd=directory_descriptor,
+                )
+                try:
+                    opened = os.fstat(child)
+                    if (value.st_dev, value.st_ino) != (opened.st_dev, opened.st_ino):
+                        raise ImplementationDriftError(f"implementation directory identity changed: {display}")
+                    walk(child, display)
+                    after = os.stat(name, dir_fd=directory_descriptor, follow_symlinks=False)
+                    if (after.st_dev, after.st_ino) != (opened.st_dev, opened.st_ino):
+                        raise ImplementationDriftError(f"implementation directory changed during walk: {display}")
+                finally:
+                    os.close(child)
+            elif stat.S_ISREG(value.st_mode):
+                key = display.as_posix()
+                if key in result:
+                    raise ImplementationDriftError(f"implementation path overlaps another owned path: {display}")
+                result[key] = _read_implementation_file(directory_descriptor, name, root / display)
+            else:
+                raise ImplementationDriftError(f"implementation inventory contains nonregular entry: {display}")
+
+    for relative in owned_paths:
+        parent = open_directory_chain(root / relative.parent, create=False)
+        try:
+            value = os.stat(relative.name, dir_fd=parent, follow_symlinks=False)
+            if stat.S_ISDIR(value.st_mode):
+                child = os.open(
+                    relative.name,
+                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                    dir_fd=parent,
+                )
+                try:
+                    opened = os.fstat(child)
+                    if (value.st_dev, value.st_ino) != (opened.st_dev, opened.st_ino):
+                        raise ImplementationDriftError(f"implementation root identity changed: {relative}")
+                    walk(child, relative)
+                    after = os.stat(relative.name, dir_fd=parent, follow_symlinks=False)
+                    if (after.st_dev, after.st_ino) != (opened.st_dev, opened.st_ino):
+                        raise ImplementationDriftError(f"implementation root changed during walk: {relative}")
+                finally:
+                    os.close(child)
+            elif stat.S_ISREG(value.st_mode):
+                result[relative.as_posix()] = _read_implementation_file(parent, relative.name, root / relative)
+            else:
+                raise ImplementationDriftError(f"implementation inventory contains nonregular entry: {relative}")
+        except FileNotFoundError as exc:
+            raise ImplementationDriftError(f"implementation inventory entry is absent: {relative}") from exc
+        finally:
+            os.close(parent)
+    return tuple((name, *result[name]) for name in sorted(result))
 
 
 def _wire(value: object) -> object:
@@ -931,6 +1104,21 @@ def _rollout_wire(artifact: RolloutArtifact, replay: ReplayResult) -> dict[str, 
     })  # type: ignore[return-value]
 
 
+def _condition_metadata(condition_id: str) -> tuple[int, int, int, str]:
+    match = re.fullmatch(r"core-(05|10|20)-(000|100|300|700)-([12])", condition_id)
+    if match is not None:
+        return int(match.group(1)), int(match.group(2)), int(match.group(3)), "NONE"
+    special = {
+        "probe-drop": (10, 300, 2, "DROP"),
+        "probe-out-of-order": (10, 300, 2, "OUT_OF_ORDER"),
+        "control-stationary": (10, 300, 0, "STATIONARY_CONTROL"),
+    }
+    try:
+        return special[condition_id]
+    except KeyError as exc:
+        raise ArtifactError("condition identity is outside the frozen domain") from exc
+
+
 def raw_evidence_from_rollout(
     rollout_path: Path,
     *,
@@ -955,6 +1143,11 @@ def raw_evidence_from_rollout(
     seed = artifact.metadata.seed
     if stack_id not in _STACK_ORDER or not isinstance(condition_id, str):
         raise ArtifactError("rollout lacks its exact stack/condition identity")
+    derived_condition = _condition_metadata(condition_id)
+    if derived_condition != (
+        policy_hz, latency_ms, move_count, fault,
+    ):
+        raise ArtifactError("caller condition metadata differs from the retained condition identity")
     for value, name in (
         (revision, "revision"), (policy_hz, "policy_hz"), (latency_ms, "latency_ms"),
         (move_count, "move_count"),
@@ -1002,11 +1195,11 @@ def raw_evidence_from_rollout(
         "replay_sha256": _digest_state(rollout["replay"]),
         "bundle_sha256": _digest_state(rollout), "disposition": disposition,
         "reason": "NONE" if disposition == "SUCCESS" else "SCIENTIFIC_FAILURE",
-        "analysis_included": True, "rollout": rollout,
+        "analysis_included": True, "failure": None, "rollout": rollout,
         "plot": {
             "stack_id": stack_id, "seed": seed, "condition_id": condition_id,
-            "policy_hz": policy_hz, "latency_ms": latency_ms,
-            "move_count": move_count, "fault": fault,
+            "policy_hz": derived_condition[0], "latency_ms": derived_condition[1],
+            "move_count": derived_condition[2], "fault": derived_condition[3],
             "recovery_s": float(metrics["recovery_s"]),
             "error_m": float(metrics["final_error_m"]),
             "jerk_p95": float(metrics["jerk_p95"]),
@@ -1016,6 +1209,41 @@ def raw_evidence_from_rollout(
         },
     }
     return row
+
+
+def raw_evidence_from_failure_disposition(
+    value: Mapping[str, object], *, variant_id: str, anchor_id: str,
+    candidate_id: str, rng_namespace: str,
+) -> dict[str, object]:
+    """Retain one typed absent-output disposition without fabricating a rollout."""
+    failure = _failure_row(dict(value))
+    condition_id = str(failure["condition_id"])
+    _condition_metadata(condition_id)
+    for item, name in (
+        (variant_id, "variant_id"), (anchor_id, "anchor_id"),
+        (candidate_id, "candidate_id"), (rng_namespace, "rng_namespace"),
+    ):
+        _text(item, name)
+    disposition = {
+        "PROCESS_TIMEOUT": "TIMED_OUT", "CORRUPT_OUTPUT": "CRASHED",
+        "MISSING_OUTPUT": "DECLARED_MISSING", "RESOURCE_EXHAUSTION": "EXCLUDED",
+    }[str(failure["reason"])]
+    seed, stack_id = int(failure["seed"]), str(failure["stack_id"])
+    return {
+        "schema_version": 1, "revision": int(failure["revision"]),
+        "stack_id": stack_id, "condition_id": condition_id,
+        "variant_id": variant_id, "scene_id": f"scene-{seed:08d}",
+        "episode_id": f"{failure['shard_id']}:{condition_id}:declared-invalid",
+        "anchor_id": anchor_id, "candidate_id": candidate_id, "seed": seed,
+        "rng_namespace": rng_namespace, "tick_start": 0, "tick_end": 0,
+        "units": {"position": "m", "time": "ns"}, "frames": {"target": "world"},
+        "validity": "DECLARED_INVALID", "missingness": str(failure["reason"]),
+        "terminal_state": disposition, "config_sha256": None, "code_sha256": None,
+        "dependency_sha256": None, "input_sha256": None, "output_sha256": None,
+        "replay_sha256": None, "bundle_sha256": None, "disposition": disposition,
+        "reason": str(failure["reason"]), "analysis_included": False,
+        "failure": failure, "rollout": None, "plot": None,
+    }
 
 
 def _sorted_raw_rows(raw_rows: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
@@ -1048,6 +1276,8 @@ def _raw_payload_offsets(
 
 def _command_output_bytes(row: Mapping[str, object]) -> bytes:
     rollout = row.get("rollout")
+    if rollout is None and isinstance(row.get("failure"), Mapping):
+        return canonical_state_bytes(row["failure"])
     if not isinstance(rollout, Mapping):
         raise ArtifactError("raw row lacks retained rollout command output")
     return canonical_state_bytes({
@@ -1150,10 +1380,10 @@ def _render_task11_plots(
     stacks = tuple(dict.fromkeys(("P1", *promoted_stacks)))
     ordered = tuple(sorted((dict(row) for row in plot_rows if row["valid"]), key=lambda row: (_STACK_ORDER[str(row["stack_id"])], int(row["seed"]), str(row["condition_id"]))))
     keys_by_stack = {stack: {(row["seed"], row["condition_id"]) for row in ordered if row["stack_id"] == stack} for stack in stacks}
-    shared = set.intersection(*(keys_by_stack[stack] for stack in stacks))
-    if not shared:
-        raise ArtifactError("plots require shared P1/promoted stack seed-condition evidence")
-    ordered = tuple(row for row in ordered if row["stack_id"] in stacks and (row["seed"], row["condition_id"]) in shared)
+    domains = tuple(keys_by_stack[stack] for stack in stacks)
+    if not domains[0] or any(domain != domains[0] for domain in domains[1:]):
+        raise ArtifactError("plots require one symmetric exact P1/promoted stack domain")
+    ordered = tuple(row for row in ordered if row["stack_id"] in stacks)
     specs = (
         (_PLOT_NAMES[0], "Recovery vs latency", "latency (ms)", "recovery (s)", lambda row: (float(row["latency_ms"]), float(row["recovery_s"]))),
         (_PLOT_NAMES[1], "Tracking error vs rate", "policy rate (Hz)", "error (m)", lambda row: (float(row["policy_hz"]), float(row["error_m"]))),
@@ -1182,7 +1412,7 @@ def _publication_payloads(
         "missingness", "terminal_state", "config_sha256", "code_sha256",
         "dependency_sha256", "input_sha256", "output_sha256", "replay_sha256",
         "bundle_sha256", "disposition", "reason", "analysis_included",
-        "rollout", "plot",
+        "failure", "rollout", "plot",
     })
     index_keys = frozenset({
         "schema_version", "revision", "stack_id", "variant_id", "condition_id",
@@ -1219,27 +1449,54 @@ def _publication_payloads(
             raise ArtifactError("analysis_included must be boolean")
         if row["missingness"] is not None:
             _text(row["missingness"], "missingness")
-        for key in ("config_sha256", "code_sha256", "dependency_sha256", "input_sha256"):
-            _hash(row[key], key)
-        for key in ("output_sha256", "replay_sha256", "bundle_sha256"):
+        for key in (
+            "config_sha256", "code_sha256", "dependency_sha256", "input_sha256",
+            "output_sha256", "replay_sha256", "bundle_sha256",
+        ):
             if row[key] is not None:
                 _hash(row[key], key)
         complete = disposition in {"SUCCESS", "FAILED"}
         if complete and (
             row["validity"] != "VALID" or row["missingness"] is not None
             or row["terminal_state"] != "COMPLETE" or not row["analysis_included"]
-            or any(row[key] is None for key in ("output_sha256", "replay_sha256", "bundle_sha256"))
+            or any(row[key] is None for key in (
+                "config_sha256", "code_sha256", "dependency_sha256", "input_sha256",
+                "output_sha256", "replay_sha256", "bundle_sha256",
+            ))
         ):
             raise ArtifactError("complete episode disposition contradicts validity or retained evidence")
         if disposition in {"TIMED_OUT", "CRASHED", "DECLARED_MISSING"} and (
             row["validity"] != "DECLARED_INVALID" or row["missingness"] is None
-            or row["analysis_included"] or row["bundle_sha256"] is not None
+            or row["analysis_included"] or any(
+                row[key] is not None for key in (
+                    "config_sha256", "code_sha256", "dependency_sha256", "input_sha256",
+                    "output_sha256", "replay_sha256", "bundle_sha256",
+                )
+            )
         ):
             raise ArtifactError("invalid episode disposition contradicts missingness or analysis inclusion")
         if disposition == "EXCLUDED" and (row["analysis_included"] or row["missingness"] is None):
             raise ArtifactError("excluded episode disposition requires a reason and analysis exclusion")
         if (disposition == "SUCCESS") != (row["reason"] == "NONE"):
             raise ArtifactError("episode disposition and reason are inconsistent")
+        if not complete:
+            failure = _failure_row(row["failure"])
+            expected_disposition = {
+                "PROCESS_TIMEOUT": "TIMED_OUT", "CORRUPT_OUTPUT": "CRASHED",
+                "MISSING_OUTPUT": "DECLARED_MISSING", "RESOURCE_EXHAUSTION": "EXCLUDED",
+            }[str(failure["reason"])]
+            if (
+                row["rollout"] is not None or row["plot"] is not None
+                or failure["stack_id"] != row["stack_id"]
+                or failure["seed"] != row["seed"]
+                or failure["condition_id"] != row["condition_id"]
+                or disposition != expected_disposition
+            ):
+                raise ArtifactError("declared-invalid raw row differs from its retained failure")
+            normalized_raw.append(row)
+            continue
+        if row["failure"] is not None:
+            raise ArtifactError("complete raw row cannot retain a failure disposition")
         rollout = _closed(row["rollout"], _ROLLOUT_WIRE_KEYS, "retained rollout")
         plot = _closed(row["plot"], _PLOT_ROW_KEYS, "plot row")
         metadata = rollout["metadata"]
@@ -1403,7 +1660,7 @@ def _publication_payloads(
     if tuple(normalized_recipes) != expected_recipes:
         raise ArtifactError("plot recipe differs from the closed Task11 reconstruction contract")
     sorted_recipes = list(normalized_recipes)
-    plot_rows = [dict(row["plot"]) for row in sorted_raw]
+    plot_rows = [dict(row["plot"]) for row in sorted_raw if row["plot"] is not None]
     payloads = {
         "raw-evidence.jsonl": raw_payload,
         "annotated-samples.jsonl": jsonl(sorted_index),
@@ -1529,26 +1786,80 @@ def reconstruct_evidence(
     payloads = _publication_payloads(raw_rows, annotated_index, plot_recipes)
     manifest = _artifact_manifest(payloads, protocol_sha256)
     marker = canonical_json_bytes(manifest)
-    descriptor = open_directory_chain(output_dir, create=True)
+    if output_dir.name in {"", ".", ".."}:
+        raise ArtifactError("evidence output must name one final directory")
+    parent_descriptor = open_directory_chain(output_dir.parent, create=True)
+    staged = None
+    published = False
     try:
-        names = set(os.listdir(descriptor))
-        if "artifact-manifest.json" in names:
+        fcntl.flock(parent_descriptor, fcntl.LOCK_EX)
+        try:
+            final_state = os.stat(
+                output_dir.name, dir_fd=parent_descriptor, follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            final_state = None
+        if final_state is not None:
+            if not stat.S_ISDIR(final_state.st_mode):
+                raise ArtifactError("evidence destination is not a regular directory")
             existing = validate_evidence_publication(output_dir)
-            if existing != manifest or any(_read_regular_at(descriptor, name) != data for name, data in payloads.items()):
-                raise FileExistsError("immutable evidence publication conflicts")
+            final_descriptor = os.open(
+                output_dir.name,
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=parent_descriptor,
+            )
+            try:
+                if existing != manifest or any(
+                    _read_regular_at(final_descriptor, name) != data
+                    for name, data in payloads.items()
+                ) or _read_regular_at(final_descriptor, "artifact-manifest.json") != marker:
+                    raise FileExistsError("immutable evidence publication conflicts")
+            finally:
+                os.close(final_descriptor)
+            after_final = os.stat(
+                output_dir.name, dir_fd=parent_descriptor, follow_symlinks=False,
+            )
+            if (final_state.st_dev, final_state.st_ino) != (after_final.st_dev, after_final.st_ino):
+                raise ArtifactError("evidence destination changed during validation")
             return existing
-        _quarantine_partial_publication(descriptor, payloads)
+        staged = create_temporary_directory(
+            parent_descriptor, f".{output_dir.name}.analysis-stage-",
+        )
         for name, payload in sorted(payloads.items()):
-            _write_at_create_only(descriptor, name, payload)
+            _write_at_create_only(staged.descriptor, name, payload)
             _publication_boundary(f"file:{name}")
-            os.fsync(descriptor)
-            _publication_boundary(f"directory-fsync:{name}")
-        _write_at_create_only(descriptor, "artifact-manifest.json", marker)
+        _write_at_create_only(staged.descriptor, "artifact-manifest.json", marker)
         _publication_boundary("marker:artifact-manifest.json")
-        os.fsync(descriptor)
+        os.fsync(staged.descriptor)
         _publication_boundary("directory-fsync:artifact-manifest.json")
+        staged_state = os.fstat(staged.descriptor)
+        _renameat_directory_noreplace(
+            parent_descriptor, staged.name, parent_descriptor, output_dir.name,
+        )
+        published = True
+        _publication_boundary("rename:analysis-directory")
+        final_state = os.stat(
+            output_dir.name, dir_fd=parent_descriptor, follow_symlinks=False,
+        )
+        if (
+            not stat.S_ISDIR(final_state.st_mode)
+            or (final_state.st_dev, final_state.st_ino)
+            != (staged_state.st_dev, staged_state.st_ino)
+        ):
+            raise ArtifactError("published evidence directory identity differs from staged bytes")
+        os.fsync(parent_descriptor)
+        _publication_boundary("directory-fsync:analysis-directory")
     finally:
-        os.close(descriptor)
+        if staged is not None:
+            if not published:
+                cleanup_exact_directory(
+                    parent_descriptor, staged.descriptor, staged.identity, staged.name,
+                )
+            os.close(staged.descriptor)
+        try:
+            fcntl.flock(parent_descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(parent_descriptor)
     return manifest
 
 
@@ -1684,6 +1995,7 @@ __all__ = [
     "canonical_state_bytes", "iter_manifest", "load_artifact_manifest",
     "load_canonical_json", "load_protocol_manifest", "load_seed_manifest",
     "prepare_manifest", "preflight_resources", "raw_evidence_from_rollout",
+    "raw_evidence_from_failure_disposition",
     "build_annotated_samples", "build_plot_recipes",
     "publish_failure_disposition", "publish_or_validate_skip", "reconstruct_evidence",
     "replay_rollout", "validate_evidence_publication", "validate_rollout",

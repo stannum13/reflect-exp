@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import importlib
 import json
 from pathlib import Path
 import subprocess
+import threading
 
 import pytest
 
@@ -54,9 +56,10 @@ def test_iter_manifest_is_closed_canonical_and_p1_first(tmp_path: Path) -> None:
 
 def test_preflight_uses_exact_caps_and_never_accepts_bool() -> None:
     mib = 1024 * 1024
-    confirmation_wave = 5_016 * mib
+    confirmation_rollouts = 5_016 * mib
+    confirmation_wave = confirmation_rollouts + 128 * mib
     allowed = artifacts.preflight_resources(
-        "confirmation", 14_576 * mib - confirmation_wave, 0, 0,
+        "confirmation", 10_288 * mib - confirmation_wave, 0, 0,
         confirmation_wave,
         24 * 3600, 240 * 3600,
     )
@@ -64,7 +67,7 @@ def test_preflight_uses_exact_caps_and_never_accepts_bool() -> None:
     assert allowed.reserved_bytes == confirmation_wave
     assert allowed.reasons == ()
     refused = artifacts.preflight_resources(
-        "confirmation", 14_576 * mib - confirmation_wave + 1, 0, 0,
+        "confirmation", 10_288 * mib - confirmation_wave + 1, 0, 0,
         confirmation_wave - 1,
         24 * 3600 + 1, 240 * 3600,
     )
@@ -75,7 +78,7 @@ def test_preflight_uses_exact_caps_and_never_accepts_bool() -> None:
     with pytest.raises(ValueError, match="integer"):
         artifacts.preflight_resources("pilot", True, 0, 0, 2 * mib, 0, 0)
     pilot_buckets = artifacts.preflight_resources(
-        "pilot", 0, 32 * mib + 1, 64 * mib + 1, 54 * mib, 0, 0,
+        "pilot", 0, 32 * mib + 1, 64 * mib + 1, 182 * mib, 0, 0,
     )
     assert pilot_buckets.reasons == ("QUARANTINE_BYTES_EXCEEDED", "TEMP_BYTES_EXCEEDED")
     confirmation_buckets = artifacts.preflight_resources(
@@ -85,13 +88,21 @@ def test_preflight_uses_exact_caps_and_never_accepts_bool() -> None:
     assert confirmation_buckets.reasons == ("QUARANTINE_BYTES_EXCEEDED", "TEMP_BYTES_EXCEEDED")
 
     exact_shard = artifacts.preflight_resources(
-        "pilot", 0, 0, 0, 6 * mib, 0, 0, rollout_count=3,
+        "pilot", 0, 0, 0, 134 * mib, 0, 0, rollout_count=3,
     )
-    assert exact_shard.disposition == "ALLOW" and exact_shard.reserved_bytes == 6 * mib
+    assert exact_shard.disposition == "ALLOW" and exact_shard.reserved_bytes == 134 * mib
     one_byte_short = artifacts.preflight_resources(
-        "pilot", 0, 0, 0, 6 * mib - 1, 0, 0, rollout_count=3,
+        "pilot", 0, 0, 0, 134 * mib - 1, 0, 0, rollout_count=3,
     )
     assert one_byte_short.reasons == ("INSUFFICIENT_FREE_BYTES",)
+    with pytest.raises(artifacts.ArtifactError, match="revision rollout"):
+        artifacts.preflight_resources(
+            "pilot", 0, 0, 0, 4096 * mib, 0, 0, rollout_count=1009,
+        )
+    with pytest.raises(artifacts.ArtifactError, match="wave rollout"):
+        artifacts.preflight_resources(
+            "confirmation", 0, 0, 0, 6000 * mib, 0, 0, rollout_count=2509,
+        )
 
 
 def test_prepare_revision_publishes_seed_partition_then_runnable_six_stack_base(
@@ -136,6 +147,20 @@ def test_protocol_loader_rejects_unbound_stage_parameter_resource_and_seed_data(
     artifacts.prepare_manifest("base", revision, base, config, gate, implementation_sha=G40)
     original = json.loads(base.read_text(encoding="utf-8"))
 
+    arbitrary_vector = original | {
+        "parameter_vector": {"pd": [77.0, 7.0], "ik": 0.01, "p5_smoothness": 0.02},
+    }
+    arbitrary_vector["parameter_hash"] = hashlib.sha256(
+        json.dumps(arbitrary_vector["parameter_vector"], sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    arbitrary_conditions = json.loads(json.dumps(original))
+    arbitrary_conditions["shards"][0]["condition_ids"] = ["a", "b", "c"]
+    arbitrary_conditions["shards"][0]["output_identities"] = [
+        f"P1-{condition}-00000000" for condition in ("a", "b", "c")
+    ]
+    arbitrary_configuration = json.loads(json.dumps(original))
+    arbitrary_configuration["shards"][0]["configuration_hash"] = "f" * 64
+
     mutations = (
         ("null predecessor", original | {"predecessor_sha256": None}),
         ("predecessor chain", original | {"predecessor_sha256": "f" * 64}),
@@ -143,6 +168,9 @@ def test_protocol_loader_rejects_unbound_stage_parameter_resource_and_seed_data(
         ("resource limits", original | {"resource_limits": {}}),
         ("stage", original | {"stage": "invented"}),
         ("seed manifest", original | {"seed_manifest_sha256": "f" * 64}),
+        ("parameter vector", arbitrary_vector),
+        ("condition domain", arbitrary_conditions),
+        ("configuration hash", arbitrary_configuration),
     )
     for label, mutation in mutations:
         candidate = base.with_name(f"bad-{label.replace(' ', '-')}.json")
@@ -299,6 +327,35 @@ def test_implementation_snapshot_rejects_replace_refs_staged_and_ignored_additio
         current_guard.validate_after()
 
 
+def test_implementation_snapshot_rejects_identical_inode_swap_during_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+    owned = tmp_path / "owned"
+    owned.mkdir()
+    target = owned / "code.py"
+    target.write_text("VALUE = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "owned/code.py"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+    sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=tmp_path, text=True).strip()
+    snapshot = artifacts.ImplementationSnapshot.capture(tmp_path, sha, (Path("owned"),))
+    swapped = False
+
+    def swap_before_read(path: Path) -> None:
+        nonlocal swapped
+        if path == target and not swapped:
+            swapped = True
+            payload = path.read_bytes()
+            path.unlink()
+            path.write_bytes(payload)
+
+    monkeypatch.setattr(artifacts, "_implementation_read_boundary", swap_before_read)
+    with pytest.raises(artifacts.ImplementationDriftError, match="changed|identity"):
+        snapshot.validate_before()
+
+
 def test_rollout_derived_reconstruction_joins_annotations_renders_task11_and_resumes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -341,6 +398,43 @@ def test_rollout_derived_reconstruction_joins_annotations_renders_task11_and_res
             tuple(float(item) for item in record.metrics["raw_500hz"]["error_m"]), True,
         ))
 
+    with pytest.raises(artifacts.ArtifactError, match="condition metadata"):
+        artifacts.raw_evidence_from_rollout(
+            tmp_path / "rollouts" / str(raw_rows[0]["episode_id"]),
+            revision=1, variant_id="base", anchor_id="P1", candidate_id="P1",
+            rng_namespace="confirmation", policy_hz=20, latency_ms=300,
+            move_count=2, fault="NONE",
+        )
+    asymmetric = [dict(row["plot"]) for row in raw_rows]
+    asymmetric.append(dict(asymmetric[0]) | {"seed": 999})
+    with pytest.raises(artifacts.ArtifactError, match="exact.*domain|asymmetric"):
+        artifacts._render_task11_plots(asymmetric, ("P2",))
+
+    invalid_rows = []
+    for stack, reason in (("P1", "PROCESS_TIMEOUT"), ("P2", "MISSING_OUTPUT")):
+        invalid_rows.append(artifacts.raw_evidence_from_failure_disposition({
+            "schema_version": 1, "study_id": "reflect-lite-policy-control",
+            "phase": "pilot", "revision": 1, "shard_id": f"{stack}:base:023",
+            "stack_id": stack, "seed": 23, "condition_id": condition.condition_id,
+            "reason": reason, "started_at_utc": "2026-08-23T00:00:00Z",
+            "finished_at_utc": "2026-08-23T00:00:01Z", "command_sha256": H64,
+            "readable_output_sha256": None, "details_sha256": H64,
+        }, variant_id="base", anchor_id="P1", candidate_id=stack,
+            rng_namespace="confirmation"))
+    mixed_rows = (*raw_rows, *invalid_rows)
+    mixed_annotations = artifacts.build_annotated_samples(mixed_rows)
+    mixed_recipes = artifacts.build_plot_recipes(mixed_rows, ("P2",))
+    mixed = tmp_path / "mixed-valid-invalid"
+    artifacts.reconstruct_evidence(
+        mixed, mixed_rows, mixed_annotations, mixed_recipes, protocol_sha256=H64,
+    )
+    retained_invalid = [
+        json.loads(line) for line in (mixed / "raw-evidence.jsonl").read_bytes().splitlines()
+        if json.loads(line)["validity"] == "DECLARED_INVALID"
+    ]
+    assert len(retained_invalid) == 2
+    assert all(row["rollout"] is None and row["plot"] is None and row["failure"] for row in retained_invalid)
+
     annotations = artifacts.build_annotated_samples(raw_rows)
     recipes = artifacts.build_plot_recipes(raw_rows, ("P2",))
     clean = tmp_path / "clean"
@@ -365,6 +459,36 @@ def test_rollout_derived_reconstruction_joins_annotations_renders_task11_and_res
     assert reordered_manifest == manifest
     for row in manifest["files"]:
         assert (reordered / row["path"]).read_bytes() == (clean / row["path"]).read_bytes()
+
+    concurrent = tmp_path / "concurrent"
+    entered, release = threading.Event(), threading.Event()
+    original_boundary = artifacts._publication_boundary
+    paused = False
+
+    def pause_first_writer(name: str) -> None:
+        nonlocal paused
+        if not paused and name.startswith("file:"):
+            paused = True
+            entered.set()
+            assert release.wait(5)
+
+    monkeypatch.setattr(artifacts, "_publication_boundary", pause_first_writer)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(
+            artifacts.reconstruct_evidence, concurrent, raw_rows, annotations, recipes,
+            protocol_sha256=H64,
+        )
+        assert entered.wait(5)
+        second = pool.submit(
+            artifacts.reconstruct_evidence, concurrent, raw_rows, annotations, recipes,
+            protocol_sha256=H64,
+        )
+        release.set()
+        assert first.result(timeout=10) == manifest
+        assert second.result(timeout=10) == manifest
+    monkeypatch.setattr(artifacts, "_publication_boundary", original_boundary)
+    assert not tuple(tmp_path.glob(".concurrent.analysis-stage-*"))
+    assert artifacts.validate_evidence_publication(concurrent) == manifest
 
     tampered = json.loads(json.dumps(raw_rows[0]))
     tampered["rollout"]["metrics"]["recovery_s"] += 1.0
@@ -400,12 +524,13 @@ def test_rollout_derived_reconstruction_joins_annotations_renders_task11_and_res
         artifacts.reconstruct_evidence(
             interrupted, raw_rows, annotations, recipes, protocol_sha256=H64,
         )
-    assert not (interrupted / "artifact-manifest.json").exists()
+    assert not interrupted.exists()
+    assert not tuple(tmp_path.glob(".interrupted.analysis-stage-*"))
     monkeypatch.setattr(artifacts, "_publication_boundary", lambda _name: None)
     resumed = artifacts.reconstruct_evidence(
         interrupted, raw_rows, annotations, recipes, protocol_sha256=H64,
     )
-    assert resumed == manifest and (interrupted / ".quarantine").is_dir()
+    assert resumed == manifest
     assert artifacts.validate_evidence_publication(interrupted) == manifest
     for row in manifest["files"]:
         assert (interrupted / row["path"]).read_bytes() == (clean / row["path"]).read_bytes()
