@@ -120,3 +120,17 @@ def test_annotations_include_raw_working_and_nonworking_samples(tmp_path: Path) 
     assert annotations["selection_rule"] == "FIRST_CANONICAL_WORKING_AND_NONWORKING_PER_VARIANT"
     assert {row["class"] for row in annotations["samples"]} >= {"WORKING", "NONWORKING"}
     assert all("decision" in row and "truth" in row and "observation_sha256" in row for row in annotations["samples"])
+
+
+def test_canonical_result_has_real_frozen_sha_and_invalid_predecessor_is_marked() -> None:
+    canonical = Path("results/exp04-unfixed-memory-indicative-v2")
+    invalid = Path("results/exp04-unfixed-memory-indicative-v1")
+    evidence = json.loads((canonical / "derived" / "evidence-manifest.json").read_text(encoding="ascii"))
+    provenance = json.loads((canonical / "provenance.json").read_text(encoding="ascii"))
+    assert evidence["implementation_git_sha"] == provenance["implementation_commit"] == "9369114fc5dffa32b00866526d2bf82b71ab7bd8"
+    assert evidence["implementation_source_sha256"] == provenance["implementation_source_sha256"]
+    assert provenance["preregistration_commit"] == "94d8b2e396094b747ae9872dc33a737dfbc371e2"
+    assert (invalid / "INVALID_PROVENANCE.md").is_file()
+    assert "INVALID_EVIDENCE" in (invalid / "INVALID_PROVENANCE.md").read_text(encoding="ascii")
+    assert (invalid / "raw" / "decisions.jsonl").read_bytes() == (canonical / "raw" / "decisions.jsonl").read_bytes()
+    assert (invalid / "derived" / "paired-effects.csv").read_bytes() == (canonical / "derived" / "paired-effects.csv").read_bytes()
