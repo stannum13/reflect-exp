@@ -242,13 +242,37 @@ def test_resource_evidence_loads_actual_protocol_completion_and_ledger_bytes(
     results = tmp_path / "results"
     directory = results / artifacts._shard_directory_name(shard["shard_id"])
     directory.mkdir(parents=True)
+    cfg = contracts.load_config(config)
+    scenario = evaluate.generate_scenario(shard["seed"], cfg)
+    identity = evaluate.EpisodeIdentity(
+        G40, True, None, H64, "test", "test", None, "3.11",
+        {"mujoco": "3.12.0"}, shard["configuration_hash"], {"arm": H64},
+    )
+    conditions = {
+        f"tune-{rate:02d}-{latency:03d}-{moves}": contracts.Condition(
+            f"tune-{rate:02d}-{latency:03d}-{moves}", rate, latency, moves,
+        )
+        for rate, latency, moves in cfg.pilot.tuning_conditions
+    }
     rollout_hashes = []
     retained = 0
-    for identity in shard["output_identities"]:
-        payload = _canonical({"output_identity": identity})
-        (directory / f"{identity}.rollout.json").write_bytes(payload)
-        rollout_hashes.append(hashlib.sha256(payload).hexdigest())
-        retained += len(payload)
+    protocol_sha = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    for output_identity, condition_id in zip(
+        shard["output_identities"], shard["condition_ids"], strict=True,
+    ):
+        record = evaluate.run_episode(contracts.CommandStack.P1, conditions[condition_id], scenario, cfg, identity)
+        record = replace(record, metrics=dict(record.metrics) | {
+            "protocol_sha256": protocol_sha, "source_sha256": H64,
+        })
+        artifacts.publish_or_validate_skip(
+            record, directory / output_identity,
+            artifacts.RolloutSpec(
+                output_identity, "P1", shard["seed"], condition_id,
+                shard["configuration_hash"], protocol_sha, H64, scenario.identity_sha256,
+            ),
+        )
+        rollout_hashes.append(artifacts._rollout_bundle_sha256(directory / output_identity))
+        retained += artifacts._directory_bytes(directory / output_identity)
     ledger = {
         "schema_version": 1, "study_id": artifacts.STUDY_ID, "phase": "pilot",
         "revision": 1, "shard_id": shard["shard_id"], "command_sha256": H64,
@@ -263,7 +287,7 @@ def test_resource_evidence_loads_actual_protocol_completion_and_ledger_bytes(
         "schema_version": 1, "study_id": artifacts.STUDY_ID, "phase": "pilot",
         "revision": 1, "shard_id": shard["shard_id"], "implementation_sha": G40,
         "preregistration_git_sha": None,
-        "protocol_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+        "protocol_sha256": protocol_sha,
         "configuration_hash": shard["configuration_hash"], "seed": shard["seed"],
         "expected_output_identities": shard["output_identities"],
         "completed_output_identities": shard["output_identities"],

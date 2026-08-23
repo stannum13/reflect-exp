@@ -18,9 +18,16 @@ import json
 import math
 import os
 from pathlib import Path
+import platform
 import re
+import secrets
+import shutil
+import signal
 import stat
 import subprocess
+import sys
+import tempfile
+import time
 from typing import Any
 
 import numpy as np
@@ -864,7 +871,7 @@ def load_resource_completion_evidence(
                 if phase == "confirmation":
                     _hash(completion["preregistration_git_sha"], "preregistration_git_sha", _GIT_SHA)
                 shard_names = set(os.listdir(descriptor))
-                rollout_names = tuple(f"{identity}.rollout.json" for identity in completed_outputs)
+                rollout_names = completed_outputs
                 allowed_shard_names = {
                     "completion.json", "resource-ledger.jsonl", "stdout-output.bin", "stderr-output.bin",
                     *rollout_names,
@@ -903,13 +910,11 @@ def load_resource_completion_evidence(
                     raise ArtifactError("shard publication contains an unlisted artifact")
                 if any(name not in shard_names for name in rollout_names):
                     raise ArtifactError("shard completion names a missing rollout artifact")
-                actual_rollout_hashes = tuple(
-                    hashlib.sha256(_read_regular_at(descriptor, name)).hexdigest()
-                    for name in rollout_names
-                )
+                rollout_paths = tuple(root / directory_name / name for name in rollout_names)
+                actual_rollout_hashes = tuple(_rollout_bundle_sha256(path) for path in rollout_paths)
                 if actual_rollout_hashes != rollout_hashes:
                     raise ArtifactError("rollout hashes do not bind the retained rollout artifacts")
-                if any(len(_read_regular_at(descriptor, name)) > ROLLOUT_RESERVATION_BYTES for name in rollout_names):
+                if any(_directory_bytes(path) > ROLLOUT_RESERVATION_BYTES for path in rollout_paths):
                     raise ArtifactError("retained rollout exceeds its frozen 2 MiB reservation")
                 ledger_rows, ledger_raw = _canonical_jsonl_at(descriptor, "resource-ledger.jsonl")
                 ledger_sha = hashlib.sha256(ledger_raw).hexdigest()
@@ -950,9 +955,11 @@ def load_resource_completion_evidence(
                 expected_ledger_disposition = completion["state"]
                 if not ledger_rows or ledger_rows[-1]["disposition"] != expected_ledger_disposition:
                     raise ArtifactError("resource ledger terminal row differs from shard completion state")
-                measured_retained = sum(
+                measured_retained = sum(_directory_bytes(path) for path in rollout_paths) + sum(
                     len(_read_regular_at(descriptor, name))
-                    for name in shard_names - {"completion.json", "resource-ledger.jsonl"}
+                    for name in shard_names - {
+                        "completion.json", "resource-ledger.jsonl", *rollout_names,
+                    }
                 )
                 if shard_retained_bytes != measured_retained:
                     raise ArtifactError("resource ledger retained bytes do not equal retained shard artifacts")
@@ -1245,6 +1252,17 @@ def _directory_bytes(path: Path) -> int:
             raise ArtifactError(f"unexpected rollout entry: {entry.name}")
         total += entry.stat().st_size
     return total
+
+
+def _rollout_bundle_sha256(path: Path) -> str:
+    validate_rollout(path)
+    rows = []
+    for entry in sorted(path.iterdir(), key=lambda item: item.name):
+        if entry.is_symlink() or not entry.is_file():
+            raise ArtifactError(f"unexpected rollout entry: {entry.name}")
+        payload = entry.read_bytes()
+        rows.append({"path": entry.name, "bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest()})
+    return hashlib.sha256(canonical_json_bytes(rows)).hexdigest()
 
 
 def _validate_declared_metrics(metrics: Mapping[str, object], spec: RolloutSpec) -> None:
@@ -2460,6 +2478,267 @@ def publish_failure_disposition(
         os.close(descriptor)
 
 
+def _consume_worker_capability(capability_fd: int, capability_sha256: str) -> None:
+    if type(capability_fd) is not int or capability_fd < 0:
+        raise ArtifactError("worker capability descriptor is invalid")
+    _hash(capability_sha256, "worker capability hash")
+    try:
+        payload = os.read(capability_fd, 4097)
+        trailing = os.read(capability_fd, 1)
+    except OSError as exc:
+        raise ArtifactError("worker capability cannot be read") from exc
+    if trailing or not payload or hashlib.sha256(payload).hexdigest() != capability_sha256:
+        raise ArtifactError("worker capability does not authenticate the private launch")
+
+
+def run_worker_shard(
+    manifest_path: Path,
+    shard_id: str,
+    stage_dir: Path,
+    config_path: Path,
+    capability_fd: int,
+    capability_sha256: str,
+) -> int:
+    """Private physics worker; capability validation precedes every external input."""
+    _consume_worker_capability(capability_fd, capability_sha256)
+    manifest = load_protocol_manifest(Path(manifest_path))
+    matches = tuple(row for row in manifest["shards"] if row["shard_id"] == shard_id)
+    if len(matches) != 1:
+        raise ArtifactError("worker shard identity is not uniquely declared")
+    shard = matches[0]
+    destination = Path(stage_dir)
+    if destination.is_symlink() or not destination.is_dir() or any(destination.iterdir()):
+        raise ArtifactError("worker stage directory must be an empty regular directory")
+    from . import evaluate, timing
+    from .arm import MJCF_BYTES
+    from .contracts import CommandStack, Condition, load_config
+    config = load_config(Path(config_path))
+    if hashlib.sha256(Path(config_path).read_bytes()).hexdigest() != manifest["config_sha256"]:
+        raise ArtifactError("worker config bytes differ from the protocol")
+    condition_map = {
+        f"tune-{rate:02d}-{latency:03d}-{moves}": Condition(
+            f"tune-{rate:02d}-{latency:03d}-{moves}", rate, latency, moves,
+        )
+        for rate, latency, moves in config.pilot.tuning_conditions
+    }
+    condition_map.update({item.condition_id: item for item in (*evaluate.core_conditions(config), *evaluate.probe_conditions(config))})
+    if any(condition not in condition_map for condition in shard["condition_ids"]):
+        raise ArtifactError("worker manifest contains an unknown condition")
+    repo_root = Path(__file__).resolve().parents[3]
+    lock_path = repo_root / "uv.lock"
+    source_hash = hashlib.sha256(lock_path.read_bytes()).hexdigest()
+    dirty_bytes = subprocess.run(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"], cwd=repo_root,
+        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    ).stdout
+    try:
+        import mujoco
+        dependency_versions = {"mujoco": mujoco.__version__, "numpy": np.__version__}
+    except (ImportError, AttributeError) as exc:
+        raise ArtifactError("locked MuJoCo runtime is unavailable") from exc
+    identity = evaluate.EpisodeIdentity(
+        manifest["implementation_sha"], not dirty_bytes,
+        None if not dirty_bytes else hashlib.sha256(dirty_bytes).hexdigest(),
+        source_hash, platform.platform(), platform.processor() or "unknown-cpu", None,
+        platform.python_version(), dependency_versions,
+        evaluate.sha256_json(timing.scheduler_config(config)),
+        {"arm.xml": hashlib.sha256(MJCF_BYTES).hexdigest()},
+    )
+    scenario = evaluate.generate_scenario(shard["seed"], config)
+    protocol_sha = hashlib.sha256(Path(manifest_path).read_bytes()).hexdigest()
+    for output_identity, condition_id in zip(
+        shard["output_identities"], shard["condition_ids"], strict=True,
+    ):
+        record = evaluate.run_episode(
+            CommandStack(shard["stack_id"]), condition_map[condition_id], scenario, config, identity,
+        )
+        if record.events[0].rollout_id != output_identity:
+            raise ArtifactError("worker rollout identity differs from the manifest output")
+        record = __import__("dataclasses").replace(record, metrics=dict(record.metrics) | {
+            "protocol_sha256": protocol_sha, "source_sha256": source_hash,
+        })
+        publish_or_validate_skip(
+            record, destination / output_identity,
+            RolloutSpec(
+                output_identity, shard["stack_id"], shard["seed"], condition_id,
+                shard["configuration_hash"], protocol_sha, source_hash,
+                scenario.identity_sha256, ROLLOUT_RESERVATION_BYTES,
+            ),
+        )
+    return 0
+
+
+def _bounded_process_output(handle: object, limit: int = 65_536) -> bytes:
+    handle.seek(0, os.SEEK_END)
+    size = handle.tell()
+    handle.seek(0)
+    if size <= 2 * limit:
+        return handle.read()
+    first = handle.read(limit)
+    handle.seek(-limit, os.SEEK_END)
+    return first + handle.read(limit)
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def run_supervised_shard(
+    manifest_path: Path,
+    shard_id: str,
+    output_dir: Path,
+    config_path: Path,
+    p3_gate_path: Path,
+    max_episodes: int,
+    *,
+    repo_root: Path,
+    deadline_s: float = 3_600.0,
+    term_grace_s: float = 5.0,
+    worker_argv: Sequence[str] | None = None,
+) -> str:
+    """Run one manifest shard in an isolated process and publish its marker last."""
+    manifest_path = Path(manifest_path)
+    manifest = load_protocol_manifest(manifest_path)
+    matches = tuple(row for row in manifest["shards"] if row["shard_id"] == shard_id)
+    if len(matches) != 1:
+        raise ArtifactError("supervisor shard identity is not uniquely declared")
+    shard = matches[0]
+    if type(max_episodes) is not int or max_episodes != shard["episode_count"]:
+        raise ArtifactError("max_episodes must equal the immutable shard episode count")
+    for path, name in ((Path(config_path), "config"), (Path(p3_gate_path), "P3 gate")):
+        if path.is_symlink() or not path.is_file():
+            raise ArtifactError(f"supervisor {name} input is unavailable or unsafe")
+    if not math.isfinite(deadline_s) or deadline_s <= 0 or not math.isfinite(term_grace_s) or term_grace_s <= 0:
+        raise ArtifactError("supervisor deadlines must be finite and positive")
+    output_dir = Path(output_dir)
+    parent_descriptor = open_directory_chain(output_dir, create=True)
+    final_name = _shard_directory_name(shard_id)
+    held = create_temporary_directory(parent_descriptor, f".{final_name}.shard-stage-")
+    stage_path = output_dir / held.name
+    capability_read = capability_write = -1
+    started_utc = _utc_now()
+    started_ns = time.monotonic_ns()
+    timed_out = False
+    process: subprocess.Popen[bytes] | None = None
+    published = False
+    try:
+        capability = secrets.token_bytes(32)
+        capability_sha = hashlib.sha256(capability).hexdigest()
+        capability_read, capability_write = os.pipe()
+        os.write(capability_write, capability)
+        os.close(capability_write)
+        capability_write = -1
+        if worker_argv is None:
+            code = (
+                "import importlib,pathlib,sys;"
+                "a=importlib.import_module('experiments.01_policy_control.src.artifacts');"
+                "raise SystemExit(a.run_worker_shard(pathlib.Path(sys.argv[1]),sys.argv[2],"
+                "pathlib.Path(sys.argv[3]),pathlib.Path(sys.argv[4]),int(sys.argv[5]),sys.argv[6]))"
+            )
+            argv = (
+                sys.executable, "-c", code, str(manifest_path), shard_id, str(stage_path),
+                str(config_path), str(capability_read), capability_sha,
+            )
+        else:
+            replacements = {
+                "{capability_fd}": str(capability_read),
+                "{capability_sha256}": capability_sha,
+                "{stage_dir}": str(stage_path),
+            }
+            argv = tuple(replacements.get(item, item) for item in worker_argv)
+        command_sha = hashlib.sha256(canonical_json_bytes(list(argv))).hexdigest()
+        with tempfile.TemporaryFile() as stdout_handle, tempfile.TemporaryFile() as stderr_handle:
+            process = subprocess.Popen(
+                argv, cwd=Path(repo_root), stdin=subprocess.DEVNULL,
+                stdout=stdout_handle, stderr=stderr_handle, pass_fds=(capability_read,),
+                start_new_session=True,
+            )
+            os.close(capability_read)
+            capability_read = -1
+            try:
+                return_code = process.wait(timeout=deadline_s)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    process.wait(timeout=term_grace_s)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait()
+                return_code = process.returncode
+            stdout = _bounded_process_output(stdout_handle)
+            stderr = _bounded_process_output(stderr_handle)
+        if stdout:
+            _write_at_create_only(held.descriptor, "stdout-output.bin", stdout)
+        if stderr:
+            _write_at_create_only(held.descriptor, "stderr-output.bin", stderr)
+        success = not timed_out and return_code == 0
+        failure_sha: str | None = None
+        if not success:
+            reason = "PROCESS_TIMEOUT" if timed_out else "CORRUPT_OUTPUT"
+            readable = stdout + stderr
+            rows = tuple({
+                "schema_version": 1, "study_id": STUDY_ID,
+                "phase": manifest["phase"], "revision": manifest["revision"],
+                "shard_id": shard_id, "stack_id": shard["stack_id"], "seed": shard["seed"],
+                "condition_id": condition_id, "reason": reason,
+                "started_at_utc": started_utc, "finished_at_utc": _utc_now(),
+                "command_sha256": command_sha,
+                "readable_output_sha256": hashlib.sha256(readable).hexdigest() if readable else None,
+                "details_sha256": hashlib.sha256(canonical_json_bytes({
+                    "return_code": return_code, "timed_out": timed_out,
+                })).hexdigest(),
+            } for condition_id in shard["condition_ids"])
+            publish_failure_disposition(rows, stage_path / "failure-disposition.jsonl")
+            failure_sha = hashlib.sha256((stage_path / "failure-disposition.jsonl").read_bytes()).hexdigest()
+        completed_outputs = tuple(shard["output_identities"]) if success else ()
+        rollout_hashes = tuple(_rollout_bundle_sha256(stage_path / name) for name in completed_outputs)
+        retained = sum(_directory_bytes(stage_path / name) for name in completed_outputs) + sum(
+            path.stat().st_size for path in stage_path.iterdir() if path.is_file()
+        )
+        disposition = "COMPLETE" if success else "DECLARED_INVALID"
+        ledger = {
+            "schema_version": 1, "study_id": STUDY_ID, "phase": manifest["phase"],
+            "revision": manifest["revision"], "shard_id": shard_id,
+            "command_sha256": command_sha, "started_at_utc": started_utc,
+            "finished_at_utc": _utc_now(), "wall_ns": time.monotonic_ns() - started_ns,
+            "cpu_ns": 0, "retained_bytes": retained, "temp_peak_bytes": 0,
+            "quarantine_bytes": 0, "free_bytes_after": shutil.disk_usage(output_dir).free,
+            "disposition": disposition,
+        }
+        ledger_bytes = canonical_json_bytes(ledger)
+        _write_at_create_only(held.descriptor, "resource-ledger.jsonl", ledger_bytes)
+        completion = {
+            "schema_version": 1, "study_id": STUDY_ID, "phase": manifest["phase"],
+            "revision": manifest["revision"], "shard_id": shard_id,
+            "implementation_sha": manifest["implementation_sha"],
+            "preregistration_git_sha": None if manifest["phase"] == "pilot" else manifest["implementation_sha"],
+            "protocol_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+            "configuration_hash": shard["configuration_hash"], "seed": shard["seed"],
+            "expected_output_identities": list(shard["output_identities"]),
+            "completed_output_identities": list(completed_outputs),
+            "rollout_sha256s": list(rollout_hashes),
+            "failure_disposition_sha256": failure_sha,
+            "resource_ledger_sha256": hashlib.sha256(ledger_bytes).hexdigest(),
+            "state": disposition,
+        }
+        _write_at_create_only(held.descriptor, "completion.json", canonical_json_bytes(completion))
+        os.fsync(held.descriptor)
+        _renameat_directory_noreplace(parent_descriptor, held.name, parent_descriptor, final_name)
+        os.fsync(parent_descriptor)
+        published = True
+        return "published" if success else "declared-invalid"
+    finally:
+        if capability_read >= 0:
+            os.close(capability_read)
+        if capability_write >= 0:
+            os.close(capability_write)
+        if not published:
+            cleanup_exact_directory(parent_descriptor, held.descriptor, held.identity, held.name)
+        os.close(held.descriptor)
+        os.close(parent_descriptor)
+
+
 __all__ = [
     "ArtifactError", "ImplementationDriftError", "ImplementationSnapshot",
     "ResourceDisposition", "RolloutSpec", "ShardSpec", "canonical_json_bytes",
@@ -2469,5 +2748,6 @@ __all__ = [
     "raw_evidence_from_failure_disposition",
     "build_annotated_samples", "build_plot_recipes",
     "publish_failure_disposition", "publish_or_validate_skip", "reconstruct_evidence",
+    "load_resource_completion_evidence", "run_supervised_shard", "run_worker_shard",
     "replay_rollout", "validate_evidence_publication", "validate_rollout",
 ]

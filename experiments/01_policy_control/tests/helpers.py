@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import importlib
-import hashlib
-import json
 from pathlib import Path
-import tempfile
 
 import numpy as np
 
@@ -12,7 +9,7 @@ from reflect.types import Constraint, ObjectBelief, Observation, Pose, Predicate
 
 
 contracts = importlib.import_module("experiments.01_policy_control.src.contracts")
-artifacts = importlib.import_module("experiments.01_policy_control.src.artifacts")
+evaluate = importlib.import_module("experiments.01_policy_control.src.evaluate")
 BASE = Path(__file__).resolve().parents[1] / "configs/base.yaml"
 
 
@@ -21,65 +18,18 @@ def config():
 
 
 def resource_evidence(*, phase: str, complete: bool, predecessor: str | None = None):
-    with tempfile.TemporaryDirectory(prefix="exp01-resource-") as temporary:
-        root = Path(temporary)
-        gate = root / "p3-gate.yaml"
-        gate.write_text("schema_version: 1\n", encoding="utf-8")
-        revision = root / "protocol" / "revision-manifest.json"
-        base = revision.with_name("base-manifest.json")
-        implementation = "3" * 40
-        artifacts.prepare_manifest("revision", None, revision, BASE, gate, implementation_sha=implementation)
-        artifacts.prepare_manifest("base", revision, base, BASE, gate, implementation_sha=implementation)
-        protocol = base
-        if phase == "confirmation":
-            row = json.loads(base.read_text(encoding="utf-8"))
-            row["phase"] = "confirmation"
-            row["stage"] = "confirmation"
-            row["predecessor_sha256"] = predecessor or "9" * 64
-            protocol = revision.with_name("confirmation-manifest.json")
-            protocol.write_bytes(artifacts.canonical_json_bytes(row))
-        manifest = artifacts.load_protocol_manifest(protocol)
-        results = root / "results"
-        results.mkdir()
-        if complete:
-            protocol_sha = hashlib.sha256(protocol.read_bytes()).hexdigest()
-            for shard in manifest["shards"]:
-                directory = results / artifacts._shard_directory_name(shard["shard_id"])
-                directory.mkdir()
-                rollout_hashes = []
-                retained = 0
-                for identity in shard["output_identities"]:
-                    payload = artifacts.canonical_json_bytes({"output_identity": identity})
-                    (directory / f"{identity}.rollout.json").write_bytes(payload)
-                    rollout_hashes.append(hashlib.sha256(payload).hexdigest())
-                    retained += len(payload)
-                ledger = {
-                    "schema_version": 1, "study_id": artifacts.STUDY_ID,
-                    "phase": phase, "revision": 1, "shard_id": shard["shard_id"],
-                    "command_sha256": hashlib.sha256(shard["shard_id"].encode()).hexdigest(),
-                    "started_at_utc": "2026-08-23T00:00:00Z",
-                    "finished_at_utc": "2026-08-23T00:00:01Z",
-                    "wall_ns": 1, "cpu_ns": 1, "retained_bytes": retained,
-                    "temp_peak_bytes": 0, "quarantine_bytes": 0,
-                    "free_bytes_after": 20 * 1024 * 1024 * 1024, "disposition": "COMPLETE",
-                }
-                ledger_bytes = artifacts.canonical_json_bytes(ledger)
-                (directory / "resource-ledger.jsonl").write_bytes(ledger_bytes)
-                completion = {
-                    "schema_version": 1, "study_id": artifacts.STUDY_ID,
-                    "phase": phase, "revision": 1, "shard_id": shard["shard_id"],
-                    "implementation_sha": implementation,
-                    "preregistration_git_sha": None if phase == "pilot" else "4" * 40,
-                    "protocol_sha256": protocol_sha,
-                    "configuration_hash": shard["configuration_hash"], "seed": shard["seed"],
-                    "expected_output_identities": shard["output_identities"],
-                    "completed_output_identities": shard["output_identities"],
-                    "rollout_sha256s": rollout_hashes, "failure_disposition_sha256": None,
-                    "resource_ledger_sha256": hashlib.sha256(ledger_bytes).hexdigest(),
-                    "state": "COMPLETE",
-                }
-                (directory / "completion.json").write_bytes(artifacts.canonical_json_bytes(completion))
-        return artifacts.load_resource_completion_evidence(protocol, results)
+    expected = tuple(f"P1:fixture:{index:03d}" for index in range(2))
+    completed = expected if complete else ()
+    return evaluate._resource_completion_from_validated_artifacts(
+        phase=phase, revision=1,
+        protocol_sha256=("9" if phase == "pilot" else "8") * 64,
+        predecessor_protocol_sha256=None if phase == "pilot" else (predecessor or "9" * 64),
+        disposition_sha256="f" * 64, expected_shard_ids=expected,
+        completed_shard_ids=completed,
+        ledger_sha256s=tuple(f"{100 + index:064x}" for index in range(len(completed))),
+        completion_sha256s=tuple(f"{200 + index:064x}" for index in range(len(completed))),
+        retained_bytes=1024 * len(completed), temporary_peak_bytes=0, quarantine_bytes=0,
+    )
 
 
 def policy_input(period_ns: int = 100_000_000, response_ns: int = 300_000_000):
