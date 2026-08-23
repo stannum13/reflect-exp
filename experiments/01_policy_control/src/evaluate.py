@@ -1681,6 +1681,8 @@ class ResourceCompletionEvidence:
     lifecycle_bytes: int
     preflight_sha256: str
     resource_state: str
+    confirmation_wave: int | None
+    chain_sha256: str
 
     def __init__(
         self, phase: str, revision: int, protocol_sha256: str,
@@ -1690,6 +1692,7 @@ class ResourceCompletionEvidence:
         retained_bytes: int, temporary_peak_bytes: int, quarantine_bytes: int,
         wall_ns: int, cpu_ns: int, lifecycle_bytes: int,
         preflight_sha256: str, resource_state: str,
+        confirmation_wave: int | None, chain_sha256: str,
         *, _seal: object,
     ) -> None:
         if _seal is not _RESOURCE_COMPLETION_SEAL:
@@ -1748,6 +1751,12 @@ class ResourceCompletionEvidence:
         if resource_state not in {"COMPLETE", "INCOMPLETE", "STOPPED"}:
             raise ValueError("resource evidence state is invalid")
         object.__setattr__(self, "resource_state", resource_state)
+        if (phase == "pilot") != (confirmation_wave is None):
+            raise ValueError("resource evidence wave identity is invalid")
+        if confirmation_wave not in {None, 1, 2}:
+            raise ValueError("resource evidence wave identity is invalid")
+        object.__setattr__(self, "confirmation_wave", confirmation_wave)
+        object.__setattr__(self, "chain_sha256", _hash(chain_sha256, "resource chain hash"))
 
     @property
     def complete(self) -> bool:
@@ -1762,6 +1771,7 @@ def _resource_completion_from_validated_artifacts(
     retained_bytes: int, temporary_peak_bytes: int, quarantine_bytes: int,
     wall_ns: int, cpu_ns: int, lifecycle_bytes: int,
     preflight_sha256: str, resource_state: str,
+    confirmation_wave: int | None = None, chain_sha256: str = "0" * 64,
 ) -> ResourceCompletionEvidence:
     """Private artifact-layer handoff after descriptor-relative validation."""
     return ResourceCompletionEvidence(
@@ -1770,6 +1780,7 @@ def _resource_completion_from_validated_artifacts(
         ledger_sha256s, completion_sha256s, retained_bytes,
         temporary_peak_bytes, quarantine_bytes,
         wall_ns, cpu_ns, lifecycle_bytes, preflight_sha256, resource_state,
+        confirmation_wave, chain_sha256,
         _seal=_RESOURCE_COMPLETION_SEAL,
     )
 

@@ -365,6 +365,46 @@ def test_resource_evidence_loads_actual_protocol_completion_and_ledger_bytes(
         artifacts.load_resource_completion_evidence(manifest_path, results)
 
 
+def test_resource_lifecycle_chain_is_exact_typed_path_prefix(tmp_path: Path) -> None:
+    def ref(phase: str, revision: int, wave: int | None = None):
+        return artifacts.ResourceArtifactPath(
+            tmp_path / f"{phase}-{revision}-{wave}-protocol.json",
+            tmp_path / f"{phase}-{revision}-{wave}-results",
+            phase, revision, wave,
+        )
+
+    pilot_1 = ref("pilot", 1)
+    pilot_2 = ref("pilot", 2)
+    confirmation_1 = ref("confirmation", 2, 1)
+    assert artifacts._validate_resource_chain_keys((), "pilot", 1, None) == ()
+    assert artifacts._validate_resource_chain_keys(
+        (pilot_1,), "pilot", 2, None,
+    ) == (("pilot", 1, None),)
+    assert artifacts._validate_resource_chain_keys(
+        (pilot_1, pilot_2), "confirmation", 2, 1,
+    ) == (("pilot", 1, None), ("pilot", 2, None))
+    assert artifacts._validate_resource_chain_keys(
+        (pilot_1, pilot_2, confirmation_1), "confirmation", 2, 2,
+    )[-1] == ("confirmation", 2, 1)
+    with pytest.raises(artifacts.ArtifactError, match="exact|chain|prefix"):
+        artifacts._validate_resource_chain_keys((pilot_2,), "confirmation", 2, 1)
+    with pytest.raises(artifacts.ArtifactError, match="path|descriptor|typed"):
+        artifacts._validate_resource_chain_keys((object(),), "pilot", 2, None)
+
+
+def test_confirmation_wave_domain_is_exact_disjoint_16_seed_partition() -> None:
+    rows = tuple(
+        (f"P{stack}:confirmation:{seed:03d}", {"seed": seed, "episode_count": 1}, "f" * 64)
+        for stack in range(1, 7) for seed in range(32)
+    )
+    wave_1 = artifacts._resource_wave_rows(rows, "confirmation", 1)
+    wave_2 = artifacts._resource_wave_rows(rows, "confirmation", 2)
+    assert {row[1]["seed"] for row in wave_1} == set(range(16))
+    assert {row[1]["seed"] for row in wave_2} == set(range(16, 32))
+    assert {row[0] for row in wave_1}.isdisjoint({row[0] for row in wave_2})
+    assert len(wave_1) == len(wave_2) == 96
+
+
 def test_publish_rollout_is_create_only_and_replay_validated(tmp_path: Path) -> None:
     cfg = contracts.load_config(Path(__file__).parents[1] / "configs/base.yaml")
     scenario_record = evaluate.generate_scenario(17, cfg)

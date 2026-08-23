@@ -32,6 +32,8 @@ def resource_evidence(*, phase: str, complete: bool, predecessor: str | None = N
         wall_ns=1, cpu_ns=1, lifecycle_bytes=128 * 1024 * 1024,
         preflight_sha256="e" * 64,
         resource_state="COMPLETE" if complete else "INCOMPLETE",
+        confirmation_wave=None if phase == "pilot" else 2,
+        chain_sha256="d" * 64,
     )
 
 

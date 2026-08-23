@@ -643,6 +643,72 @@ class ResourceDisposition:
         return self.canonical_bytes().decode("utf-8").removesuffix("\n")
 
 
+@dataclass(frozen=True)
+class ResourceArtifactPath:
+    protocol_path: Path
+    results_root: Path
+    phase: str
+    revision: int
+    confirmation_wave: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.phase not in {"pilot", "confirmation"}:
+            raise ArtifactError("resource artifact path phase is invalid")
+        if self.revision not in {1, 2}:
+            raise ArtifactError("resource artifact path revision is invalid")
+        if (self.phase == "pilot") != (self.confirmation_wave is None):
+            raise ArtifactError("resource artifact path wave identity is invalid")
+        if self.confirmation_wave not in {None, 1, 2}:
+            raise ArtifactError("resource artifact path wave identity is invalid")
+        object.__setattr__(self, "protocol_path", Path(self.protocol_path))
+        object.__setattr__(self, "results_root", Path(self.results_root))
+
+
+def _validate_resource_chain_keys(
+    prior_artifacts: Sequence[ResourceArtifactPath],
+    phase: str, revision: int, confirmation_wave: int | None,
+) -> tuple[tuple[str, int, int | None], ...]:
+    if not all(isinstance(item, ResourceArtifactPath) for item in prior_artifacts):
+        raise ArtifactError("resource chain requires typed artifact path descriptors")
+    current = (phase, revision, confirmation_wave)
+    exact_prefixes = {
+        ("pilot", 1, None): (),
+        ("pilot", 2, None): (("pilot", 1, None),),
+        ("confirmation", 2, 1): (("pilot", 1, None), ("pilot", 2, None)),
+        ("confirmation", 2, 2): (
+            ("pilot", 1, None), ("pilot", 2, None), ("confirmation", 2, 1),
+        ),
+    }
+    expected = exact_prefixes.get(current)
+    keys = tuple(
+        (item.phase, item.revision, item.confirmation_wave) for item in prior_artifacts
+    )
+    if expected is None or keys != expected:
+        raise ArtifactError("resource artifact chain is not the exact frozen prefix")
+    return keys
+
+
+def _resource_wave_rows(
+    rows: Sequence[tuple[str, Mapping[str, object], str]],
+    phase: str, confirmation_wave: int | None,
+) -> tuple[tuple[str, Mapping[str, object], str], ...]:
+    values = tuple(rows)
+    if phase == "pilot":
+        if confirmation_wave is not None:
+            raise ArtifactError("pilot resources cannot name a confirmation wave")
+        return values
+    if confirmation_wave not in {1, 2}:
+        raise ArtifactError("confirmation resources require wave 1 or 2")
+    seeds = tuple(sorted({int(row[1]["seed"]) for row in values}))
+    if len(seeds) != 32:
+        raise ArtifactError("confirmation protocol must contain exactly 32 seed identities")
+    selected = set(seeds[:16] if confirmation_wave == 1 else seeds[16:])
+    domain = tuple(row for row in values if int(row[1]["seed"]) in selected)
+    if not domain or {int(row[1]["seed"]) for row in domain} != selected:
+        raise ArtifactError("confirmation wave domain is incomplete")
+    return domain
+
+
 def preflight_resources(
     stage: str,
     retained_bytes: int,
@@ -910,7 +976,8 @@ def load_resource_completion_evidence(
     protocol_path: Path,
     results_root: Path,
     *,
-    prior_evidence: Sequence[object] = (),
+    prior_artifacts: Sequence[ResourceArtifactPath] = (),
+    confirmation_wave: int | None = None,
 ) -> object:
     """Load exact shard markers/ledgers and derive sealed inference evidence."""
     chain, protocol_handles = _stable_protocol_manifest_chain(Path(protocol_path))
@@ -918,10 +985,26 @@ def load_resource_completion_evidence(
         raise ArtifactError("resource evidence requires a runnable protocol manifest")
     phase = chain[-1][1]["phase"]
     revision = chain[-1][1]["revision"]
-    expected_rows = tuple(
+    _validate_resource_chain_keys(prior_artifacts, phase, revision, confirmation_wave)
+    validated_prior = []
+    for index, artifact_path in enumerate(prior_artifacts):
+        evidence = load_resource_completion_evidence(
+            artifact_path.protocol_path, artifact_path.results_root,
+            prior_artifacts=prior_artifacts[:index],
+            confirmation_wave=artifact_path.confirmation_wave,
+        )
+        if (
+            not evidence.complete or evidence.phase != artifact_path.phase
+            or evidence.revision != artifact_path.revision
+            or evidence.confirmation_wave != artifact_path.confirmation_wave
+        ):
+            raise ArtifactError("resource predecessor path does not yield exact complete evidence")
+        validated_prior.append(evidence)
+    all_expected_rows = tuple(
         (row["shard_id"], row, hashlib.sha256(raw).hexdigest())
         for _, manifest, raw in chain for row in manifest["shards"]
     )
+    expected_rows = _resource_wave_rows(all_expected_rows, phase, confirmation_wave)
     expected_ids = tuple(item[0] for item in expected_rows)
     if not expected_ids or len(set(expected_ids)) != len(expected_ids):
         raise ArtifactError("resource protocol shard inventory is empty or duplicated")
@@ -947,7 +1030,10 @@ def load_resource_completion_evidence(
     try:
         names = tuple(sorted(os.listdir(root_descriptor)))
         allowed_files = {"resource-terminal.json", "preflight.json"}
-        unknown = set(names) - set(expected_by_directory) - allowed_files
+        all_expected_directories = {
+            _shard_directory_name(row[0]) for row in all_expected_rows
+        }
+        unknown = set(names) - all_expected_directories - allowed_files
         if unknown:
             raise ArtifactError(f"resource results contain unlisted entries: {sorted(unknown)}")
         if "preflight.json" not in names:
@@ -1160,28 +1246,38 @@ def load_resource_completion_evidence(
         )
         if phase == "confirmation" and rollout_count > CONFIRMATION_WAVE_ROLLOUTS:
             raise ArtifactError("confirmation evidence merges distinct 128 MiB wave buckets")
-        prior = tuple(prior_evidence)
-        if any(
-            getattr(item, "resource_state", None) != "COMPLETE"
-            or type(getattr(item, "lifecycle_bytes", None)) is not int
+        prior = tuple(validated_prior)
+        lifecycle_bytes = sum(
+            PILOT_REVISION_LIMIT_BYTES if item.phase == "pilot"
+            else CONFIRMATION_WAVE_ROLLOUTS * ROLLOUT_RESERVATION_BYTES + PHASE_ALLOWANCE_BYTES
             for item in prior
-        ):
-            raise ArtifactError("lifecycle predecessors must be complete validated resource evidence")
-        prior_keys = tuple((item.phase, item.revision) for item in prior)
-        current_key = (phase, revision)
-        order = {"pilot": 0, "confirmation": 1}
-        ordered_keys = tuple(sorted(
-            (*prior_keys, current_key), key=lambda item: (order[item[0]], item[1]),
-        ))
-        if (*prior_keys, current_key) != ordered_keys or len(set((*prior_keys, current_key))) != len((*prior_keys, current_key)):
-            raise ArtifactError("resource lifecycle phase/revision sequence is invalid")
-        lifecycle_bytes = (prior[-1].lifecycle_bytes if prior else 0) + current_capacity
+        ) + current_capacity
         if lifecycle_bytes > LIFECYCLE_LIMIT_BYTES:
             raise ArtifactError("resource evidence exceeds the exact 14,576 MiB lifecycle ceiling")
+        phase_wall_ns = wall_ns + sum(item.wall_ns for item in prior if item.phase == phase)
+        phase_cpu_ns = cpu_ns + sum(item.cpu_ns for item in prior if item.phase == phase)
+        if phase_wall_ns > wall_cap_ns or phase_cpu_ns > cpu_cap_ns:
+            raise ArtifactError("resource artifact chain exceeds the frozen phase wall/CPU ceiling")
         disposition_sha = (
             terminal_hash_payload if isinstance(terminal_hash_payload, str)
             else hashlib.sha256(canonical_json_bytes(terminal_hash_payload)).hexdigest()
         )
+        chain_sha = hashlib.sha256(canonical_json_bytes([
+            {
+                "phase": item.phase, "revision": item.revision,
+                "confirmation_wave": item.confirmation_wave,
+                "protocol_sha256": item.protocol_sha256,
+                "disposition_sha256": item.disposition_sha256,
+                "completion_sha256s": list(item.completion_sha256s),
+            }
+            for item in (*prior,)
+        ] + [{
+            "phase": phase, "revision": revision,
+            "confirmation_wave": confirmation_wave,
+            "protocol_sha256": hashlib.sha256(chain[-1][2]).hexdigest(),
+            "disposition_sha256": disposition_sha,
+            "completion_sha256s": completion_hashes,
+        }])).hexdigest()
     finally:
         os.close(root_descriptor)
         _close_stable_protocol_files(protocol_handles)
@@ -1195,14 +1291,14 @@ def load_resource_completion_evidence(
         ledger_sha256s=tuple(ledger_hashes), completion_sha256s=tuple(completion_hashes),
         retained_bytes=retained_bytes, temporary_peak_bytes=temp_peak_bytes,
         quarantine_bytes=quarantine_bytes,
-        wall_ns=wall_ns, cpu_ns=cpu_ns, lifecycle_bytes=lifecycle_bytes,
+        wall_ns=phase_wall_ns, cpu_ns=phase_cpu_ns, lifecycle_bytes=lifecycle_bytes,
         preflight_sha256=preflight_sha,
         resource_state=(
             "STOPPED" if stopped else (
                 "COMPLETE" if tuple(completed_ids) == expected_ids
                 and reproduced_preflight.disposition == "ALLOW" else "INCOMPLETE"
             )
-        ),
+        ), confirmation_wave=confirmation_wave, chain_sha256=chain_sha,
     )
 
 
@@ -3028,7 +3124,7 @@ def run_supervised_shard(
 
 __all__ = [
     "ArtifactError", "ImplementationDriftError", "ImplementationSnapshot",
-    "ResourceDisposition", "RolloutSpec", "ShardSpec", "canonical_json_bytes",
+    "ResourceArtifactPath", "ResourceDisposition", "RolloutSpec", "ShardSpec", "canonical_json_bytes",
     "canonical_state_bytes", "iter_manifest", "load_artifact_manifest",
     "load_canonical_json", "load_protocol_manifest", "load_seed_manifest",
     "prepare_manifest", "preflight_resources", "raw_evidence_from_rollout",
