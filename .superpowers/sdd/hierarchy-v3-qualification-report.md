@@ -6,7 +6,7 @@ Branch: `feat/hierarchy-recovery-probe`
 
 Base: `3c2f5a3`
 
-Qualified source commit: `e5c7fe4f6663cd423d8f9b9e9efcc9a2b456d73f`
+Qualified source commit: `1cc81bc469cc69ca2805704042f532279987b1b9`
 
 Status: **READY FOR FRESH READ-ONLY REVIEW**
 
@@ -45,6 +45,7 @@ GREEN commits:
 - `a825b46` — freeze the approval-hash-guarded 360-cell outcome path and authentic geometry NOT_RUN
 - `2878a81` — replace self-referential gates, freeze environment/spec/config, add PNGs and durable archive publication
 - `e5c7fe4` — close the second construct review: verdict authentication, transitive cause closure, event-reconstructed T3, exact budgets/anchor effects/prechecks, and the complete frozen outcome path
+- `1cc81bc` — force invalid/interrupted retained outcome dispositions to invalidate construct Gate 8
 
 Review-fix RED/GREEN evidence included five authority-tamper failures (trace target/action flags, reported reset count, retained EEF, matched qref/torque envelope tampering, and T3 provenance/evidence hash), a last-object-only mission structural failure, missing spec/environment/PNG/archive failures, and independent gate failures. Focused GREEN runs were **18 scorer tests passed in 47.38s**, **1 full qualification/publication/reconstruction test passed in 211.46s**, and **1 durable archive extraction test passed in 140.09s**.
 
@@ -61,7 +62,7 @@ Final post-review-fix verification:
 - V3-only selection: **43 passed, 60 deselected in 444.70s**.
 - Complete Experiment 03 suite: **103 passed in 474.15s**.
 - Canonical qualification CLI: **18 episodes; 17 SUCCESS, 1 expected FAILURE; 10/10 gates; `READY_FOR_FRESH_READ_ONLY_REVIEW`**.
-- Independent clean reconstruction: **18 episodes, `matched=true`**, raw manifest `a6407854…`, derived manifest `5cc4c34c…`.
+- Independent clean reconstruction: **18 episodes, `matched=true`**, raw manifest `a6407854…`, derived manifest `7f0ab57d…`.
 - Durable archive extraction round trip: **1 passed in 140.09s**.
 
 Second-review RED/GREEN evidence includes: rejected-report acceptance (**2 RED → 2 GREEN**); forged and self-rehashed T3 fact (**1 RED → GREEN**); CONTROL `2→2` budget tamper (**1 RED → GREEN**); seven matched-anchor substitutions (**7 GREEN**); environment/config drift (**2 GREEN**); missing/tampered prechecks (**1 GREEN**); approval dry-run and interrupted disposition retention (**2 GREEN**); synthetic 360-row complete analysis without sampling (**1 GREEN**); contracts/runtime/outcome (**24 passed in 30.67s**); scorer/outcome (**30 passed in 50.55s**); and full publication/reconstruction (**1 passed in 222.54s**).
@@ -148,19 +149,19 @@ Bytes: **50,002,928**
 
 | Artifact | SHA-256 |
 |---|---|
-| qualification freeze | `55234e0eabbc5ac9797468d98fe7d9c24fa94cced58432003d04c8b8b0d43d97` |
+| qualification freeze | `0e579fce1327dbbe70d30140d7482fcae38f74352c90607a7181d269679b5248` |
 | raw manifest / raw reconstruction | `a640785497bdb96beb672dc33a166059d70bc5c25facd0f7344ae37be8066572` |
-| derived manifest / derived reconstruction | `5cc4c34c12f7ffe84363a54123c65a4c86bd6fc8580b3279e4be3a494259947c` |
+| derived manifest / derived reconstruction | `7f0ab57d243687ea4f2b748a8e39781d0c231ec9b847266c458b16b23001cf3e` |
 | qualification summary | `1372bb6421ff5ef0aae9aa64b398dd58df81daf46c639a25c9c28710304b32ca` |
 | gate audit receipts | `39bf35cb6412407f0128165bc0993618f8886f2b308f7d4ed3471e7d0ecd9cc3` |
 | replay receipt | `d8bd12f6c31dad887f3e9691974a2dd91e6a0ec9df9632575d17693ae58e4517` |
-| source/spec/import closure | `7f35c98c23fddf0875621b9dea2798ce2154e7cdb41883d518652580e92efb04` |
+| source/spec/import closure | `85251fc9c311f631da2e8a9cdaf75f95c349c5b87fb91c50af76d154b73f13d0` |
 | frozen qualification/outcome configuration | `1e5fec9533ad61eced4a485ef5b8615586050e470167b8f373b79e55d1860672` |
 | frozen environment | `d6e2926ed735b6049ca7752e318f32206af0926e6745fbd2d52f9886669d1b5f` |
-| durable qualification tree | `0b7d8c8c9a0fc14abab5176c044a9381b24ef2be2a65dca24fd00bfe9c14b0f5` |
-| durable archive | `e52f403dc549581fb2e9ac63a6770897070235cf1c12bd0cd988d4f72bef357a` |
+| durable qualification tree | `f8c0f1d4194cae3ce680ad499450d4d22b8d7b98664d8ae694533a5cc7a17a7c` |
+| durable archive | `bcc59df409a43ece3b81b144a6715ed72d74c1e9c71213a9eaca9d9451e4d6c2` |
 
-Clean reconstruction destination: `/private/tmp/hierarchical-recovery-v3-clean-e5c7fe4`. It independently replayed all **18** episodes with `matched=true`; the regenerated raw and derived manifest hashes exactly equal the hashes above. Reconstruction reads raw episode inputs and does not trust the original summaries.
+Clean reconstruction destination: `/private/tmp/hierarchical-recovery-v3-clean-1cc81bc`. It independently replayed all **18** episodes with `matched=true`; the regenerated raw and derived manifest hashes exactly equal the hashes above. Reconstruction reads raw episode inputs and does not trust the original summaries.
 
 The canonical diagnostic bundle includes tables plus deterministic SVG and exact SVG-rasterized PNG companions for injection timing/disturbance realization, P6/P4 controller byte differences, time-advanced budgets/retries, and scorer-positive controls. All companions are authenticated by the derived manifest. `gate-audits.json` retains separate injection receipts, matched-anchor domain effects, exact decision-budget transitions, transitive typed cause closure, every qualification precheck, the frozen precheck-before-execution outcome plan, and recomputed geometric NOT_RUN receipts. `examples.json` binds:
 
@@ -168,7 +169,7 @@ The canonical diagnostic bundle includes tables plus deterministic SVG and exact
 - nonworking: `qualification-P6-R0-semantic-object-unavailable-20261893`
 - NOT_RUN: `architecture-independent-unreachable-geometry-v1`
 
-The ignored working bundle is durably retained as the tracked, deterministic, content-addressed archive `reports/evidence/hierarchical-recovery-v3-qualification/e52f403dc549581fb2e9ac63a6770897070235cf1c12bd0cd988d4f72bef357a.tar.gz` (**8,757,691 bytes; 437 members**) with a tracked manifest and byte-exact extraction test.
+The ignored working bundle is durably retained as the tracked, deterministic, content-addressed archive `reports/evidence/hierarchical-recovery-v3-qualification/bcc59df409a43ece3b81b144a6715ed72d74c1e9c71213a9eaca9d9451e4d6c2.tar.gz` (**8,757,685 bytes; 437 members**) with a tracked manifest and byte-exact extraction test.
 
 The 10 registered hard gates all pass in the qualification bundle: exact sampled-tick injection, six realized disturbances, distinct observable policy sequences, real/different P6 and P4 paths, time-advanced guarded budgets, closed cause boundary, independent raw scorer, nine terminal-positive controls, byte-exact replay/reconstruction, and architecture-independent NOT_RUN handling.
 
@@ -177,7 +178,7 @@ The 10 registered hard gates all pass in the qualification bundle: exact sampled
 - This is representative calibration qualification, not an outcome sample, power result, or scientific claim.
 - The one R0 failure is intended evidence for a nonworking architecture under semantic change; it is not silently excluded.
 - Outcome execution is frozen but approval-gated: the verifier parses a canonical reviewer report, requires exact `APPROVED_FOR_OUTCOME` with zero Critical/Important findings, binds all qualification/source/report hashes, and rechecks configuration/environment identities. The frozen post-approval path includes resumable create-only execution, full dispositions, paired analysis, 10,000-draw realization bootstrap, eight gates, graphs, reconstruction, and archive publication.
-- The ignored evidence is create-only and source-bound to commit `e5c7fe4`; any source change requires regeneration and another review.
+- The ignored evidence is create-only and source-bound to commit `1cc81bc`; any source change requires regeneration and another review.
 - No outcome evidence root exists at report time.
 
 Reviewer decision: **PENDING — approve or reject; this implementation does not self-authorize.**
