@@ -12,7 +12,7 @@ scene: 2,304 replayed MuJoCo branches. All 144 attempts are `VALID`.
 
 ## Frozen calibration
 
-Training selected W3R as the residual parent. The fixed confidence threshold
+Tuning selected W3R among the residual families fitted on training data. The fixed confidence threshold
 domain was the tuning-score quantiles `(0.25, 0.50, 0.75)`, which yielded
 thresholds `(0.7059795831, 0.8214734255, 0.9940987651)`. Tuning selected q=0.75,
 threshold `0.9940987651`, with residual-use fraction 0.75. Calibration SHA-256
