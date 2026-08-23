@@ -425,7 +425,7 @@ operations:
   - --name
   - mujoco_mpc
   - --sparse-checkout
-  relative_output: experiments/00_source_audit/results/fragments/mujoco-mpc-checkout.json
+  relative_output: experiments/00_source_audit/results/fragments/mujoco_mpc-checkout.json
   platform: macos-arm64
   python_requirement: '>=3.11'
   compiler_or_runtime: git
@@ -449,7 +449,7 @@ operations:
   - --name
   - mujoco_menagerie
   - --sparse-checkout
-  relative_output: experiments/00_source_audit/results/fragments/mujoco-menagerie-checkout.json
+  relative_output: experiments/00_source_audit/results/fragments/mujoco_menagerie-checkout.json
   platform: macos-arm64
   python_requirement: '>=3.11'
   compiler_or_runtime: git
@@ -569,7 +569,7 @@ operations:
   - --name
   - behaviortree_cpp
   - --sparse-checkout
-  relative_output: experiments/00_source_audit/results/fragments/behaviortree-cpp-checkout.json
+  relative_output: experiments/00_source_audit/results/fragments/behaviortree_cpp-checkout.json
   platform: macos-arm64
   python_requirement: '>=3.11'
   compiler_or_runtime: git
@@ -638,9 +638,9 @@ operations:
   - mujoco
   - headless-one-step
   relative_output: experiments/00_source_audit/results/fragments/mujoco-package-smoke.json
-  platform: macos-arm64
-  python_requirement: '>=3.11'
-  compiler_or_runtime: mujoco-3.12.0;python-3.11
+  platform: darwin-arm64
+  python_requirement: '>=3.11,<3.12'
+  compiler_or_runtime: mujoco-3.12.0;python-3.11.13
   timeout_seconds: 60
   download_ceiling_bytes: 0
   disk_ceiling_bytes: 536870912

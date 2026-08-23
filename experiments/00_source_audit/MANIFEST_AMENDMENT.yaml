@@ -1,0 +1,68 @@
+schema_version: 1
+record_type: P3_OPERATION_MANIFEST_AMENDMENT
+classification: ENGINEERING_NONCONFIRMATORY
+reason: >-
+  Execution exposed output-path and host-runtime identities that did not match the
+  frozen operation manifest. The original manifest remains immutable in Git; this
+  record binds the post-freeze amendment and the refused publication attempts.
+registry_sha256: eb72b501a177ee9dcf93a77444536e07dd532d9ac92950c61a063b8a8d1a4a3d
+lock_sha256: ce46f15903be44af121d8d2e2430d4bff78d94b978a09c48820dd31190f4e449
+original_manifest:
+  git_commit: f53c7f44937ae33dd7e6fd30b669ed3dea82e93b
+  git_blob: 989e73145c0a316fa4a08778b15664593113b63c
+  sha256: c9be2b88d69eaa15ea1ca12bfe215a608ec68fbea43e9455e56577e99db983c4
+amended_manifest:
+  sha256: 00bbb8f33d5000302d76994a57933d3f29ed590f18df559b739e616b9d94ec26
+changes:
+  - field: operations.MUJOCO_MPC_CHECKOUT.relative_output
+    original: experiments/00_source_audit/results/fragments/mujoco-mpc-checkout.json
+    amended: experiments/00_source_audit/results/fragments/mujoco_mpc-checkout.json
+    rationale: Match the reviewed fetch_reference create-only filename.
+  - field: operations.MUJOCO_MENAGERIE_CHECKOUT.relative_output
+    original: experiments/00_source_audit/results/fragments/mujoco-menagerie-checkout.json
+    amended: experiments/00_source_audit/results/fragments/mujoco_menagerie-checkout.json
+    rationale: Match the reviewed fetch_reference create-only filename.
+  - field: operations.BEHAVIORTREE_CPP_CHECKOUT.relative_output
+    original: experiments/00_source_audit/results/fragments/behaviortree-cpp-checkout.json
+    amended: experiments/00_source_audit/results/fragments/behaviortree_cpp-checkout.json
+    rationale: Match the reviewed fetch_reference create-only filename.
+  - field: operations.MUJOCO_PACKAGE_SMOKE.platform
+    original: macos-arm64
+    amended: darwin-arm64
+    rationale: Match the exact normalized platform emitted by the reviewed smoke.
+  - field: operations.MUJOCO_PACKAGE_SMOKE.python_requirement
+    original: '>=3.11'
+    amended: '>=3.11,<3.12'
+    rationale: Match the audited locked Python runtime boundary.
+  - field: operations.MUJOCO_PACKAGE_SMOKE.compiler_or_runtime
+    original: mujoco-3.12.0;python-3.11
+    amended: mujoco-3.12.0;python-3.11.13
+    rationale: Bind the exact interpreter used by the smoke.
+refused_attempts:
+  - sequence: 1
+    command:
+      - .venv/bin/python
+      - scripts/source_audit.py
+      - --operate
+      - MJCTRL_AST_PARSE
+    exit_status: 1
+    publication: REFUSED
+    error: fragment path is not declared by the operation manifest
+    artifact_written: false
+  - sequence: 2
+    command:
+      - .venv/bin/python
+      - scripts/source_audit.py
+      - --operate
+      - MUJOCO_PACKAGE_SMOKE
+    exit_status: 1
+    publication: REFUSED
+    error: fragment facts do not match the frozen operation spec
+    artifact_written: false
+outcome:
+  confirmation_eligible: false
+  p3_operational_gate: BLOCKED
+  blocker: LEROBOT_CHECKOUT failed because the checkout contains a nonregular or linked file.
+  remedy_disposition: >-
+    No second checkout was attempted because bypassing the reviewed nonregular-file
+    guard would require a new operation contract; the immutable failure receipt is retained.
