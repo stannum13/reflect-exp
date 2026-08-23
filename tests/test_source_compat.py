@@ -744,7 +744,7 @@ def test_lerobot_revision_chain_hash_joins_contract_attempts_modes_and_receipt(
         destination = tmp_path / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(project / relative, destination)
-    v2_bytes = (project / "experiments/00_source_audit/results/fragments/lerobot-checkout.json").read_bytes()
+    v2_bytes = (project / "experiments/00_source_audit/results/attempts/lerobot-checkout-v2-pass.json").read_bytes()
     v2_path = tmp_path / "experiments/00_source_audit/results/attempts/lerobot-checkout-v2-pass.json"
     v2_path.parent.mkdir(parents=True, exist_ok=True)
     v2_path.write_bytes(v2_bytes)
