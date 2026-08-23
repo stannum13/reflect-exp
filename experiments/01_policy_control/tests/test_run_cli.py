@@ -93,11 +93,18 @@ def test_shard_execution_maps_closed_supervisor_result_to_exit_status(
     _safe(monkeypatch, tmp_path)
     manifest = tmp_path / "manifest.json"
     manifest.write_text("{}\n", encoding="utf-8")
-    monkeypatch.setattr(artifacts, "run_supervised_shard", lambda *_args: result, raising=False)
+    observed = {}
+
+    def supervise(*_args, **kwargs):
+        observed.update(kwargs)
+        return result
+
+    monkeypatch.setattr(artifacts, "run_supervised_shard", supervise, raising=False)
     assert run.main(_args(
         tmp_path, "--manifest", str(manifest), "--shard-id", "P1:base:000",
         "--max-episodes", "3",
     )) == expected
+    assert observed == {"repo_root": tmp_path}
 
 
 def test_shard_execution_maps_unsafe_or_drift_failure_to_exit_two(

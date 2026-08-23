@@ -141,7 +141,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 1
             result = artifacts.run_supervised_shard(
                 manifest_path, args.shard_id, output_dir, config_path, gate_path,
-                args.max_episodes,
+                args.max_episodes, repo_root=REPO_ROOT,
             )
             if result in _SUCCESSFUL_SHARD_RESULTS:
                 return 0
