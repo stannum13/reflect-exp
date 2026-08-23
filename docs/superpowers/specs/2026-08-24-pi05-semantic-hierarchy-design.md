@@ -10,6 +10,31 @@ Does a frontline π0.5 semantic planner improve task recovery when it consumes a
 separate live semantic memory and episodic history, while motion replanning and
 MPC/PID retry/retrigger remain independently measurable lower layers?
 
+## Mission terminology and evaluation order
+
+Early experiments are **component probes**, not missions. They isolate semantic
+grounding/memory, semantic replanning, motion replanning, and controller recovery
+on short cells. Only the final integration stage evaluates **missions**:
+long-horizon compositions of perception, semantic-map queries, navigation, scene
+interaction, manipulation, tool use, recovery, and user-directed plan changes.
+
+The mission grammar is:
+
+```text
+MISSION := instruction + ordered/conditional goals + route constraints
+           + interaction constraints + completion conditions
+GOAL    := locate | retrieve | transport | unpack | store | rearrange | inspect
+SUBGOAL := semantic-map query | global path | local navigation | scene interaction
+           | manipulation skill | verification | recovery | user update
+TASK    := one typed tool/skill invocation with explicit pre/postconditions
+```
+
+The final benchmark includes the Reflect-style parcel family—retrieve a parcel,
+obey route requirements such as stairs/elevator/signs, unpack with a tool, store
+the contents, and react to an interrupt changing route/destination—plus held-out
+compositions from the same frozen skill inventory. The architecture is not tuned
+around one named parcel, medicine, or pick/place story.
+
 ## Non-negotiable boundary
 
 ```text
@@ -104,9 +129,49 @@ Use both task-local manipulation scenes and building-scale semantic contexts:
 - command dropout, latency, tracking error, and physical perturbation;
 - combined semantic + motion + control faults;
 - memory confidence/staleness and event-history length gradients.
+- scene-object/material variants: furniture geometry, clutter, opaque barriers,
+  framed clear glass, glass doors/windows, reflective/translucent panels, and
+  held-out transparent configurations;
+- mission-prompt paraphrases that preserve intent, constraint wording/order, and
+  distractor clauses;
+- mid-mission intervention prompts that cancel, redirect, reorder, or add a
+  constraint after execution has begun.
 
 Every scenario has multiple magnitudes/delays and at least ten matched
 realizations. Scenario identity is hidden from π0.5 and all policies.
+
+Transparent-surface transfer is a distinct perceptual/motion probe. Training or
+adaptation cells may contain collisions/avoidance experience with opaque barriers,
+windows, and framed glass-like surfaces; held-out cells introduce new transparent
+barriers and arrangements. Measure whether avoidance transfers by visual/material
+similarity, while keeping authoritative collision geometry separate from semantic
+memory. Do not claim that language reasoning alone learned glass physics.
+
+## Final mission-space stability benchmark
+
+Run only after component gates pass. Freeze the skill inventory before generating
+missions. Cross:
+
+- horizon: 4, 8, 12, and 16 required steps;
+- topology: one/two floors, alternate routes, stairs/elevator, doors and signs;
+- interactions: retrieve, carry, open/unpack with a tool, place/store, rearrange;
+- constraints: route preference/prohibition, occupancy, authorization;
+- disturbances: object movement/loss, failed grasp, blocked path, transparent
+  obstacle, controller disturbance, delay, and compound faults;
+- intervention: none versus a mid-mission route/destination/priority change;
+- language: matched paraphrases and different valid goal orderings;
+- novelty: seen versus held-out skill compositions and scene-object arrangements.
+
+Primary endpoints are end-to-end mission completion and normalized progress before
+the first unrecovered error. Stability retains completion/progress distributions by
+horizon and family, success hazard per extra step, paraphrase and seed variance,
+worst-family completion, recovery-conditioned survival, intervention recovery, and
+degradation slopes versus horizon, disturbance count, scene novelty, map change,
+and memory age. Report macro-average and minimum-family results so easy missions
+cannot hide collapse elsewhere.
+
+No mission-space claim is allowed if a required task is mocked, a skill is added
+after held-out missions are seen, or π0.5 lacks a checkpoint-backed forward pass.
 
 ## Measures
 

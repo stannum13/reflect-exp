@@ -85,7 +85,25 @@
 - [ ] Retain every valid, failed, interrupted, refused, and NOT_RUN attempt.
 - [ ] Commit only immutable evidence/report artifacts after the run.
 
-### Task 5: Analyze rich paired measures and reconstruct
+### Task 5: Run the final mission-space stability benchmark
+
+**Files:**
+- Create: `experiments/09_mini_reflect/configs/pi05-mission-space-v1.json`
+- Create: `experiments/09_mini_reflect/src/mission_space.py`
+- Test: `experiments/09_mini_reflect/tests/test_mission_space.py`
+
+**Interfaces:**
+- Consumes: frozen π0.5 hierarchy, fixed skill inventory, semantic building graph, mission grammar.
+- Produces: matched 4/8/12/16-step mission rollouts and per-step progress/recovery evidence.
+
+- [ ] Write failing tests for family balance, frozen skills, horizon/topology/interaction/constraint/disturbance/intervention/paraphrase axes, opaque-to-transparent transfer, and held-out composition isolation.
+- [ ] Implement deterministic mission generation containing the Reflect-style parcel/stairs/elevator/unpack/store/interrupt family plus held-out compositions over identical skills.
+- [ ] Render matched scene-object variants containing opaque, reflective, translucent, framed-glass, and held-out transparent barriers while collision truth remains independently retained.
+- [ ] Freeze mission and scene identities before outcomes and prove no component/skill changes after outcome start.
+- [ ] Execute matched missions only after Tasks 1–4 pass; retain every step, first error, local recovery, escalation, prompt intervention, and terminal disposition.
+- [ ] Independently verify completion and normalized progress from raw task pre/postconditions and execution receipts.
+
+### Task 6: Analyze rich paired measures and reconstruct
 
 **Files:**
 - Create: `experiments/09_mini_reflect/src/pi05_analysis.py`
@@ -96,8 +114,8 @@
 - Consumes: raw model/memory/semantic/motion/control evidence and matched dispositions.
 - Produces: paired effects, clustered intervals, strata tables, graphs, examples, manifests, archive, and decision label.
 
-- [ ] Write failing tests that independently recompute semantic grounding, memory use/staleness, layer-specific interventions, controller/trajectory measures, latency, safety, and outcome labels from raw evidence.
+- [ ] Write failing tests that independently recompute semantic grounding, memory use/staleness, layer-specific interventions, controller/trajectory measures, latency, safety, transparent-obstacle avoidance, mission completion, normalized progress, first-error step, and outcome labels from raw evidence.
 - [ ] Implement realization-cluster bootstrap and retain its exact 10,000 draws, inputs, effective sample sizes, and template sensitivity.
-- [ ] Generate canonical graph CSVs plus deterministic SVG/PNG figures for success, semantic quality, intervention profile, latency, trajectory quality, and failure taxonomy.
+- [ ] Generate canonical graph CSVs plus deterministic SVG/PNG figures for success, semantic quality, intervention profile, latency, trajectory quality, failure taxonomy, opaque-to-transparent transfer, completion/progress by horizon/family, per-step hazard, recovery-conditioned survival, and degradation slopes.
 - [ ] Reconstruct in a clean directory and require byte equality for raw-derived joins, analysis, graphs, report, manifests, and archive.
 - [ ] Obtain independent scientific/evidence review and commit the approved result or annotated negative/NOT_RUN evidence.
