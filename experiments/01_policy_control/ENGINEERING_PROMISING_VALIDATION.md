@@ -60,6 +60,14 @@ Differences are configuration minus P5 5/.5 slew 3 over the same 48
 condition/seed cells. Intervals are percentile intervals from 10,000 paired
 bootstrap resamples with fixed analysis seed 20260823.
 
+Exact reconstruction recipe: preserve `probe-summary.json` rollout order
+(variant, then seed ascending, then the declared condition order), form each
+48-element paired difference vector, initialize NumPy 2.4.6
+`default_rng(20260823)` (PCG64), draw one shared index matrix with
+`rng.integers(0, 48, size=(10000, 48))`, take each resampled row mean, and
+apply `numpy.quantile` at `.025` and `.975` with its default `method="linear"`.
+The same index matrix is reused for every comparator and metric.
+
 | Comparator | Δ working fraction (95%) | Δ clamp (95%) | Δ saturation (95%) | Δ p95 error m (95%) |
 |---|---:|---:|---:|---:|
 | P5 5/.5 slew 6 | +0.2083 [+0.1042,+0.3333] | -0.005353 [-0.005980,-0.004740] | 0 [0,0] | -0.000029 [-0.000052,-0.000006] |
