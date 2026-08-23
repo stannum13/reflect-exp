@@ -93,6 +93,7 @@ class Outcome:
     anchor_id: str
     candidate_id: str
     strategy_id: str
+    action_sha256: str
     terminal_state: tuple[float, ...]
     position_error_m: float
     orientation_error_rad: float
@@ -309,8 +310,8 @@ def run_candidate(scene: Scene,anchor: Anchor,candidate: Candidate)->Outcome:
     model,data=_new_data(scene);restore=_apply_anchor(model,data,anchor);collision=False
     for command in candidate.commands:collision|=_advance(model,data,command)
     terminal=tuple(float(x) for x in (*data.qpos,*data.qvel,*data.mocap_pos[0,:2]));pos=float(np.linalg.norm(data.qpos[:2]-scene.target_xy));yaw=abs(_wrap(float(data.qpos[2]-scene.target_yaw)));energy=float(np.sum(candidate.commands**2)*COMMAND_DT);unsafe=bool(not np.isfinite(terminal).all() if isinstance(terminal,np.ndarray) else not all(math.isfinite(x) for x in terminal)) or bool(np.any(np.abs(data.qpos[:2])>.5));success=bool(pos<=CONFIG["success_position_m"] and yaw<=CONFIG["success_yaw_rad"] and not unsafe);failure=not success;cost=actual_cost(pos,yaw,collision,energy,failure,success)
-    wire=[scene.spec.scene_id,anchor.anchor_id,candidate.candidate_id,terminal,pos,yaw,collision,energy,unsafe,success,failure,cost,restore]
-    return Outcome(scene.spec.scene_id,anchor.anchor_id,candidate.candidate_id,candidate.strategy_id,terminal,pos,yaw,collision,energy,unsafe,success,failure,cost,restore,sha(canonical(wire)))
+    wire=[scene.spec.scene_id,anchor.anchor_id,candidate.candidate_id,candidate.strategy_id,candidate.action_sha256,terminal,pos,yaw,collision,energy,unsafe,success,failure,cost,restore]
+    return Outcome(scene.spec.scene_id,anchor.anchor_id,candidate.candidate_id,candidate.strategy_id,candidate.action_sha256,terminal,pos,yaw,collision,energy,unsafe,success,failure,cost,restore,sha(canonical(wire)))
 
 
 def run_scene(spec: SceneSpec)->tuple[Scene,tuple[Anchor,...],tuple[Candidate,...],tuple[Outcome,...]]:
