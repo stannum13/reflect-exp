@@ -98,7 +98,6 @@ def test_full_qualification_publication_and_raw_reconstruction_are_byte_exact(tm
         "python", "python_executable_sha256", "numpy", "mujoco", "platform", "png_renderer",
     }
     assert freeze["configuration"]["outcome_matrix"]["episode_count"] == 360
-
     clean = tmp_path / "clean-reconstruction"
     replay = evidence.reconstruct(output, clean)
     assert replay["matched"] is True
@@ -124,9 +123,48 @@ def test_durable_archive_is_content_addressed_and_extracts_byte_exact(tmp_path: 
     with tarfile.open(archive, "r:gz") as stream:
         stream.extractall(extracted, filter="data")
     assert evidence.tree_sha256(output) == evidence.tree_sha256(extracted)
-    archive.write_bytes(archive.read_bytes() + b"tamper")
-    with pytest.raises(RuntimeError, match="archive create-only member mismatch"):
+    payload = archive.read_bytes()
+    archive.unlink()
+    with pytest.raises(RuntimeError, match="archive member mismatch"):
         evidence.publish_durable_archive(output, destination)
+    assert not archive.exists()
+    archive.write_bytes(payload + b"tamper")
+    with pytest.raises(RuntimeError, match="archive member mismatch"):
+        evidence.publish_durable_archive(output, destination)
+
+
+def test_durable_archive_rejects_arbitrary_incomplete_tree(tmp_path: Path) -> None:
+    arbitrary = tmp_path / "one-file"
+    arbitrary.mkdir()
+    (arbitrary / "claim.json").write_text("{}\n", encoding="ascii")
+    with pytest.raises(RuntimeError, match="publishable evidence"):
+        evidence.publish_durable_archive(arbitrary, tmp_path / "archive")
+
+
+def test_qualification_report_facts_are_authenticated_from_derived_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    output = tmp_path / "hierarchical-recovery-v3-qualification"
+    (output / "derived").mkdir(parents=True)
+    commit = "b" * 40
+    (output / "qualification-freeze.json").write_bytes(contracts.canonical_bytes({"source_commit": commit}))
+    (output / "raw").mkdir()
+    (output / "raw/manifest.json").write_bytes(contracts.canonical_bytes({"schema_version": 1}))
+    (output / "derived/manifest.json").write_bytes(contracts.canonical_bytes({"schema_version": 1}))
+    hashes = [hashlib.sha256(f"controller-{index}".encode()).hexdigest() for index in range(6)]
+    (output / "derived/controller-paths.csv").write_text(
+        "controller_id,trajectory_sha256,q_ref_sha256,torque_sha256\n"
+        f"P4,{hashes[0]},{hashes[1]},{hashes[2]}\nP6,{hashes[3]},{hashes[4]},{hashes[5]}\n", encoding="ascii",
+    )
+    (output / "derived/scorer-controls.csv").write_text("control,terminal,detected_count\ninvalid_action,FAILURE,17\n", encoding="ascii")
+    report = tmp_path / "report.md"
+    report.write_text("\n".join([commit, *hashes, "| invalid action/trajectory | 17 |", *[
+        hashlib.sha256((output / name).read_bytes()).hexdigest()
+        for name in ("qualification-freeze.json", "raw/manifest.json", "derived/manifest.json")
+    ]]), encoding="utf-8")
+    monkeypatch.setattr(evidence, "validate_publishable_evidence", lambda root: {"kind": "QUALIFICATION"})
+    assert evidence.verify_qualification_report(output, report)["matched"] is True
+    report.write_text(report.read_text(encoding="utf-8").replace(hashes[3], "stale-p6-hash"), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="report consistency"):
+        evidence.verify_qualification_report(output, report)
 
 
 def test_publication_is_create_only(tmp_path: Path) -> None:

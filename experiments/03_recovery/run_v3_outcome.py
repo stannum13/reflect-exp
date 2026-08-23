@@ -6,8 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from .src.v3_evidence import publish_durable_archive
-from .src.v3_outcome import dry_run_outcomes, reconstruct_outcomes, run_outcomes
+from .src.v3_outcome import dry_run_outcomes, publish_outcome_archive, reconstruct_outcomes, run_outcomes
 
 
 def main() -> None:
@@ -32,9 +31,9 @@ def main() -> None:
             parser.error("reconstruct requires --clean-output")
         result = reconstruct_outcomes(args.output, args.clean_output, **approval)
     else:
-        if args.archive_output is None:
-            parser.error("archive requires --archive-output")
-        result = publish_durable_archive(args.output, args.archive_output)
+        if args.archive_output is None or args.clean_output is None:
+            parser.error("archive requires --archive-output and --clean-output")
+        result = publish_outcome_archive(args.output, args.archive_output, args.clean_output, **approval)
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
 
 

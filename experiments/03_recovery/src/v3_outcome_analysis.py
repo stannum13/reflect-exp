@@ -37,6 +37,11 @@ def _write_expected(path: Path, payload: bytes) -> None:
         stream.write(payload)
         stream.flush()
         os.fsync(stream.fileno())
+    descriptor = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _validate_raw_inventory(output: Path) -> None:
@@ -313,9 +318,19 @@ def analyze_outcomes(output: Path, *, construct_integrity: Mapping[str, bool]) -
     _validate_raw_inventory(output)
     rows = [json.loads(line) for line in (output / "raw/outcome-rows.jsonl").read_text(encoding="ascii").splitlines()]
     payloads = outcome_payloads(rows, construct_integrity=construct_integrity)
+    manifest_payload = canonical_bytes({"schema_version": 1, "files": _inventory(payloads)})
+    manifest_path = derived / "manifest.json"
+    if manifest_path.exists():
+        if manifest_path.is_symlink() or not manifest_path.is_file() or manifest_path.read_bytes() != manifest_payload:
+            raise RuntimeError("outcome derived sealed manifest mismatch")
+        for name, payload in payloads.items():
+            path = derived / name
+            if path.is_symlink() or not path.is_file() or path.read_bytes() != payload:
+                raise RuntimeError(f"outcome derived sealed member mismatch: {path}")
+        return json.loads(payloads["decision.json"])
     for name, payload in sorted(payloads.items()):
         _write_expected(derived / name, payload)
-    _write_expected(derived / "manifest.json", canonical_bytes({"schema_version": 1, "files": _inventory(payloads)}))
+    _write_expected(manifest_path, manifest_payload)
     return json.loads(payloads["decision.json"])
 
 

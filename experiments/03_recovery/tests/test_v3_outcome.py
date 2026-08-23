@@ -4,6 +4,7 @@ import importlib
 import hashlib
 import json
 from pathlib import Path
+import stat
 from dataclasses import replace
 
 import pytest
@@ -104,6 +105,32 @@ def test_outcome_execution_refuses_before_output_or_episode_without_immutable_ap
         )
     assert called is False
     assert not output.exists()
+
+
+def test_outcome_archive_refuses_arbitrary_root_before_publication(tmp_path: Path) -> None:
+    arbitrary = tmp_path / "hierarchical-recovery-v3"
+    arbitrary.mkdir()
+    (arbitrary / "claim.json").write_text("{}\n", encoding="ascii")
+    with pytest.raises(outcome.OutcomeAuthorizationError, match="approval"):
+        outcome.publish_outcome_archive(
+            arbitrary, tmp_path / "archive", tmp_path / "clean",
+            qualification_root=tmp_path / "qualification",
+            approval_binding=tmp_path / "binding.json",
+            approval_report=tmp_path / "report.json",
+        )
+    assert not (tmp_path / "archive").exists()
+
+
+def test_authenticated_outcome_archive_rejects_unsealed_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    qualification, binding, report = _approval_fixture(tmp_path, monkeypatch, "APPROVED_FOR_OUTCOME")
+    arbitrary = tmp_path / "hierarchical-recovery-v3"
+    arbitrary.mkdir()
+    with pytest.raises(outcome.OutcomeAuthorizationError, match="sealed headers"):
+        outcome.publish_outcome_archive(
+            arbitrary, tmp_path / "archive", tmp_path / "clean",
+            qualification_root=qualification, approval_binding=binding, approval_report=report,
+        )
+    assert not (tmp_path / "archive").exists()
 
 
 def test_rejected_report_cannot_be_accepted_by_caller_created_binding(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -278,6 +305,11 @@ def test_interrupted_outcome_attempt_retains_create_only_invalid_disposition_wit
     assert json.loads((root / "derived/decision.json").read_text(encoding="ascii"))["gates"][7]["passed"] is False
     integrity = {"approval": True, "inventory": False, "freeze": True, "cause": True, "replay": False, "reconstruction": True}
     assert analysis.analyze_outcomes(root, construct_integrity=integrity)["scientific_result"] == "INVALID_EXPERIMENT"
+    derived_member = root / "derived/examples.json"
+    derived_member.unlink()
+    with pytest.raises(RuntimeError, match="derived sealed member"):
+        analysis.analyze_outcomes(root, construct_integrity=integrity)
+    assert not derived_member.exists()
     rows_path = root / "raw/outcome-rows.jsonl"
     rows_path.write_bytes(rows_path.read_bytes() + b"{}\n")
     with pytest.raises(outcome.OutcomeAuthorizationError, match="mismatch"):
@@ -312,6 +344,10 @@ def test_counterfactual_oracle_rejects_wrong_object_and_missing_execution_or_res
     assert outcome.counterfactual_event_audit(replace(raw, action_envelopes=wrong))["matched_event_count"] == 0
     assert outcome.counterfactual_event_audit(replace(raw, execution_receipts=()))["matched_event_count"] == 0
     assert outcome.counterfactual_event_audit(replace(raw, budget_resets=()))["matched_event_count"] == 0
+    observations = list(raw.observations)
+    observations[1] = replace(observations[1], geometry_feasible=False)
+    still_failing = replace(raw, observations=tuple(observations))
+    assert outcome.counterfactual_event_audit(still_failing)["matched_event_count"] == 0
 
 
 def test_create_only_members_resume_exact_bytes_and_reject_tamper(tmp_path: Path) -> None:
@@ -328,3 +364,23 @@ def test_create_only_members_resume_exact_bytes_and_reject_tamper(tmp_path: Path
     (root / "rows.jsonl").write_bytes(b"tampered\n")
     with pytest.raises(outcome.OutcomeAuthorizationError, match="mismatch"):
         outcome._resume_create_only_members(root, members, marker_name="SEALED.json", seal=True)
+
+
+def test_sealed_bundle_never_repairs_deleted_member_and_fsyncs_files_and_directories(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "sealed"
+    real_fsync = outcome.os.fsync
+    synced_modes = []
+
+    def recording_fsync(fd: int) -> None:
+        synced_modes.append(outcome.os.fstat(fd).st_mode)
+        real_fsync(fd)
+
+    monkeypatch.setattr(outcome.os, "fsync", recording_fsync)
+    members = {"nested/header.json": b"header\n", "episode.json": b"episode\n"}
+    outcome._resume_create_only_members(root, members, marker_name="SEALED.json", seal=True)
+    assert any(stat.S_ISREG(mode) for mode in synced_modes)
+    assert any(stat.S_ISDIR(mode) for mode in synced_modes)
+    (root / "episode.json").unlink()
+    with pytest.raises(outcome.OutcomeAuthorizationError, match="sealed bundle member"):
+        outcome._resume_create_only_members(root, members, marker_name="SEALED.json", seal=True)
+    assert not (root / "episode.json").exists()

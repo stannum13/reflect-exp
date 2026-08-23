@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import stat
 from typing import Mapping, Sequence
 
 from .v3_contracts import (
@@ -21,7 +22,7 @@ from .v3_contracts import (
     canonical_bytes,
     sha256_bytes,
 )
-from .v3_evidence import _assert_trees_equal, _freeze_record, _inventory, _tree_bytes, _validate_episode, episode_payloads, qualification_specs, source_closure
+from .v3_evidence import _assert_trees_equal, _freeze_record, _inventory, _tree_bytes, _validate_episode, episode_payloads, publish_durable_archive, qualification_specs, source_closure
 from .v3_runtime import V3EpisodeSpec, precheck, run_episode
 from .v3_scorer import score_episode
 from .v3_outcome_analysis import analyze_outcomes
@@ -126,6 +127,17 @@ def _write(path: Path, payload: bytes) -> None:
         stream.write(payload)
         stream.flush()
         os.fsync(stream.fileno())
+    _fsync_directory(path.parent)
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OutcomeAuthorizationError(f"publication parent is not a directory: {path}")
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _write_expected(path: Path, payload: bytes) -> None:
@@ -143,11 +155,21 @@ def _resume_create_only_members(
 ) -> None:
     """Validate-or-complete an idempotent bundle; the authenticated marker is last."""
     root.mkdir(parents=True, exist_ok=True)
+    marker = root / marker_name
+    expected_marker = marker_payload or canonical_bytes({"schema_version": 1, "files": _inventory(members)})
+    if marker.exists():
+        if marker.is_symlink() or not marker.is_file() or marker.read_bytes() != expected_marker:
+            raise OutcomeAuthorizationError(f"sealed bundle marker mismatch: {marker}")
+        for name, payload in members.items():
+            path = root / name
+            if not path.is_file() or path.is_symlink() or path.read_bytes() != payload:
+                raise OutcomeAuthorizationError(f"sealed bundle member mismatch: {path}")
+        return
     for name, payload in members.items():
         _write_expected(root / name, payload)
+    _fsync_directory(root)
     if seal:
-        payload = marker_payload or canonical_bytes({"schema_version": 1, "files": _inventory(members)})
-        _write_expected(root / marker_name, payload)
+        _write_expected(marker, expected_marker)
 
 
 def _write_episode_resume(root: Path, raw: object) -> dict[str, object]:
@@ -297,7 +319,12 @@ def counterfactual_event_audit(raw: object) -> dict[str, object]:
                         verified_receipts.append(receipt)
             receipt_valid = bool(verified_receipts)
             post = next((item for item in raw.observations if observable.tick < item.tick <= next_tick), None)
-            post_valid = bool(post is not None and post.action_valid and post.controller_safe)
+            domain_resolved = bool(
+                post is not None and not post.failure_detected and post.controller_safe
+                and (expected != "MOTION" or (post.action_valid and post.geometry_feasible))
+                and (expected != "SEMANTIC" or post.semantic_preconditions_valid)
+            )
+            post_valid = bool(post is not None and domain_resolved)
             changed_contents = {content for content in contents if content != decision.budget_before.active_content_sha256} if decision is not None else set()
             if expected in {"MOTION", "SEMANTIC"}:
                 reset_valid = any(
@@ -485,7 +512,37 @@ def reconstruct_outcomes(
     }
 
 
+def publish_outcome_archive(
+    output: Path, destination: Path, clean: Path, *, qualification_root: Path,
+    approval_binding: Path, approval_report: Path,
+) -> dict[str, object]:
+    """Authenticate, reconstruct, validate, then archive sealed outcome evidence."""
+    verify_outcome_approval(qualification_root, approval_binding, approval_report)
+    required = (
+        output / "outcome-freeze.json", output / "HEADERS-SEALED.json",
+        output / "approval/approval-binding.json", output / "approval/approval-report.json",
+        output / "raw/manifest.json",
+    )
+    if not all(path.is_file() and not path.is_symlink() for path in required):
+        raise OutcomeAuthorizationError("outcome archive requires sealed headers and raw manifest")
+    if (output / "approval/approval-binding.json").read_bytes() != approval_binding.read_bytes() or (output / "approval/approval-report.json").read_bytes() != approval_report.read_bytes():
+        raise OutcomeAuthorizationError("outcome archive approval provenance mismatch")
+    rows = _seal_dispositions(output)
+    if not rows or (len(rows) != 360 and not any(row.get("disposition") in {"INVALID", "INTERRUPTED"} for row in rows)):
+        raise OutcomeAuthorizationError("outcome raw disposition inventory is incomplete")
+    replay = reconstruct_outcomes(
+        output, clean, qualification_root=qualification_root,
+        approval_binding=approval_binding, approval_report=approval_report,
+    )
+    if replay.get("matched") is not True:
+        raise OutcomeAuthorizationError("outcome reconstruction did not match")
+    decision = json.loads((output / "derived/decision.json").read_text(encoding="ascii"))
+    if decision.get("scientific_result") != replay.get("scientific_result"):
+        raise OutcomeAuthorizationError("outcome derived scientific disposition mismatch")
+    return publish_durable_archive(output, destination)
+
+
 __all__ = [
     "APPROVAL_DECISION", "OUTCOME_ROOT_NAME", "OutcomeAuthorizationError", "dry_run_outcomes", "outcome_specs",
-    "reconstruct_outcomes", "run_outcomes", "seal_invalid_outcomes", "verify_outcome_approval",
+    "publish_outcome_archive", "reconstruct_outcomes", "run_outcomes", "seal_invalid_outcomes", "verify_outcome_approval",
 ]

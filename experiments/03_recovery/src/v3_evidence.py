@@ -262,6 +262,11 @@ def _write(path: Path, payload: bytes) -> None:
         stream.write(payload)
         stream.flush()
         os.fsync(stream.fileno())
+    descriptor = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _jsonl(rows: Iterable[object]) -> bytes:
@@ -822,10 +827,98 @@ def tree_sha256(root: Path) -> str:
     return sha256_bytes(canonical_bytes(inventory))
 
 
+def _canonical_json(path: Path) -> dict[str, object]:
+    payload = path.read_bytes()
+    value = json.loads(payload.decode("ascii"))
+    if not isinstance(value, dict) or canonical_bytes(value) != payload:
+        raise RuntimeError(f"publishable evidence contains noncanonical JSON: {path}")
+    return value
+
+
+def _validate_inventory(root: Path, inventory: Sequence[Mapping[str, object]]) -> None:
+    actual = []
+    for item in inventory:
+        path = root / str(item["path"])
+        if path.is_symlink() or not path.is_file():
+            raise RuntimeError(f"publishable evidence member missing: {path}")
+        payload = path.read_bytes()
+        actual.append({"path": str(item["path"]), "bytes": len(payload), "sha256": sha256_bytes(payload)})
+    if actual != [dict(item) for item in inventory]:
+        raise RuntimeError("publishable evidence inventory mismatch")
+
+
+def validate_publishable_evidence(output: Path) -> dict[str, object]:
+    """Reject arbitrary/incomplete trees before deterministic archive publication."""
+    if output.name == "hierarchical-recovery-v3-qualification":
+        if not all((output / name).is_file() for name in ("qualification-freeze.json", "raw/manifest.json", "derived/manifest.json")):
+            raise RuntimeError("publishable evidence qualification headers incomplete")
+        freeze = _canonical_json(output / "qualification-freeze.json")
+        raw = _canonical_json(output / "raw/manifest.json")
+        derived = _canonical_json(output / "derived/manifest.json")
+        if freeze.get("self_authorizes_outcomes") is not False or raw.get("episode_count") != 18:
+            raise RuntimeError("publishable evidence qualification identity mismatch")
+        episodes = raw.get("episodes")
+        if not isinstance(episodes, list) or len(episodes) != 18:
+            raise RuntimeError("publishable evidence qualification inventory incomplete")
+        for item in episodes:
+            destination = output / "raw/episodes" / str(item["episode_id"])
+            manifest = _validate_episode(destination)
+            if sha256_bytes(canonical_bytes(manifest)) != item.get("manifest_sha256"):
+                raise RuntimeError("publishable evidence episode manifest mismatch")
+        _validate_inventory(output / "derived", derived.get("files", ()))
+        summary = _canonical_json(output / "derived/qualification-summary.json")
+        if summary.get("status") != "READY_FOR_FRESH_READ_ONLY_REVIEW" or summary.get("hard_gates_passed") != 10:
+            raise RuntimeError("publishable evidence qualification disposition mismatch")
+        return {"kind": "QUALIFICATION", "scientific_disposition": summary["status"]}
+    if output.name == "hierarchical-recovery-v3":
+        if not all((output / name).is_file() for name in ("outcome-freeze.json", "raw/manifest.json", "derived/manifest.json", "approval/approval-binding.json", "approval/approval-report.json")):
+            raise RuntimeError("publishable evidence outcome headers incomplete")
+        _canonical_json(output / "outcome-freeze.json")
+        raw = _canonical_json(output / "raw/manifest.json")
+        derived = _canonical_json(output / "derived/manifest.json")
+        _validate_inventory(output / "raw", raw.get("files", ()))
+        _validate_inventory(output / "derived", derived.get("files", ()))
+        rows = [json.loads(line) for line in (output / "raw/outcome-rows.jsonl").read_text(encoding="ascii").splitlines()]
+        invalid = any(row.get("disposition") in {"INVALID", "INTERRUPTED"} for row in rows)
+        if len(rows) != 360 and not invalid:
+            raise RuntimeError("publishable evidence outcome disposition inventory incomplete")
+        decision = _canonical_json(output / "derived/decision.json")
+        if invalid and decision.get("scientific_result") != "INVALID_EXPERIMENT":
+            raise RuntimeError("publishable evidence invalid outcome disposition mismatch")
+        return {"kind": "OUTCOME", "scientific_disposition": decision.get("scientific_result")}
+    raise RuntimeError("not a publishable evidence root")
+
+
+def verify_qualification_report(output: Path, report: Path, *, archive_manifest: Path | None = None) -> dict[str, object]:
+    """Authenticate every mutable report fact against retained derived evidence."""
+    validate_publishable_evidence(output)
+    text = report.read_text(encoding="utf-8")
+    freeze = _canonical_json(output / "qualification-freeze.json")
+    controllers = list(csv.DictReader((output / "derived/controller-paths.csv").read_text(encoding="ascii").splitlines()))
+    controls = list(csv.DictReader((output / "derived/scorer-controls.csv").read_text(encoding="ascii").splitlines()))
+    expected = [str(freeze["source_commit"])]
+    for row in controllers:
+        expected.extend((row["trajectory_sha256"], row["q_ref_sha256"], row["torque_sha256"]))
+    invalid = next(row for row in controls if row["control"] == "invalid_action")
+    expected.append(f"| invalid action/trajectory | {invalid['detected_count']} |")
+    for relative in ("qualification-freeze.json", "raw/manifest.json", "derived/manifest.json"):
+        expected.append(sha256_bytes((output / relative).read_bytes()))
+    if archive_manifest is not None:
+        archive = _canonical_json(archive_manifest)
+        if archive.get("tree_sha256") != tree_sha256(output):
+            raise RuntimeError("qualification report archive tree mismatch")
+        expected.extend((str(archive["archive_sha256"]), f"**{archive['archive_bytes']:,} bytes; {archive['member_count']} members**"))
+    missing = [value for value in expected if value not in text]
+    if missing:
+        raise RuntimeError(f"qualification report consistency mismatch: {missing[:3]}")
+    return {"matched": True, "authenticated_fact_count": len(expected)}
+
+
 def publish_durable_archive(output: Path, destination: Path) -> dict[str, object]:
     """Publish a deterministic, content-addressed archive suitable for git retention."""
     if not output.is_dir():
         raise FileNotFoundError(output)
+    validate_publishable_evidence(output)
     destination.mkdir(parents=True, exist_ok=True)
     buffer = io.BytesIO()
     with gzip.GzipFile(fileobj=buffer, mode="wb", filename="", mtime=0, compresslevel=9) as compressed:
@@ -841,12 +934,6 @@ def publish_durable_archive(output: Path, destination: Path) -> dict[str, object
     payload = buffer.getvalue()
     digest = sha256_bytes(payload)
     archive_name = f"{digest}.tar.gz"
-    archive_path = destination / archive_name
-    if archive_path.exists():
-        if archive_path.is_symlink() or not archive_path.is_file() or archive_path.read_bytes() != payload:
-            raise RuntimeError("durable archive create-only member mismatch")
-    else:
-        _write(archive_path, payload)
     receipt = {
         "schema_version": 1,
         "archive": archive_name,
@@ -860,8 +947,17 @@ def publish_durable_archive(output: Path, destination: Path) -> dict[str, object
     if manifest_path.exists():
         if manifest_path.is_symlink() or not manifest_path.is_file() or manifest_path.read_bytes() != manifest_payload:
             raise RuntimeError("durable archive manifest mismatch")
+        archive_path = destination / archive_name
+        if archive_path.is_symlink() or not archive_path.is_file() or archive_path.read_bytes() != payload:
+            raise RuntimeError("sealed durable archive member mismatch")
+        return receipt
+    archive_path = destination / archive_name
+    if archive_path.exists():
+        if archive_path.is_symlink() or not archive_path.is_file() or archive_path.read_bytes() != payload:
+            raise RuntimeError("durable archive create-only member mismatch")
     else:
-        _write(manifest_path, manifest_payload)
+        _write(archive_path, payload)
+    _write(manifest_path, manifest_payload)
     return receipt
 
 
