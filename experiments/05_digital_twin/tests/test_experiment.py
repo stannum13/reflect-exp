@@ -112,3 +112,10 @@ def test_v7_replication_namespace_is_distinct_planner_frozen_and_reconstructable
     clean = tmp_path / "v7-clean"
     experiment.reconstruct(root / "raw", clean)
     assert {path.name: path.read_bytes() for path in (root / "derived").iterdir()} == {path.name: path.read_bytes() for path in clean.iterdir()}
+
+
+def test_committed_v7_r1_root_reconstructs_byte_exact(tmp_path: Path) -> None:
+    root = Path("experiments/05_digital_twin/results/engineering-twin-v7-r1")
+    clean = tmp_path / "committed-v7-r1"
+    experiment.reconstruct(root / "raw", clean)
+    assert {path.name: path.read_bytes() for path in (root / "derived").iterdir()} == {path.name: path.read_bytes() for path in clean.iterdir()}

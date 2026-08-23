@@ -1,4 +1,4 @@
-# Experiment 05 untouched robustness replication v7
+# Experiment 05 untouched robustness replication v7-r1
 
 Status: **PRELIMINARY_REPLICATION_ONLY**. This is a deterministic synthetic
 robustness replication, not a confirmatory result, facility pilot, or deployment
@@ -78,18 +78,22 @@ smaller subset in which the constraint changes the terminal disposition.
 
 ## Reconstructable evidence
 
-The sole v7 root is `results/engineering-twin-v7`.
+The reportable root is `results/engineering-twin-v7-r1`. The original v7 raw
+bytes are identical, but its derived T0 route-cost mean used ordinary floating
+summation and drifted in the last bit on an independent process. It is preserved
+and machine-marked `INVALID_DERIVED_RECONSTRUCTION_CLAIM`; r1 uses `math.fsum`
+for the canonical aggregate and changes no case, outcome, or scientific result.
 
 - Cases: `005d49750edd86406a0aa63025ca94fdbe126410702e74c6605db6ce8e34174b`
 - Outcomes: `ed7896424f31f4846b73b9d73efe64491a7c5b3f472a96e69bd84a678212c504`
 - Instruction causality: `fe7e655dd311f0f5b34b20a38dcd311361b5327fa6205763fa683b64bc830805`
 - Raw manifest: `6898c2d45911a6dafc95482db25cc020ee9f7c7f4be74c025515f603e2350bfd`
-- Overall metrics: `3cfdc3231a43c0d00c0f90488f9466fc451356fe55de2e0df341718ceb6ddede`
+- Overall metrics: `bf8f6ac618555edf9233ed22ba558f4002804534e9b27773233bd758bb3adde6`
 - Replication metrics: `a463f4732b16d31f67a1f14bedf90565fb62451cfc0d186131395fa0e2558fc7`
 - Sample index: `8789bd8fa9066e5cf76f593710303708b8e521721daf55024f00fa02b48592ed`
 - Recipe: `dcaf1822ea92cf2cc45aa85b750f0898c1ad33fdc6dcd3a24e4ca7797bfe23e4`
-- Canonical eight-file inventory: 4,171,330 bytes,
-  `f5b09815e7055504f0b6e0ee6ab92491e23454aa1b466b9b79eebd4d55f7737b`
+- Canonical eight-file inventory: 4,171,329 bytes,
+  `727d42666059e69510a8b4419c00163b8af424b349c2bc76dedc45c5c9128125`
 
 The deterministic working sample is T3 seed 0 / nearest-coolant, case
 `3d8a590876fdd809895181c9e4b5d87381584098cb419bb2306389af351f5fa5`,

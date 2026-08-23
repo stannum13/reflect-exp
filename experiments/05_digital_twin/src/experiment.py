@@ -442,11 +442,12 @@ def _wilson(successes: int, total: int) -> tuple[float, float]:
     z=1.959963984540054;p=successes/total;d=1+z*z/total;c=(p+z*z/(2*total))/d;h=z*math.sqrt(p*(1-p)/total+z*z/(4*total*total))/d;return c-h,c+h
 
 
-def _derived(outcomes: Sequence[Outcome], manifest_sha256: str) -> dict[str, bytes]:
+def _derived(outcomes: Sequence[Outcome], manifest_sha256: str, *, stable_float_sum: bool = False) -> dict[str, bytes]:
     metrics=[]
     for variant in Variant:
         rows=[row for row in outcomes if row.variant is variant];successes=sum(row.success for row in rows);lo,hi=_wilson(successes,len(rows))
-        metrics.append({"variant":variant.value,"cases":len(rows),"mission_success_fraction":successes/len(rows),"success_wilson95":[lo,hi],"mean_route_cost_m":sum(row.route_cost_m for row in rows)/len(rows),"forbidden_region_violations":sum(row.forbidden_region_violations for row in rows),"invalid_affordance_choices":sum(row.invalid_affordance_choices for row in rows),"stale_belief_failures":sum(row.stale_belief_failures for row in rows),"invalid_initial_plans":sum(row.invalid_initial_plan for row in rows),"replans":sum(row.replanned for row in rows),"mean_replanning_latency_us":sum(row.replanning_latency_us for row in rows)/len(rows),"semantic_queries":sum(row.semantic_query_count for row in rows),"geometry_queries":sum(row.geometry_query_count for row in rows),"mean_context_facts":sum(row.context_fact_count for row in rows)/len(rows)})
+        route_total=math.fsum(row.route_cost_m for row in rows) if stable_float_sum else sum(row.route_cost_m for row in rows)
+        metrics.append({"variant":variant.value,"cases":len(rows),"mission_success_fraction":successes/len(rows),"success_wilson95":[lo,hi],"mean_route_cost_m":route_total/len(rows),"forbidden_region_violations":sum(row.forbidden_region_violations for row in rows),"invalid_affordance_choices":sum(row.invalid_affordance_choices for row in rows),"stale_belief_failures":sum(row.stale_belief_failures for row in rows),"invalid_initial_plans":sum(row.invalid_initial_plan for row in rows),"replans":sum(row.replanned for row in rows),"mean_replanning_latency_us":sum(row.replanning_latency_us for row in rows)/len(rows),"semantic_queries":sum(row.semantic_query_count for row in rows),"geometry_queries":sum(row.geometry_query_count for row in rows),"mean_context_facts":sum(row.context_fact_count for row in rows)/len(rows)})
     ordered=sorted(outcomes,key=lambda row:(row.variant.value,row.mission.value,row.seed));samples=[]
     for label,value in (("WORKING",True),("NONWORKING",False)):
         row=next(item for item in ordered if item.success is value and item.variant in {Variant.T3,Variant.T4});samples.append({"label":label,"seed":row.seed,"mission":row.mission.value,"variant":row.variant.value,"case_sha256":row.case_sha256,"outcome_sha256":row.outcome_sha256,"selection":"FIRST_CANONICAL_STRONG_TWIN"})
@@ -505,7 +506,7 @@ def run_matrix(output: Path, *, seeds: Iterable[int], seed_namespace: str = "exp
     members=[raw/"cases.jsonl",raw/"outcomes.jsonl"]
     if replication:_write(raw/"instruction-causality.jsonl",b"".join(canonical(row) for row in causality));members.append(raw/"instruction-causality.jsonl")
     manifest={"schema_version":"exp05-manifest-v2" if replication else "exp05-manifest-v1","status":"PRELIMINARY_REPLICATION_ONLY" if replication else "PRELIMINARY_ENGINEERING_ONLY","seed_namespace":seed_namespace,"seeds":list(selected),"frozen_v6_planner_sha256":FROZEN_V6_PLANNER_SHA256 if replication else None,"seed_count":len(selected),"case_count":len(cases),"outcome_count":len(outcomes),"files":[{"path":path.name,"bytes":path.stat().st_size,"sha256":hashlib.sha256(path.read_bytes()).hexdigest()} for path in members]};manifest_bytes=canonical(manifest);_write(raw/"manifest.json",manifest_bytes)
-    for name,payload in _derived(outcomes,hashlib.sha256(manifest_bytes).hexdigest()).items():_write(derived/name,payload)
+    for name,payload in _derived(outcomes,hashlib.sha256(manifest_bytes).hexdigest(),stable_float_sum=replication).items():_write(derived/name,payload)
     if replication:_write(derived/"replication.json",_replication_derived(cases,outcomes,causality))
 
 
@@ -530,5 +531,5 @@ def reconstruct(raw: Path, output: Path) -> None:
     causality=_instruction_causality(cases) if replication else ()
     if replication and b"".join(canonical(row) for row in causality)!=(raw/"instruction-causality.jsonl").read_bytes():raise EvidenceError("instruction causality does not regenerate")
     output.mkdir()
-    for name,payload in _derived(outcomes,hashlib.sha256(manifest_bytes).hexdigest()).items():_write(output/name,payload)
+    for name,payload in _derived(outcomes,hashlib.sha256(manifest_bytes).hexdigest(),stable_float_sum=replication).items():_write(output/name,payload)
     if replication:_write(output/"replication.json",_replication_derived(cases,outcomes,causality))
