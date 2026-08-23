@@ -109,5 +109,8 @@ The committed result root will contain canonical raw JSONL streams, hidden
 truth, decisions, and per-decision scores; matched per-seed CSV; endpoint and
 paired-effect CSV graph data; deterministic SVG graphs; explicitly annotated
 working and nonworking samples; a result report; an evidence manifest and
-`SHA256SUMS`; and a stdlib-only reconstruction program. No result PNG is
-required because SVG is canonical and lossless.
+`SHA256SUMS`; and a project-environment reconstruction program. No result PNG is
+required because SVG is canonical and lossless. The reconstruction program may
+use NumPy already locked by the project solely to reproduce the preregistered
+`PCG64` cluster bootstrap; file validation, replay, CSV, JSON, SVG, and report
+generation otherwise use the Python standard library.
