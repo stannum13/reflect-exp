@@ -1,14 +1,15 @@
 """Typed four-layer digital twin and deterministic building-planning benchmark."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from enum import Enum
 import hashlib
+import inspect
 import json
 import math
 import os
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable, Mapping, Sequence
 
 import numpy as np
 
@@ -207,6 +208,9 @@ class Outcome:
 ROOMS = ("Lobby", "CorridorA", "PumpRoom", "ElectricalRoom", "RestrictedLab")
 BASE_POSITIONS = {"Lobby": (0.0, 0.0), "CorridorA": (5.0, 0.0), "PumpRoom": (10.0, 0.0), "ElectricalRoom": (5.0, 5.0), "RestrictedLab": (10.0, 5.0)}
 EDGE_ROWS = (("Door1", "Lobby", "CorridorA", 5.0), ("Door2", "CorridorA", "PumpRoom", 5.0), ("Door3", "CorridorA", "RestrictedLab", 6.0), ("Door4", "ElectricalRoom", "RestrictedLab", 5.0), ("Door5", "CorridorA", "ElectricalRoom", 5.0), ("Door6", "Lobby", "ElectricalRoom", 7.0))
+REPLICATION_NAMESPACE = "replication-v7"
+REPLICATION_SEEDS = tuple(range(80))
+FROZEN_V6_PLANNER_SHA256 = "d5f1ea24a43f1a7976b30da41f97477361bc85b6f19ee66dab3aefff382e03a8"
 
 
 def canonical(value: object) -> bytes:
@@ -232,10 +236,10 @@ def _mission_instruction(mission: Mission, instruction_variant: int) -> str:
     return base if instruction_variant == 0 else base.replace("Inspect", "Safely inspect")
 
 
-def make_case(seed: int, mission: Mission) -> TwinCase:
-    if type(seed) is not int or seed < 0 or not isinstance(mission, Mission):
+def make_case(seed: int, mission: Mission, *, seed_namespace: str = "exp05") -> TwinCase:
+    if type(seed) is not int or seed < 0 or not isinstance(mission, Mission) or not seed_namespace or not seed_namespace.isascii():
         raise ValueError("seed and mission are closed")
-    rng = np.random.Generator(np.random.PCG64(int.from_bytes(hashlib.sha256(canonical(["exp05", seed, mission.value])).digest()[:8], "big")))
+    rng = np.random.Generator(np.random.PCG64(int.from_bytes(hashlib.sha256(canonical([seed_namespace, seed, mission.value])).digest()[:8], "big")))
     positions = {room: (x + float(rng.uniform(-0.25, 0.25)), y + float(rng.uniform(-0.25, 0.25))) for room, (x, y) in BASE_POSITIONS.items()}
     geometry_rows = [GeometryEntity(room, "Floor1", *positions[room], 1.5) for room in ROOMS]
     asset_rows = (
@@ -422,6 +426,11 @@ def evaluate(case: TwinCase, variant: Variant) -> Outcome:
     return _execute(case,plan(planner_view(case,variant)))
 
 
+def planner_fingerprint() -> str:
+    names=("_variant","planner_view","_route","_door_for","plan","_execute","evaluate")
+    return hashlib.sha256("".join(inspect.getsource(globals()[name]) for name in names).encode("utf-8")).hexdigest()
+
+
 def _finish(case: TwinCase, variant: Variant, target: str | None, initial: tuple[str, ...], final: tuple[str, ...], actions: tuple[str, ...], events: tuple[EpisodicEvent, ...], success: bool, reason: str, cost: float, forbidden: int, invalid_affordance: int, stale: int, invalid_initial: bool, replanned: bool, operations: int, latency: int, semantic_queries: int, geometry_queries: int) -> Outcome:
     context = {Variant.T0: len(case.geometry.entities), Variant.T1: len(case.geometry.entities)+len(case.topology.edges), Variant.T2: len(case.semantics.entities)+len(case.topology.edges), Variant.T3: len(case.belief.facts)+len(case.semantics.entities), Variant.T4: len(case.belief.facts)+len(case.semantics.entities)+len(case.history)}[variant]
     fields = (case.case_sha256, case.seed, case.mission, variant, target, initial, final, actions, events, success, reason, float(cost), forbidden, invalid_affordance, stale, invalid_initial, replanned, operations, latency, semantic_queries, geometry_queries, context)
@@ -444,33 +453,82 @@ def _derived(outcomes: Sequence[Outcome], manifest_sha256: str) -> dict[str, byt
     return {"metrics.json":canonical({"schema_version":"exp05-metrics-v1","rows":metrics}),"sample-index.json":canonical({"schema_version":"exp05-samples-v1","samples":samples}),"recipe.json":canonical({"schema_version":"exp05-recipe-v1","renderer":"experiment.py:reconstruct","manifest_sha256":manifest_sha256,"sort":["seed","mission","variant"],"uncertainty":"Wilson score 95% over seed-by-mission cases"})}
 
 
+def _instruction_causality(cases:Sequence[TwinCase])->tuple[dict[str,object],...]:
+    rows=[]
+    for case in cases:
+        instruction=next((event for event in case.dynamic_events if event.event_type=="INSTRUCTION_CHANGED"),None)
+        if instruction is None:continue
+        counterfactual=replace(case,dynamic_events=tuple(event for event in case.dynamic_events if event is not instruction))
+        for variant in (Variant.T1,Variant.T2,Variant.T3,Variant.T4):
+            observed=evaluate(case,variant);baseline=evaluate(counterfactual,variant)
+            rows.append({"case_sha256":case.case_sha256,"seed":case.seed,"mission":case.mission.value,"variant":variant.value,"event":asdict(instruction),"observed_outcome_sha256":observed.outcome_sha256,"counterfactual_outcome_sha256":baseline.outcome_sha256,"trace_changed":observed.actions!=baseline.actions or observed.final_route!=baseline.final_route,"terminal_changed":(observed.success,observed.terminal_reason)!=(baseline.success,baseline.terminal_reason)})
+    return tuple(rows)
+
+
+def _bootstrap_difference(pairs:Sequence[float],label:str)->dict[str,object]:
+    values=np.asarray(pairs,dtype=np.float64);rng=np.random.Generator(np.random.PCG64(int.from_bytes(hashlib.sha256(canonical(["exp05-v7-bootstrap",label])).digest()[:8],"big")))
+    draws=np.mean(values[rng.integers(0,len(values),size=(10000,len(values)))],axis=1)
+    return {"difference":float(np.mean(values)),"bootstrap95":[float(np.quantile(draws,.025)),float(np.quantile(draws,.975))],"draws":10000,"unit":"paired seed-by-mission case"}
+
+
+def _replication_derived(cases:Sequence[TwinCase],outcomes:Sequence[Outcome],causality:Sequence[Mapping[str,object]])->bytes:
+    by_key={(row.case_sha256,row.variant):row for row in outcomes};case_by={row.case_sha256:row for row in cases}
+    def summary(domain:Sequence[Outcome])->dict[str,object]:
+        return {variant.value:{"cases":len(rows:= [row for row in domain if row.variant is variant]),"success_fraction":sum(row.success for row in rows)/len(rows),"forbidden_region_violations":sum(row.forbidden_region_violations for row in rows),"invalid_initial_plans":sum(row.invalid_initial_plan for row in rows),"replans":sum(row.replanned for row in rows)} for variant in Variant}
+    missions={mission.value:summary([row for row in outcomes if row.mission is mission]) for mission in Mission}
+    event_types=sorted({event.event_type for case in cases for event in case.dynamic_events})
+    events={name:summary([row for row in outcomes if any(event.event_type==name for event in case_by[row.case_sha256].dynamic_events)]) for name in event_types}
+    pairs32=[float(by_key[(case.case_sha256,Variant.T3)].success)-float(by_key[(case.case_sha256,Variant.T2)].success) for case in cases]
+    pairs43=[float(by_key[(case.case_sha256,Variant.T4)].success)-float(by_key[(case.case_sha256,Variant.T3)].success) for case in cases]
+    disagreements=[]
+    for label,left,right in (("T3_MINUS_T2",Variant.T2,Variant.T3),("T4_MINUS_T3",Variant.T3,Variant.T4)):
+        candidates=sorted((case for case in cases if by_key[(case.case_sha256,left)].success!=by_key[(case.case_sha256,right)].success),key=lambda case:(case.seed,case.mission.value))
+        if candidates:
+            case=candidates[0];disagreements.append({"label":label,"case_sha256":case.case_sha256,"seed":case.seed,"mission":case.mission.value,"left_outcome_sha256":by_key[(case.case_sha256,left)].outcome_sha256,"right_outcome_sha256":by_key[(case.case_sha256,right)].outcome_sha256})
+    value={"schema_version":"exp05-replication-v1","claim_status":"PRELIMINARY_REPLICATION_ONLY","overall":summary(outcomes),"missions":missions,"event_types":events,"paired":{"T3_MINUS_T2":_bootstrap_difference(pairs32,"T3_MINUS_T2"),"T4_MINUS_T3":_bootstrap_difference(pairs43,"T4_MINUS_T3")},"instruction_causality":{"rows":len(causality),"trace_changed":sum(bool(row["trace_changed"]) for row in causality),"terminal_changed":sum(bool(row["terminal_changed"]) for row in causality)},"disagreement_samples":disagreements}
+    return canonical(value)
+
+
 def _write(path: Path, payload: bytes) -> None:
     path.parent.mkdir(parents=True,exist_ok=True)
     with path.open("xb") as stream: stream.write(payload);stream.flush();os.fsync(stream.fileno())
 
 
-def run_matrix(output: Path, *, seeds: Iterable[int]) -> None:
+def run_matrix(output: Path, *, seeds: Iterable[int], seed_namespace: str = "exp05") -> None:
     selected=tuple(seeds)
     if output.exists() or not selected or len(set(selected))!=len(selected): raise EvidenceError("absent output and unique seeds required")
-    cases=[make_case(seed,mission) for seed in sorted(selected) for mission in Mission];outcomes=[evaluate(case,variant) for case in cases for variant in Variant]
+    replication=seed_namespace==REPLICATION_NAMESPACE
+    if replication and (selected!=REPLICATION_SEEDS or planner_fingerprint()!=FROZEN_V6_PLANNER_SHA256):raise EvidenceError("replication domain or frozen v6 planner drifted")
+    cases=[make_case(seed,mission,seed_namespace=seed_namespace) for seed in sorted(selected) for mission in Mission];outcomes=[evaluate(case,variant) for case in cases for variant in Variant];causality=_instruction_causality(cases) if replication else ()
     raw=output/"raw";derived=output/"derived";raw.mkdir(parents=True);derived.mkdir()
     case_bytes=b"".join(canonical(asdict(row)) for row in cases);outcome_bytes=b"".join(canonical(asdict(row)) for row in outcomes);_write(raw/"cases.jsonl",case_bytes);_write(raw/"outcomes.jsonl",outcome_bytes)
-    members=[raw/"cases.jsonl",raw/"outcomes.jsonl"];manifest={"schema_version":"exp05-manifest-v1","status":"PRELIMINARY_ENGINEERING_ONLY","seed_count":len(selected),"case_count":len(cases),"outcome_count":len(outcomes),"files":[{"path":path.name,"bytes":path.stat().st_size,"sha256":hashlib.sha256(path.read_bytes()).hexdigest()} for path in members]};manifest_bytes=canonical(manifest);_write(raw/"manifest.json",manifest_bytes)
+    members=[raw/"cases.jsonl",raw/"outcomes.jsonl"]
+    if replication:_write(raw/"instruction-causality.jsonl",b"".join(canonical(row) for row in causality));members.append(raw/"instruction-causality.jsonl")
+    manifest={"schema_version":"exp05-manifest-v2" if replication else "exp05-manifest-v1","status":"PRELIMINARY_REPLICATION_ONLY" if replication else "PRELIMINARY_ENGINEERING_ONLY","seed_namespace":seed_namespace,"seeds":list(selected),"frozen_v6_planner_sha256":FROZEN_V6_PLANNER_SHA256 if replication else None,"seed_count":len(selected),"case_count":len(cases),"outcome_count":len(outcomes),"files":[{"path":path.name,"bytes":path.stat().st_size,"sha256":hashlib.sha256(path.read_bytes()).hexdigest()} for path in members]};manifest_bytes=canonical(manifest);_write(raw/"manifest.json",manifest_bytes)
     for name,payload in _derived(outcomes,hashlib.sha256(manifest_bytes).hexdigest()).items():_write(derived/name,payload)
+    if replication:_write(derived/"replication.json",_replication_derived(cases,outcomes,causality))
 
 
 def reconstruct(raw: Path, output: Path) -> None:
-    if output.exists() or not raw.is_dir() or {path.name for path in raw.iterdir()}!={"cases.jsonl","outcomes.jsonl","manifest.json"}:raise EvidenceError("exact raw root and absent output required")
+    if output.exists() or not raw.is_dir():raise EvidenceError("exact raw root and absent output required")
     manifest_bytes=(raw/"manifest.json").read_bytes();manifest=json.loads(manifest_bytes)
     if canonical(manifest)!=manifest_bytes:raise EvidenceError("manifest is noncanonical")
+    replication=manifest.get("schema_version")=="exp05-manifest-v2"
+    expected={"cases.jsonl","outcomes.jsonl","manifest.json"}|({"instruction-causality.jsonl"} if replication else set())
+    if {path.name for path in raw.iterdir()}!=expected:raise EvidenceError("raw file set is not exact")
     for row in manifest["files"]:
         path=raw/row["path"]
         if path.stat().st_size!=row["bytes"] or hashlib.sha256(path.read_bytes()).hexdigest()!=row["sha256"]:raise EvidenceError("raw hash mismatch")
     case_rows=[json.loads(line) for line in (raw/"cases.jsonl").read_text().splitlines()];outcome_rows=[json.loads(line) for line in (raw/"outcomes.jsonl").read_text().splitlines()]
-    cases=[make_case(row["seed"],Mission(row["mission"])) for row in case_rows]
+    namespace=str(manifest.get("seed_namespace","exp05"));seeds=tuple(manifest.get("seeds",sorted({row["seed"] for row in case_rows})))
+    if replication and (namespace!=REPLICATION_NAMESPACE or seeds!=REPLICATION_SEEDS or manifest.get("frozen_v6_planner_sha256")!=FROZEN_V6_PLANNER_SHA256 or planner_fingerprint()!=FROZEN_V6_PLANNER_SHA256):raise EvidenceError("replication provenance drifted")
+    cases=[make_case(row["seed"],Mission(row["mission"]),seed_namespace=namespace) for row in case_rows]
     if b"".join(canonical(asdict(row)) for row in cases)!=(raw/"cases.jsonl").read_bytes():raise EvidenceError("case inputs do not regenerate")
     outcomes=[evaluate(case,variant) for case in cases for variant in Variant]
     if b"".join(canonical(asdict(row)) for row in outcomes)!=(raw/"outcomes.jsonl").read_bytes():raise EvidenceError("plans/outcomes do not regenerate")
     if manifest["case_count"]!=len(cases) or manifest["outcome_count"]!=len(outcomes):raise EvidenceError("manifest counts drifted")
+    causality=_instruction_causality(cases) if replication else ()
+    if replication and b"".join(canonical(row) for row in causality)!=(raw/"instruction-causality.jsonl").read_bytes():raise EvidenceError("instruction causality does not regenerate")
     output.mkdir()
     for name,payload in _derived(outcomes,hashlib.sha256(manifest_bytes).hexdigest()).items():_write(output/name,payload)
+    if replication:_write(output/"replication.json",_replication_derived(cases,outcomes,causality))

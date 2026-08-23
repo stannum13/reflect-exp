@@ -91,3 +91,24 @@ def test_raw_reconstruction_is_exact_and_tamper_fails(tmp_path: Path) -> None:
     raw.write_bytes(payload.replace(b'"success":true', b'"success":false', 1))
     with pytest.raises(experiment.EvidenceError):
         experiment.reconstruct(root / "raw", tmp_path / "bad")
+
+
+def test_v7_replication_namespace_is_distinct_planner_frozen_and_reconstructable(tmp_path: Path) -> None:
+    assert experiment.planner_fingerprint() == experiment.FROZEN_V6_PLANNER_SHA256
+    baseline = experiment.make_case(0, experiment.Mission.INSPECT_NEAREST_COOLANT)
+    replication = experiment.make_case(0, experiment.Mission.INSPECT_NEAREST_COOLANT, seed_namespace=experiment.REPLICATION_NAMESPACE)
+    assert baseline.case_sha256 != replication.case_sha256
+    with pytest.raises(experiment.EvidenceError, match="replication domain"):
+        experiment.run_matrix(tmp_path / "wrong", seeds=range(2), seed_namespace=experiment.REPLICATION_NAMESPACE)
+
+    root = tmp_path / "v7"
+    experiment.run_matrix(root, seeds=experiment.REPLICATION_SEEDS, seed_namespace=experiment.REPLICATION_NAMESPACE)
+    manifest = __import__("json").loads((root / "raw/manifest.json").read_text())
+    assert manifest["seed_namespace"] == experiment.REPLICATION_NAMESPACE
+    assert manifest["frozen_v6_planner_sha256"] == experiment.FROZEN_V6_PLANNER_SHA256
+    assert (manifest["seed_count"], manifest["case_count"], manifest["outcome_count"]) == (80, 400, 2000)
+    causality = (root / "raw/instruction-causality.jsonl").read_text().splitlines()
+    assert len(causality) == 320
+    clean = tmp_path / "v7-clean"
+    experiment.reconstruct(root / "raw", clean)
+    assert {path.name: path.read_bytes() for path in (root / "derived").iterdir()} == {path.name: path.read_bytes() for path in clean.iterdir()}
