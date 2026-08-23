@@ -9,8 +9,9 @@ from typing import Iterable, Sequence
 import numpy as np
 from . import world
 
-SELECTORS=("DIRECT","W0","W1","W1V2","W2","W3","W4","W3R","W4R")
+SELECTORS=("DIRECT","W0","W1","W1V2","W2","W3","W4","W3R","W4R","W5")
 LEARNED=("W3","W4","W3R","W4R")
+W5_THRESHOLD_QUANTILES=(.25,.5,.75)
 V4_MODELS_SHA256="70666cdd4226a05e00d0a1b4552fd27760f91d42ca7f93dca4d0706e046a20de"
 
 @dataclass(frozen=True)
@@ -38,6 +39,14 @@ class Prediction:
 class Selection:
     selector_id:str; scene_id:str; stratum:str; anchor_id:str; candidate_id:str; strategy_id:str
     selected_actual_cost:float; oracle_actual_cost:float; regret:float; spearman:float|None; success:bool; collision:bool
+    source_selector:str|None=None; confidence_score:float|None=None
+
+@dataclass(frozen=True)
+class HybridCalibration:
+    selected_residual:str; threshold_quantiles:tuple[float,...]; candidate_thresholds:tuple[float,...]
+    selected_quantile:float; selected_threshold:float; training_residual_scale:float
+    training_scene_ids:tuple[str,...]; tuning_scene_ids:tuple[str,...]; parent_model_sha256s:tuple[str,...]
+    tuning_residual_use_fraction:float; calibration_sha256:str
 
 def frozen_models_sha256(models:Sequence[FittedModel])->str:
     return hashlib.sha256(world.canonical([asdict(item) for item in models])).hexdigest()
@@ -143,6 +152,9 @@ def fit_models(training_rows:Sequence[DatasetRow],tuning_rows:Sequence[DatasetRo
 
 def predict_all(models:Sequence[FittedModel],rows:Sequence[DatasetRow])->tuple[Prediction,...]:
     if any(r.partition!="evaluation" for r in rows):raise ValueError("predictions require untouched evaluation rows")
+    return _predict_rows(models,rows)
+
+def _predict_rows(models:Sequence[FittedModel],rows:Sequence[DatasetRow])->tuple[Prediction,...]:
     by={x.selector_id:x for x in models}
     if set(by)!=set(LEARNED):raise ValueError("exact learned model set required")
     result=[]
@@ -155,13 +167,54 @@ def _ranks(values:Sequence[float])->np.ndarray:
 def _spearman(predicted:Sequence[float],actual:Sequence[float])->float:
     p=_ranks(predicted);a=_ranks(actual);return float(np.corrcoef(p,a)[0,1]) if len(p)>1 else 1.
 
-def rank_selectors(predictions:Sequence[Prediction],rows:Sequence[DatasetRow])->tuple[Selection,...]:
+def _segment_clearance(point:np.ndarray,a:np.ndarray,b:np.ndarray)->float:
+    ab=b-a;t=float(np.clip(np.dot(point-a,ab)/max(float(np.dot(ab,ab)),1e-12),0.,1.));return float(np.linalg.norm(point-(a+t*ab)))
+
+def _w5_confidence(group:Sequence[DatasetRow],fitted:Sequence[FittedModel],calibration:HybridCalibration)->tuple[float,tuple[float,float,float,float]]:
+    by={x.selector_id:x for x in fitted};selected=by[calibration.selected_residual]
+    distances=[float(np.sqrt(np.mean(np.square((_features(r,selected.selector_id)-np.asarray(selected.feature_mean))/np.asarray(selected.feature_scale))))) for r in group]
+    selected_predictions=[_prediction(selected,r) for r in group]
+    disagreement=max(p.uncertainty for p in selected_predictions)/calibration.training_residual_scale
+    w3=[_prediction(by["W3R"],r).predicted_cost for r in group];w4=[_prediction(by["W4R"],r).predicted_cost for r in group]
+    rank_disagreement=max(0.,(1.-_spearman(w3,w4))/2.)
+    s=np.asarray(group[0].state_features);support=float(s[12] if s[10] else max(s[13:15]));contact_gap=abs(float(np.linalg.norm(s[:2]-s[2:4]))-(support+.055))/max(support,.03)
+    obstacle_risk=0.
+    if s[15]==1.:
+        clearance=_segment_clearance(s[2:4],s[16:18],s[18:20]);obstacle_risk=max(0.,(support+.02-clearance)/max(support+.02,1e-12))
+    components=(max(distances),float(disagreement),float(rank_disagreement),float(contact_gap+obstacle_risk))
+    return float(np.mean(components)),components
+
+def calibrate_w5(training_rows:Sequence[DatasetRow],tuning_rows:Sequence[DatasetRow],fitted:Sequence[FittedModel])->HybridCalibration:
+    if not training_rows or any(r.partition!="train" for r in training_rows):raise ValueError("W5 training ancestry is not closed")
+    if not tuning_rows or any(r.partition!="tuning" for r in tuning_rows):raise ValueError("W5 tuning ancestry is not closed")
+    by={x.selector_id:x for x in fitted}
+    if set(by)!=set(LEARNED):raise ValueError("W5 requires exact residual model parents")
+    selected=next((x.selector_id for x in fitted if x.selected_for_evaluation),None)
+    if selected not in {"W3R","W4R"}:raise ValueError("W5 residual parent selection is invalid")
+    scale=float(np.median([abs(r.actual_cost-_w1v2(r).predicted_cost) for r in training_rows]));scale=max(scale,1e-12)
+    provisional=HybridCalibration(selected,W5_THRESHOLD_QUANTILES,(),0.,0.,scale,tuple(sorted({r.scene_id for r in training_rows})),tuple(sorted({r.scene_id for r in tuning_rows})),tuple(x.model_sha256 for x in fitted),0.,"")
+    predictions=_predict_rows(fitted,tuning_rows);lookup={(p.selector_id,p.scene_id,p.anchor_id,p.candidate_id):p for p in predictions};groups=list(_groups(tuning_rows));scores=[]
+    for _,group in groups:scores.append(_w5_confidence(group,fitted,provisional)[0])
+    thresholds=tuple(float(np.quantile(scores,q,method="linear")) for q in W5_THRESHOLD_QUANTILES);eligible=[]
+    for q,threshold in zip(W5_THRESHOLD_QUANTILES,thresholds):
+        use=[score<=threshold for score in scores];coverage=float(np.mean(use))
+        if .25<=coverage<=.75:
+            regrets=[]
+            for (_,group),residual in zip(groups,use):
+                source=selected if residual else "W1V2";chosen=min(group,key=lambda r:(lookup[(source,r.scene_id,r.anchor_id,r.candidate_id)].predicted_cost,r.candidate_id));regrets.append(chosen.actual_cost-min(r.actual_cost for r in group))
+            eligible.append((float(np.mean(regrets)),q,threshold,coverage))
+    if not eligible:raise ValueError("W5 tuning coverage has no eligible threshold")
+    _,selected_q,selected_threshold,coverage=min(eligible,key=lambda x:(x[0],x[1],x[2]));wire=[selected,W5_THRESHOLD_QUANTILES,thresholds,selected_q,selected_threshold,scale,provisional.training_scene_ids,provisional.tuning_scene_ids,provisional.parent_model_sha256s,coverage,"linear"]
+    digest=hashlib.sha256(world.canonical(wire)).hexdigest();return HybridCalibration(selected,W5_THRESHOLD_QUANTILES,thresholds,selected_q,selected_threshold,scale,provisional.training_scene_ids,provisional.tuning_scene_ids,provisional.parent_model_sha256s,coverage,digest)
+
+def rank_selectors(predictions:Sequence[Prediction],rows:Sequence[DatasetRow],fitted:Sequence[FittedModel],calibration:HybridCalibration)->tuple[Selection,...]:
     lookup={(p.selector_id,p.scene_id,p.anchor_id,p.candidate_id):p for p in predictions};result=[];predicted=("W1","W1V2","W3","W4","W3R","W4R")
     for (sid,aid),group in _groups(rows):
         oracle=min(group,key=lambda r:(r.actual_cost,r.candidate_id));choices={"DIRECT":next(r for r in group if r.strategy_id=="DIRECT"),"W0":group[int.from_bytes(hashlib.sha256(world.canonical(["W0",sid,aid])).digest()[:8],"big")%8],"W2":oracle}
         for selector in predicted:choices[selector]=min(group,key=lambda r:(lookup[(selector,sid,aid,r.candidate_id)].predicted_cost,r.candidate_id))
+        confidence,_=_w5_confidence(group,fitted,calibration);source=calibration.selected_residual if confidence<=calibration.selected_threshold else "W1V2";choices["W5"]=choices[source]
         for selector in SELECTORS:
-            chosen=choices[selector];spear=_spearman([lookup[(selector,sid,aid,r.candidate_id)].predicted_cost for r in group],[r.actual_cost for r in group]) if selector in predicted else None;result.append(Selection(selector,sid,group[0].stratum,aid,chosen.candidate_id,chosen.strategy_id,chosen.actual_cost,oracle.actual_cost,max(0.,chosen.actual_cost-oracle.actual_cost),spear,chosen.success,chosen.collision))
+            chosen=choices[selector];rank_source=source if selector=="W5" else selector;spear=_spearman([lookup[(rank_source,sid,aid,r.candidate_id)].predicted_cost for r in group],[r.actual_cost for r in group]) if rank_source in predicted else None;result.append(Selection(selector,sid,group[0].stratum,aid,chosen.candidate_id,chosen.strategy_id,chosen.actual_cost,oracle.actual_cost,max(0.,chosen.actual_cost-oracle.actual_cost),spear,chosen.success,chosen.collision,source if selector=="W5" else None,confidence if selector=="W5" else None))
     return tuple(result)
 
 def aggregate_metrics(selections:Sequence[Selection],predictions:Sequence[Prediction],rows:Sequence[DatasetRow])->dict[str,object]:
@@ -176,7 +229,8 @@ def aggregate_metrics(selections:Sequence[Selection],predictions:Sequence[Predic
     for selector in ("W1V2","W3R","W4R"):
         ps=[p for p in predictions if p.selector_id==selector];quality[selector]={"cost_mae":float(np.mean([abs(p.predicted_cost-truth[(p.scene_id,p.anchor_id,p.candidate_id)].actual_cost) for p in ps])),"collision_brier":float(np.mean([(p.predicted_collision_probability-float(truth[(p.scene_id,p.anchor_id,p.candidate_id)].collision))**2 for p in ps])),"success_brier":float(np.mean([(p.predicted_success_probability-float(truth[(p.scene_id,p.anchor_id,p.candidate_id)].success))**2 for p in ps])),"uncertainty_coverage":float(np.mean([abs(p.predicted_cost-truth[(p.scene_id,p.anchor_id,p.candidate_id)].actual_cost)<=max(p.uncertainty,1e-12) for p in ps]))}
     strata={s:[x for x in selections if x.stratum==s] for s in world.STRATA};row_strata={s:[x for x in rows if x.stratum==s] for s in world.STRATA}
-    return {"overall":aggregate(selections),"strata":{s:aggregate(v) for s,v in strata.items() if v},"prediction_quality":quality,"candidate_set":{"overall":candidate_set(rows),"strata":{s:candidate_set(v) for s,v in row_strata.items() if v}}}
+    w5=[x for x in selections if x.selector_id=="W5"];hybrid={"overall_residual_use_fraction":float(np.mean([x.source_selector in {"W3R","W4R"} for x in w5])),"strata_residual_use_fraction":{s:float(np.mean([x.source_selector in {"W3R","W4R"} for x in w5 if x.stratum==s])) for s in world.STRATA if any(x.stratum==s for x in w5)}}
+    return {"overall":aggregate(selections),"strata":{s:aggregate(v) for s,v in strata.items() if v},"prediction_quality":quality,"candidate_set":{"overall":candidate_set(rows),"strata":{s:candidate_set(v) for s,v in row_strata.items() if v}},"hybrid":hybrid}
 
-def quality_gate(metrics:dict[str,object],selected:str,latency:dict[str,dict[str,int]],*,latency_limit_ns:int=5_000_000)->dict[str,object]:
-    overall=metrics["overall"];strata=metrics["strata"];available=[s for s in world.STRATA if s in strata];beaten=sum(strata[s][selected]["mean_regret"]<strata[s]["W1V2"]["mean_regret"] for s in available);checks={"beats_w1v2_overall":overall[selected]["mean_regret"]<overall["W1V2"]["mean_regret"],"beats_four_of_five_strata":len(available)==5 and beaten>=4,"no_loss_to_direct":overall[selected]["mean_regret"]<=overall["DIRECT"]["mean_regret"],"latency":latency[selected]["p95_ns"]<=latency_limit_ns};return {"authority":"ENGINEERING_NONCONFIRMATORY","selected_selector":selected,"strata_beaten":beaten,"strata_observed":available,"checks":checks,"passed":all(checks.values())}
+def quality_gate(metrics:dict[str,object],latency:dict[str,dict[str,int]],*,latency_limit_ns:int=5_000_000)->dict[str,object]:
+    overall=metrics["overall"];strata=metrics["strata"];comparators=("W1V2","W3R","W0","DIRECT");available=[s for s in world.STRATA if s in strata];beaten=sum(all(strata[s]["W5"]["mean_regret"]<strata[s][c]["mean_regret"] for c in comparators) for s in available);coverage=metrics["hybrid"]["overall_residual_use_fraction"];checks={"beats_all_overall":all(overall["W5"]["mean_regret"]<overall[c]["mean_regret"] for c in comparators),"beats_all_in_four_of_five_strata":len(available)==5 and beaten>=4,"latency":latency["W5"]["p95_ns"]<=latency_limit_ns,"nontrivial_coverage":.1<=coverage<=.9};return {"authority":"ENGINEERING_NONCONFIRMATORY","selected_selector":"W5","comparators":list(comparators),"strata_beaten":beaten,"strata_observed":available,"residual_use_fraction":coverage,"checks":checks,"passed":all(checks.values())}

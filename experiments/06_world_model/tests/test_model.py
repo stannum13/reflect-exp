@@ -21,7 +21,11 @@ def _rows(specs: list[object]) -> tuple[object, ...]:
 @pytest.fixture(scope="module")
 def domains() -> tuple[tuple[object, ...], tuple[object, ...], tuple[object, ...]]:
     specs = world.scene_rows()
-    return tuple(_rows([next(x for x in specs if x.partition == part)]) for part in ("train", "tuning", "evaluation"))
+    return (
+        _rows([x for x in specs if x.partition == "train"][:4]),
+        _rows([x for x in specs if x.partition == "tuning"][:4]),
+        _rows([next(x for x in specs if x.partition == "evaluation")]),
+    )
 
 
 def test_fit_rejects_partition_leakage(domains: tuple[tuple[object, ...], ...]) -> None:
@@ -45,15 +49,16 @@ def test_ridge_models_are_byte_stable_and_bind_only_train_tune(domains: tuple[tu
 def test_all_selectors_are_total_and_oracle_has_zero_regret(domains: tuple[tuple[object, ...], ...]) -> None:
     training, tuning, evaluation = domains
     fitted = model.fit_models(training, tuning)
+    calibration = model.calibrate_w5(training, tuning, fitted)
     predictions = model.predict_all(fitted, evaluation)
-    selections = model.rank_selectors(predictions, evaluation)
+    selections = model.rank_selectors(predictions, evaluation, fitted, calibration)
     anchors = {(row.scene_id, row.anchor_id) for row in evaluation}
-    assert len(selections) == len(anchors) * 9
-    assert {item.selector_id for item in selections} == {"DIRECT", "W0", "W1", "W1V2", "W2", "W3", "W4", "W3R", "W4R"}
+    assert len(selections) == len(anchors) * 10
+    assert {item.selector_id for item in selections} == {"DIRECT", "W0", "W1", "W1V2", "W2", "W3", "W4", "W3R", "W4R", "W5"}
     assert all(item.regret >= -1e-12 for item in selections)
     assert all(abs(item.regret) <= 1e-12 for item in selections if item.selector_id == "W2")
     metrics = model.aggregate_metrics(selections, predictions, evaluation)
-    assert set(metrics["overall"]) == {"DIRECT", "W0", "W1", "W1V2", "W2", "W3", "W4", "W3R", "W4R"}
+    assert set(metrics["overall"]) == {"DIRECT", "W0", "W1", "W1V2", "W2", "W3", "W4", "W3R", "W4R", "W5"}
     assert metrics["overall"]["W2"]["mean_regret"] == 0.0
     assert "collision_fraction" not in metrics["overall"]["W2"]
     assert "selected_collision_fraction" in metrics["overall"]["W2"]
@@ -75,9 +80,14 @@ def test_v4_predictions_are_truth_free_and_tuning_selects_one_residual(domains: 
 
 
 def test_quality_gate_is_mechanical() -> None:
-    overall = {name: {"mean_regret": value} for name, value in {"DIRECT": .5, "W1V2": .7, "W3R": .4}.items()}
-    strata = {name: {"W1V2": {"mean_regret": .7}, "W3R": {"mean_regret": .6 if index < 4 else .8}} for index, name in enumerate(world.STRATA)}
-    gate = model.quality_gate({"overall": overall, "strata": strata}, "W3R", {"W3R": {"p95_ns": 1000}}, latency_limit_ns=5000)
+    comparators = {"W1V2": .7, "W3R": .6, "W0": .8, "DIRECT": .9}
+    overall = {name: {"mean_regret": value} for name, value in {**comparators, "W5": .5}.items()}
+    strata = {
+        name: {selector: {"mean_regret": (.4 if selector == "W5" and index < 4 else value)} for selector, value in {**comparators, "W5": .9}.items()}
+        for index, name in enumerate(world.STRATA)
+    }
+    metrics = {"overall": overall, "strata": strata, "hybrid": {"overall_residual_use_fraction": .5}}
+    gate = model.quality_gate(metrics, {"W5": {"p95_ns": 1000}}, latency_limit_ns=5000)
     assert gate["passed"] is True
     assert gate["strata_beaten"] == 4
 
@@ -88,3 +98,36 @@ def test_v4_models_load_byte_frozen_without_refitting() -> None:
     assert tuple(item.selector_id for item in fitted) == ("W3", "W4", "W3R", "W4R")
     assert next(item.selector_id for item in fitted if item.selected_for_evaluation) == "W3R"
     assert model.frozen_models_sha256(fitted) == "70666cdd4226a05e00d0a1b4552fd27760f91d42ca7f93dca4d0706e046a20de"
+
+
+def test_w5_calibration_has_frozen_domain_ancestry_and_nontrivial_tuning_coverage(domains: tuple[tuple[object, ...], ...]) -> None:
+    training, tuning, _ = domains
+    fitted = model.fit_models(training, tuning)
+    calibration = model.calibrate_w5(training, tuning, fitted)
+    assert calibration.threshold_quantiles == (.25, .5, .75)
+    assert calibration.selected_quantile in calibration.threshold_quantiles
+    assert .25 <= calibration.tuning_residual_use_fraction <= .75
+    assert set(calibration.training_scene_ids) == {row.scene_id for row in training}
+    assert set(calibration.tuning_scene_ids) == {row.scene_id for row in tuning}
+    assert not set(calibration.training_scene_ids) & set(calibration.tuning_scene_ids)
+    assert len(calibration.calibration_sha256) == 64
+
+
+def test_w5_confidence_and_choice_are_truth_free(domains: tuple[tuple[object, ...], ...]) -> None:
+    training, tuning, evaluation = domains
+    fitted = model.fit_models(training, tuning)
+    calibration = model.calibrate_w5(training, tuning, fitted)
+    predictions = model.predict_all(fitted, evaluation)
+    original = model.rank_selectors(predictions, evaluation, fitted, calibration)
+    altered_rows = tuple(
+        replace(row, actual_cost=9999.0, terminal_state=(99.0,) * len(row.terminal_state), collision=not row.collision,
+                success=not row.success, terminal_failure=not row.terminal_failure, action_energy=9999.0)
+        for row in evaluation
+    )
+    altered_predictions = model.predict_all(fitted, altered_rows)
+    altered = model.rank_selectors(altered_predictions, altered_rows, fitted, calibration)
+    identity = lambda rows: [
+        (row.scene_id, row.anchor_id, row.candidate_id, row.source_selector, row.confidence_score)
+        for row in rows if row.selector_id == "W5"
+    ]
+    assert identity(original) == identity(altered)
