@@ -4,7 +4,7 @@ Date: 2026-08-24
 
 Branch: `feat/hierarchy-recovery-probe`
 
-Qualified source commit: `27cef6662c84602e453f98bb0c596ce7d5a95c34`
+Qualified source commit: `95b28fbee366c6559172ef3b2c7e2cf80e4ea365`
 
 Status: **READY FOR FRESH READ-ONLY REVIEW**
 
@@ -54,23 +54,23 @@ Bytes: **50,009,565**
 
 | Artifact | SHA-256 |
 |---|---|
-| qualification freeze | `ed9ae1356570b531263c052359acfa2e2bda139b5d3cbee09ba5b15547b1898d` |
+| qualification freeze | `3349a2bebde77411e5711f1eabf038d523cc88f4e3cb70aef7d285f9abfc36b5` |
 | raw manifest / raw reconstruction | `561397e27fb82e4368b5b254bd06dd8f7947a1b878718a21be62aa708af90169` |
-| derived manifest / derived reconstruction | `7135b0739e8e4f83d687e4008780b8e65d50e76ab1969601ae0b0ac2e5ec1eb3` |
+| derived manifest / derived reconstruction | `371fb4a7e31c9e787400d339063d4ead9eb3b32df1bf98a05f121998fc88d55f` |
 | qualification summary | `1372bb6421ff5ef0aae9aa64b398dd58df81daf46c639a25c9c28710304b32ca` |
-| gate audit receipts | `432804155b58920b7379795079d5dd5c5b219075c51c1a4a047ab346f139bdab` |
+| gate audit receipts | `21b947d3143b079bb3e6e7f525026fa7e40ab2a63b7d1ce25fc3424ea8286d19` |
 | replay receipt | `4d9f103ebb42021f7ef888f88dc4f7069bb366114dedb7dbd125a16225ef7a2f` |
-| source/spec/import closure | `3d07f3361ebee8fe4127babb714bcf9752e8a5f76efc58d54f3aaeae5cb0ecac` |
+| source/spec/import closure | `aebe5eaa286837f8ed51b2505b9cca07244a775a31bf9bb0def083c762a50272` |
 | frozen qualification/outcome configuration | `1e5fec9533ad61eced4a485ef5b8615586050e470167b8f373b79e55d1860672` |
 | frozen environment | `d6e2926ed735b6049ca7752e318f32206af0926e6745fbd2d52f9886669d1b5f` |
-| durable qualification tree | `19c8aeb7de2ab9a6b3060e2d409ce5fddfe31c06dccd14ba454eaab227cc9f7f` |
-| durable archive | `4dc382d06cbe96e7ff9d9d2cfd058234fb0583b2196586dc671b7c5b48f79dbe` |
+| durable qualification tree | `4243538581e224828cc5c6141e61510fc1df03dc6692da4e8f3e1d633ab16215` |
+| durable archive | `74697f17f24ebb2f61f3662dd2ab50ed19d7600cc2b73714acb94c6f2bf11fd5` |
 
-Clean reconstruction destination: `/private/tmp/hierarchy-v3-seventh-reseal-27cef66-reconstructed`. It replayed all **18** episodes with `matched=true`; raw manifest `561397e27fb82e4368b5b254bd06dd8f7947a1b878718a21be62aa708af90169` and derived manifest `7135b0739e8e4f83d687e4008780b8e65d50e76ab1969601ae0b0ac2e5ec1eb3` matched byte-exactly.
+Clean reconstruction destination: `/private/tmp/hierarchy-v3-eighth-reconstruction-95b28fb`. It replayed all **18** episodes with `matched=true`; raw manifest `561397e27fb82e4368b5b254bd06dd8f7947a1b878718a21be62aa708af90169` and derived manifest `371fb4a7e31c9e787400d339063d4ead9eb3b32df1bf98a05f121998fc88d55f` matched byte-exactly.
 
-The ignored working bundle is durably retained as the tracked, deterministic, content-addressed archive `reports/evidence/hierarchical-recovery-v3-qualification/4dc382d06cbe96e7ff9d9d2cfd058234fb0583b2196586dc671b7c5b48f79dbe.tar.gz` (**8,759,575 bytes; 437 members**) with a tracked manifest and byte-exact extraction test.
+The ignored working bundle is durably retained as the tracked, deterministic, content-addressed archive `reports/evidence/hierarchical-recovery-v3-qualification/74697f17f24ebb2f61f3662dd2ab50ed19d7600cc2b73714acb94c6f2bf11fd5.tar.gz` (**8,759,536 bytes; 437 members**) with a tracked manifest and byte-exact extraction test.
 
-Governed verification receipt: **78 V3 passed, 60 deselected; 138 Experiment 03 passed**.
+Governed verification receipt: **125 V3 passed, 60 deselected; 185 Experiment 03 passed**.
 
 The companion authentication record binds the complete visible report bytes, archive/tree receipt, and governed test counts. Artifact-derived structured checks independently authenticate status, recursive file/byte inventory, episode and hard-gate counts, controller hashes, positive-control count, freeze/raw/derived hashes, archive bytes/member count, and test receipt. Missing, contradictory, duplicate, or altered visible values fail closed.
 
