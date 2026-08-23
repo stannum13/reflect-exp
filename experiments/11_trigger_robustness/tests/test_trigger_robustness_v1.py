@@ -108,3 +108,10 @@ def test_derived_graphs_are_data_faithful_and_full_reconstruction_matches(tmp_pa
     rebuilt = tmp_path / "rebuilt"
     exp.reconstruct_all(root, rebuilt)
     assert exp.tree_hash(root) == exp.tree_hash(rebuilt)
+
+
+def test_tracked_report_authenticates_authoritative_tables():
+    report = (exp.ROOT / "TRIGGER_ROBUSTNESS_RESULT.md").read_text(encoding="ascii")
+    derived = exp.ROOT / "results/v1/derived"
+    for name in ("bootstrap.csv", "graph-table.csv", "heterogeneity.csv", "slopes-cliffs.csv"):
+        assert exp.sha((derived / name).read_bytes()) in report
