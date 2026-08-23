@@ -212,6 +212,32 @@ inventoried and cannot contribute to selection or analysis.
 - Semantic replan cannot mutate durable geometry or erase contrary observations.
 - No architecture may use the injected disturbance label as an input.
 
+## Open-source reuse boundary
+
+The immediate probe reuses the existing open-source MuJoCo runtime and the already
+validated local P6 controller, with repaired P4 used only for the declared sensitivity
+slice. It also keeps the experiment-local Cartesian skill representation, explicit
+Python recovery state machine, and sealed JSON/JSONL/Parquet evidence path. Adding a
+new robotics framework here would change the execution system at the same time as the
+recovery architecture and would make the causal comparison harder to interpret.
+
+No new runtime package is therefore required for the 288 primary/sensitivity episodes.
+Open-source projects are introduced one layer at a time only in later replication:
+
+- Gymnasium-Robotics Fetch tasks provide the first standard MuJoCo environment transfer;
+- Mink may replace only the differential-IK component when a higher-DoF model requires it;
+- py_trees may replace only the orchestration state machine after two tasks exhibit the
+  same recovery structure; and
+- DuckDB may index the append-only memory/event ledger for the unfixed-memory study,
+  while immutable JSON/Parquet evidence remains authoritative.
+
+MoveIt, ROS 2 control, BehaviorTree.CPP, MuJoCo MPC, Isaac/ManiSkill, and generalized
+scene-graph frameworks remain reference implementations rather than immediate
+dependencies. Their integration surface is larger than this probe and would introduce
+middleware, controller, engine, or perception changes unrelated to the three recovery
+levels being tested. Any later dependency is revision-pinned, license-checked, and
+hidden behind the existing typed recovery interface.
+
 ## Parallel execution plan
 
 After implementation is frozen, run three independent evidence shards in parallel:
