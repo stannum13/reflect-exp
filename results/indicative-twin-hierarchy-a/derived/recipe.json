@@ -1,0 +1,1 @@
+{"manifest_sha256":"150adc78c58c749146da9962fdb418a2e1ed98b06ad5523ed24dc0c985a2d7d1","renderer":"experiment.py:reconstruct","schema_version":"exp05-recipe-v1","sort":["seed","mission","variant"],"uncertainty":"Wilson score 95% over seed-by-mission cases"}

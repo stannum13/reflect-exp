@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760" role="img" aria-labelledby="title desc">
+<title id="title">Mission success by hierarchy variant</title>
+<desc id="desc">Deterministic analysis graphic reconstructed from frozen outcomes.</desc>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>text{font-family:Arial,sans-serif;fill:#172033}.title{font-size:25px;font-weight:700}.label{font-size:15px}.small{font-size:12px}.axis{stroke:#526077;stroke-width:1.5}.grid{stroke:#d7dde7;stroke-width:1}.error{stroke:#172033;stroke-width:2}</style>
+<text x="100" y="53" class="title">Mission success by hierarchy variant</text>
+<text x="100" y="78" class="label">Bars: exact success fraction; whiskers: Wilson 95% interval; 400 matched cases per run/variant.</text>
+<line x1="100" y1="635.00" x2="1210" y2="635.00" class="grid"/>
+<text x="88" y="640.00" text-anchor="end" class="small">0%</text>
+<line x1="100" y1="530.00" x2="1210" y2="530.00" class="grid"/>
+<text x="88" y="535.00" text-anchor="end" class="small">20%</text>
+<line x1="100" y1="425.00" x2="1210" y2="425.00" class="grid"/>
+<text x="88" y="430.00" text-anchor="end" class="small">40%</text>
+<line x1="100" y1="320.00" x2="1210" y2="320.00" class="grid"/>
+<text x="88" y="325.00" text-anchor="end" class="small">60%</text>
+<line x1="100" y1="215.00" x2="1210" y2="215.00" class="grid"/>
+<text x="88" y="220.00" text-anchor="end" class="small">80%</text>
+<line x1="100" y1="110.00" x2="1210" y2="110.00" class="grid"/>
+<text x="88" y="115.00" text-anchor="end" class="small">100%</text>
+<line x1="100" y1="110" x2="100" y2="635" class="axis"/>
+<line x1="100" y1="635" x2="1210" y2="635" class="axis"/>
+<text x="377.50" y="678" text-anchor="middle" class="label">Run A (seeds 80–159)</text>
+<rect x="183.50" y="635.00" width="68" height="0.00" rx="3" fill="#9aa5b5"/>
+<line x1="217.50" y1="630.01" x2="217.50" y2="635.00" class="error"/>
+<line x1="210.50" y1="630.01" x2="224.50" y2="630.01" class="error"/>
+<line x1="210.50" y1="635.00" x2="224.50" y2="635.00" class="error"/>
+<text x="217.50" y="624.00" text-anchor="middle" class="small">0.0%</text>
+<text x="217.50" y="657" text-anchor="middle" class="small">T0</text>
+<rect x="263.50" y="533.94" width="68" height="101.06" rx="3" fill="#6fa8dc"/>
+<line x1="297.50" y1="512.16" x2="297.50" y2="552.65" class="error"/>
+<line x1="290.50" y1="512.16" x2="304.50" y2="512.16" class="error"/>
+<line x1="290.50" y1="552.65" x2="304.50" y2="552.65" class="error"/>
+<text x="297.50" y="522.94" text-anchor="middle" class="small">19.2%</text>
+<text x="297.50" y="657" text-anchor="middle" class="small">T1</text>
+<rect x="343.50" y="423.69" width="68" height="211.31" rx="3" fill="#7ec8b5"/>
+<line x1="377.50" y1="398.09" x2="377.50" y2="448.32" class="error"/>
+<line x1="370.50" y1="398.09" x2="384.50" y2="398.09" class="error"/>
+<line x1="370.50" y1="448.32" x2="384.50" y2="448.32" class="error"/>
+<text x="377.50" y="412.69" text-anchor="middle" class="small">40.2%</text>
+<text x="377.50" y="657" text-anchor="middle" class="small">T2</text>
+<rect x="423.50" y="228.12" width="68" height="406.88" rx="3" fill="#405cf5"/>
+<line x1="457.50" y1="208.07" x2="457.50" y2="250.92" class="error"/>
+<line x1="450.50" y1="208.07" x2="464.50" y2="208.07" class="error"/>
+<line x1="450.50" y1="250.92" x2="464.50" y2="250.92" class="error"/>
+<text x="457.50" y="217.12" text-anchor="middle" class="small">77.5%</text>
+<text x="457.50" y="657" text-anchor="middle" class="small">T3</text>
+<rect x="503.50" y="211.06" width="68" height="423.94" rx="3" fill="#e18d38"/>
+<line x1="537.50" y1="192.35" x2="537.50" y2="232.84" class="error"/>
+<line x1="530.50" y1="192.35" x2="544.50" y2="192.35" class="error"/>
+<line x1="530.50" y1="232.84" x2="544.50" y2="232.84" class="error"/>
+<text x="537.50" y="200.06" text-anchor="middle" class="small">80.8%</text>
+<text x="537.50" y="657" text-anchor="middle" class="small">T4</text>
+<text x="932.50" y="678" text-anchor="middle" class="label">Run B (seeds 160–239)</text>
+<rect x="738.50" y="635.00" width="68" height="0.00" rx="3" fill="#9aa5b5"/>
+<line x1="772.50" y1="630.01" x2="772.50" y2="635.00" class="error"/>
+<line x1="765.50" y1="630.01" x2="779.50" y2="630.01" class="error"/>
+<line x1="765.50" y1="635.00" x2="779.50" y2="635.00" class="error"/>
+<text x="772.50" y="624.00" text-anchor="middle" class="small">0.0%</text>
+<text x="772.50" y="657" text-anchor="middle" class="small">T0</text>
+<rect x="818.50" y="526.06" width="68" height="108.94" rx="3" fill="#6fa8dc"/>
+<line x1="852.50" y1="503.79" x2="852.50" y2="545.42" class="error"/>
+<line x1="845.50" y1="503.79" x2="859.50" y2="503.79" class="error"/>
+<line x1="845.50" y1="545.42" x2="859.50" y2="545.42" class="error"/>
+<text x="852.50" y="515.06" text-anchor="middle" class="small">20.8%</text>
+<text x="852.50" y="657" text-anchor="middle" class="small">T1</text>
+<rect x="898.50" y="418.44" width="68" height="216.56" rx="3" fill="#7ec8b5"/>
+<line x1="932.50" y1="392.79" x2="932.50" y2="443.21" class="error"/>
+<line x1="925.50" y1="392.79" x2="939.50" y2="392.79" class="error"/>
+<line x1="925.50" y1="443.21" x2="939.50" y2="443.21" class="error"/>
+<text x="932.50" y="407.44" text-anchor="middle" class="small">41.2%</text>
+<text x="932.50" y="657" text-anchor="middle" class="small">T2</text>
+<rect x="978.50" y="220.25" width="68" height="414.75" rx="3" fill="#405cf5"/>
+<line x1="1012.50" y1="200.79" x2="1012.50" y2="242.60" class="error"/>
+<line x1="1005.50" y1="200.79" x2="1019.50" y2="200.79" class="error"/>
+<line x1="1005.50" y1="242.60" x2="1019.50" y2="242.60" class="error"/>
+<text x="1012.50" y="209.25" text-anchor="middle" class="small">79.0%</text>
+<text x="1012.50" y="657" text-anchor="middle" class="small">T3</text>
+<rect x="1058.50" y="209.75" width="68" height="425.25" rx="3" fill="#e18d38"/>
+<line x1="1092.50" y1="191.15" x2="1092.50" y2="231.45" class="error"/>
+<line x1="1085.50" y1="191.15" x2="1099.50" y2="191.15" class="error"/>
+<line x1="1085.50" y1="231.45" x2="1099.50" y2="231.45" class="error"/>
+<text x="1092.50" y="198.75" text-anchor="middle" class="small">81.0%</text>
+<text x="1092.50" y="657" text-anchor="middle" class="small">T4</text>
+<text x="100" y="710" class="small">Source: indicative-twin-hierarchy-a and -b frozen raw outcomes. This is an architectural parallel, not evidence of three-level recovery.</text>
+</svg>

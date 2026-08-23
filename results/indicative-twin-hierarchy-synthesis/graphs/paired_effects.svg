@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="680" viewBox="0 0 1280 680" role="img" aria-labelledby="title desc">
+<title id="title">Paired mission-success differences</title>
+<desc id="desc">Deterministic analysis graphic reconstructed from frozen outcomes.</desc>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>text{font-family:Arial,sans-serif;fill:#172033}.title{font-size:25px;font-weight:700}.label{font-size:15px}.small{font-size:12px}.axis{stroke:#526077;stroke-width:1.5}.grid{stroke:#d7dde7;stroke-width:1}.error{stroke:#172033;stroke-width:2}</style>
+<text x="100" y="53" class="title">Paired mission-success differences</text>
+<text x="100" y="78" class="label">Point: matched-case mean difference; whisker: deterministic 10,000-draw bootstrap 95% interval.</text>
+<line x1="296.47" y1="115" x2="296.47" y2="575" class="grid"/>
+<text x="296.47" y="603" text-anchor="middle" class="small">0 pp</text>
+<line x1="484.71" y1="115" x2="484.71" y2="575" class="grid"/>
+<text x="484.71" y="603" text-anchor="middle" class="small">10 pp</text>
+<line x1="672.94" y1="115" x2="672.94" y2="575" class="grid"/>
+<text x="672.94" y="603" text-anchor="middle" class="small">20 pp</text>
+<line x1="861.18" y1="115" x2="861.18" y2="575" class="grid"/>
+<text x="861.18" y="603" text-anchor="middle" class="small">30 pp</text>
+<line x1="1049.41" y1="115" x2="1049.41" y2="575" class="grid"/>
+<text x="1049.41" y="603" text-anchor="middle" class="small">40 pp</text>
+<line x1="296.47" y1="115" x2="296.47" y2="575" stroke="#172033" stroke-width="2"/>
+<line x1="908.24" y1="153.33" x2="1087.06" y2="153.33" stroke="#405cf5" stroke-width="5" stroke-linecap="round"/>
+<circle cx="997.65" cy="153.33" r="8" fill="#405cf5"/>
+<text x="222" y="158.33" text-anchor="end" class="label">T3−T2 · run a</text>
+<text x="1099.06" y="158.33" class="small">+37.2 pp [+32.5, +42.0]</text>
+<line x1="917.65" y1="230.00" x2="1101.18" y2="230.00" stroke="#405cf5" stroke-width="5" stroke-linecap="round"/>
+<circle cx="1007.06" cy="230.00" r="8" fill="#405cf5"/>
+<text x="222" y="235.00" text-anchor="end" class="label">T3−T2 · run b</text>
+<text x="1113.18" y="235.00" class="small">+37.8 pp [+33.0, +42.8]</text>
+<line x1="938.82" y1="306.67" x2="1065.88" y2="306.67" stroke="#405cf5" stroke-width="5" stroke-linecap="round"/>
+<circle cx="1002.35" cy="306.67" r="8" fill="#405cf5"/>
+<text x="222" y="311.67" text-anchor="end" class="label">T3−T2 · pooled two runs</text>
+<text x="1077.88" y="311.67" class="small">+37.5 pp [+34.1, +40.9]</text>
+<line x1="329.41" y1="383.33" x2="390.59" y2="383.33" stroke="#e18d38" stroke-width="5" stroke-linecap="round"/>
+<circle cx="357.65" cy="383.33" r="8" fill="#e18d38"/>
+<text x="222" y="388.33" text-anchor="end" class="label">T4−T3 · run a</text>
+<text x="402.59" y="388.33" class="small">+3.2 pp [+1.8, +5.0]</text>
+<line x1="310.59" y1="460.00" x2="362.35" y2="460.00" stroke="#e18d38" stroke-width="5" stroke-linecap="round"/>
+<circle cx="334.12" cy="460.00" r="8" fill="#e18d38"/>
+<text x="222" y="465.00" text-anchor="end" class="label">T4−T3 · run b</text>
+<text x="374.35" y="465.00" class="small">+2.0 pp [+0.8, +3.5]</text>
+<line x1="322.35" y1="536.67" x2="374.12" y2="536.67" stroke="#e18d38" stroke-width="5" stroke-linecap="round"/>
+<circle cx="345.88" cy="536.67" r="8" fill="#e18d38"/>
+<text x="222" y="541.67" text-anchor="end" class="label">T4−T3 · pooled two runs</text>
+<text x="386.12" y="541.67" class="small">+2.6 pp [+1.4, +4.1]</text>
+<text x="240" y="625" class="small">Pooled intervals resample the two runs first, then paired cases within selected runs (n_clusters=2): descriptive sensitivity only.</text>
+</svg>
