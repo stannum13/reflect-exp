@@ -322,7 +322,7 @@ def _validate_snapshot(artifacts: dict[str, GitArtifact], smoke_path: str, opera
     stages = run_manifest.get("stages")
     if not isinstance(safety, dict) or safety.get("physical_deployment_allowed") is not False or safety.get("remote_enabled") is not False or not isinstance(stages, dict) or stages.get("p3") != "complete":
         raise ValueError("P3 run-manifest safety/stage gate is invalid")
-    if not artifacts["references/licenses.md"].content.startswith(b"# Source licenses") or not artifacts["docs/SOURCE_MAP.md"].content.startswith(b"# Source map") or not artifacts["docs/ASSUMPTIONS.md"].content.startswith(b"# Assumptions"):
+    if not artifacts["references/licenses.md"].content.startswith(b"# Source licenses") or not artifacts["docs/SOURCE_MAP.md"].content.startswith(b"# Source map") or not artifacts["docs/ASSUMPTIONS.md"].content.startswith(b"# Recorded Assumptions"):
         raise ValueError("P3 provenance documents are incomplete")
     package_version, platform_name, runtime = _validate_domain_snapshot(artifacts, smoke_path)
     if platform_name != operation["platform"] or runtime != operation["compiler_or_runtime"]:
