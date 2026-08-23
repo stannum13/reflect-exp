@@ -234,7 +234,10 @@ def _validate_manifest(manifest: dict[str, object]) -> tuple[str, dict[str, obje
 def _validate_domain_snapshot(
     artifacts: Mapping[str, GitArtifact], smoke_path: str
 ) -> tuple[str, str, str]:
-    with tempfile.TemporaryDirectory(prefix="reflect-p3-report-") as temporary:
+    temporary_parent = Path(tempfile.gettempdir()).resolve(strict=True)
+    with tempfile.TemporaryDirectory(
+        prefix="reflect-p3-report-", dir=temporary_parent
+    ) as temporary:
         snapshot_root = Path(temporary)
         for path, artifact in artifacts.items():
             target = snapshot_root / path
