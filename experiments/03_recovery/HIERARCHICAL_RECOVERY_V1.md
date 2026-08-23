@@ -1,8 +1,10 @@
 # Hierarchical Recovery V1
 
-Status: `COMPLETE_NONCONFIRMATORY_ENGINEERING_SCREEN`
-Predeclared decision: `SUPPORTS_LAYER_MATCHED_HIERARCHY`
+Status: `SUPERSEDED_NONWORKING_CONSTRUCT_VALIDITY_SAMPLE`
+Historical analyzer output: `SUPPORTS_LAYER_MATCHED_HIERARCHY` (no scientific promotion authority)
 Execution source: `7244c5659e5172539ab6b6040ef71cc861fd45bd`
+
+This V1 run is retained byte-for-byte as integration and evidence-pipeline conformance material, but its scientific interpretation is superseded. Whole-branch review found that recovery signatures were assigned from scenario identity, validity flags could be resolved before the corresponding physics evolved, retry/replan handling did not always advance and re-observe MuJoCo, the independent safety audit was incomplete, and primary seeds did not produce distinct physical realizations. Those are construct-validity blockers. The grounded V2 preregistration corrects them; no V1 result byte has been changed.
 
 ## Situation and objective
 
@@ -59,11 +61,9 @@ R3 used exactly 16 bounded local recoveries on control disturbances, 16 motion r
 
 These intervals are descriptive engineering output, not confirmatory inference.
 
-## Inference and conclusion
+## Historical analyzer output and supersession
 
-Within this frozen semantic cell, R3 retained the success of the global-recovery comparators while eliminating their unnecessary cross-layer work. Its advantage over R0 was not a general controller gain: all architectures shared the same P6 controller and all succeeded on anchors and control disturbances. The observed difference occurred exactly where local retry could not repair invalid motion or semantic contracts.
-
-The approved decision rule therefore returns `SUPPORTS_LAYER_MATCHED_HIERARCHY`. This supports only the narrow claim that explicit control, motion, and semantic recovery responsibilities compose usefully for these fixed task contracts and disturbances. It does not establish physical-robot safety, general semantic planning, or a universal hierarchy.
+The historical analyzer emitted `SUPPORTS_LAYER_MATCHED_HIERARCHY` under the V1 mechanical gates. Because the observables, recovery transitions, seed use, and safety audit fail the later construct-validity review, that output does not support a scientific claim. V1 is a nonworking experimental sample retained only to exercise deterministic execution, evidence retention, and reconstruction.
 
 ## Working, nonworking, and absent classes
 
@@ -95,6 +95,7 @@ A clean reconstruction at `/private/tmp/hierarchy-reconstruction.DCFBUk/derived`
 
 ## Limits and concerns
 
+- No scientific conclusion should be drawn from V1. Refer to the grounded V2 preregistration and evidence for any hierarchy claim.
 - This is a nonconfirmatory engineering screen on one 3-DoF MuJoCo cell. No deployment or architecture promotion follows.
 - The declared seed namespace is retained in every identity and pairing, but this fixed simulator/task path has no stochastic branch and does not consume the seed to vary geometry, state, or disturbance magnitude. The eight seed cells are therefore exact deterministic repeats within each architecture/scenario, which explains the degenerate bootstrap intervals and reduces the effective independent geometry count. The paired mechanism comparison remains reproducible, but seed-robustness cannot be inferred from this run.
 - Disturbance classes are typed contract changes with fixed magnitudes, not perception noise or learned failure classification.
