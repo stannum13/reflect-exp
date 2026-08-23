@@ -1,6 +1,8 @@
 # Experiment 01 P4 Cartesian-trajectory rescue
 
-Status: `PRELIMINARY_MECHANISM_RESCUE`; conclusion: `CANDIDATE_FOR_FORMAL_P4_PILOT`, `NO_PROMOTION`, and `NOT_PARITY_WITH_P6`.
+Status: `HISTORICAL_V1_SUPERSEDED_FOR_SAFETY_CLOSED_CLAIMS`.
+
+This v1 screen remains an authentic historical execution, but its implementation did not suppress outward velocity when a reference was already exactly on a joint limit. It is therefore invalid as evidence for the current safety-closed P4 mechanism or formal-pilot candidacy. The immutable raw tree is preserved; `ENGINEERING_P4_RESCUE_SUPERSESSION.json` binds this v1 evidence to the repaired v2 rerun and `ENGINEERING_P4_RESCUE_V2.md` contains the current preliminary conclusion. No v1 raw bytes were rewritten.
 
 ## Outcome
 

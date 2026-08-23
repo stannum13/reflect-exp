@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import importlib
 import hashlib
 import inspect
@@ -132,3 +133,45 @@ def test_committed_p4_rescue_receipt_binds_reconstructable_raw_when_present() ->
         assert sum(row["bytes"] for row in rows)==receipt["evidence"]["bytes"]
         assert hashlib.sha256(rescue.canonical(rows)).hexdigest()==receipt["evidence"]["inventory_sha256"]
         assert rescue.reconstruct(evidence)["manifest_sha256"]==receipt["evidence"]["manifest_sha256"]
+
+
+def _claim_projection(summary: dict[str, object]) -> list[dict[str, object]]:
+    excluded=("compute_p50_ns","compute_p95_ns","controller_compute_p50_ns","controller_compute_p95_ns","controller_compute_series_ns","policy_compute_series_ns")
+    identity=("phase","variant_id","stack_id","knobs","condition_id","fault_kind","seed","scenario_identity_sha256","configuration_sha256","outcome","absolute_working","absolute_nonworking_reasons","ik_failures")
+    projected=[]
+    for row in summary["rollouts"]:
+        metrics=copy.deepcopy(row["metrics"])
+        for field in excluded:metrics.pop(field,None)
+        metrics["raw_500hz"].pop("controller_compute_ns",None);metrics["raw_500hz"].pop("policy_compute_ns",None)
+        projected.append({**{field:row[field] for field in identity},"metrics":metrics})
+    return projected
+
+
+def test_p4_rescue_v2_supersedes_v1_and_binds_repaired_reconstruction() -> None:
+    rescue=importlib.import_module("experiments.01_policy_control.engineering_p4_rescue");root=Path(rescue.__file__).resolve().parent
+    old=json.loads((root/"ENGINEERING_P4_RESCUE_EVIDENCE.json").read_text());new=json.loads((root/"ENGINEERING_P4_RESCUE_V2_EVIDENCE.json").read_text());supersession=json.loads((root/"ENGINEERING_P4_RESCUE_SUPERSESSION.json").read_text())
+    assert supersession["disposition"]=="HISTORICAL_V1_INVALID_FOR_SAFETY_CLOSED_CLAIMS_SUPERSEDED_BY_V2"
+    assert supersession["reason_ids"]==["EXACT_JOINT_LIMIT_OUTWARD_DQ_WAS_NOT_SUPPRESSED"]
+    assert supersession["v1"]["raw_bytes_rewritten"] is False
+    assert supersession["v1"]["manifest_sha256"]==old["evidence"]["manifest_sha256"]
+    assert supersession["v2"]["manifest_sha256"]==new["evidence"]["manifest_sha256"]
+    assert new["repair_commit"]==supersession["repair_commit"]
+    assert new["disposition"]=="PRELIMINARY_MECHANISM_RESCUE_V2_CANDIDATE_FOR_FORMAL_P4_PILOT_NO_PROMOTION"
+    assert new["aggregates"]["P4-lookahead1-dqon"]["working"]==88 and new["aggregates"]["P6-res0p5-slew48"]["working"]==96
+    evidence=Path(rescue.ROOT)/new["evidence"]["relative_path"]
+    if evidence.is_dir():
+        rows=[]
+        for path in sorted(x for x in evidence.rglob("*") if x.is_file()):
+            payload=path.read_bytes();rows.append({"path":path.relative_to(evidence).as_posix(),"bytes":len(payload),"sha256":hashlib.sha256(payload).hexdigest()})
+        assert len(rows)==new["evidence"]["files"] and sum(row["bytes"] for row in rows)==new["evidence"]["bytes"]
+        assert hashlib.sha256(rescue.canonical(rows)).hexdigest()==new["evidence"]["inventory_sha256"]
+        assert hashlib.sha256((evidence/"summary.json").read_bytes()).hexdigest()==new["evidence"]["summary_sha256"]
+        assert hashlib.sha256((evidence/"selection.json").read_bytes()).hexdigest()==new["evidence"]["selection_sha256"]
+        assert rescue.reconstruct(evidence)["manifest_sha256"]==new["evidence"]["manifest_sha256"]
+        old_evidence=Path(rescue.ROOT)/old["evidence"]["relative_path"]
+        if old_evidence.is_dir():
+            old_summary=json.loads((old_evidence/"summary.json").read_text());new_summary=json.loads((evidence/"summary.json").read_text())
+            old_projection=_claim_projection(old_summary);new_projection=_claim_projection(new_summary)
+            assert old_projection==new_projection
+            projection_sha=hashlib.sha256(rescue.canonical(new_projection)).hexdigest()
+            assert projection_sha==new["outcome_comparison_to_v1"]["claim_projection_sha256"]==supersession["v2"]["claim_projection_sha256"]
