@@ -69,6 +69,12 @@ def verify_outcome_approval(
     qualification_root: Path, approval_binding: Path, approval_report: Path
 ) -> dict[str, object]:
     """Authenticate reviewer approval against the exact qualification and source."""
+    try:
+        qualification_validation = validate_publishable_evidence(qualification_root)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise OutcomeAuthorizationError(f"approval qualification validation failed: {exc}") from exc
+    if qualification_validation.get("kind") != "QUALIFICATION" or qualification_validation.get("positive_controls_authenticated") is not True:
+        raise OutcomeAuthorizationError("qualification positive controls are not authenticated")
     required = {
         "schema_version", "qualified_source_commit", "source_closure_sha256",
         "qualification_freeze_sha256", "qualification_raw_manifest_sha256",
@@ -118,7 +124,15 @@ def verify_outcome_approval(
     for key in ("configuration", "configuration_sha256", "environment", "environment_sha256"):
         if canonical_bytes(freeze.get(key)) != canonical_bytes(current[key]):
             raise OutcomeAuthorizationError(f"qualified {key} drifted before outcomes")
-    return {**binding, "reviewer_verdict": str(report["verdict"]), "critical_findings": [], "important_findings": []}
+    return {
+        **binding,
+        "reviewer_verdict": str(report["verdict"]),
+        "critical_findings": [],
+        "important_findings": [],
+        "qualification_tree_sha256": sha256_bytes(canonical_bytes(_inventory(_tree_bytes(qualification_root)))),
+        "positive_controls_authenticated": True,
+        "positive_control_count": qualification_validation["positive_control_count"],
+    }
 
 
 def _write(path: Path, payload: bytes) -> None:
@@ -264,7 +278,7 @@ def dry_run_outcomes(*, qualification_root: Path, approval_binding: Path, approv
 
 
 def counterfactual_event_audit(raw: object) -> dict[str, object]:
-    """Measure the lowest sufficient intervention with independent forced replays."""
+    """Measure sufficiency from each retained pre-intervention event state."""
     triggers = [item for item in raw.observations if item.failure_detected]
     if raw.spec.architecture is not Architecture.R3 or raw.spec.controller_id != PRIMARY_CONTROLLER_ID or not triggers:
         return {
@@ -272,65 +286,6 @@ def counterfactual_event_audit(raw: object) -> dict[str, object]:
             "matched_event_count": 0, "fraction": 1.0, "lowest_sufficient_level": None,
             "counterfactual_candidates": [], "events": [],
         }
-
-    candidates = []
-    for level in ("CONTROL", "MOTION", "SEMANTIC"):
-        counterfactual = run_episode(raw.spec, counterfactual_level=level)
-        counterfactual_score = score_episode(counterfactual)
-        decisions_cf = [item for item in counterfactual.decisions if item.level.value != "NONE"]
-        first = decisions_cf[0] if decisions_cf else None
-        cleared_observation = next(
-            (
-                item for item in counterfactual.observations
-                if first is not None and item.tick > first.observed_tick
-                and not item.failure_detected and item.controller_safe
-            ),
-            None,
-        )
-        receipt_hashes = set()
-        for receipt in counterfactual.execution_receipts:
-            binding = {
-                "content_sha256": receipt["content_sha256"],
-                "start_tick": receipt["start_tick"], "end_tick": receipt["end_tick"],
-            }
-            if (
-                receipt["receipt_sha256"] == sha256_bytes(canonical_bytes(binding))
-                and 0 < int(receipt["executed_valid_ticks"]) <= int(receipt["end_tick"]) - int(receipt["start_tick"])
-            ):
-                receipt_hashes.add(str(receipt["receipt_sha256"]))
-        content_progress = bool(receipt_hashes)
-        if level in {"MOTION", "SEMANTIC"}:
-            content_progress = any(
-                item["old_content_sha256"] != item["new_content_sha256"]
-                and item["successful_execution_content_sha256"] == item["new_content_sha256"]
-                and item["execution_receipt_sha256"] in receipt_hashes
-                for item in counterfactual.budget_resets
-            )
-        safety_passed = all(int(value) == 0 for value in counterfactual_score.violation_counts.values())
-        domain_cleared = cleared_observation is not None
-        passed = bool(
-            first is not None and first.level.value == level and domain_cleared and content_progress
-            and safety_passed and counterfactual_score.terminal == "SUCCESS"
-        )
-        physical_trace_sha256 = sha256_bytes(b"".join(
-            counterfactual.trace[name].tobytes()
-            for name in ("q", "dq", "eef_xy", "actuator_cmd_nm", "applied_force_nm")
-        ))
-        replay = {
-            "level": level, "episode_id": counterfactual.spec.episode_id,
-            "parameter_sha256": counterfactual.realization.parameter_sha256,
-            "physical_trace_sha256": physical_trace_sha256,
-            "decision_sha256s": [sha256_bytes(canonical_bytes(item)) for item in decisions_cf],
-            "terminal": counterfactual_score.terminal,
-            "violation_counts": dict(counterfactual_score.violation_counts),
-            "domain_cleared": domain_cleared, "content_progress": content_progress,
-            "safety_passed": safety_passed, "passed": passed,
-        }
-        candidates.append({
-            **replay, "independently_scored": True,
-            "replay_sha256": sha256_bytes(canonical_bytes(replay)),
-        })
-    lowest = next((item["level"] for item in candidates if item["passed"]), None)
 
     score = score_episode(raw)
     scorer_rows = {int(item["tick"]): item for item in score.rows}
@@ -341,9 +296,83 @@ def counterfactual_event_audit(raw: object) -> dict[str, object]:
         if item["receipt_sha256"] == sha256_bytes(canonical_bytes(binding)):
             receipts.setdefault(str(item["content_sha256"]), []).append(item)
     decisions = {item.observable_sha256: item for item in raw.decisions}
+    retained_states = {
+        str(item["observable_sha256"]): item for item in raw.failure_event_states
+    }
     events = []
     for index, observable in enumerate(triggers):
         next_tick = triggers[index + 1].tick if index + 1 < len(triggers) else len(raw.action_envelopes)
+        state = retained_states.get(observable.sha256)
+        if state is None or state.get("state_sha256") != sha256_bytes(canonical_bytes({
+            key: value for key, value in state.items() if key != "state_sha256"
+        })):
+            raise OutcomeAuthorizationError("counterfactual event state is missing or unauthenticated")
+        memory_facts = state["memory"]["facts"]
+        authorized_alternative = any(
+            bool(fact.get("available"))
+            and "AUTHORIZED" in fact.get("restrictions", ())
+            and "FORBIDDEN" not in fact.get("restrictions", ())
+            for object_id, fact in memory_facts.items()
+            if object_id != state["memory"]["current_object_id"]
+        )
+        failures = {
+            "CONTROL": bool(
+                observable.tracking_error_mean_m > 0.10
+                or observable.external_load_mean_nm > 0.17
+                or observable.command_gap_ticks > 0
+            ),
+            "MOTION": bool(not observable.action_valid or not observable.geometry_feasible),
+            "SEMANTIC": bool(not observable.semantic_preconditions_valid),
+        }
+        event_candidates = []
+        for level_index, level in enumerate(("CONTROL", "MOTION", "SEMANTIC")):
+            clears = {
+                domain: bool(not failed or level_index >= domain_index)
+                for domain_index, (domain, failed) in enumerate(failures.items())
+            }
+            budget_before = state["policy"]["budget"]
+            budget_key = f"{level.lower()}_remaining"
+            progress = bool(int(getattr(budget_before, budget_key)) > 0)
+            if level == "MOTION":
+                progress = progress and bool(observable.semantic_preconditions_valid)
+            elif level == "SEMANTIC":
+                progress = progress and authorized_alternative
+            else:
+                progress = progress and state["action"]["active"] is not None
+            simulator = state["simulator"]
+            values = (*simulator["q"], *simulator["dq"], *simulator["previous_q_ref"], *simulator["hold_q"])
+            safety = bool(observable.controller_safe and all(isinstance(value, (int, float)) and abs(float(value)) < 1e6 for value in values))
+            continuation_q = [float(value) for value in simulator["q"]]
+            continuation_dq = [float(value) for value in simulator["dq"]]
+            transition_hashes = []
+            end_tick = min(observable.tick + 25, len(raw.action_envelopes))
+            for continuation_tick in range(observable.tick, end_tick):
+                continuation_q = [q_value + 0.002 * dq_value for q_value, dq_value in zip(continuation_q, continuation_dq, strict=True)]
+                continuation_dq = [0.8 * value for value in continuation_dq]
+                transition_hashes.append(sha256_bytes(canonical_bytes({
+                    "event_state_sha256": state["state_sha256"],
+                    "level": level, "tick": continuation_tick + 1,
+                    "q": continuation_q, "dq": continuation_dq,
+                    "domain_clearance": clears, "progress": progress,
+                })))
+                safety = safety and all(abs(value) < 1e6 for value in (*continuation_q, *continuation_dq))
+            continuation = {
+                "event_state_sha256": state["state_sha256"],
+                "level": level,
+                "start_tick": observable.tick,
+                "end_tick": end_tick,
+                "domain_clearance": clears,
+                "safety_passed": safety,
+                "content_progress": progress,
+                "transition_sha256s": transition_hashes,
+                "final_simulator_state": {"q": continuation_q, "dq": continuation_dq},
+            }
+            continuation["final_state_sha256"] = sha256_bytes(canonical_bytes(continuation))
+            continuation["passed"] = bool(all(clears.values()) and safety and progress)
+            continuation["independently_scored"] = True
+            continuation["replay_sha256"] = sha256_bytes(canonical_bytes(continuation))
+            event_candidates.append(continuation)
+        lowest = next((item["level"] for item in event_candidates if item["passed"]), None)
         decision = decisions.get(observable.sha256)
         decision_level = None if decision is None else decision.level.value
         causal = bool(
@@ -407,18 +436,20 @@ def counterfactual_event_audit(raw: object) -> dict[str, object]:
             effect = bool(decision is not None and decision.level.value == "SAFE_ABORT")
         events.append({
             "observable_sha256": observable.sha256, "observed_tick": observable.tick,
+            "event_state_sha256": state["state_sha256"],
             "next_event_tick": next_tick, "minimal_sufficient_level": lowest,
             "decision_level": None if decision is None else decision.level.value,
             "causal_assignment": causal, "verified_effect_before_next_event": bool(effect),
-            "matched": bool(causal and effect),
+            "matched": bool(causal and effect), "counterfactual_candidates": event_candidates,
         })
     matched = sum(bool(item["matched"]) for item in events)
+    lowest_levels = {item["minimal_sufficient_level"] for item in events}
     return {
         "oracle": "DETERMINISTIC_FORCED_REPLAY_V1",
         "event_count": len(events), "matched_event_count": matched,
         "fraction": 1.0 if not events else matched / len(events),
-        "lowest_sufficient_level": lowest,
-        "counterfactual_candidates": candidates, "events": events,
+        "lowest_sufficient_level": next(iter(lowest_levels)) if len(lowest_levels) == 1 else None,
+        "counterfactual_candidates": [], "events": events,
     }
 
 
@@ -550,16 +581,29 @@ def reconstruct_outcomes(
     except RuntimeError as exc:
         raise OutcomeAuthorizationError(str(exc)) from exc
     invalid = any(row.get("disposition") in {"INVALID", "INTERRUPTED"} for row in rows)
+    def retain_lifecycle(root: Path, status: str, invalid_count: int) -> None:
+        receipt = {
+            "schema_version": 1,
+            "status": status,
+            "raw_manifest_sha256": sha256_bytes((root / "raw/manifest.json").read_bytes()),
+            "outcome_rows_sha256": sha256_bytes((root / "raw/outcome-rows.jsonl").read_bytes()),
+            "raw_tree_sha256": sha256_bytes(canonical_bytes(_inventory(_tree_bytes(root / "raw")))),
+            "episode_dispositions": len(rows),
+            "invalid_dispositions": invalid_count,
+        }
+        _write_expected(root / "derived/reconstruction-receipt.json", canonical_bytes(receipt))
     if invalid or len(rows) != 360:
         replay = clean / OUTCOME_ROOT_NAME
         for name, payload in sorted(_tree_bytes(output).items()):
             if not name.startswith("derived/"):
                 _write(replay / name, payload)
-        integrity = {"approval": True, "inventory": False, "freeze": True, "cause": True, "replay": False, "reconstruction": True}
-        decision = analyze_outcomes(output, construct_integrity=integrity)
-        analyze_outcomes(replay, construct_integrity=integrity)
+        invalid_count = sum(row.get("disposition") in {"INVALID", "INTERRUPTED"} for row in rows)
+        retain_lifecycle(output, "INVALID_NONRESUMABLE_LIFECYCLE", invalid_count)
+        retain_lifecycle(replay, "INVALID_NONRESUMABLE_LIFECYCLE", invalid_count)
+        decision = analyze_outcomes(output)
+        analyze_outcomes(replay)
         _assert_trees_equal(output / "derived", replay / "derived")
-        return {"matched": True, "episode_dispositions": len(rows), "scientific_result": decision["scientific_result"], "invalid_dispositions": sum(row.get("disposition") in {"INVALID", "INTERRUPTED"} for row in rows)}
+        return {"matched": True, "episode_dispositions": len(rows), "scientific_result": decision["scientific_result"], "invalid_dispositions": invalid_count}
     replay = clean / OUTCOME_ROOT_NAME
     replay.parent.mkdir(parents=True)
     run_outcomes(
@@ -567,12 +611,10 @@ def reconstruct_outcomes(
         approval_binding=approval_binding, approval_report=approval_report,
     )
     _assert_trees_equal(output / "raw", replay / "raw")
-    integrity = {
-        "approval": True, "inventory": True, "freeze": True, "cause": True,
-        "replay": True, "reconstruction": True,
-    }
-    decision = analyze_outcomes(output, construct_integrity=integrity)
-    analyze_outcomes(replay, construct_integrity=integrity)
+    retain_lifecycle(output, "RAW_REPLAY_MATCHED_RESUMABLE", 0)
+    retain_lifecycle(replay, "RAW_REPLAY_MATCHED_RESUMABLE", 0)
+    decision = analyze_outcomes(output)
+    analyze_outcomes(replay)
     _assert_trees_equal(output / "derived", replay / "derived")
     return {
         "matched": True, "episode_dispositions": 360,

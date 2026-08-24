@@ -129,6 +129,7 @@ class V3EpisodeRaw:
     memory_ledger: tuple[Mapping[str, object], ...]
     memory_events: tuple[Mapping[str, object], ...]
     observations: tuple[ObservableState, ...]
+    failure_event_states: tuple[Mapping[str, object], ...]
     decisions: tuple[DecisionEvent, ...]
     budget_resets: tuple[Mapping[str, object], ...]
     execution_receipts: tuple[Mapping[str, object], ...]
@@ -746,6 +747,7 @@ def run_episode(
     action_envelopes: list[Mapping[str, object]] = []
     contact_envelopes: list[Mapping[str, object]] = []
     observations: list[ObservableState] = []
+    failure_event_states: list[Mapping[str, object]] = []
     decisions: list[DecisionEvent] = []
     resets: list[Mapping[str, object]] = []
     execution_receipts: list[Mapping[str, object]] = []
@@ -869,11 +871,49 @@ def run_episode(
             observable.tick, observable.sha256, candidate.budget_before, candidate.budget_before,
         )
 
+    def retain_failure_state(observable: ObservableState, before: BudgetState) -> None:
+        q, dq = world.state()
+        active_state = None if active is None else {
+            "record": dict(active.record),
+            "path": [list(item) for item in active.path],
+            "segment_index": active.segment_index,
+            "segment_generated_tick": active.segment_generated_tick,
+            "executor_state": active.executor_state,
+        }
+        state = {
+            "schema_version": 1,
+            "episode_id": spec.episode_id,
+            "observed_tick": observable.tick,
+            "observable_sha256": observable.sha256,
+            "simulator": {
+                "q": q.tolist(), "dq": dq.tolist(), "time_s": float(world.data.time),
+                "previous_q_ref": previous_q_ref.tolist(), "hold_q": hold_q.tolist(),
+            },
+            "policy": {"budget": before, "reobserve_index": reobserve_index, "aborted": aborted},
+            "memory": {
+                "version": memory_version,
+                "current_object_id": current_object_id,
+                "facts": json.loads(canonical_bytes(memory)),
+                "ledger_sha256": sha256_bytes(b"".join(canonical_bytes(item) for item in memory_ledger)),
+            },
+            "action": {
+                "active": active_state,
+                "command_sequence": command_sequence,
+                "forced_hold_tick": forced_hold_tick,
+                "dropout_start": dropout_start,
+                "obstacle_active": obstacle_active,
+                "history_sha256": sha256_bytes(b"".join(canonical_bytes(item) for item in action_envelopes)),
+            },
+        }
+        state["state_sha256"] = sha256_bytes(canonical_bytes(state))
+        failure_event_states.append(MappingProxyType(state))
+
     def handle_decision(observable: ObservableState) -> None:
         nonlocal budget, aborted
         if budget is None:
             active_sha = ZERO_SHA256 if active is None else str(active.record["content_sha256"])
             budget = initial_budget(active_sha)
+        retain_failure_state(observable, budget)
         event = choose_decision(observable, budget)
         observations.append(observable)
         decisions.append(event)
@@ -1145,6 +1185,8 @@ def run_episode(
             )
             attempt = None
             reobserve_index += 1
+            if observable.failure_detected:
+                retain_failure_state(observable, before)
             event = choose_decision(observable, before)
             observations.append(observable)
             decisions.append(event)
@@ -1178,6 +1220,7 @@ def run_episode(
         tuple(memory_ledger),
         tuple(memory_events),
         tuple(observations),
+        tuple(failure_event_states),
         tuple(decisions),
         tuple(resets),
         tuple(execution_receipts),

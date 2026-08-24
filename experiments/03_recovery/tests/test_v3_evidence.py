@@ -23,15 +23,16 @@ def _tracked_qualification(tmp_path: Path) -> tuple[Path, Path, Path]:
     output.mkdir()
     with tarfile.open(durable / receipt["archive"], "r:gz") as stream:
         stream.extractall(output, filter="data")
-    report = tmp_path / "qualification-report.md"
-    report.write_bytes((ROOT / ".superpowers/sdd/hierarchy-v3-qualification-report.md").read_bytes())
     receipt["verification"] = {
-        "experiment_03_passed": 185,
+        "experiment_03_passed": 188,
         "v3_deselected": 60,
-        "v3_passed": 125,
+        "v3_passed": 128,
     }
-    receipt["qualification_report_sha256"] = hashlib.sha256(report.read_bytes()).hexdigest()
     archive_manifest = tmp_path / "archive-manifest.json"
+    archive_manifest.write_bytes(contracts.canonical_bytes(receipt))
+    report = tmp_path / "qualification-report.md"
+    report.write_bytes(evidence.render_qualification_report(output, archive_manifest))
+    receipt["qualification_report_sha256"] = hashlib.sha256(report.read_bytes()).hexdigest()
     archive_manifest.write_bytes(contracts.canonical_bytes(receipt))
     return output, report, archive_manifest
 
@@ -214,13 +215,9 @@ def test_qualification_report_facts_are_authenticated_from_derived_data(tmp_path
 
 
 @pytest.mark.parametrize(("old", "forged"), (
-    ("Files: **437**", "Files: **999**"),
-    ("Bytes: **50,009,565**", "Bytes: **1**"),
     ("The 10 registered hard gates all pass", "The 0 registered hard gates all pass"),
     ("Status: **READY FOR FRESH READ-ONLY REVIEW**", "Status: **STALE**"),
     ("exactly **18 executed episodes**", "exactly **99 executed episodes**"),
-    ("Governed verification receipt: **125 V3 passed", "Governed verification receipt: **999 V3 passed"),
-    ("8,759,536 bytes; 437 members", "8,759,536 bytes; 999 members"),
 ))
 def test_qualification_report_rejects_forged_visible_inventory_and_gate_counts(
     tmp_path: Path, old: str, forged: str,
@@ -259,18 +256,8 @@ def test_qualification_report_rejects_forged_visible_inventory_and_gate_counts(
     ("working episode `qualification-P6-R3-semantic-object-unavailable-20261891`", "working episode `qualification-P6-R3-anchor-nominal-20261891`"),
     ("nonworking episode `qualification-P6-R0-semantic-object-unavailable-20261893`", "nonworking episode `qualification-P6-R3-semantic-object-unavailable-20261893`"),
     ("NOT_RUN control `architecture-independent-unreachable-geometry-v1`", "NOT_RUN control `stale-not-run-control`"),
-    ("| qualification summary | `1372bb6421ff5ef0aae9aa64b398dd58df81daf46c639a25c9c28710304b32ca` |", "| qualification summary | `0000000000000000000000000000000000000000000000000000000000000000` |"),
-    ("| gate audit receipts | `21b947d3143b079bb3e6e7f525026fa7e40ab2a63b7d1ce25fc3424ea8286d19` |", "| gate audit receipts | `0000000000000000000000000000000000000000000000000000000000000000` |"),
-    ("| replay receipt | `4d9f103ebb42021f7ef888f88dc4f7069bb366114dedb7dbd125a16225ef7a2f` |", "| replay receipt | `0000000000000000000000000000000000000000000000000000000000000000` |"),
-    ("| source/spec/import closure | `aebe5eaa286837f8ed51b2505b9cca07244a775a31bf9bb0def083c762a50272` |", "| source/spec/import closure | `0000000000000000000000000000000000000000000000000000000000000000` |"),
-    ("| frozen qualification/outcome configuration | `1e5fec9533ad61eced4a485ef5b8615586050e470167b8f373b79e55d1860672` |", "| frozen qualification/outcome configuration | `0000000000000000000000000000000000000000000000000000000000000000` |"),
-    ("| frozen environment | `d6e2926ed735b6049ca7752e318f32206af0926e6745fbd2d52f9886669d1b5f` |", "| frozen environment | `0000000000000000000000000000000000000000000000000000000000000000` |"),
-    ("| durable qualification tree | `4243538581e224828cc5c6141e61510fc1df03dc6692da4e8f3e1d633ab16215` |", "| durable qualification tree | `0000000000000000000000000000000000000000000000000000000000000000` |"),
-    ("| durable archive | `74697f17f24ebb2f61f3662dd2ab50ed19d7600cc2b73714acb94c6f2bf11fd5` |", "| durable archive | `0000000000000000000000000000000000000000000000000000000000000000` |"),
     ("It replayed all **18** episodes with `matched=true`", "It replayed all **17** episodes with `matched=true`"),
     ("It replayed all **18** episodes with `matched=true`", "It replayed all **18** episodes with `matched=false`"),
-    ("raw manifest `561397e27fb82e4368b5b254bd06dd8f7947a1b878718a21be62aa708af90169`", "raw manifest `0000000000000000000000000000000000000000000000000000000000000000`"),
-    ("derived manifest `371fb4a7e31c9e787400d339063d4ead9eb3b32df1bf98a05f121998fc88d55f`", "derived manifest `0000000000000000000000000000000000000000000000000000000000000000`"),
     ("Reviewer decision: **PENDING — approve or reject**", "Reviewer decision: **APPROVED**"),
 ))
 def test_qualification_report_rejects_forged_visible_semantic_fact_with_recomputed_receipt(
@@ -286,11 +273,9 @@ def test_qualification_report_rejects_forged_visible_semantic_fact_with_recomput
 
 
 @pytest.mark.parametrize("line", (
-    "Files: **437**",
     "The 10 registered hard gates all pass in the qualification bundle:",
     "| R3/P6, all eight registered scenarios, seed `20261891` | 8 | 8 SUCCESS |",
     "| collision | 1 |",
-    "| qualification summary | `1372bb6421ff5ef0aae9aa64b398dd58df81daf46c639a25c9c28710304b32ca` |",
     "The retained examples bind the working episode `qualification-P6-R3-semantic-object-unavailable-20261891`, nonworking episode `qualification-P6-R0-semantic-object-unavailable-20261893`, and architecture-independent NOT_RUN control `architecture-independent-unreachable-geometry-v1`.",
     "Reviewer decision: **PENDING — approve or reject**",
 ))
@@ -301,6 +286,17 @@ def test_qualification_report_rejects_duplicate_visible_mutable_fact(tmp_path: P
     report.write_text(f"{original}\n{matched}\n", encoding="utf-8")
     _refresh_report_receipt(report, archive_manifest)
     with pytest.raises(RuntimeError, match="report consistency"):
+        evidence.verify_qualification_report(output, report, archive_manifest=archive_manifest)
+
+
+def test_qualification_report_rejects_any_appended_visible_text_with_recomputed_authentication(tmp_path: Path) -> None:
+    output, report, archive_manifest = _tracked_qualification(tmp_path)
+    report.write_text(
+        report.read_text(encoding="utf-8") + "\nThis extra visible claim is not artifact-derived.\n",
+        encoding="utf-8",
+    )
+    _refresh_report_receipt(report, archive_manifest)
+    with pytest.raises(RuntimeError, match="canonical|report consistency"):
         evidence.verify_qualification_report(output, report, archive_manifest=archive_manifest)
 
 

@@ -303,6 +303,7 @@ def episode_payloads(raw: V3EpisodeRaw) -> dict[str, bytes]:
         "memory-ledger.jsonl": _jsonl(raw.memory_ledger),
         "memory-events.jsonl": _jsonl(raw.memory_events),
         "observations.jsonl": _jsonl(raw.observations),
+        "failure-event-states.jsonl": _jsonl(raw.failure_event_states),
         "decisions.jsonl": _jsonl(raw.decisions),
         "budget-resets.jsonl": _jsonl(raw.budget_resets),
         "execution-receipts.jsonl": _jsonl(raw.execution_receipts),
@@ -865,6 +866,51 @@ def _validate_inventory(
     return declared
 
 
+def _validate_closed_tree(root: Path, expected_files: set[str]) -> None:
+    expected_directories = {
+        parent.as_posix()
+        for name in expected_files
+        for parent in Path(name).parents
+        if parent.as_posix() != "."
+    }
+    actual_files: set[str] = set()
+    actual_directories: set[str] = set()
+    for path in root.rglob("*"):
+        relative = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            raise RuntimeError(f"publishable evidence contains symlink: {relative}")
+        if path.is_file():
+            actual_files.add(relative)
+        elif path.is_dir():
+            actual_directories.add(relative)
+        else:
+            raise RuntimeError(f"publishable evidence contains non-regular member: {relative}")
+    if actual_files != expected_files or actual_directories != expected_directories:
+        raise RuntimeError("publishable evidence root closed inventory has unlisted members")
+
+
+def _authenticate_positive_controls(path: Path) -> dict[str, object]:
+    controls = _canonical_json(path)
+    expected = {
+        "collision", "forbidden", "invalid_action", "loop", "missed_dwell",
+        "reset", "stale", "unsafe", "wrong_object",
+    }
+    passed = bool(
+        set(controls) == expected
+        and all(
+            isinstance(row, Mapping)
+            and row.get("terminal") == "FAILURE"
+            and type(row.get("detected_count")) is int
+            and int(row["detected_count"]) > 0
+            and isinstance(row.get("violation_counts"), Mapping)
+            for row in controls.values()
+        )
+    )
+    if not passed:
+        raise RuntimeError("publishable evidence positive controls are not authenticated failures")
+    return {"positive_controls_authenticated": True, "positive_control_count": len(controls)}
+
+
 def validate_publishable_evidence(
     output: Path, *, require_derived: bool = True,
 ) -> dict[str, object]:
@@ -883,6 +929,7 @@ def validate_publishable_evidence(
         raw_paths = {"manifest.json", "positive-controls.json", "not-run-positive-control.json"}
         if sha256_bytes((output / "raw/positive-controls.json").read_bytes()) != raw.get("positive_controls_sha256"):
             raise RuntimeError("publishable evidence positive controls mismatch")
+        positive_controls = _authenticate_positive_controls(output / "raw/positive-controls.json")
         if sha256_bytes((output / "raw/not-run-positive-control.json").read_bytes()) != raw.get("not_run_positive_control_sha256"):
             raise RuntimeError("publishable evidence NOT_RUN control mismatch")
         for item in episodes:
@@ -908,10 +955,11 @@ def validate_publishable_evidence(
         expected_tree = {"qualification-freeze.json"} | {
             f"raw/{name}" for name in raw_paths
         } | {f"derived/{name}" for name in derived_paths}
-        actual_tree = set(_tree_bytes(output))
-        if actual_tree != expected_tree:
-            raise RuntimeError("publishable qualification root has unlisted members")
-        return {"kind": "QUALIFICATION", "scientific_disposition": summary["status"]}
+        _validate_closed_tree(output, expected_tree)
+        return {
+            "kind": "QUALIFICATION", "scientific_disposition": summary["status"],
+            **positive_controls,
+        }
     if output.name == "hierarchical-recovery-v3":
         required = [
             "outcome-freeze.json", "HEADERS-SEALED.json", "raw/manifest.json",
@@ -964,11 +1012,98 @@ def validate_publishable_evidence(
         expected_tree = set(header_members) | {"HEADERS-SEALED.json"} | {
             f"raw/{name}" for name in raw_paths
         } | {f"derived/{name}" for name in derived_paths}
-        actual_tree = set(_tree_bytes(output))
-        if actual_tree != expected_tree:
-            raise RuntimeError("publishable outcome root closed inventory has unlisted members")
+        _validate_closed_tree(output, expected_tree)
         return {"kind": "OUTCOME", "scientific_disposition": decision.get("scientific_result")}
     raise RuntimeError("not a publishable evidence root")
+
+
+def render_qualification_report(output: Path, archive_manifest: Path) -> bytes:
+    """Render the sole canonical human-readable qualification report."""
+    validate_publishable_evidence(output)
+    freeze = _canonical_json(output / "qualification-freeze.json")
+    raw = _canonical_json(output / "raw/manifest.json")
+    summary = _canonical_json(output / "derived/qualification-summary.json")
+    replay = _canonical_json(output / "derived/replay.json")
+    examples = _canonical_json(output / "derived/examples.json")
+    archive = _canonical_json(archive_manifest)
+    controllers = list(csv.DictReader((output / "derived/controller-paths.csv").read_text(encoding="ascii").splitlines()))
+    controls = list(csv.DictReader((output / "derived/scorer-controls.csv").read_text(encoding="ascii").splitlines()))
+    episodes = list(raw["episodes"])
+
+    def terminal(episode_id: str) -> str:
+        return str(_canonical_json(output / "raw/episodes" / episode_id / "scorer.json")["terminal"])
+
+    def coverage(label: str, selected: Sequence[Mapping[str, object]], note: str | None = None) -> str:
+        successes = sum(terminal(str(row["episode_id"])) == "SUCCESS" for row in selected)
+        result = f"{successes} SUCCESS" + (f"; {note}" if note else "")
+        return f"| {label} | {len(selected)} | {result} |"
+
+    def display_path(value: str) -> str:
+        return " -> ".join(value.replace("representations.", "").replace("arm.", "").split("->"))
+
+    controller_by_id = {row["controller_id"]: row for row in controllers}
+    control_by_id = {row["control"]: row for row in controls}
+    matrix = freeze["configuration"]["outcome_matrix"]
+    tree = _tree_bytes(output)
+    verification = archive["verification"]
+    artifact_rows = (
+        ("qualification freeze", sha256_bytes((output / "qualification-freeze.json").read_bytes())),
+        ("raw manifest / raw reconstruction", sha256_bytes((output / "raw/manifest.json").read_bytes())),
+        ("derived manifest / derived reconstruction", sha256_bytes((output / "derived/manifest.json").read_bytes())),
+        ("qualification summary", sha256_bytes((output / "derived/qualification-summary.json").read_bytes())),
+        ("gate audit receipts", sha256_bytes((output / "derived/gate-audits.json").read_bytes())),
+        ("replay receipt", sha256_bytes((output / "derived/replay.json").read_bytes())),
+        ("source/spec/import closure", str(freeze["source_closure_sha256"])),
+        ("frozen qualification/outcome configuration", str(freeze["configuration_sha256"])),
+        ("frozen environment", str(freeze["environment_sha256"])),
+        ("durable qualification tree", str(archive["tree_sha256"])),
+        ("durable archive", str(archive["archive_sha256"])),
+    )
+    coverage_rows = (
+        coverage("R3/P6, all eight registered scenarios, seed `20261891`", [row for row in episodes if row["architecture"] == "R3" and row["controller_id"] == PRIMARY_CONTROLLER_ID and row["seed"] == 20261891]),
+        coverage("R0/R1/R2/R3 semantic-object-unavailable, seed `20261893`", [row for row in episodes if row["scenario_id"] == "semantic-object-unavailable" and row["seed"] == 20261893], "R0 expected FAILURE"),
+        coverage("R0/R1/R2/R3 control-impulse, seed `20261892`", [row for row in episodes if row["scenario_id"] == "control-impulse" and row["seed"] == 20261892]),
+        coverage("R3 P6/P4 anchor sensitivity, seed `20261894`", [row for row in episodes if row["architecture"] == "R3" and row["scenario_id"] == "anchor-nominal" and row["seed"] == 20261894]),
+    )
+    controller_rows = tuple(
+        f"| {label} | `{display_path(row['call_path'])}` | `{row['trajectory_sha256']}` | `{row['q_ref_sha256']}` | `{row['torque_sha256']}` |"
+        for label, row in (("P6", controller_by_id[PRIMARY_CONTROLLER_ID]), ("repaired P4", controller_by_id[SENSITIVITY_CONTROLLER_ID]))
+    )
+    control_rows = tuple(
+        f"| {label} | {control_by_id[key]['detected_count']} |"
+        for label, key in (
+            ("collision", "collision"), ("forbidden execution", "forbidden"),
+            ("invalid action/trajectory", "invalid_action"), ("loop/no progress", "loop"),
+            ("missed dwell", "missed_dwell"), ("invalid reset", "reset"),
+            ("stale observation/memory", "stale"), ("unsafe torque", "unsafe"),
+            ("wrong object", "wrong_object"),
+        )
+    )
+    artifact_table = tuple(f"| {label} | `{digest}` |" for label, digest in artifact_rows)
+    held_out = matrix["seeds"]
+    terminal_counts = summary["terminal_counts"]
+    lines = (
+        "# Hierarchical Recovery V3 pre-outcome qualification report", "", "Date: 2026-08-24", "",
+        "Branch: `feat/hierarchy-recovery-probe`", "", f"Qualified source commit: `{freeze['source_commit']}`", "",
+        "Status: **READY FOR FRESH READ-ONLY REVIEW**", "",
+        f"This is calibration-only qualification, not an outcome claim or approval. Held-out seeds `{min(held_out)}..{max(held_out)}` were not executed, and `results/hierarchical-recovery-v3` was not created. The frozen post-approval matrix contains {matrix['episode_count']} cells: {matrix['primary_cells']} primary P6 cells and {matrix['sensitivity_cells']} fixed P4 sensitivity cells.", "",
+        "## Qualification result", "",
+        f"The retained matrix contains exactly **{summary['episode_count']} executed episodes**, all using calibration seeds. Independent scoring reconstructed **{terminal_counts['SUCCESS']} SUCCESS** and **{terminal_counts['FAILURE']} expected FAILURE**. The retained calibration seeds are `20261891`, `20261892`, `20261893`, and `20261894`.", "",
+        "| Coverage cell | Episodes | Result |", "|---|---:|---|", *coverage_rows, "",
+        "The 10 registered hard gates all pass in the qualification bundle: exact sampled-tick injection, six realized disturbances, distinct observable policy sequences, real and different P6/P4 paths, time-advanced guarded budgets, closed cause boundary, independent raw scorer, nine terminal-positive controls, byte-exact replay/reconstruction, and architecture-independent NOT_RUN handling.", "",
+        "## Controller and scorer evidence", "", "| Controller | Call path | Trajectory SHA-256 | q_ref SHA-256 | torque SHA-256 |", "|---|---|---|---|---|", *controller_rows, "",
+        "| Control | Detected count |", "|---|---:|", *control_rows, "",
+        f"The retained examples bind the working episode `{examples['working']}`, nonworking episode `{examples['nonworking']}`, and architecture-independent NOT_RUN control `{examples['not_run']}`.", "",
+        "## Retained evidence", "", "Ignored qualification evidence root: `results/hierarchical-recovery-v3-qualification`", "",
+        f"Files: **{len(tree):,}**", "", f"Bytes: **{sum(len(payload) for payload in tree.values()):,}**", "",
+        "| Artifact | SHA-256 |", "|---|---|", *artifact_table, "",
+        f"Clean reconstruction destination: `artifact-derived-clean-reconstruction`. It replayed all **{replay['episodes_replayed']}** episodes with `matched={str(bool(replay['raw_matched'] and replay['derived_matched'])).lower()}`; raw manifest `{replay['raw_manifest_sha256']}` and derived manifest `{sha256_bytes((output / 'derived/manifest.json').read_bytes())}` matched byte-exactly.", "",
+        f"The ignored working bundle is durably retained as the tracked, deterministic, content-addressed archive `reports/evidence/hierarchical-recovery-v3-qualification/{archive['archive_sha256']}.tar.gz` (**{archive['archive_bytes']:,} bytes; {archive['member_count']} members**) with a tracked manifest and byte-exact extraction test.", "",
+        f"Governed verification receipt: **{verification['v3_passed']} V3 passed, {verification['v3_deselected']} deselected; {verification['experiment_03_passed']} Experiment 03 passed**.", "",
+        "Every visible byte above is generated deterministically from the authenticated freeze, recursive inventories, scorer controls, replay receipt, archive receipt, and governed verification receipt.", "",
+        "## Reviewer decision", "", "The qualification does not self-authorize. Reviewer decision: **PENDING — approve or reject**.", "",
+    )
+    return "\n".join(lines).encode("utf-8")
 
 
 def verify_qualification_report(output: Path, report: Path, *, archive_manifest: Path | None = None) -> dict[str, object]:
@@ -976,6 +1111,8 @@ def verify_qualification_report(output: Path, report: Path, *, archive_manifest:
     if archive_manifest is None:
         raise RuntimeError("qualification report consistency mismatch: archive manifest required")
     validate_publishable_evidence(output)
+    if report.read_bytes() != render_qualification_report(output, archive_manifest):
+        raise RuntimeError("qualification report consistency mismatch: not canonical artifact rendering")
     text = report.read_text(encoding="utf-8")
     freeze = _canonical_json(output / "qualification-freeze.json")
     raw = _canonical_json(output / "raw/manifest.json")

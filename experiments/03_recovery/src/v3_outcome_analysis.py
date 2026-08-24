@@ -10,7 +10,7 @@ from typing import Mapping, Sequence
 import numpy as np
 
 from .v3_contracts import Architecture, OUTCOME_SEEDS, PRIMARY_CONTROLLER_ID, SCENARIO_IDS, SENSITIVITY_CONTROLLER_ID, canonical_bytes, sha256_bytes
-from .v3_evidence import _csv, _diagnostic_png, _diagnostic_svg, _inventory
+from .v3_evidence import _csv, _diagnostic_png, _diagnostic_svg, _inventory, _tree_bytes, source_closure
 
 
 BOOTSTRAP_DRAWS = 10_000
@@ -236,7 +236,7 @@ def evaluate_outcome_gates(rows: Sequence[Mapping[str, object]], *, construct_in
     r3 = [row for row in primary if row["architecture"] == "R3"]
     comparators = {arch: [row for row in primary if row["architecture"] == arch] for arch in ("R0", "R1", "R2")}
     violation_keys = ("unsafe", "forbidden", "collision", "invalid_action", "stale", "loop", "reset")
-    g1 = all(sum(int(row.get(key, 1)) for row in r3) <= sum(int(row.get(key, 1)) for row in values) for values in comparators.values() for key in violation_keys)
+    g1 = bool(construct_integrity.get("positive_controls")) and all(sum(int(row.get(key, 1)) for row in r3) <= sum(int(row.get(key, 1)) for row in values) for values in comparators.values() for key in violation_keys)
     ms = [row for row in pairs if row["scenario_id"] in DOMAINS["MOTION"] + DOMAINS["SEMANTIC"]]
     template_diffs = {scenario: sum(int(row["r3_success"]) - int(row["r0_success"]) for row in ms if row["scenario_id"] == scenario) for scenario in DOMAINS["MOTION"] + DOMAINS["SEMANTIC"]}
     g2 = sum(int(row["r3_success"]) - int(row["r0_success"]) for row in ms) > 0 and all(value >= 0 for value in template_diffs.values())
@@ -270,7 +270,7 @@ def evaluate_outcome_gates(rows: Sequence[Mapping[str, object]], *, construct_in
             "passed": len(template) == 10 and len(complete) >= 8 and len(trace_hashes) >= 8 and len(verified_parameter_hashes) >= 8,
         }
     g7 = all(item["passed"] for item in diversity.values())
-    g8 = True
+    g8 = bool(construct_integrity.get("lifecycle")) and all(construct_integrity.values())
     gates = [g1, g2, g3, g4, g5, g6, g7, g8]
     result = "SUPPORTS_CONSTRUCT_VALID_LAYER_MATCHED_HIERARCHY" if all(gates) else "INVALID_EXPERIMENT" if not g8 else "DOES_NOT_SUPPORT_CONSTRUCT_VALID_LAYER_MATCHED_HIERARCHY"
     return {"scientific_result": result, "gates": [{"gate": index + 1, "passed": value} for index, value in enumerate(gates)], "paired_row_count": len(pairs), "matrix_identity": matrix, "fixed_best_comparator": fixed_best, "comparator_totals": comparator_totals, "counterfactual_events": {"matched": event_matched, "total": event_total}, "diversity": diversity}
@@ -313,11 +313,99 @@ def outcome_payloads(rows: Sequence[Mapping[str, object]], *, construct_integrit
     }
 
 
-def analyze_outcomes(output: Path, *, construct_integrity: Mapping[str, bool]) -> dict[str, object]:
+def _derived_construct_integrity(output: Path, rows: Sequence[Mapping[str, object]]) -> dict[str, bool]:
+    freeze_payload = (output / "outcome-freeze.json").read_bytes()
+    freeze = json.loads(freeze_payload.decode("ascii"))
+    header_payload = (output / "HEADERS-SEALED.json").read_bytes()
+    header = json.loads(header_payload.decode("ascii"))
+    approval_report = (output / "approval/approval-report.json").read_bytes()
+    approval_binding = (output / "approval/approval-binding.json").read_bytes()
+    report = json.loads(approval_report.decode("ascii"))
+    binding = json.loads(approval_binding.decode("ascii"))
+    expected_header = canonical_bytes({
+        "schema_version": 1,
+        "files": _inventory({
+            "outcome-freeze.json": freeze_payload,
+            "approval/approval-binding.json": approval_binding,
+            "approval/approval-report.json": approval_report,
+        }),
+    })
+    approval = freeze.get("approval", {})
+    approval_passed = bool(
+        isinstance(approval, Mapping)
+        and approval.get("reviewer_verdict") == "APPROVED_FOR_OUTCOME"
+        and approval.get("approval_report_sha256") == sha256_bytes(approval_report)
+        and approval.get("positive_controls_authenticated") is True
+        and report.get("verdict") == "APPROVED_FOR_OUTCOME"
+        and report.get("critical_findings") == []
+        and report.get("important_findings") == []
+        and binding.get("approval_report_sha256") == sha256_bytes(approval_report)
+        and all(binding.get(key) == approval.get(key) for key in binding if key != "schema_version")
+    )
+    inventory_passed = bool(
+        len(rows) == 360
+        and len({str(row.get("episode_id")) for row in rows}) == 360
+        and (output / "raw/manifest.json").is_file()
+    )
+    freeze_passed = bool(
+        canonical_bytes(freeze) == freeze_payload
+        and canonical_bytes(header) == header_payload
+        and header_payload == expected_header
+        and freeze.get("source_closure") == source_closure()
+        and freeze.get("source_closure_sha256") == sha256_bytes(canonical_bytes(source_closure()))
+    )
+    causal_rows = [
+        row for row in rows
+        if row.get("architecture") == "R3" and row.get("controller_id") == PRIMARY_CONTROLLER_ID
+        and row.get("disposition") == "COMPLETE"
+    ]
+    cause_passed = True
+    for row in causal_rows:
+        audit = row.get("counterfactual_event_audit", {})
+        events = audit.get("events", ()) if isinstance(audit, Mapping) else ()
+        if int(audit.get("event_count", -1)) != len(events):
+            cause_passed = False
+            break
+        for event in events:
+            candidates = event.get("counterfactual_candidates", ())
+            if (
+                [item.get("level") for item in candidates] != ["CONTROL", "MOTION", "SEMANTIC"]
+                or any(item.get("event_state_sha256") != event.get("event_state_sha256") for item in candidates)
+                or any(item.get("independently_scored") is not True for item in candidates)
+            ):
+                cause_passed = False
+                break
+    receipt_payload = (output / "derived/reconstruction-receipt.json").read_bytes()
+    receipt = json.loads(receipt_payload.decode("ascii"))
+    rows_payload = (output / "raw/outcome-rows.jsonl").read_bytes()
+    receipt_valid = bool(
+        canonical_bytes(receipt) == receipt_payload
+        and receipt.get("raw_manifest_sha256") == sha256_bytes((output / "raw/manifest.json").read_bytes())
+        and receipt.get("outcome_rows_sha256") == sha256_bytes(rows_payload)
+        and receipt.get("raw_tree_sha256") == sha256_bytes(canonical_bytes(_inventory(_tree_bytes(output / "raw"))))
+    )
+    inventory_passed = inventory_passed and receipt_valid
+    replay_passed = receipt_valid and receipt.get("status") == "RAW_REPLAY_MATCHED_RESUMABLE"
+    lifecycle_passed = replay_passed and receipt.get("invalid_dispositions") == 0
+    return {
+        "approval": approval_passed,
+        "inventory": inventory_passed,
+        "freeze": freeze_passed,
+        "cause": cause_passed,
+        "replay": replay_passed,
+        "reconstruction": replay_passed,
+        "positive_controls": bool(approval.get("positive_controls_authenticated") is True),
+        "lifecycle": lifecycle_passed,
+    }
+
+
+def analyze_outcomes(output: Path) -> dict[str, object]:
     derived = output / "derived"
     _validate_raw_inventory(output)
     rows = [json.loads(line) for line in (output / "raw/outcome-rows.jsonl").read_text(encoding="ascii").splitlines()]
+    construct_integrity = _derived_construct_integrity(output, rows)
     payloads = outcome_payloads(rows, construct_integrity=construct_integrity)
+    payloads["reconstruction-receipt.json"] = (derived / "reconstruction-receipt.json").read_bytes()
     manifest_payload = canonical_bytes({"schema_version": 1, "files": _inventory(payloads)})
     manifest_path = derived / "manifest.json"
     if manifest_path.exists():

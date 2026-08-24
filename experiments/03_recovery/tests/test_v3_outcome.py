@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import stat
+import tarfile
 from dataclasses import replace
 
 import pytest
@@ -57,7 +58,54 @@ def _approval_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, verdict: 
     monkeypatch.setattr(outcome, "_freeze_record", lambda specs: {
         key: freeze[key] for key in ("configuration", "configuration_sha256", "environment", "environment_sha256")
     })
+    real_validate = outcome.validate_publishable_evidence
+
+    def validate(root: Path, **kwargs: object) -> dict[str, object]:
+        if root == qualification:
+            return {
+                "kind": "QUALIFICATION", "scientific_disposition": "READY_FOR_FRESH_READ_ONLY_REVIEW",
+                "positive_controls_authenticated": True, "positive_control_count": 9,
+            }
+        return real_validate(root, **kwargs)
+
+    monkeypatch.setattr(outcome, "validate_publishable_evidence", validate)
     return qualification, binding, report
+
+
+def _tracked_qualification(tmp_path: Path) -> Path:
+    root = Path(__file__).resolve().parents[3]
+    receipt = json.loads((root / "reports/evidence/hierarchical-recovery-v3-qualification/manifest.json").read_text(encoding="ascii"))
+    archive = root / "reports/evidence/hierarchical-recovery-v3-qualification" / receipt["archive"]
+    output = tmp_path / "hierarchical-recovery-v3-qualification"
+    output.mkdir()
+    with tarfile.open(archive, "r:gz") as stream:
+        stream.extractall(output, filter="data")
+    return output
+
+
+def _approval_for_qualification(tmp_path: Path, qualification: Path) -> tuple[Path, Path]:
+    freeze_payload = (qualification / "qualification-freeze.json").read_bytes()
+    raw_payload = (qualification / "raw/manifest.json").read_bytes()
+    derived_payload = (qualification / "derived/manifest.json").read_bytes()
+    freeze = json.loads(freeze_payload)
+    hashes = {
+        "qualified_source_commit": freeze["source_commit"],
+        "source_closure_sha256": freeze["source_closure_sha256"],
+        "qualification_freeze_sha256": hashlib.sha256(freeze_payload).hexdigest(),
+        "qualification_raw_manifest_sha256": hashlib.sha256(raw_payload).hexdigest(),
+        "qualification_derived_manifest_sha256": hashlib.sha256(derived_payload).hexdigest(),
+    }
+    report = tmp_path / "approval-report.json"
+    report.write_bytes(contracts.canonical_bytes({
+        "schema_version": 1, "verdict": "APPROVED_FOR_OUTCOME",
+        "critical_findings": [], "important_findings": [], **hashes,
+    }))
+    binding = tmp_path / "approval-binding.json"
+    binding.write_bytes(contracts.canonical_bytes({
+        "schema_version": 1, **hashes,
+        "approval_report_sha256": hashlib.sha256(report.read_bytes()).hexdigest(),
+    }))
+    return binding, report
 
 
 def test_outcome_plan_is_exact_and_constructing_it_does_not_sample_or_execute(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -147,31 +195,22 @@ def test_structured_reviewer_approval_requires_zero_blocking_findings(tmp_path: 
 
 
 def test_live_canonical_qualification_accepts_exact_unmocked_approval(tmp_path: Path) -> None:
-    qualification = Path(__file__).resolve().parents[3] / "results/hierarchical-recovery-v3-qualification"
-    freeze_payload = (qualification / "qualification-freeze.json").read_bytes()
-    raw_payload = (qualification / "raw/manifest.json").read_bytes()
-    derived_payload = (qualification / "derived/manifest.json").read_bytes()
-    freeze = json.loads(freeze_payload.decode("ascii"))
-    hashes = {
-        "qualified_source_commit": freeze["source_commit"],
-        "source_closure_sha256": freeze["source_closure_sha256"],
-        "qualification_freeze_sha256": hashlib.sha256(freeze_payload).hexdigest(),
-        "qualification_raw_manifest_sha256": hashlib.sha256(raw_payload).hexdigest(),
-        "qualification_derived_manifest_sha256": hashlib.sha256(derived_payload).hexdigest(),
-    }
-    report = tmp_path / "approval-report.json"
-    report.write_bytes(contracts.canonical_bytes({
-        "schema_version": 1, "verdict": "APPROVED_FOR_OUTCOME",
-        "critical_findings": [], "important_findings": [], **hashes,
-    }))
-    binding = tmp_path / "approval-binding.json"
-    binding.write_bytes(contracts.canonical_bytes({
-        "schema_version": 1, **hashes,
-        "approval_report_sha256": hashlib.sha256(report.read_bytes()).hexdigest(),
-    }))
+    qualification = _tracked_qualification(tmp_path)
+    binding, report = _approval_for_qualification(tmp_path, qualification)
     verified = outcome.verify_outcome_approval(qualification, binding, report)
     assert verified["reviewer_verdict"] == "APPROVED_FOR_OUTCOME"
+    assert verified["positive_controls_authenticated"] is True
     assert not (tmp_path / "hierarchical-recovery-v3").exists()
+
+
+def test_outcome_approval_recursively_rejects_positive_control_byte_corruption(tmp_path: Path) -> None:
+    qualification = _tracked_qualification(tmp_path)
+    binding, report = _approval_for_qualification(tmp_path, qualification)
+    controls = qualification / "raw/positive-controls.json"
+    payload = controls.read_bytes()
+    controls.write_bytes(payload[:-2] + b"0\n")
+    with pytest.raises(outcome.OutcomeAuthorizationError, match="positive controls|inventory mismatch"):
+        outcome.verify_outcome_approval(qualification, binding, report)
 
 
 def test_accepted_approval_dry_run_is_side_effect_free_and_does_not_sample(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -241,11 +280,11 @@ def test_complete_outcome_analysis_bundle_is_frozen_without_sampling(monkeypatch
             "precheck_input": precheck_input,
             "precheck_receipt": {"architecture_independent": True, "realization_sha256": parameter_sha},
         })
-    payloads = analysis.outcome_payloads(rows, construct_integrity={name: True for name in ("approval", "inventory", "freeze", "cause", "replay", "reconstruction")})
+    integrity = {name: True for name in ("approval", "inventory", "freeze", "cause", "replay", "reconstruction", "positive_controls", "lifecycle")}
+    payloads = analysis.outcome_payloads(rows, construct_integrity=integrity)
     assert {"decision.json", "paired-rows.csv", "bootstrap.json", "template-cluster-sensitivity.json", "graph-table.csv", "outcome-by-domain.svg", "outcome-by-domain.png", "examples.json"} <= set(payloads)
     assert json.loads(payloads["bootstrap.json"])["draw_count"] == 10_000
     assert payloads["outcome-by-domain.png"].startswith(b"\x89PNG\r\n\x1a\n")
-    integrity = {name: True for name in ("approval", "inventory", "freeze", "cause", "replay", "reconstruction")}
     baseline = analysis.evaluate_outcome_gates(rows, construct_integrity=integrity)
     assert baseline["gates"][7]["passed"] is True
     assert baseline["matrix_identity"]["paired_count"] == 80
@@ -331,6 +370,9 @@ def test_interrupted_outcome_attempt_retains_create_only_invalid_disposition_wit
     assert reconstruction["matched"] is True
     assert reconstruction["scientific_result"] == "INVALID_EXPERIMENT"
     assert json.loads((root / "derived/decision.json").read_text(encoding="ascii"))["gates"][7]["passed"] is False
+    lifecycle = json.loads((root / "derived/reconstruction-receipt.json").read_text(encoding="ascii"))
+    assert lifecycle["status"] == "INVALID_NONRESUMABLE_LIFECYCLE"
+    assert lifecycle["invalid_dispositions"] == 1
     unlisted = root / "unlisted-claim.bin"
     unlisted.write_bytes(b"unlisted\n")
     with pytest.raises(outcome.OutcomeAuthorizationError, match="unlisted|closed inventory"):
@@ -340,12 +382,11 @@ def test_interrupted_outcome_attempt_retains_create_only_invalid_disposition_wit
         )
     assert not (tmp_path / "unlisted-clean").exists()
     unlisted.unlink()
-    integrity = {"approval": True, "inventory": False, "freeze": True, "cause": True, "replay": False, "reconstruction": True}
-    assert analysis.analyze_outcomes(root, construct_integrity=integrity)["scientific_result"] == "INVALID_EXPERIMENT"
+    assert analysis.analyze_outcomes(root)["scientific_result"] == "INVALID_EXPERIMENT"
     derived_member = root / "derived/examples.json"
     derived_member.unlink()
     with pytest.raises(RuntimeError, match="derived sealed member"):
-        analysis.analyze_outcomes(root, construct_integrity=integrity)
+        analysis.analyze_outcomes(root)
     assert not derived_member.exists()
     rows_path = root / "raw/outcome-rows.jsonl"
     rows_path.write_bytes(rows_path.read_bytes() + b"{}\n")
@@ -384,7 +425,8 @@ def test_counterfactual_oracle_rejects_wrong_object_and_missing_execution_or_res
     observations = list(raw.observations)
     observations[1] = replace(observations[1], geometry_feasible=False)
     still_failing = replace(raw, observations=tuple(observations))
-    assert outcome.counterfactual_event_audit(still_failing)["matched_event_count"] == 0
+    with pytest.raises(outcome.OutcomeAuthorizationError, match="event state"):
+        outcome.counterfactual_event_audit(still_failing)
 
 
 @pytest.mark.parametrize(("scenario", "lowest"), (
@@ -400,11 +442,26 @@ def test_counterfactual_oracle_uses_independently_scored_forced_replays(scenario
     ))
     audit = outcome.counterfactual_event_audit(raw)
     assert audit["oracle"] == "DETERMINISTIC_FORCED_REPLAY_V1"
-    assert [item["level"] for item in audit["counterfactual_candidates"]] == ["CONTROL", "MOTION", "SEMANTIC"]
+    assert audit["counterfactual_candidates"] == []
     assert audit["lowest_sufficient_level"] == lowest
-    assert all(len(item["replay_sha256"]) == 64 for item in audit["counterfactual_candidates"])
-    assert all(item["independently_scored"] is True for item in audit["counterfactual_candidates"])
+    assert all(len(item["counterfactual_candidates"]) == 3 for item in audit["events"])
+    for event in audit["events"]:
+        assert [item["level"] for item in event["counterfactual_candidates"]] == ["CONTROL", "MOTION", "SEMANTIC"]
+        assert all(item["event_state_sha256"] == event["event_state_sha256"] for item in event["counterfactual_candidates"])
+        assert all(item["start_tick"] == event["observed_tick"] for item in event["counterfactual_candidates"])
+        assert all(item["independently_scored"] is True for item in event["counterfactual_candidates"])
+        assert all(len(item["transition_sha256s"]) == item["end_tick"] - item["start_tick"] for item in event["counterfactual_candidates"])
     assert audit["matched_event_count"] / audit["event_count"] >= (0.5 if scenario == "control-dropout" else 1.0)
+
+
+def test_outcome_analysis_rejects_caller_supplied_integrity_literals(tmp_path: Path) -> None:
+    with pytest.raises(TypeError):
+        analysis.analyze_outcomes(
+            tmp_path,
+            construct_integrity={name: True for name in (
+                "approval", "inventory", "freeze", "cause", "replay", "reconstruction",
+            )},
+        )
 
 
 def test_create_only_members_resume_exact_bytes_and_reject_tamper(tmp_path: Path) -> None:
