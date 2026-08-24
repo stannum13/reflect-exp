@@ -12,16 +12,13 @@ def _module():
     return importlib.import_module("experiments.13_direct_hierarchy.src.compact_evidence")
 
 
-def _canonical_root() -> Path:
-    return Path(__file__).resolve().parents[3] / "results/exp13-direct-hierarchy-v3"
+def _repository_root() -> Path:
+    return Path(__file__).resolve().parents[3]
 
 
 @pytest.fixture(scope="module")
-def compact_pack(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    module = _module()
-    destination = tmp_path_factory.mktemp("exp13-pack") / "pack"
-    module.publish_compact_pack(_canonical_root(), destination)
-    return destination
+def compact_pack() -> Path:
+    return _repository_root() / "reports/evidence/exp13-direct-hierarchy-v3"
 
 
 def test_compact_pack_reconstructs_every_derived_byte(compact_pack: Path, tmp_path: Path) -> None:
@@ -65,4 +62,15 @@ def test_compact_pack_rejects_rehashed_outcome_substitution(compact_pack: Path, 
     disposition.write_bytes(module.canonical_bytes(row))
     module.reseal_inventory_for_test(attacked)
     with pytest.raises(RuntimeError, match="substitution|derived reconstruction"):
+        module.verify_compact_pack(attacked)
+
+
+def test_compact_pack_rejects_rehashed_selected_raw_substitution(compact_pack: Path, tmp_path: Path) -> None:
+    module = _module()
+    attacked = tmp_path / "raw-substitution"
+    shutil.copytree(compact_pack, attacked)
+    raw_file = next(path for path in (attacked / "inputs/selected-episodes/working").glob("*") if path.name != "manifest.json")
+    raw_file.write_bytes(raw_file.read_bytes() + b"attack")
+    module.reseal_inventory_for_test(attacked)
+    with pytest.raises(RuntimeError, match="selected raw substitution"):
         module.verify_compact_pack(attacked)

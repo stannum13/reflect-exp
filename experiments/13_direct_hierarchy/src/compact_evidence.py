@@ -306,6 +306,15 @@ def verify_compact_pack(pack: Path) -> dict[str, object]:
         item = raw_lookup.get(key)
         if item is None or item["sha256"] != _sha(path.read_bytes()):
             raise RuntimeError("compact manifest substitution against raw inventory")
+    annotations = json.loads((pack / "inputs/sample-annotations.json").read_text())
+    for annotation in annotations:
+        label = annotation["label"]
+        episode_id = annotation["episode_id"]
+        for path in sorted((pack / "inputs/selected-episodes" / label).glob("*")):
+            key = f"raw/episodes/{episode_id}/{path.name}"
+            item = raw_lookup.get(key)
+            if item is None or item["sha256"] != _sha(path.read_bytes()):
+                raise RuntimeError("selected raw substitution against raw inventory")
     with tempfile.TemporaryDirectory() as temporary:
         rebuilt = Path(temporary) / "derived"
         reconstruct_derived(pack, rebuilt)
