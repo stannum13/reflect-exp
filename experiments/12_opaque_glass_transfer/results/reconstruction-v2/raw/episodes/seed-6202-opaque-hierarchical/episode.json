@@ -1,0 +1,10 @@
+{
+  "condition": "OPAQUE",
+  "controller": "HIERARCHICAL",
+  "replans": 0,
+  "retries": 0,
+  "scene_relpath": "raw/scenes/seed-6202-opaque",
+  "seed": 6202,
+  "semantic_wakes": 0,
+  "tick_count": 275
+}

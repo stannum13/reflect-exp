@@ -1,0 +1,19 @@
+{
+  "collision_free": false,
+  "condition": "EVAL_X2",
+  "controller": "RGB_ONLY",
+  "detection_correct": false,
+  "detection_present": false,
+  "detector_latency_ms": 0.35,
+  "episode_id": "seed-6207-eval_x2-rgb_only",
+  "goal_error_m": 1.3918151103815493,
+  "localization_error_m": null,
+  "obstacle_contact_ticks": 267,
+  "path_length_m": 1.0606449335744028,
+  "replans": 0,
+  "safe_completion": false,
+  "seed": 6207,
+  "semantic_wakes": 0,
+  "task_complete": false,
+  "ticks": 300
+}

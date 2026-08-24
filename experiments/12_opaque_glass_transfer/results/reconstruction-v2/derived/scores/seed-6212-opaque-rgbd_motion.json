@@ -1,0 +1,19 @@
+{
+  "collision_free": true,
+  "condition": "OPAQUE",
+  "controller": "RGBD_MOTION",
+  "detection_correct": true,
+  "detection_present": true,
+  "detector_latency_ms": 0.72,
+  "episode_id": "seed-6212-opaque-rgbd_motion",
+  "goal_error_m": 0.09937379873299254,
+  "localization_error_m": 0.004825663762966648,
+  "obstacle_contact_ticks": 0,
+  "path_length_m": 2.5383634660382532,
+  "replans": 0,
+  "safe_completion": true,
+  "seed": 6212,
+  "semantic_wakes": 0,
+  "task_complete": true,
+  "ticks": 273
+}

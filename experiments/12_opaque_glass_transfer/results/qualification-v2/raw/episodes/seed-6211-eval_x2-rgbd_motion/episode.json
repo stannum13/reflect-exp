@@ -1,0 +1,10 @@
+{
+  "condition": "EVAL_X2",
+  "controller": "RGBD_MOTION",
+  "replans": 0,
+  "retries": 0,
+  "scene_relpath": "raw/scenes/seed-6211-eval_x2",
+  "seed": 6211,
+  "semantic_wakes": 0,
+  "tick_count": 274
+}

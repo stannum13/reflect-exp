@@ -1,0 +1,573 @@
+{
+  "config_sha256": "65d934d5429ac53372400a82eb66b137dc266fe6942468f016b82a6cb0edb94c",
+  "environment": {
+    "mujoco": "3.12.0",
+    "numpy": "2.4.6",
+    "platform": "macOS-15.6.1-arm64-arm-64bit",
+    "python": "3.11.13 (main, Jun  3 2025, 18:38:25) [Clang 17.0.0 (clang-1700.0.13.3)]"
+  },
+  "matrix": [
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "seed": 6201
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "seed": 6201
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "seed": 6201
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "seed": 6201
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "seed": 6201
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "seed": 6201
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGB_ONLY",
+      "seed": 6201
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGBD_MOTION",
+      "seed": 6201
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "HIERARCHICAL",
+      "seed": 6201
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "seed": 6202
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "seed": 6202
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "seed": 6202
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "seed": 6202
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "seed": 6202
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "seed": 6202
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGB_ONLY",
+      "seed": 6202
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGBD_MOTION",
+      "seed": 6202
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "HIERARCHICAL",
+      "seed": 6202
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "seed": 6203
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "seed": 6203
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "seed": 6203
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "seed": 6203
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "seed": 6203
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "seed": 6203
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGB_ONLY",
+      "seed": 6203
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGBD_MOTION",
+      "seed": 6203
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "HIERARCHICAL",
+      "seed": 6203
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "seed": 6204
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "seed": 6204
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "seed": 6204
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "seed": 6204
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "seed": 6204
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "seed": 6204
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGB_ONLY",
+      "seed": 6204
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGBD_MOTION",
+      "seed": 6204
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "HIERARCHICAL",
+      "seed": 6204
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "seed": 6205
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "seed": 6205
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "seed": 6205
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "seed": 6205
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "seed": 6205
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "seed": 6205
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGB_ONLY",
+      "seed": 6205
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGBD_MOTION",
+      "seed": 6205
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "HIERARCHICAL",
+      "seed": 6205
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "seed": 6206
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "seed": 6206
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "seed": 6206
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "seed": 6206
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "seed": 6206
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "seed": 6206
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGB_ONLY",
+      "seed": 6206
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGBD_MOTION",
+      "seed": 6206
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "HIERARCHICAL",
+      "seed": 6206
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "seed": 6207
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "seed": 6207
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "seed": 6207
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "seed": 6207
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "seed": 6207
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "seed": 6207
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGB_ONLY",
+      "seed": 6207
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGBD_MOTION",
+      "seed": 6207
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "HIERARCHICAL",
+      "seed": 6207
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "seed": 6208
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "seed": 6208
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "seed": 6208
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "seed": 6208
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "seed": 6208
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "seed": 6208
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGB_ONLY",
+      "seed": 6208
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGBD_MOTION",
+      "seed": 6208
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "HIERARCHICAL",
+      "seed": 6208
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "seed": 6209
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "seed": 6209
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "seed": 6209
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "seed": 6209
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "seed": 6209
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "seed": 6209
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGB_ONLY",
+      "seed": 6209
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGBD_MOTION",
+      "seed": 6209
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "HIERARCHICAL",
+      "seed": 6209
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "seed": 6210
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "seed": 6210
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "seed": 6210
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "seed": 6210
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "seed": 6210
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "seed": 6210
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGB_ONLY",
+      "seed": 6210
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGBD_MOTION",
+      "seed": 6210
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "HIERARCHICAL",
+      "seed": 6210
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "seed": 6211
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "seed": 6211
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "seed": 6211
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "seed": 6211
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "seed": 6211
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "seed": 6211
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGB_ONLY",
+      "seed": 6211
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGBD_MOTION",
+      "seed": 6211
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "HIERARCHICAL",
+      "seed": 6211
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "seed": 6212
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "seed": 6212
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "seed": 6212
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "seed": 6212
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "seed": 6212
+    },
+    {
+      "condition": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "seed": 6212
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGB_ONLY",
+      "seed": 6212
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "RGBD_MOTION",
+      "seed": 6212
+    },
+    {
+      "condition": "EVAL_X2",
+      "controller": "HIERARCHICAL",
+      "seed": 6212
+    }
+  ],
+  "mode": "HELDOUT",
+  "seed_namespace": [
+    6201,
+    6202,
+    6203,
+    6204,
+    6205,
+    6206,
+    6207,
+    6208,
+    6209,
+    6210,
+    6211,
+    6212
+  ],
+  "source_commit": "a50520959680a3be8959420e3df38bc0ffdc68fa",
+  "source_hashes": {
+    "experiments/12_opaque_glass_transfer/config-v2.json": "65d934d5429ac53372400a82eb66b137dc266fe6942468f016b82a6cb0edb94c",
+    "experiments/12_opaque_glass_transfer/src/experiment.py": "9c9ea642a79069ae41ca8820f8cba867fa5bd6e9d57beb2b12306d5eb98335e4",
+    "experiments/12_opaque_glass_transfer/src/v2.py": "82f97e49cdcd10dafe5e8ad170ef8fe7a05067cc67c9a646d144ca2030fed7b0"
+  },
+  "status": "COMPLETE"
+}

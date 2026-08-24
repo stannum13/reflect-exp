@@ -1,0 +1,19 @@
+{
+  "collision_free": true,
+  "condition": "EVAL_X2",
+  "controller": "HIERARCHICAL",
+  "detection_correct": true,
+  "detection_present": true,
+  "detector_latency_ms": 0.72,
+  "episode_id": "seed-6205-eval_x2-hierarchical",
+  "goal_error_m": 0.09843887750735296,
+  "localization_error_m": 0.019818042113981416,
+  "obstacle_contact_ticks": 0,
+  "path_length_m": 2.5385668730359248,
+  "replans": 0,
+  "safe_completion": true,
+  "seed": 6205,
+  "semantic_wakes": 0,
+  "task_complete": true,
+  "ticks": 274
+}

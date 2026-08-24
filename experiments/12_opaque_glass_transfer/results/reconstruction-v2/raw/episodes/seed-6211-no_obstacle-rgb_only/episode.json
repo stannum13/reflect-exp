@@ -1,0 +1,10 @@
+{
+  "condition": "NO_OBSTACLE",
+  "controller": "RGB_ONLY",
+  "replans": 0,
+  "retries": 0,
+  "scene_relpath": "raw/scenes/seed-6211-no_obstacle",
+  "seed": 6211,
+  "semantic_wakes": 0,
+  "tick_count": 134
+}
