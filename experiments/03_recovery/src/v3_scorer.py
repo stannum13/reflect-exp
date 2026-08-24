@@ -16,6 +16,7 @@ from types import MappingProxyType
 from typing import Mapping, Sequence
 
 import numpy as np
+import mujoco
 
 from reflect.types import ActionChunk
 
@@ -546,6 +547,151 @@ def score_episode(raw: object) -> ScoreResult:
     )
 
 
+def _counterfactual_model(candidate: Mapping[str, object]) -> tuple[mujoco.MjModel, mujoco.MjData, int, int]:
+    _, arm_module, _, _ = _scoring_dependencies()
+    plant = candidate["plant"]
+    obstacle = '<geom name="v3-obstacle" type="sphere" pos="5 5 0" size="0.04" contype="2" conaffinity="4" rgba="0.8 0.1 0.1 1"/>'
+    objects = (
+        f'<geom name="v3-object-a" type="sphere" pos="{plant["target_a_xy"][0]} {plant["target_a_xy"][1]} 0" size="0.009" contype="0" conaffinity="0"/>'
+        f'<geom name="v3-object-b" type="sphere" pos="{plant["target_b_xy"][0]} {plant["target_b_xy"][1]} 0" size="0.009" contype="0" conaffinity="0"/>'
+    )
+    xml = arm_module.MJCF_BYTES.decode("utf-8").replace("<worldbody>", f"<worldbody>{obstacle}{objects}", 1)
+    xml = xml.replace(
+        '<site name="eef" pos=".20 0 0" size=".01"/>',
+        '<site name="eef" pos=".20 0 0" size=".01"/><geom name="v3-eef-contact" type="sphere" pos=".20 0 0" size=".012" contype="4" conaffinity="2" rgba="0 0 0 0"/>',
+        1,
+    )
+    model = mujoco.MjModel.from_xml_string(xml)
+    data = mujoco.MjData(model)
+    model.dof_damping[:3] *= float(plant["damping_multiplier"])
+    obstacle_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "v3-obstacle")
+    eef_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "v3-eef-contact")
+    if bool(plant["obstacle_active"]):
+        model.geom_pos[obstacle_id] = (*plant["obstacle_xy"], 0.0)
+        model.geom_size[obstacle_id, 0] = float(plant["obstacle_radius_m"])
+    return model, data, obstacle_id, eef_id
+
+
+def score_counterfactual_candidate(
+    event_state: Mapping[str, object], candidate: Mapping[str, object],
+) -> dict[str, object]:
+    """Independently replay candidate MuJoCo bytes and derive sufficiency."""
+    raw_value = json.loads(canonical_bytes(candidate))
+    raw_sha = raw_value.pop("raw_sha256", None)
+    if raw_sha != sha256_bytes(canonical_bytes(raw_value)):
+        raise ValueError("counterfactual raw hash mismatch")
+    state_value = json.loads(canonical_bytes(event_state))
+    state_sha = state_value.pop("state_sha256", None)
+    if state_sha != sha256_bytes(canonical_bytes(state_value)) or state_sha != candidate.get("event_state_sha256"):
+        raise ValueError("counterfactual event state mismatch")
+    expected_members = {
+        "start_state": sha256_bytes(canonical_bytes(candidate["start_state"])),
+        "ticks": sha256_bytes(canonical_bytes(candidate["ticks"])),
+        "terminal": sha256_bytes(canonical_bytes(candidate["terminal"])),
+    }
+    if candidate.get("member_sha256s") != expected_members or candidate.get("trace_sha256") != expected_members["ticks"]:
+        raise ValueError("counterfactual member hash mismatch")
+    if canonical_bytes(candidate.get("start_state")) != canonical_bytes(event_state) or int(candidate.get("window_ticks", -1)) != 25:
+        raise ValueError("counterfactual restored state/window mismatch")
+    ticks = candidate.get("ticks")
+    if not isinstance(ticks, list) or len(ticks) != 25:
+        raise ValueError("counterfactual tick inventory mismatch")
+
+    model, data, obstacle_id, eef_id = _counterfactual_model(candidate)
+    simulator = state_value["simulator"]
+    data.qpos[:] = np.asarray(simulator["qpos"], dtype=np.float64)
+    data.qvel[:] = np.asarray(simulator["qvel"], dtype=np.float64)
+    data.ctrl[:] = np.asarray(simulator["ctrl"], dtype=np.float64)
+    data.qfrc_applied[:] = np.asarray(simulator["qfrc_applied"], dtype=np.float64)
+    data.xfrc_applied[:] = np.asarray(simulator["xfrc_applied"], dtype=np.float64)
+    data.time = float(simulator["time_s"])
+    mujoco.mj_forward(model, data)
+    safe = True
+    collision_free = True
+    executed = []
+    errors = []
+    for index, row in enumerate(ticks):
+        try:
+            if int(row["tick"]) != int(candidate["start_tick"]) + index:
+                raise ValueError("counterfactual tick order mismatch")
+            if not np.array_equal(data.qpos, np.asarray(row["qpos_before"], dtype=np.float64)):
+                raise ValueError("counterfactual qpos restore mismatch")
+            if not np.array_equal(data.qvel, np.asarray(row["qvel_before"], dtype=np.float64)):
+                raise ValueError("counterfactual qvel restore mismatch")
+            if data.time != float(row["time_before"]):
+                raise ValueError("counterfactual time restore mismatch")
+            data.ctrl[:] = np.asarray(row["ctrl"], dtype=np.float64)
+            data.qfrc_applied[:] = np.asarray(row["qfrc_applied"], dtype=np.float64)
+            data.xfrc_applied[:] = np.asarray(row["xfrc_applied"], dtype=np.float64)
+            mujoco.mj_step(model, data)
+            mujoco.mj_forward(model, data)
+            if not np.array_equal(data.qpos, np.asarray(row["qpos_after"], dtype=np.float64)):
+                raise ValueError("counterfactual qpos transition mismatch")
+            if not np.array_equal(data.qvel, np.asarray(row["qvel_after"], dtype=np.float64)):
+                raise ValueError("counterfactual qvel transition mismatch")
+            if data.time != float(row["time_after"]):
+                raise ValueError("counterfactual time transition mismatch")
+            collision = False
+            for contact_index in range(data.ncon):
+                contact = data.contact[contact_index]
+                collision |= {int(contact.geom1), int(contact.geom2)} == {obstacle_id, eef_id}
+            if bool(row["collision"]) != collision or int(row["contact_count"]) != data.ncon:
+                raise ValueError("counterfactual contact reconstruction mismatch")
+            finite = np.isfinite(data.qpos).all() and np.isfinite(data.qvel).all() and np.isfinite(data.ctrl).all()
+            safe &= bool(finite and np.all(np.abs(data.qpos[:3]) <= 2.7) and np.all(np.abs(data.ctrl) <= 12.0))
+            collision_free &= not collision
+            if row["mode"] == "EXECUTE":
+                executed.append(row)
+                errors.append(float(row["target_error_m"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            if isinstance(exc, ValueError) and str(exc).startswith("counterfactual"):
+                raise
+            raise ValueError("counterfactual tick schema mismatch") from exc
+
+    final = ticks[-1]
+    level = str(candidate.get("level"))
+    if level not in {"CONTROL", "MOTION", "SEMANTIC"}:
+        raise ValueError("counterfactual level mismatch")
+    observable = state_value.get("observable")
+    if not isinstance(observable, Mapping):
+        raise ValueError("counterfactual observable evidence missing")
+    control_required = bool(
+        float(observable["tracking_error_mean_m"]) > 0.10
+        or float(observable["external_load_mean_nm"]) > 0.17
+        or int(observable["command_gap_ticks"]) > 0
+    )
+    motion_required = bool(not observable["action_valid"] or not observable["geometry_feasible"])
+    semantic_required = bool(not observable["semantic_preconditions_valid"])
+    control_clear = bool(
+        not final["command_gap_active"] and np.allclose(final["qfrc_applied"][:3], 0.0)
+    )
+    motion_clear = bool(final["command_valid"] and final["geometry_feasible"] and executed)
+    selected = str(candidate["intervention"]["selected_object_id"])
+    fact = state_value["memory"]["facts"][selected]
+    restrictions = set(str(item) for item in fact["restrictions"])
+    semantic_clear = bool(
+        final["semantic_valid"] and fact["available"]
+        and "AUTHORIZED" in restrictions and "FORBIDDEN" not in restrictions and executed
+    )
+    domain_cleared = bool(
+        (not control_required or control_clear)
+        and (not motion_required or motion_clear)
+        and (not semantic_required or semantic_clear)
+    )
+    content_progress = bool(executed and (len(errors) < 2 or errors[-1] <= errors[0] + 1e-12))
+    terminal_success = bool(safe and collision_free and domain_cleared and content_progress)
+    receipt: dict[str, object] = {
+        "schema_version": 1, "level": level, "event_state_sha256": state_sha,
+        "input_sha256": raw_sha, "trace_sha256": expected_members["ticks"],
+        "member_sha256s": expected_members, "safety_passed": safe and collision_free,
+        "domain_cleared": domain_cleared, "content_progress": content_progress,
+        "terminal": "SUCCESS" if terminal_success else "FAILURE",
+        "passed": terminal_success, "independently_scored": True,
+    }
+    receipt["score_receipt_sha256"] = sha256_bytes(canonical_bytes(receipt))
+    return receipt
+
+
 def _parts(raw: object) -> dict[str, object]:
     return {
         "trace": {name: np.array(value, copy=True) for name, value in raw.trace.items()},
@@ -639,4 +785,4 @@ def positive_control_audit(raw: object) -> dict[str, dict[str, object]]:
     return result
 
 
-__all__ = ["ScoreResult", "positive_control_audit", "score_episode", "score_raw"]
+__all__ = ["ScoreResult", "positive_control_audit", "score_counterfactual_candidate", "score_episode", "score_raw"]

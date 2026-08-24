@@ -137,3 +137,17 @@ def test_all_positive_controls_independently_force_terminal_failure() -> None:
     }
     assert all(item["terminal"] == "FAILURE" for item in audit.values())
     assert all(int(item["detected_count"]) > 0 for item in audit.values())
+
+
+def test_counterfactual_candidate_scorer_recomputes_raw_trace_and_rejects_tamper() -> None:
+    raw = episode("motion-target-shift")
+    state = raw.failure_event_states[0]
+    candidate = runtime.run_counterfactual_continuation(raw, state, contracts.DecisionLevel.MOTION, window_ticks=25)
+    receipt = scorer.score_counterfactual_candidate(state, candidate)
+    assert receipt["independently_scored"] is True
+    assert receipt["input_sha256"] == candidate["raw_sha256"]
+    assert receipt["passed"] is True
+    damaged = deepcopy(candidate)
+    damaged["ticks"][0]["qpos_after"][0] += 0.01
+    with pytest.raises(ValueError, match="counterfactual"):
+        scorer.score_counterfactual_candidate(state, damaged)

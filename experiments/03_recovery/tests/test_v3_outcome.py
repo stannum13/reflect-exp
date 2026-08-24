@@ -450,8 +450,64 @@ def test_counterfactual_oracle_uses_independently_scored_forced_replays(scenario
         assert all(item["event_state_sha256"] == event["event_state_sha256"] for item in event["counterfactual_candidates"])
         assert all(item["start_tick"] == event["observed_tick"] for item in event["counterfactual_candidates"])
         assert all(item["independently_scored"] is True for item in event["counterfactual_candidates"])
-        assert all(len(item["transition_sha256s"]) == item["end_tick"] - item["start_tick"] for item in event["counterfactual_candidates"])
+        assert all(len(item["ticks"]) == item["end_tick"] - item["start_tick"] == 25 for item in event["counterfactual_candidates"])
+        assert all(item["score_receipt"]["input_sha256"] == item["raw_sha256"] for item in event["counterfactual_candidates"])
     assert audit["matched_event_count"] / audit["event_count"] >= (0.5 if scenario == "control-dropout" else 1.0)
+
+
+def test_dropout_invokes_three_runtime_continuations_and_three_independent_scores_per_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime = importlib.import_module("experiments.03_recovery.src.v3_runtime")
+    scorer = importlib.import_module("experiments.03_recovery.src.v3_scorer")
+    raw = runtime.run_episode(runtime.V3EpisodeSpec(
+        contracts.Architecture.R3, "control-dropout", 20261891, contracts.PRIMARY_CONTROLLER_ID,
+    ))
+    continuation_calls: list[tuple[str, str]] = []
+    scorer_calls: list[tuple[str, str]] = []
+    real_continuation = runtime.run_counterfactual_continuation
+    real_score = scorer.score_counterfactual_candidate
+
+    def continuation(raw_value: object, state: object, level: object, **kwargs: object) -> object:
+        continuation_calls.append((state["state_sha256"], contracts.DecisionLevel(level).value))
+        return real_continuation(raw_value, state, level, **kwargs)
+
+    def score(state: object, candidate: object) -> object:
+        scorer_calls.append((state["state_sha256"], candidate["level"]))
+        return real_score(state, candidate)
+
+    monkeypatch.setattr(outcome, "run_counterfactual_continuation", continuation)
+    monkeypatch.setattr(outcome, "score_counterfactual_candidate", score)
+    audit = outcome.counterfactual_event_audit(raw)
+    assert audit["event_count"] == 2
+    assert len(continuation_calls) == len(scorer_calls) == 6
+    assert continuation_calls == scorer_calls
+
+
+def test_gate8_recomputes_counterfactual_members_scores_and_minimal_level() -> None:
+    runtime = importlib.import_module("experiments.03_recovery.src.v3_runtime")
+    raw = runtime.run_episode(runtime.V3EpisodeSpec(
+        contracts.Architecture.R3, "motion-target-shift", 20261891, contracts.PRIMARY_CONTROLLER_ID,
+    ))
+    audit = outcome.counterfactual_event_audit(raw)
+    assert analysis._counterfactual_cause_valid(audit) is True
+
+    forged = json.loads(contracts.canonical_bytes(audit))
+    forged["events"][0]["counterfactual_candidates"][1]["ticks"][0]["qpos_after"][0] += 0.01
+    candidate = forged["events"][0]["counterfactual_candidates"][1]
+    candidate["member_sha256s"]["ticks"] = contracts.sha256_bytes(contracts.canonical_bytes(candidate["ticks"]))
+    candidate["trace_sha256"] = candidate["member_sha256s"]["ticks"]
+    raw_candidate = dict(candidate)
+    for key in ("safety_passed", "domain_cleared", "content_progress", "scored_terminal", "passed", "independently_scored", "score_receipt"):
+        raw_candidate.pop(key, None)
+    raw_candidate.pop("raw_sha256")
+    candidate["raw_sha256"] = contracts.sha256_bytes(contracts.canonical_bytes(raw_candidate))
+    assert analysis._counterfactual_cause_valid(forged) is False
+
+    forged = json.loads(contracts.canonical_bytes(audit))
+    forged["events"][0]["counterfactual_candidates"][1]["independently_scored"] = False
+    assert analysis._counterfactual_cause_valid(forged) is False
+    forged = json.loads(contracts.canonical_bytes(audit))
+    forged["events"][0]["minimal_sufficient_level"] = "CONTROL"
+    assert analysis._counterfactual_cause_valid(forged) is False
 
 
 def test_outcome_analysis_rejects_caller_supplied_integrity_literals(tmp_path: Path) -> None:

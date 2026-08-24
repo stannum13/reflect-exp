@@ -187,3 +187,23 @@ def test_existing_p6_and_repaired_p4_paths_have_distinct_bound_bytes() -> None:
     assert p6.trajectory_bytes != p4.trajectory_bytes
     assert p6.trace["q_ref"].tobytes() != p4.trace["q_ref"].tobytes()
     assert p6.trace["actuator_cmd_nm"].tobytes() != p4.trace["actuator_cmd_nm"].tobytes()
+
+
+def test_failure_event_snapshot_restores_three_real_mujoco_continuations() -> None:
+    raw = runtime.run_episode(runtime.V3EpisodeSpec(
+        contracts.Architecture.R3, "control-dropout", 20261891, contracts.PRIMARY_CONTROLLER_ID,
+    ))
+    assert len(raw.failure_event_states) == 2
+    state = raw.failure_event_states[0]
+    assert {"simulator", "world", "memory", "policy", "action", "history", "state_sha256"} <= set(state)
+    assert {"qpos", "qvel", "ctrl", "qfrc_applied", "xfrc_applied", "time_s"} <= set(state["simulator"])
+    assert {"mission_started", "obstacle_active", "dropout_start", "gap_ticks", "current_object_id"} <= set(state["world"])
+    candidates = [
+        runtime.run_counterfactual_continuation(raw, state, level, window_ticks=25)
+        for level in (contracts.DecisionLevel.CONTROL, contracts.DecisionLevel.MOTION, contracts.DecisionLevel.SEMANTIC)
+    ]
+    assert [item["level"] for item in candidates] == ["CONTROL", "MOTION", "SEMANTIC"]
+    assert all(item["event_state_sha256"] == state["state_sha256"] for item in candidates)
+    assert all(len(item["ticks"]) == 25 for item in candidates)
+    assert all(contracts.canonical_bytes(item["start_state"]) == contracts.canonical_bytes(state) for item in candidates)
+    assert len({item["raw_sha256"] for item in candidates}) == 3

@@ -17,7 +17,7 @@ from typing import Mapping, Sequence
 import mujoco
 import numpy as np
 
-from reflect.types import Constraint, ObjectBelief, Observation, Pose, Predicate, RobotState, SkillSpec
+from reflect.types import ActionChunk, Constraint, ObjectBelief, Observation, Pose, Predicate, RobotState, SkillSpec
 
 from .v3_contracts import (
     Architecture,
@@ -663,6 +663,44 @@ def _controller_binding(spec: V3EpisodeSpec, arm_module: object) -> Mapping[str,
     })
 
 
+def _active_state(active: _ActiveCommand | None) -> Mapping[str, object] | None:
+    if active is None:
+        return None
+    chunk = active.chunk
+    executor = active.executor_state
+    return {
+        "record": dict(active.record),
+        "chunk": {
+            "chunk_id": chunk.chunk_id, "skill_id": chunk.skill_id,
+            "source_observation_id": chunk.source_observation_id,
+            "source_observation_time_ns": chunk.source_observation_time_ns,
+            "generated_time_ns": chunk.generated_time_ns, "valid_from_ns": chunk.valid_from_ns,
+            "expires_at_ns": chunk.expires_at_ns, "dt_s": chunk.dt_s,
+            "actions": np.asarray(chunk.actions).tolist(), "representation": chunk.representation,
+            "expected_phase": chunk.expected_phase, "metadata": dict(chunk.metadata),
+        },
+        "stack": active.stack.value,
+        "executor_state": {
+            "active_chunk_id": executor.active_chunk_id,
+            "latched_q_ref": np.asarray(executor.latched_q_ref).tolist(),
+            "p5_qdot_previous": np.asarray(executor.p5_qdot_previous).tolist(),
+            "p5_planner_q_ref": np.asarray(executor.p5_planner_q_ref).tolist(),
+            "p5_planner_enabled": executor.p5_planner_enabled,
+        },
+        "path": [list(item) for item in active.path],
+        "segment_index": active.segment_index,
+        "segment_generated_tick": active.segment_generated_tick,
+    }
+
+
+def _attempt_state(attempt: _Attempt | None) -> Mapping[str, object] | None:
+    return None if attempt is None else {
+        "level": attempt.level.value, "start_tick": attempt.start_tick, "end_tick": attempt.end_tick,
+        "old_content_sha256": attempt.old_content_sha256, "new_content_sha256": attempt.new_content_sha256,
+        "executed_valid_ticks": attempt.executed_valid_ticks,
+    }
+
+
 def run_episode(
     spec: V3EpisodeSpec, *, counterfactual_level: DecisionLevel | None = None,
 ) -> V3EpisodeRaw:
@@ -872,37 +910,54 @@ def run_episode(
         )
 
     def retain_failure_state(observable: ObservableState, before: BudgetState) -> None:
-        q, dq = world.state()
-        active_state = None if active is None else {
-            "record": dict(active.record),
-            "path": [list(item) for item in active.path],
-            "segment_index": active.segment_index,
-            "segment_generated_tick": active.segment_generated_tick,
-            "executor_state": active.executor_state,
-        }
         state = {
             "schema_version": 1,
             "episode_id": spec.episode_id,
             "observed_tick": observable.tick,
             "observable_sha256": observable.sha256,
+            "observable": observable,
             "simulator": {
-                "q": q.tolist(), "dq": dq.tolist(), "time_s": float(world.data.time),
+                "qpos": np.asarray(world.data.qpos).tolist(),
+                "qvel": np.asarray(world.data.qvel).tolist(),
+                "ctrl": np.asarray(world.data.ctrl).tolist(),
+                "qfrc_applied": np.asarray(world.data.qfrc_applied).tolist(),
+                "xfrc_applied": np.asarray(world.data.xfrc_applied).tolist(),
+                "time_s": float(world.data.time),
                 "previous_q_ref": previous_q_ref.tolist(), "hold_q": hold_q.tolist(),
             },
-            "policy": {"budget": before, "reobserve_index": reobserve_index, "aborted": aborted},
+            "world": {
+                "mission_started": mission_started, "obstacle_active": obstacle_active,
+                "dropout_start": dropout_start, "gap_ticks": gap_ticks,
+                "forced_hold_tick": forced_hold_tick, "current_object_id": current_object_id,
+                "injection_rows": list(injection_rows), "contacts": list(world.contacts()),
+            },
+            "policy": {
+                "budget": before, "reobserve_index": reobserve_index, "aborted": aborted,
+                "attempt": _attempt_state(attempt),
+            },
             "memory": {
                 "version": memory_version,
                 "current_object_id": current_object_id,
                 "facts": json.loads(canonical_bytes(memory)),
+                "ledger": list(memory_ledger), "events": list(memory_events),
                 "ledger_sha256": sha256_bytes(b"".join(canonical_bytes(item) for item in memory_ledger)),
             },
             "action": {
-                "active": active_state,
+                "active": _active_state(active),
                 "command_sequence": command_sequence,
                 "forced_hold_tick": forced_hold_tick,
                 "dropout_start": dropout_start,
                 "obstacle_active": obstacle_active,
+                "previous_q_ref": previous_q_ref.tolist(), "hold_q": hold_q.tolist(),
                 "history_sha256": sha256_bytes(b"".join(canonical_bytes(item) for item in action_envelopes)),
+            },
+            "history": {
+                "trace": {name: list(values) for name, values in trace_rows.items()},
+                "actions": list(action_envelopes), "contacts": list(contact_envelopes),
+                "commands": list(commands), "trajectory_members_hex": [item.hex() for item in trajectories],
+                "world_ledger": list(world_ledger), "semantic_events": list(semantic_events),
+                "observations": list(observations), "decisions": list(decisions),
+                "budget_resets": list(resets), "execution_receipts": list(execution_receipts),
             },
         }
         state["state_sha256"] = sha256_bytes(canonical_bytes(state))
@@ -1236,7 +1291,201 @@ def run_episode(
     )
 
 
+def _restore_active(value: Mapping[str, object] | None) -> _ActiveCommand | None:
+    if value is None:
+        return None
+    exp_contracts, _, _, representations = _modules()
+    chunk_value = value["chunk"]
+    chunk = ActionChunk(
+        str(chunk_value["chunk_id"]), str(chunk_value["skill_id"]),
+        int(chunk_value["source_observation_id"]), int(chunk_value["source_observation_time_ns"]),
+        int(chunk_value["generated_time_ns"]), int(chunk_value["valid_from_ns"]),
+        int(chunk_value["expires_at_ns"]), float(chunk_value["dt_s"]),
+        np.asarray(chunk_value["actions"], dtype=np.float64), str(chunk_value["representation"]),
+        chunk_value["expected_phase"], dict(chunk_value["metadata"]),
+    )
+    executor_value = value["executor_state"]
+    executor = exp_contracts.ExecutorState(
+        executor_value["active_chunk_id"], np.asarray(executor_value["latched_q_ref"], dtype=np.float64),
+        np.asarray(executor_value["p5_qdot_previous"], dtype=np.float64),
+        np.asarray(executor_value["p5_planner_q_ref"], dtype=np.float64),
+        bool(executor_value["p5_planner_enabled"]),
+    )
+    return _ActiveCommand(
+        dict(value["record"]), chunk, exp_contracts.CommandStack(str(value["stack"])), executor,
+        tuple(tuple(float(item) for item in point) for point in value["path"]),
+        int(value["segment_index"]), int(value["segment_generated_tick"]),
+    )
+
+
+def run_counterfactual_continuation(
+    raw: V3EpisodeRaw,
+    event_state: Mapping[str, object],
+    level: DecisionLevel,
+    *,
+    window_ticks: int = 25,
+) -> dict[str, object]:
+    """Restore one authenticated event state and execute one forced MuJoCo continuation."""
+    level = DecisionLevel(level)
+    if level not in {DecisionLevel.CONTROL, DecisionLevel.MOTION, DecisionLevel.SEMANTIC}:
+        raise ValueError("counterfactual continuation level must be CONTROL, MOTION, or SEMANTIC")
+    if window_ticks != 25:
+        raise ValueError("counterfactual continuation window must be the preregistered 25 ticks")
+    detached_state = json.loads(canonical_bytes(event_state))
+    claimed = detached_state.pop("state_sha256", None)
+    if claimed != sha256_bytes(canonical_bytes(detached_state)):
+        raise ValueError("counterfactual event state hash mismatch")
+    detached_state["state_sha256"] = claimed
+    if detached_state.get("episode_id") != raw.spec.episode_id:
+        raise ValueError("counterfactual event state episode mismatch")
+
+    exp_contracts, arm_module, kinematics, representations = _modules()
+    config = _controller_config()
+    world = _World(raw.realization, config, arm_module)
+    if bool(detached_state["world"]["obstacle_active"]):
+        world.activate_obstacle(raw.realization)
+    simulator = detached_state["simulator"]
+    world.data.qpos[:] = np.asarray(simulator["qpos"], dtype=np.float64)
+    world.data.qvel[:] = np.asarray(simulator["qvel"], dtype=np.float64)
+    world.data.ctrl[:] = np.asarray(simulator["ctrl"], dtype=np.float64)
+    world.data.qfrc_applied[:] = np.asarray(simulator["qfrc_applied"], dtype=np.float64)
+    world.data.xfrc_applied[:] = np.asarray(simulator["xfrc_applied"], dtype=np.float64)
+    world.data.time = float(simulator["time_s"])
+    mujoco.mj_forward(world.model, world.data)
+
+    memory = json.loads(canonical_bytes(detached_state["memory"]["facts"]))
+    current_object = str(detached_state["world"]["current_object_id"])
+    active = _restore_active(detached_state["action"]["active"])
+    previous_q_ref = np.asarray(simulator["previous_q_ref"], dtype=np.float64)
+    hold_q = np.asarray(simulator["hold_q"], dtype=np.float64)
+    obstacle_active = bool(detached_state["world"]["obstacle_active"])
+    dropout_start = detached_state["world"]["dropout_start"]
+    start_tick = int(detached_state["observed_tick"])
+
+    def authorized(object_id: str) -> bool:
+        fact = memory[object_id]
+        return _fact_authorized(fact)
+
+    selected_object = current_object
+    path: tuple[tuple[float, float], ...]
+    if level is DecisionLevel.CONTROL and active is not None:
+        path = active.path[active.segment_index:]
+    elif level is DecisionLevel.SEMANTIC:
+        alternatives = [name for name in sorted(memory) if name != current_object and authorized(name)]
+        selected_object = alternatives[0] if alternatives else current_object
+        path = (tuple(float(item) for item in memory[selected_object]["pose_xy"]),)
+    else:
+        target = np.asarray(memory[selected_object]["pose_xy"], dtype=np.float64)
+        if obstacle_active:
+            path = _waypoint_path(world.site_xy(), target, np.asarray(raw.realization.obstacle_xy), raw.realization.obstacle_radius_m)
+        else:
+            path = (tuple(float(item) for item in target),)
+    selected_target = np.asarray(path[0], dtype=np.float64)
+    forced_content_sha256 = sha256_bytes(canonical_bytes({
+        "event_state_sha256": claimed, "level": level.value,
+        "object_id": selected_object, "path": path,
+    }))
+    tick_rows: list[dict[str, object]] = []
+    for tick in range(start_tick, start_tick + window_ticks):
+        q_before = np.asarray(world.data.qpos, dtype=np.float64).copy()
+        qvel_before = np.asarray(world.data.qvel, dtype=np.float64).copy()
+        time_before = float(world.data.time)
+        # Every candidate is an actual post-intervention continuation.  The
+        # intervention emits a fresh command, so a retained pre-intervention
+        # transport gap is evidence about the cause, not a condition to replay.
+        gap_active = False
+        fact = memory[selected_object]
+        command_valid = bool(authorized(selected_object))
+        if level is DecisionLevel.CONTROL and active is not None:
+            command_valid = command_valid and np.array_equal(
+                np.asarray(active.path[-1], dtype=np.float64), np.asarray(fact["pose_xy"], dtype=np.float64),
+            )
+        geometry_feasible = True
+        if obstacle_active:
+            points = (tuple(float(item) for item in world.site_xy()),) + path
+            geometry_feasible = all(
+                not _blocked(np.asarray(first), np.asarray(second), np.asarray(raw.realization.obstacle_xy), raw.realization.obstacle_radius_m)
+                for first, second in zip(points, points[1:])
+            )
+        semantic_valid = authorized(selected_object)
+        mode = "EXECUTE" if command_valid and geometry_feasible and semantic_valid and not gap_active else "HOLD"
+        if mode == "EXECUTE" and level is DecisionLevel.CONTROL and active is not None:
+            reference, active.executor_state, _ = representations.reference_for_tick(
+                active.stack, active.chunk, q_before[:3], qvel_before[:3], tick * 2_000_000,
+                active.executor_state, config,
+            )
+            requested_q = np.asarray(reference.q_ref)
+            requested_dq = np.asarray(reference.dq_ref)
+        elif mode == "EXECUTE":
+            requested_q = kinematics.absolute_ik(
+                selected_target, q_before[:3], config.arm.link_lengths_m,
+                config.controller.ik_damping_candidates[0], config,
+            )
+            requested_dq = np.zeros(3)
+        else:
+            requested_q = hold_q if not semantic_valid or not geometry_feasible else q_before[:3]
+            requested_dq = np.zeros(3)
+        q_ref, torque, _ = arm_module.bounded_pd(
+            q_before[:3], qvel_before[:3], requested_q, previous_q_ref, 5.0, 0.5, config,
+            desired_dq=requested_dq,
+        )
+        previous_q_ref = np.asarray(q_ref).copy()
+        external = np.zeros(3, dtype=np.float64)
+        if raw.spec.scenario_id == "control-impulse" and raw.realization.injection_tick <= tick < raw.realization.injection_tick + raw.realization.impulse_ticks:
+            sign = 1.0 if raw.realization.seed % 2 else -1.0
+            external = sign * raw.realization.impulse_nm * np.asarray((1.0, -1.0, 0.5))
+        world.step(torque, external)
+        contacts = world.contacts()
+        q_after = np.asarray(world.data.qpos, dtype=np.float64).copy()
+        qvel_after = np.asarray(world.data.qvel, dtype=np.float64).copy()
+        collision = any({item["geom1_name"], item["geom2_name"]} == {"v3-obstacle", "v3-eef-contact"} for item in contacts)
+        tick_rows.append({
+            "tick": tick, "time_before": time_before, "time_after": float(world.data.time),
+            "qpos_before": q_before.tolist(), "qvel_before": qvel_before.tolist(),
+            "ctrl": np.asarray(world.data.ctrl).tolist(),
+            "qfrc_applied": np.asarray(world.data.qfrc_applied).tolist(),
+            "xfrc_applied": np.asarray(world.data.xfrc_applied).tolist(),
+            "qpos_after": q_after.tolist(), "qvel_after": qvel_after.tolist(),
+            "mode": mode, "object_id": selected_object if mode == "EXECUTE" else None,
+            "command_content_sha256": forced_content_sha256 if mode == "EXECUTE" else ZERO_SHA256,
+            "command_gap_active": gap_active, "command_valid": command_valid,
+            "geometry_feasible": geometry_feasible, "semantic_valid": semantic_valid,
+            "collision": collision, "contact_count": len(contacts),
+            "target_xy": selected_target.tolist(),
+            "target_error_m": float(np.linalg.norm(world.site_xy() - selected_target)),
+        })
+    terminal = {
+        "end_tick": start_tick + window_ticks,
+        "qpos": np.asarray(world.data.qpos).tolist(), "qvel": np.asarray(world.data.qvel).tolist(),
+        "time_s": float(world.data.time), "selected_object_id": selected_object,
+    }
+    members = {
+        "start_state": sha256_bytes(canonical_bytes(detached_state)),
+        "ticks": sha256_bytes(canonical_bytes(tick_rows)),
+        "terminal": sha256_bytes(canonical_bytes(terminal)),
+    }
+    candidate: dict[str, object] = {
+        "schema_version": 1, "episode_id": raw.spec.episode_id, "level": level.value,
+        "event_state_sha256": claimed, "start_tick": start_tick,
+        "end_tick": start_tick + window_ticks, "window_ticks": window_ticks,
+        "start_state": detached_state, "plant": {
+            "damping_multiplier": raw.realization.damping_multiplier,
+            "target_a_xy": list(raw.realization.target_a_xy), "target_b_xy": list(raw.realization.target_b_xy),
+            "obstacle_xy": list(raw.realization.obstacle_xy), "obstacle_radius_m": raw.realization.obstacle_radius_m,
+            "obstacle_active": obstacle_active,
+        },
+        "intervention": {
+            "selected_object_id": selected_object, "selected_target_xy": selected_target.tolist(),
+            "path_xy": [list(item) for item in path], "content_sha256": forced_content_sha256,
+        },
+        "ticks": tick_rows, "terminal": terminal, "member_sha256s": members,
+        "trace_sha256": members["ticks"],
+    }
+    candidate["raw_sha256"] = sha256_bytes(canonical_bytes(candidate))
+    return candidate
+
+
 __all__ = [
     "PrecheckControlSpec", "PrecheckReceipt", "V3EpisodeRaw", "V3EpisodeSpec", "precheck",
-    "run_episode", "unreachable_precheck_control",
+    "run_counterfactual_continuation", "run_episode", "unreachable_precheck_control",
 ]

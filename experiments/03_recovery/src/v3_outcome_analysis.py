@@ -11,6 +11,7 @@ import numpy as np
 
 from .v3_contracts import Architecture, OUTCOME_SEEDS, PRIMARY_CONTROLLER_ID, SCENARIO_IDS, SENSITIVITY_CONTROLLER_ID, canonical_bytes, sha256_bytes
 from .v3_evidence import _csv, _diagnostic_png, _diagnostic_svg, _inventory, _tree_bytes, source_closure
+from .v3_scorer import score_counterfactual_candidate
 
 
 BOOTSTRAP_DRAWS = 10_000
@@ -313,6 +314,54 @@ def outcome_payloads(rows: Sequence[Mapping[str, object]], *, construct_integrit
     }
 
 
+def _counterfactual_cause_valid(audit: Mapping[str, object]) -> bool:
+    """Recompute every candidate/member/score receipt without trusting labels."""
+    try:
+        events = audit.get("events")
+        if not isinstance(events, list) or int(audit.get("event_count", -1)) != len(events):
+            return False
+        minimal_levels = []
+        for event in events:
+            candidates = event.get("counterfactual_candidates")
+            if not isinstance(candidates, list) or len(candidates) != 3:
+                return False
+            if [item.get("level") for item in candidates] != ["CONTROL", "MOTION", "SEMANTIC"]:
+                return False
+            if len({item.get("raw_sha256") for item in candidates}) != 3:
+                return False
+            recomputed_receipts = []
+            for candidate in candidates:
+                if candidate.get("event_state_sha256") != event.get("event_state_sha256"):
+                    return False
+                raw_candidate = json.loads(canonical_bytes(candidate))
+                for derived_key in (
+                    "safety_passed", "domain_cleared", "content_progress", "scored_terminal",
+                    "passed", "independently_scored", "score_receipt",
+                ):
+                    raw_candidate.pop(derived_key, None)
+                receipt = score_counterfactual_candidate(raw_candidate["start_state"], raw_candidate)
+                if canonical_bytes(receipt) != canonical_bytes(candidate.get("score_receipt")):
+                    return False
+                if any(candidate.get(key) != receipt[receipt_key] for key, receipt_key in (
+                    ("safety_passed", "safety_passed"),
+                    ("domain_cleared", "domain_cleared"),
+                    ("content_progress", "content_progress"),
+                    ("scored_terminal", "terminal"),
+                    ("passed", "passed"),
+                    ("independently_scored", "independently_scored"),
+                )):
+                    return False
+                recomputed_receipts.append(receipt)
+            minimal = next((item["level"] for item in recomputed_receipts if item["passed"]), None)
+            if event.get("minimal_sufficient_level") != minimal:
+                return False
+            minimal_levels.append(minimal)
+        expected_top = next(iter(set(minimal_levels))) if len(set(minimal_levels)) == 1 else None
+        return audit.get("lowest_sufficient_level") == expected_top
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def _derived_construct_integrity(output: Path, rows: Sequence[Mapping[str, object]]) -> dict[str, bool]:
     freeze_payload = (output / "outcome-freeze.json").read_bytes()
     freeze = json.loads(freeze_payload.decode("ascii"))
@@ -359,22 +408,11 @@ def _derived_construct_integrity(output: Path, rows: Sequence[Mapping[str, objec
         if row.get("architecture") == "R3" and row.get("controller_id") == PRIMARY_CONTROLLER_ID
         and row.get("disposition") == "COMPLETE"
     ]
-    cause_passed = True
-    for row in causal_rows:
-        audit = row.get("counterfactual_event_audit", {})
-        events = audit.get("events", ()) if isinstance(audit, Mapping) else ()
-        if int(audit.get("event_count", -1)) != len(events):
-            cause_passed = False
-            break
-        for event in events:
-            candidates = event.get("counterfactual_candidates", ())
-            if (
-                [item.get("level") for item in candidates] != ["CONTROL", "MOTION", "SEMANTIC"]
-                or any(item.get("event_state_sha256") != event.get("event_state_sha256") for item in candidates)
-                or any(item.get("independently_scored") is not True for item in candidates)
-            ):
-                cause_passed = False
-                break
+    cause_passed = all(
+        isinstance(row.get("counterfactual_event_audit"), Mapping)
+        and _counterfactual_cause_valid(row["counterfactual_event_audit"])
+        for row in causal_rows
+    )
     receipt_payload = (output / "derived/reconstruction-receipt.json").read_bytes()
     receipt = json.loads(receipt_payload.decode("ascii"))
     rows_payload = (output / "raw/outcome-rows.jsonl").read_bytes()
@@ -422,4 +460,4 @@ def analyze_outcomes(output: Path) -> dict[str, object]:
     return json.loads(payloads["decision.json"])
 
 
-__all__ = ["BOOTSTRAP_DRAWS", "analyze_outcomes", "evaluate_outcome_gates", "outcome_payloads", "paired_rows", "realization_bootstrap"]
+__all__ = ["BOOTSTRAP_DRAWS", "_counterfactual_cause_valid", "analyze_outcomes", "evaluate_outcome_gates", "outcome_payloads", "paired_rows", "realization_bootstrap"]

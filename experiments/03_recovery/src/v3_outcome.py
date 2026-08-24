@@ -23,8 +23,8 @@ from .v3_contracts import (
     sha256_bytes,
 )
 from .v3_evidence import _assert_trees_equal, _freeze_record, _inventory, _tree_bytes, _validate_episode, episode_payloads, publish_durable_archive, qualification_specs, source_closure, validate_publishable_evidence
-from .v3_runtime import V3EpisodeSpec, precheck, run_episode
-from .v3_scorer import score_episode
+from .v3_runtime import V3EpisodeSpec, precheck, run_counterfactual_continuation, run_episode
+from .v3_scorer import score_counterfactual_candidate, score_episode
 from .v3_outcome_analysis import analyze_outcomes
 
 
@@ -307,71 +307,20 @@ def counterfactual_event_audit(raw: object) -> dict[str, object]:
             key: value for key, value in state.items() if key != "state_sha256"
         })):
             raise OutcomeAuthorizationError("counterfactual event state is missing or unauthenticated")
-        memory_facts = state["memory"]["facts"]
-        authorized_alternative = any(
-            bool(fact.get("available"))
-            and "AUTHORIZED" in fact.get("restrictions", ())
-            and "FORBIDDEN" not in fact.get("restrictions", ())
-            for object_id, fact in memory_facts.items()
-            if object_id != state["memory"]["current_object_id"]
-        )
-        failures = {
-            "CONTROL": bool(
-                observable.tracking_error_mean_m > 0.10
-                or observable.external_load_mean_nm > 0.17
-                or observable.command_gap_ticks > 0
-            ),
-            "MOTION": bool(not observable.action_valid or not observable.geometry_feasible),
-            "SEMANTIC": bool(not observable.semantic_preconditions_valid),
-        }
         event_candidates = []
-        for level_index, level in enumerate(("CONTROL", "MOTION", "SEMANTIC")):
-            clears = {
-                domain: bool(not failed or level_index >= domain_index)
-                for domain_index, (domain, failed) in enumerate(failures.items())
-            }
-            budget_before = state["policy"]["budget"]
-            budget_key = f"{level.lower()}_remaining"
-            progress = bool(int(getattr(budget_before, budget_key)) > 0)
-            if level == "MOTION":
-                progress = progress and bool(observable.semantic_preconditions_valid)
-            elif level == "SEMANTIC":
-                progress = progress and authorized_alternative
-            else:
-                progress = progress and state["action"]["active"] is not None
-            simulator = state["simulator"]
-            values = (*simulator["q"], *simulator["dq"], *simulator["previous_q_ref"], *simulator["hold_q"])
-            safety = bool(observable.controller_safe and all(isinstance(value, (int, float)) and abs(float(value)) < 1e6 for value in values))
-            continuation_q = [float(value) for value in simulator["q"]]
-            continuation_dq = [float(value) for value in simulator["dq"]]
-            transition_hashes = []
-            end_tick = min(observable.tick + 25, len(raw.action_envelopes))
-            for continuation_tick in range(observable.tick, end_tick):
-                continuation_q = [q_value + 0.002 * dq_value for q_value, dq_value in zip(continuation_q, continuation_dq, strict=True)]
-                continuation_dq = [0.8 * value for value in continuation_dq]
-                transition_hashes.append(sha256_bytes(canonical_bytes({
-                    "event_state_sha256": state["state_sha256"],
-                    "level": level, "tick": continuation_tick + 1,
-                    "q": continuation_q, "dq": continuation_dq,
-                    "domain_clearance": clears, "progress": progress,
-                })))
-                safety = safety and all(abs(value) < 1e6 for value in (*continuation_q, *continuation_dq))
-            continuation = {
-                "event_state_sha256": state["state_sha256"],
-                "level": level,
-                "start_tick": observable.tick,
-                "end_tick": end_tick,
-                "domain_clearance": clears,
-                "safety_passed": safety,
-                "content_progress": progress,
-                "transition_sha256s": transition_hashes,
-                "final_simulator_state": {"q": continuation_q, "dq": continuation_dq},
-            }
-            continuation["final_state_sha256"] = sha256_bytes(canonical_bytes(continuation))
-            continuation["passed"] = bool(all(clears.values()) and safety and progress)
-            continuation["independently_scored"] = True
-            continuation["replay_sha256"] = sha256_bytes(canonical_bytes(continuation))
-            event_candidates.append(continuation)
+        for level in ("CONTROL", "MOTION", "SEMANTIC"):
+            continuation = run_counterfactual_continuation(raw, state, level, window_ticks=25)
+            receipt = score_counterfactual_candidate(state, continuation)
+            event_candidates.append({
+                **continuation,
+                "safety_passed": receipt["safety_passed"],
+                "domain_cleared": receipt["domain_cleared"],
+                "content_progress": receipt["content_progress"],
+                "scored_terminal": receipt["terminal"],
+                "passed": receipt["passed"],
+                "independently_scored": receipt["independently_scored"],
+                "score_receipt": receipt,
+            })
         lowest = next((item["level"] for item in event_candidates if item["passed"]), None)
         decision = decisions.get(observable.sha256)
         decision_level = None if decision is None else decision.level.value
