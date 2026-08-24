@@ -1,0 +1,4 @@
+stage,kind,status,output_shape,semantic_plan
+source_ast,pinned_static,COMPLETE,15x8,false
+transport_fixture,synthetic,WORKING,15x8,false
+checkpoint_forward,model,NOT_RUN,none,false

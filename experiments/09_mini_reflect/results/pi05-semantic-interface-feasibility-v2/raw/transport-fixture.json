@@ -1,0 +1,1 @@
+{"model_forward_pass":false,"output_shape":[15,8],"response_keys":["actions","policy_timing","server_timing"],"response_sha256":"98f416d34bd1e167824d036b0b453d9a3f2ff1e98f9927c5d68765881d6bc3a1","sample_origin":"SYNTHETIC_TRANSPORT_INTERFACE_FIXTURE","schema_version":2}
