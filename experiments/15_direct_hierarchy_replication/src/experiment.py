@@ -31,8 +31,8 @@ precheck = _runtime.precheck
 run_episode = _runtime.run_episode
 
 
-EXPERIMENT_ID = "exp15-direct-hierarchy-replication-v1"
-PRIMARY_SEEDS = tuple(range(20262201, 20262211))
+EXPERIMENT_ID = "exp15-direct-hierarchy-replication-v2"
+PRIMARY_SEEDS = tuple(range(20262301, 20262311))
 SENSITIVITY_SEEDS = PRIMARY_SEEDS[:5]
 FAMILIES = (
     "control-impulse",
@@ -69,7 +69,7 @@ class DirectSpec:
     @property
     def episode_id(self) -> str:
         controller = "P6" if self.controller_id == PRIMARY_CONTROLLER_ID else "P4"
-        return f"exp15-{controller}-{self.architecture.value}-{self.family}-{self.severity.lower()}-{self.seed}"
+        return f"exp15v2-{controller}-{self.architecture.value}-{self.family}-{self.severity.lower()}-{self.seed}"
 
 
 @dataclass(frozen=True)
@@ -293,7 +293,7 @@ def _source_closure() -> list[dict[str, object]]:
         _root() / "experiments/15_direct_hierarchy_replication/tests/__init__.py",
         _root() / "experiments/15_direct_hierarchy_replication/tests/test_experiment.py",
         _root() / "experiments/15_direct_hierarchy_replication/tests/test_compact_evidence.py",
-        _root() / "docs/superpowers/specs/2026-08-24-exp15-clean-direct-hierarchy-replication.md",
+        _root() / "docs/superpowers/specs/2026-08-24-exp15-v2-clean-replication.md",
         _root() / "pyproject.toml",
         _root() / "uv.lock",
     })
@@ -312,11 +312,41 @@ def _write(path: Path, payload: bytes) -> None:
         os.fsync(stream.fileno())
 
 
-def freeze(output: Path, *, source_commit: str, tracked_path: Path | None = None) -> dict[str, object]:
+def _validate_source_approval(path: Path | None, source_commit: str) -> tuple[dict[str, object], str]:
+    if path is None or not path.is_file():
+        raise RuntimeError("Exp15 V2 source audit approval is required before freeze")
+    payload = path.read_bytes()
+    approval = json.loads(payload.decode("ascii"))
+    expected_keys = {
+        "schema_version", "experiment_id", "source_commit", "verdict",
+        "review_scope", "reviewer",
+    }
+    if (
+        canonical_bytes(approval) != payload
+        or set(approval) != expected_keys
+        or approval["schema_version"] != 1
+        or approval["experiment_id"] != EXPERIMENT_ID
+        or approval["source_commit"] != source_commit
+        or approval["verdict"] != "APPROVE"
+        or approval["review_scope"] != "SOURCE_PREREGISTRATION_BEFORE_FREEZE"
+        or not approval["reviewer"]
+    ):
+        raise RuntimeError("Exp15 V2 source audit approval mismatch")
+    return approval, sha256_bytes(payload)
+
+
+def freeze(
+    output: Path,
+    *,
+    source_commit: str,
+    tracked_path: Path | None = None,
+    source_approval: Path | None = None,
+) -> dict[str, object]:
     if output.exists():
         raise FileExistsError(output)
     if len(source_commit) != 40:
         raise ValueError("Exp15 freeze requires a full source commit")
+    approval, approval_sha256 = _validate_source_approval(source_approval, source_commit)
     closure = _source_closure()
     configuration = dict(frozen_configuration())
     configuration["episode_ids"] = [item.episode_id for item in matrix_specs()]
@@ -327,6 +357,8 @@ def freeze(output: Path, *, source_commit: str, tracked_path: Path | None = None
         "study_type": "PREREGISTERED_REPLICATION_INFORMED_BY_EXP13",
         "causal_lowest_claim": False,
         "source_commit": source_commit,
+        "source_audit_approval": approval,
+        "source_audit_approval_sha256": approval_sha256,
         "source_closure": closure,
         "source_closure_sha256": sha256_bytes(canonical_bytes(closure)),
         "configuration": configuration,
@@ -345,7 +377,6 @@ def freeze(output: Path, *, source_commit: str, tracked_path: Path | None = None
 def _episode_manifest(output: Path, raw: object) -> dict[str, object]:
     destination = output / "raw/episodes" / raw.spec.episode_id
     payloads = _evidence.episode_payloads(raw)
-    payloads.pop("failure-event-states.jsonl", None)
     for name, payload in sorted(payloads.items()):
         _write(destination / name, payload)
     manifest = {
@@ -483,13 +514,111 @@ def _validate_preflight(output: Path) -> dict[str, object]:
     return document
 
 
+def _disposition_inventory(output: Path, *, limit: int | None = None) -> list[dict[str, object]]:
+    root = output / "raw/dispositions"
+    inventory = []
+    paths = sorted(root.glob("*.json"))
+    if limit is not None:
+        paths = paths[:limit]
+    for path in paths:
+        payload = path.read_bytes()
+        inventory.append({
+            "path": path.name,
+            "bytes": len(payload),
+            "sha256": sha256_bytes(payload),
+        })
+    return inventory
+
+
+def disposition_inventory_sha256(output: Path, *, limit: int | None = None) -> str:
+    return sha256_bytes(canonical_bytes(_disposition_inventory(output, limit=limit)))
+
+
+def release_first50(output: Path, approval_path: Path) -> dict[str, object]:
+    _validate_freeze(output)
+    _validate_preflight(output)
+    dispositions = sorted((output / "raw/dispositions").glob("*.json"))
+    if len(dispositions) != 50:
+        raise RuntimeError("Exp15 V2 first-50 release requires exactly 50 sealed dispositions")
+    payload = approval_path.read_bytes()
+    approval = json.loads(payload.decode("ascii"))
+    expected = {
+        "schema_version", "experiment_id", "verdict", "review_scope", "reviewer",
+        "freeze_sha256", "disposition_count", "disposition_inventory_sha256",
+    }
+    freeze_sha256 = sha256_bytes((output / "freeze.json").read_bytes())
+    if (
+        canonical_bytes(approval) != payload
+        or set(approval) != expected
+        or approval["schema_version"] != 1
+        or approval["experiment_id"] != EXPERIMENT_ID
+        or approval["verdict"] != "APPROVE"
+        or approval["review_scope"] != "FIRST_50_CONTINUATION"
+        or not approval["reviewer"]
+        or approval["freeze_sha256"] != freeze_sha256
+        or approval["disposition_count"] != 50
+        or approval["disposition_inventory_sha256"] != disposition_inventory_sha256(output)
+    ):
+        raise RuntimeError("Exp15 V2 first-50 approval mismatch")
+    release = {
+        **approval,
+        "approval_sha256": sha256_bytes(payload),
+        "stage": "FIRST_50_INDEPENDENT_RELEASE",
+    }
+    path = output / "first50-release.json"
+    if path.exists():
+        existing = json.loads(path.read_text(encoding="ascii"))
+        if existing != release:
+            raise RuntimeError("Exp15 V2 first-50 release already differs")
+    else:
+        _write(path, canonical_bytes(release))
+    return release
+
+
+def _validate_first50_release(output: Path) -> None:
+    dispositions = sorted((output / "raw/dispositions").glob("*.json"))
+    if len(dispositions) < 50:
+        return
+    path = output / "first50-release.json"
+    if not path.is_file():
+        raise RuntimeError("Exp15 V2 paused at first 50; independent continuation approval required")
+    payload = path.read_bytes()
+    release = json.loads(payload.decode("ascii"))
+    expected = {
+        "schema_version", "experiment_id", "verdict", "review_scope", "reviewer",
+        "freeze_sha256", "disposition_count", "disposition_inventory_sha256",
+        "approval_sha256", "stage",
+    }
+    approval_payload = {key: value for key, value in release.items() if key not in {"approval_sha256", "stage"}}
+    first50_ids = [path.stem for path in dispositions[:50]]
+    if (
+        canonical_bytes(release) != payload
+        or set(release) != expected
+        or release["schema_version"] != 1
+        or release["experiment_id"] != EXPERIMENT_ID
+        or release["verdict"] != "APPROVE"
+        or release["review_scope"] != "FIRST_50_CONTINUATION"
+        or not release["reviewer"]
+        or release["stage"] != "FIRST_50_INDEPENDENT_RELEASE"
+        or release["freeze_sha256"] != sha256_bytes((output / "freeze.json").read_bytes())
+        or release["disposition_count"] != 50
+        or first50_ids != [spec.episode_id for spec in matrix_specs()[:50]]
+        or release["disposition_inventory_sha256"] != disposition_inventory_sha256(output, limit=50)
+        or release["approval_sha256"] != sha256_bytes(canonical_bytes(approval_payload))
+    ):
+        raise RuntimeError("Exp15 V2 first-50 release state mismatch")
+
+
 def execute(output: Path, *, limit: int | None = None) -> dict[str, int]:
     freeze_document = _validate_freeze(output)
     _validate_preflight(output)
     freeze_sha256 = sha256_bytes((output / "freeze.json").read_bytes())
     disposition_root = output / "raw/dispositions"
     completed_before = len(list(disposition_root.glob("*.json"))) if disposition_root.exists() else 0
+    _validate_first50_release(output)
     allowance = len(matrix_specs()) if limit is None else int(limit)
+    if not (output / "first50-release.json").is_file():
+        allowance = min(allowance, 50 - completed_before)
     written = 0
     for spec in matrix_specs():
         path = disposition_root / f"{spec.episode_id}.json"
@@ -590,7 +719,10 @@ def execute(output: Path, *, limit: int | None = None) -> dict[str, int]:
         _write(path, canonical_bytes(row))
         written += 1
     completed = completed_before + written
-    return {"completed": completed, "remaining": 540 - completed, "total": 540}
+    result = {"completed": completed, "remaining": 540 - completed, "total": 540}
+    if completed == 50 and not (output / "first50-release.json").is_file():
+        result["paused_for_first50_review"] = True
+    return result
 
 
 def frozen_configuration() -> Mapping[str, object]:
@@ -612,5 +744,6 @@ def frozen_configuration() -> Mapping[str, object]:
 __all__ = [
     "DirectRealization", "DirectSpec", "EXPERIMENT_ID", "FAMILIES", "OUTCOME_ROW_FIELDS",
     "PRIMARY_SEEDS", "SENSITIVITY_SEEDS", "SEVERITIES", "frozen_configuration",
-    "execute", "freeze", "make_realization", "matrix_specs", "preflight", "run_cell", "score_cell",
+    "disposition_inventory_sha256", "execute", "freeze", "make_realization", "matrix_specs",
+    "preflight", "release_first50", "run_cell", "score_cell",
 ]

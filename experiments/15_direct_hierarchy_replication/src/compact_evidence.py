@@ -112,7 +112,7 @@ def _cluster_values(rows: list[dict[str, object]], left: str, right: str, metric
 def _sensitivity_values(rows: list[dict[str, object]], metric: str) -> dict[int, list[float]]:
     complete = [row for row in rows if row["disposition"] == "COMPLETE" and row["architecture"] == "R3"]
     values = {}
-    for seed in range(20262201, 20262206):
+    for seed in range(20262301, 20262306):
         cluster = []
         for family in sorted({str(row["family"]) for row in complete}):
             for severity in ("LOW", "HIGH"):
@@ -186,8 +186,8 @@ def reconstruct_derived(pack: Path, destination: Path) -> None:
                     "success_rate": float(np.mean([row["mission_success"] for row in selected])) if selected else "",
                     "mean_progress": float(np.mean([row["progress"] for row in selected])) if selected else ""})
     _write(destination / "tables/family-severity.csv", _csv_bytes(tuple(family_rows[0]), family_rows))
-    primary_plan = _bootstrap_plan(list(range(20262201, 20262211)), size=10)
-    sensitivity_plan = _balanced_sensitivity_plan(list(range(20262201, 20262206)))
+    primary_plan = _bootstrap_plan(list(range(20262301, 20262311)), size=10)
+    sensitivity_plan = _balanced_sensitivity_plan(list(range(20262301, 20262306)))
     effects = {}
     draw_columns: dict[str, np.ndarray] = {}
     augmented = [{**row, "total_wakes": row.get("control_wakes", 0) + row.get("motion_wakes", 0) + row.get("semantic_wakes", 0)} for row in rows]
@@ -238,6 +238,14 @@ def reconstruct_derived(pack: Path, destination: Path) -> None:
         and other["architecture"] == "R2"
     )
     registered_gates = {
+        "primary_n_eff_exactly_10": all(
+            effects[name][metric]["n_eff"] == 10
+            for name in ("R0", "R1", "R2")
+            for metric in ("mission_success", "safety_composite", "progress", "total_wakes")
+        ),
+        "sensitivity_n_eff_exactly_5": all(
+            sensitivity[metric]["n_eff"] == 5 for metric in ("mission_success", "progress")
+        ),
         "success_noninferiority_all_comparators": all(
             effects[name]["mission_success"]["lower_95"] >= -.10 for name in ("R0", "R1", "R2")
         ),
@@ -259,14 +267,21 @@ def reconstruct_derived(pack: Path, destination: Path) -> None:
     report = {"schema_version": 3, "scope": "BOUNDED_DIRECT_HIERARCHY_REPLICATION",
         "formal_disposition": "SUPPORTS_BOUNDED_DIRECT_HIERARCHY_REPLICATION" if supports else "DOES_NOT_SUPPORT_BOUNDED_DIRECT_HIERARCHY_REPLICATION",
         "confirmatory_support": supports, "causal_lowest_claim": False, "matrix_total": 540, "dispositions": counts,
-        "chronology": {"exploratory_reference": "Exp13 informed this frozen replication", "replication": "fresh 202622 seed namespace; no outcome-driven tuning"},
+        "chronology": {"exploratory_reference": "Exp13 informed this frozen replication", "replication": "fresh 202623 seed namespace; no outcome-driven tuning"},
         "effects": effects, "controller_sensitivity_P4_minus_P6": sensitivity,
         "registered_gate_evaluation": registered_gates,
-        "worst_r3_cell_success_rate": worst, "bootstrap": {"seed": BOOTSTRAP_SEED, "draws": BOOTSTRAP_DRAWS, "primary_n_eff": 10, "sensitivity_n_eff": 5, "primary_plan": "PCG64 seed-cluster bootstrap", "sensitivity_plan": "three exhaustive 5^5 cycles plus 625 evenly spaced exhaustive tuples"},
+        "worst_r3_cell_success_rate": worst, "bootstrap": {
+            "seed": BOOTSTRAP_SEED, "draws": BOOTSTRAP_DRAWS,
+            "primary_n_eff_actual": sorted({effects[name][metric]["n_eff"] for name in effects for metric in effects[name]}),
+            "sensitivity_n_eff_actual": sorted({sensitivity[metric]["n_eff"] for metric in sensitivity}),
+            "primary_expected_n_eff": 10, "sensitivity_expected_n_eff": 5,
+            "primary_plan": "PCG64 seed-cluster bootstrap",
+            "sensitivity_plan": "lexicographic 5^5 Cartesian product repeated three times plus integer linspace indices 0..3124 for 625 rows",
+        },
         "portability_limit": "The full physical tick/contact/command trace root remains local and is not included; its recursive inventory and selected full working/nonworking episodes are portable.",
         "reconstruction_scope": "All compact statistics, tables, bootstrap draws, SVGs and PNGs reconstruct from tracked dispositions; only selected episodes permit raw-physics rescoring."}
     _write(destination / "report.json", canonical_bytes(report))
-    markdown = f"# Exp15 clean direct-hierarchy replication\n\n**Formal disposition: {report['formal_disposition']}. No causal-lowest claim.**\n\nThis preregistered replication was informed by exploratory Exp13 and used a fresh 202622 seed namespace without outcome-driven tuning. The portable pack contains all 540 dispositions and reconstructs every derived byte. {report['portability_limit']}\n"
+    markdown = f"# Exp15 clean direct-hierarchy replication\n\n**Formal disposition: {report['formal_disposition']}. No causal-lowest claim.**\n\nThis preregistered replication was informed by exploratory Exp13 and used a fresh 202623 seed namespace without outcome-driven tuning. The portable pack contains all 540 dispositions and reconstructs every derived byte. {report['portability_limit']}\n"
     _write(destination / "REPORT.md", markdown.encode("ascii"))
     style = {"schema_version": 1, "renderer": "rsvg-convert", "canvas": [760,420], "font": "sans-serif", "colors": {"R0":"#777777","R1":"#55a868","R2":"#c44e52","R3":"#4c72b0","P4":"#8172b2"}}
     _write(destination / "graphs/style.json", canonical_bytes(style))
@@ -298,16 +313,34 @@ def _raw_inventory_lookup(pack: Path) -> dict[str, dict[str, object]]:
 
 
 def _selected_annotations(rows: list[dict[str, object]]) -> list[dict[str, object]]:
-    working = next(row for row in rows if row["disposition"] == "COMPLETE" and row["matrix_role"] == "PRIMARY" and row["architecture"] == "R3" and row["mission_success"] and not row["safety_composite"])
-    nonworking = next(
-        row for row in rows
-        if row["disposition"] == "COMPLETE"
-        and (not row["mission_success"] or row["safety_composite"])
+    population = sorted(
+        (
+            row for row in rows
+            if row["disposition"] == "COMPLETE"
+            and row["matrix_role"] == "PRIMARY"
+            and row["architecture"] == "R3"
+            and row["controller_id"] == "P6-res0p5-slew48"
+        ),
+        key=lambda row: str(row["episode_id"]),
     )
-    return [{"label": label, "episode_id": row["episode_id"], "mission_success": row["mission_success"],
-             "safety_composite": row["safety_composite"], "progress": row["progress"],
-             "selection_rule": "first lexicographic primary R3 cell matching label; registered outcomes were not tuned"}
-            for label, row in (("working", working), ("nonworking", nonworking))]
+    predicates = {
+        "working": lambda row: bool(row["mission_success"]) and not bool(row["safety_composite"]),
+        "nonworking": lambda row: not bool(row["mission_success"]) or bool(row["safety_composite"]),
+    }
+    annotations = []
+    for label, predicate in predicates.items():
+        row = next((item for item in population if predicate(item)), None)
+        annotations.append({
+            "label": label,
+            "category_status": "PRESENT" if row is not None else "ABSENT",
+            "selection_population": "PRIMARY_P6_R3_COMPLETE",
+            "episode_id": None if row is None else row["episode_id"],
+            "mission_success": None if row is None else row["mission_success"],
+            "safety_composite": None if row is None else row["safety_composite"],
+            "progress": None if row is None else row["progress"],
+            "selection_rule": "first lexicographic matching PRIMARY P6 R3 COMPLETE row; explicit ABSENT if no match",
+        })
+    return annotations
 
 
 def _validate_exact_closure(pack: Path, rows: list[dict[str, object]], manifest: dict[str, object]) -> None:
@@ -328,6 +361,10 @@ def _validate_exact_closure(pack: Path, rows: list[dict[str, object]], manifest:
     expected.update(f"inputs/dispositions/{episode_id}.json" for episode_id in expected_dispositions)
     expected.update(f"inputs/manifests/{episode_id}.json" for episode_id in complete_ids)
     for annotation in annotations:
+        if annotation["category_status"] == "ABSENT":
+            if annotation["episode_id"] is not None:
+                raise RuntimeError("compact absent sample has episode identity")
+            continue
         episode_id = annotation["episode_id"]
         episode_manifest = json.loads((pack / "inputs/manifests" / f"{episode_id}.json").read_text())
         if set(episode_manifest) != {"schema_version", "episode_id", "seed", "injection_tick", "files"} or episode_manifest.get("schema_version") != 1:
@@ -368,6 +405,8 @@ def publish_compact_pack(raw_root: Path, destination: Path) -> None:
             shutil.copyfile(source, target)
     annotations = _selected_annotations(rows)
     for annotation in annotations:
+        if annotation["category_status"] == "ABSENT":
+            continue
         label = annotation["label"]
         row = next(row for row in rows if row["episode_id"] == annotation["episode_id"])
         shutil.copytree(raw_root / "raw/episodes" / row["episode_id"], destination / "inputs/selected-episodes" / label)
@@ -417,6 +456,8 @@ def verify_compact_pack(pack: Path) -> dict[str, object]:
             raise RuntimeError("compact manifest substitution against raw inventory")
     annotations = json.loads((pack / "inputs/sample-annotations.json").read_text())
     for annotation in annotations:
+        if annotation["category_status"] == "ABSENT":
+            continue
         label = annotation["label"]
         episode_id = annotation["episode_id"]
         for path in sorted((pack / "inputs/selected-episodes" / label).glob("*")):

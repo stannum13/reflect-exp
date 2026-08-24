@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 
 import pytest
+import numpy as np
 
 
 def _module():
@@ -27,9 +28,41 @@ def test_portable_contract_is_frozen_before_outcomes() -> None:
         assert binding == "UNSEALED_BEFORE_OUTCOME" or (len(binding) == 64 and set(binding) <= set("0123456789abcdef"))
 
 
+def test_sample_annotations_never_substitute_another_population_and_allow_absence() -> None:
+    module = _module()
+    rows = [
+        {"episode_id": "working", "disposition": "COMPLETE", "matrix_role": "PRIMARY", "architecture": "R3", "controller_id": "P6-res0p5-slew48", "mission_success": True, "safety_composite": False, "progress": 1.0},
+        {"episode_id": "wrong-population", "disposition": "COMPLETE", "matrix_role": "PRIMARY", "architecture": "R1", "controller_id": "P6-res0p5-slew48", "mission_success": False, "safety_composite": True, "progress": 0.0},
+    ]
+    annotations = module._selected_annotations(rows)
+    assert annotations[0]["category_status"] == "PRESENT"
+    assert annotations[0]["episode_id"] == "working"
+    assert annotations[1]["category_status"] == "ABSENT"
+    assert annotations[1]["episode_id"] is None
+    assert all(item["selection_population"] == "PRIMARY_P6_R3_COMPLETE" for item in annotations)
+
+
+def test_sensitivity_plan_and_actual_n_eff_are_exactly_preregistered() -> None:
+    module = _module()
+    seeds = list(range(20262301, 20262306))
+    plan = module._balanced_sensitivity_plan(seeds)
+    assert plan.shape == (10_000, 5)
+    assert plan[:3].tolist() == [
+        [20262301] * 5,
+        [20262301] * 4 + [20262302],
+        [20262301] * 4 + [20262303],
+    ]
+    assert np.array_equal(plan[:3125], plan[3125:6250])
+    assert np.array_equal(plan[:3125], plan[6250:9375])
+    effect, draws = module._effect({20262301: [1.0], 20262303: [0.0]}, np.asarray([[20262301, 20262303]] * 10_000))
+    assert effect["n_eff"] == 2
+    assert effect["estimate"] == .5
+    assert len(draws) == 10_000
+
+
 @pytest.fixture(scope="module")
 def compact_pack() -> Path:
-    return _repository_root() / "reports/evidence/exp15-direct-hierarchy-replication-v1"
+    return _repository_root() / "reports/evidence/exp15-direct-hierarchy-replication-v2"
 
 
 def test_compact_pack_reconstructs_every_derived_byte(compact_pack: Path, tmp_path: Path) -> None:

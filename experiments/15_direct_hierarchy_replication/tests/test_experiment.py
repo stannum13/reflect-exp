@@ -14,14 +14,27 @@ def _module():
     return importlib.import_module("experiments.15_direct_hierarchy_replication.src.experiment")
 
 
+def _approval(tmp_path: Path, experiment, source_commit: str) -> Path:
+    path = tmp_path / "source-audit-approval.json"
+    path.write_bytes(experiment.canonical_bytes({
+        "schema_version": 1,
+        "experiment_id": experiment.EXPERIMENT_ID,
+        "source_commit": source_commit,
+        "verdict": "APPROVE",
+        "review_scope": "SOURCE_PREREGISTRATION_BEFORE_FREEZE",
+        "reviewer": "independent-test-reviewer",
+    }))
+    return path
+
+
 def test_frozen_matrix_is_exactly_480_primary_plus_60_sensitivity() -> None:
     experiment = _module()
     specs = experiment.matrix_specs()
     assert len(specs) == len({item.episode_id for item in specs}) == 540
     assert sum(item.matrix_role == "PRIMARY" for item in specs) == 480
     assert sum(item.matrix_role == "SENSITIVITY" for item in specs) == 60
-    assert sorted({item.seed for item in specs if item.matrix_role == "PRIMARY"}) == list(range(20262201, 20262211))
-    assert sorted({item.seed for item in specs if item.matrix_role == "SENSITIVITY"}) == list(range(20262201, 20262206))
+    assert sorted({item.seed for item in specs if item.matrix_role == "PRIMARY"}) == list(range(20262301, 20262311))
+    assert sorted({item.seed for item in specs if item.matrix_role == "SENSITIVITY"}) == list(range(20262301, 20262306))
 
 
 def test_matrix_and_registered_doses_match_final_exp13_except_namespace() -> None:
@@ -58,7 +71,7 @@ def test_matrix_and_registered_doses_match_final_exp13_except_namespace() -> Non
 def test_realization_is_paired_and_registered_dose_is_used() -> None:
     experiment = _module()
     specs = experiment.matrix_specs()
-    cells = [item for item in specs if item.family == "control-dropout" and item.severity == "HIGH" and item.seed == 20262201]
+    cells = [item for item in specs if item.family == "control-dropout" and item.severity == "HIGH" and item.seed == 20262301]
     realizations = [experiment.make_realization(item) for item in cells]
     assert {item.parameter_sha256 for item in realizations} == {realizations[0].parameter_sha256}
     assert {item.dropout_ticks for item in realizations} == {50}
@@ -95,7 +108,7 @@ def test_freeze_then_one_cell_is_create_only_and_resumable(tmp_path: Path) -> No
     experiment = _module()
     root = tmp_path / experiment.EXPERIMENT_ID
     source_commit = subprocess.check_output(("git", "rev-parse", "HEAD"), text=True).strip()
-    freeze = experiment.freeze(root, source_commit=source_commit)
+    freeze = experiment.freeze(root, source_commit=source_commit, source_approval=_approval(tmp_path, experiment, source_commit))
     assert freeze["configuration"]["total_cells"] == 540
     with pytest.raises(RuntimeError, match="full-matrix preflight"):
         experiment.execute(root, limit=1)
@@ -113,7 +126,7 @@ def test_not_run_is_sealed_without_episode_and_resume_continues(tmp_path: Path, 
     experiment = _module()
     root = tmp_path / experiment.EXPERIMENT_ID
     source_commit = subprocess.check_output(("git", "rev-parse", "HEAD"), text=True).strip()
-    experiment.freeze(root, source_commit=source_commit)
+    experiment.freeze(root, source_commit=source_commit, source_approval=_approval(tmp_path, experiment, source_commit))
     receipt = SimpleNamespace(
         disposition="NOT_RUN", reason="registered geometry infeasible",
         architecture_independent=True, precheck_input={"control_id": "test"},
@@ -136,7 +149,7 @@ def test_runtime_exception_is_sealed_invalid_and_does_not_abort(tmp_path: Path, 
     experiment = _module()
     root = tmp_path / experiment.EXPERIMENT_ID
     source_commit = subprocess.check_output(("git", "rev-parse", "HEAD"), text=True).strip()
-    experiment.freeze(root, source_commit=source_commit)
+    experiment.freeze(root, source_commit=source_commit, source_approval=_approval(tmp_path, experiment, source_commit))
     experiment.preflight(root)
     monkeypatch.setattr(experiment, "run_cell", lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("boom")))
     assert experiment.execute(root, limit=1) == {"completed": 1, "remaining": 539, "total": 540}
@@ -153,11 +166,63 @@ def test_preflight_is_closed_create_only_and_execute_rechecks_receipt(tmp_path: 
     experiment = _module()
     root = tmp_path / experiment.EXPERIMENT_ID
     source_commit = subprocess.check_output(("git", "rev-parse", "HEAD"), text=True).strip()
-    experiment.freeze(root, source_commit=source_commit)
+    experiment.freeze(root, source_commit=source_commit, source_approval=_approval(tmp_path, experiment, source_commit))
     first = experiment.preflight(root)
     assert first["total"] == 540
     assert experiment.preflight(root) == first
     receipt_path = next((root / "preflight/receipts").glob("*.json"))
     receipt_path.write_bytes(receipt_path.read_bytes() + b" ")
     with pytest.raises(RuntimeError, match="preflight"):
+        experiment.execute(root, limit=1)
+
+
+def test_freeze_requires_separate_exact_source_audit_approval(tmp_path: Path) -> None:
+    experiment = _module()
+    source_commit = subprocess.check_output(("git", "rev-parse", "HEAD"), text=True).strip()
+    with pytest.raises(RuntimeError, match="source audit approval"):
+        experiment.freeze(tmp_path / "missing", source_commit=source_commit)
+    wrong = _approval(tmp_path, experiment, "0" * 40)
+    with pytest.raises(RuntimeError, match="source audit approval"):
+        experiment.freeze(tmp_path / "wrong", source_commit=source_commit, source_approval=wrong)
+
+
+def test_runner_pauses_at_50_until_exact_independent_release(tmp_path: Path) -> None:
+    experiment = _module()
+    root = tmp_path / experiment.EXPERIMENT_ID
+    source_commit = subprocess.check_output(("git", "rev-parse", "HEAD"), text=True).strip()
+    experiment.freeze(root, source_commit=source_commit, source_approval=_approval(tmp_path, experiment, source_commit))
+    experiment.preflight(root)
+    disposition_root = root / "raw/dispositions"
+    disposition_root.mkdir(parents=True)
+    for spec in experiment.matrix_specs()[:50]:
+        (disposition_root / f"{spec.episode_id}.json").write_bytes(
+            experiment.canonical_bytes({"episode_id": spec.episode_id})
+        )
+    with pytest.raises(RuntimeError, match="paused at first 50"):
+        experiment.execute(root, limit=1)
+    freeze_sha256 = experiment.sha256_bytes((root / "freeze.json").read_bytes())
+    approval = tmp_path / "first50-approval.json"
+    approval.write_bytes(experiment.canonical_bytes({
+        "schema_version": 1,
+        "experiment_id": experiment.EXPERIMENT_ID,
+        "verdict": "APPROVE",
+        "review_scope": "FIRST_50_CONTINUATION",
+        "reviewer": "independent-test-reviewer",
+        "freeze_sha256": freeze_sha256,
+        "disposition_count": 50,
+        "disposition_inventory_sha256": experiment.disposition_inventory_sha256(root),
+    }))
+    release = experiment.release_first50(root, approval)
+    assert release["stage"] == "FIRST_50_INDEPENDENT_RELEASE"
+    release_path = root / "first50-release.json"
+    original_release = release_path.read_bytes()
+    forged = json.loads(original_release)
+    forged["reviewer"] = "forged-reviewer"
+    release_path.write_bytes(experiment.canonical_bytes(forged))
+    with pytest.raises(RuntimeError, match="release state mismatch"):
+        experiment.execute(root, limit=1)
+    release_path.write_bytes(original_release)
+    first = sorted(disposition_root.glob("*.json"))[0]
+    first.write_bytes(first.read_bytes() + b" ")
+    with pytest.raises(RuntimeError, match="release state mismatch"):
         experiment.execute(root, limit=1)

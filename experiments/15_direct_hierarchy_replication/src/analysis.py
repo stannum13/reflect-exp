@@ -88,7 +88,7 @@ def analyze(root: Path) -> dict[str, object]:
     augmented = [{**row, "total_wakes": row.get("control_wakes", 0) + row.get("motion_wakes", 0) + row.get("semantic_wakes", 0)} for row in rows]
     paired = {comparator: {metric: _paired_ci(rows, comparator, metric) for metric in ("mission_success", "safety_composite", "progress")} for comparator in ("R0", "R1", "R2")}
     paired["R2"]["total_wakes"] = _paired_ci(augmented, "R2", "total_wakes")
-    report = {"schema_version": 1, "experiment_id": "exp15-direct-hierarchy-replication-v1", "matrix_total": 540,
+    report = {"schema_version": 1, "experiment_id": "exp15-direct-hierarchy-replication-v2", "matrix_total": 540,
         "dispositions": counts, "summaries": summaries, "paired_seed_cluster_bootstrap_10k": paired,
         "reconstruction": "PASS", "causal_lowest_claim": False}
     analysis_root = root / "analysis"
