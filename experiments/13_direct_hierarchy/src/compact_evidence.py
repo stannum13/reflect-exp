@@ -116,19 +116,21 @@ def _svg(title: str, labels: list[str], series: list[tuple[str, list[float], str
     left, top, plot_w, plot_h = 70, 55, 630, 290
     group_w = plot_w / len(labels)
     bar_w = min(36.0, group_w / (len(series) + 1))
+    zero_y = top + plot_h - ((0.0 - y_min) / (y_max - y_min)) * plot_h
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">',
              '<rect width="100%" height="100%" fill="#ffffff"/>',
              f'<text x="380" y="28" text-anchor="middle" font-family="sans-serif" font-size="18">{title}</text>',
-             f'<line x1="{left}" y1="{top+plot_h}" x2="{left+plot_w}" y2="{top+plot_h}" stroke="#222"/>']
+             f'<line x1="{left}" y1="{zero_y:.2f}" x2="{left+plot_w}" y2="{zero_y:.2f}" stroke="#222"/>']
     for index, label in enumerate(labels):
         center = left + group_w * (index + .5)
         parts.append(f'<text x="{center:.2f}" y="{top+plot_h+24}" text-anchor="middle" font-family="sans-serif" font-size="12">{label}</text>')
         for series_index, (_, values, color) in enumerate(series):
             value = values[index]
             scaled = (value - y_min) / (y_max - y_min)
-            bar_h = max(0.0, min(1.0, scaled)) * plot_h
+            value_y = top + plot_h - max(0.0, min(1.0, scaled)) * plot_h
+            bar_h = abs(zero_y - value_y)
             x = center + (series_index - (len(series) - 1) / 2) * bar_w - bar_w * .42
-            parts.append(f'<rect x="{x:.2f}" y="{top+plot_h-bar_h:.2f}" width="{bar_w*.84:.2f}" height="{bar_h:.2f}" fill="{color}"/>')
+            parts.append(f'<rect x="{x:.2f}" y="{min(zero_y,value_y):.2f}" width="{bar_w*.84:.2f}" height="{bar_h:.2f}" fill="{color}"/>')
     for index, (name, _, color) in enumerate(series):
         parts.append(f'<rect x="{left+index*145}" y="390" width="12" height="12" fill="{color}"/><text x="{left+17+index*145}" y="401" font-family="sans-serif" font-size="12">{name}</text>')
     parts.append('</svg>')
@@ -225,13 +227,19 @@ def reconstruct_derived(pack: Path, destination: Path) -> None:
     _write(destination / "graphs/style.json", canonical_bytes(style))
     arch = {item["architecture"]: item for item in summary if item["matrix_role"] == "PRIMARY"}
     graph_specs = {
-        "success-progress": ("Primary success and progress", ["R0","R1","R2","R3"], [("success",[arch[a]["success_rate"] for a in ("R0","R1","R2","R3")],"#4c72b0"),("progress",[arch[a]["mean_progress"] for a in ("R0","R1","R2","R3")],"#55a868")]),
-        "wake-profiles": ("Primary wake profiles", ["R0","R1","R2","R3"], [("mean wakes",[arch[a]["mean_wakes"]/2 for a in ("R0","R1","R2","R3")],"#8172b2")]),
-        "family-heterogeneity": ("R3 mission success by family", [name[:10] for name in sorted({r["family"] for r in family_rows})], [(sev,[next(float(r["success_rate"]) for r in family_rows if r["architecture"]=="R3" and r["family"]==fam and r["severity"]==sev) for fam in sorted({r["family"] for r in family_rows})],color) for sev,color in (("LOW","#4c72b0"),("HIGH","#c44e52"))]),
-        "controller-sensitivity": ("R3 controller sensitivity", ["success","progress"], [("P4-P6",[sensitivity["mission_success"]["estimate"]+1,sensitivity["progress"]["estimate"]+1],"#8172b2")]),
+        "success-progress": ("Primary success and progress", ["R0","R1","R2","R3"], [("success",[arch[a]["success_rate"] for a in ("R0","R1","R2","R3")],"#4c72b0"),("progress",[arch[a]["mean_progress"] for a in ("R0","R1","R2","R3")],"#55a868")], 0.0, 1.0),
+        "wake-profiles": ("Primary wake profiles", ["R0","R1","R2","R3"], [("mean_wakes",[arch[a]["mean_wakes"] for a in ("R0","R1","R2","R3")],"#8172b2")], 0.0, 2.5),
+        "family-heterogeneity": ("R3 mission success by family", [name[:10] for name in sorted({r["family"] for r in family_rows})], [(sev,[next(float(r["success_rate"]) for r in family_rows if r["architecture"]=="R3" and r["family"]==fam and r["severity"]==sev) for fam in sorted({r["family"] for r in family_rows})],color) for sev,color in (("LOW","#4c72b0"),("HIGH","#c44e52"))], 0.0, 1.0),
+        "controller-sensitivity": ("R3 controller sensitivity (P4 minus P6)", ["success","progress"], [("P4-P6",[sensitivity["mission_success"]["estimate"],sensitivity["progress"]["estimate"]],"#8172b2")], -0.5, 0.1),
     }
-    for name, (title, labels, series) in graph_specs.items():
-        svg = _svg(title, labels, series)
+    plot_rows = []
+    for name, (_, labels, series, _, _) in graph_specs.items():
+        for series_name, values, _ in series:
+            for label, value in zip(labels, values, strict=True):
+                plot_rows.append({"graph": name, "category": label, "series": series_name, "value": value})
+    _write(destination / "graphs/plot-data.csv", _csv_bytes(("graph","category","series","value"), plot_rows))
+    for name, (title, labels, series, y_min, y_max) in graph_specs.items():
+        svg = _svg(title, labels, series, y_min=y_min, y_max=y_max)
         _write(destination / f"graphs/{name}.svg", svg)
         subprocess.run(("rsvg-convert", str(destination / f"graphs/{name}.svg"), "-o", str(destination / f"graphs/{name}.png")), check=True)
 

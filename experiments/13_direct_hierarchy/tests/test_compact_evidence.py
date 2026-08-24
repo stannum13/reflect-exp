@@ -33,6 +33,9 @@ def test_compact_pack_reconstructs_every_derived_byte(compact_pack: Path, tmp_pa
     module.reconstruct_derived(compact_pack, rebuilt)
     expected = compact_pack / "derived"
     assert module.tree_inventory(rebuilt) == module.tree_inventory(expected)
+    plot_data = (compact_pack / "derived/graphs/plot-data.csv").read_text()
+    assert "controller-sensitivity,success,P4-P6,-0.35714285714285715" in plot_data
+    assert "wake-profiles,R3,mean_wakes,1.1081081081081081" in plot_data
 
 
 def test_compact_pack_rejects_extra_and_symlink(compact_pack: Path, tmp_path: Path) -> None:
