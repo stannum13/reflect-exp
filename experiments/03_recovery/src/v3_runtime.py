@@ -702,15 +702,19 @@ def _attempt_state(attempt: _Attempt | None) -> Mapping[str, object] | None:
 
 
 def run_episode(
-    spec: V3EpisodeSpec, *, counterfactual_level: DecisionLevel | None = None,
+    spec: V3EpisodeSpec,
+    *,
+    counterfactual_level: DecisionLevel | None = None,
+    realization_override: V3Realization | None = None,
+    precheck_override: PrecheckReceipt | None = None,
 ) -> V3EpisodeRaw:
     """Execute one calibration episode and return immutable raw evidence inputs."""
     if counterfactual_level is not None:
         counterfactual_level = DecisionLevel(counterfactual_level)
         if counterfactual_level not in {DecisionLevel.CONTROL, DecisionLevel.MOTION, DecisionLevel.SEMANTIC}:
             raise ValueError("counterfactual replay requires a manipulable decision level")
-    realization = make_realization(spec.scenario_id, spec.seed, stage=spec.stage)
-    receipt = precheck(spec)
+    realization = realization_override or make_realization(spec.scenario_id, spec.seed, stage=spec.stage)
+    receipt = precheck_override or precheck(spec)
     if receipt.disposition != "READY":
         raise RuntimeError("architecture-independent precheck returned NOT_RUN")
     exp_contracts, arm_module, kinematics, representations = _modules()
