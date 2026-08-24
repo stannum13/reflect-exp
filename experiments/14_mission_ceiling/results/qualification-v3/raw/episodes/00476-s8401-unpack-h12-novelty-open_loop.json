@@ -1,0 +1,760 @@
+{
+  "episode_id": "00476-s8401-unpack-h12-novelty-open_loop",
+  "ledger": [
+    {
+      "accepted": true,
+      "action": {
+        "kind": "pickup",
+        "object": "crate"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "unpack crate to goal",
+        "inventory": [
+          "crate"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "dock",
+        "step": 0,
+        "unsafe_rooms": []
+      },
+      "reason": "picked",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ],
+          [
+            "crate",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 0,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "move",
+        "to": "room_1"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "unpack crate to goal",
+        "inventory": [
+          "crate"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "room_1",
+        "step": 1,
+        "unsafe_rooms": []
+      },
+      "reason": "moved",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "crate"
+        ],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 1,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "move",
+        "to": "room_2"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "unpack crate to goal",
+        "inventory": [
+          "crate"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "room_1",
+        "step": 2,
+        "unsafe_rooms": []
+      },
+      "reason": "badge required",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_1",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "crate"
+        ],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 2,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "move",
+        "to": "room_3"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "unpack crate to goal",
+        "inventory": [
+          "crate"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "room_1",
+        "step": 3,
+        "unsafe_rooms": []
+      },
+      "reason": "route unavailable",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_1",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "crate"
+        ],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 3,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "move",
+        "to": "room_4"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "unpack crate to goal",
+        "inventory": [
+          "crate"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "room_1",
+        "step": 4,
+        "unsafe_rooms": []
+      },
+      "reason": "route unavailable",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_1",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "crate"
+        ],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 4,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "move",
+        "to": "room_5"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "unpack crate to goal",
+        "inventory": [
+          "crate"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "room_1",
+        "step": 5,
+        "unsafe_rooms": []
+      },
+      "reason": "route unavailable",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_1",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "crate"
+        ],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 5,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "move",
+        "to": "goal"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "unpack crate to goal",
+        "inventory": [
+          "crate"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "room_1",
+        "step": 6,
+        "unsafe_rooms": []
+      },
+      "reason": "route unavailable",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_1",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "crate"
+        ],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 6,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "unpack"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "unpack crate to goal",
+        "inventory": [
+          "crate"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "room_1",
+        "step": 7,
+        "unsafe_rooms": []
+      },
+      "reason": "terminal precondition",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_1",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "crate"
+        ],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 7,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "wait"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "unpack crate to goal",
+        "inventory": [
+          "crate"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "room_1",
+        "step": 8,
+        "unsafe_rooms": []
+      },
+      "reason": "wait",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_1",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "crate"
+        ],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 8,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "wait"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "unpack crate to goal",
+        "inventory": [
+          "crate"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "room_1",
+        "step": 9,
+        "unsafe_rooms": []
+      },
+      "reason": "wait",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_1",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "crate"
+        ],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 9,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "wait"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "unpack crate to goal",
+        "inventory": [
+          "crate"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "room_1",
+        "step": 10,
+        "unsafe_rooms": []
+      },
+      "reason": "wait",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_1",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "crate"
+        ],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 10,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "wait"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "unpack crate to goal",
+        "inventory": [
+          "crate"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "room_1",
+        "step": 11,
+        "unsafe_rooms": []
+      },
+      "reason": "wait",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_1",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "crate"
+        ],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 11,
+      "terminal": false
+    }
+  ],
+  "row": {
+    "agent": "open_loop",
+    "horizon": 12,
+    "mission": "unpack",
+    "seed": 8401,
+    "variant": "novelty"
+  },
+  "scenario": {
+    "blocked_initial": [],
+    "event_step": 4,
+    "graph": [
+      [
+        "archive",
+        "room_5"
+      ],
+      [
+        "bypass_2",
+        "room_1"
+      ],
+      [
+        "bypass_2",
+        "room_2"
+      ],
+      [
+        "dock",
+        "room_1"
+      ],
+      [
+        "dock",
+        "supply"
+      ],
+      [
+        "goal",
+        "room_5"
+      ],
+      [
+        "room_1",
+        "room_2"
+      ],
+      [
+        "room_2",
+        "room_3"
+      ],
+      [
+        "room_3",
+        "room_4"
+      ],
+      [
+        "room_4",
+        "room_5"
+      ]
+    ],
+    "horizon": 12,
+    "initial_goal": "goal",
+    "instruction": "unpack crate to goal",
+    "intervention_goal": "archive",
+    "locked_edges": [
+      [
+        "room_1",
+        "room_2"
+      ]
+    ],
+    "mission": "unpack",
+    "object_locations": [
+      [
+        "badge",
+        "dock"
+      ],
+      [
+        "crate",
+        "dock"
+      ]
+    ],
+    "required_objects": [
+      "crate"
+    ],
+    "seed": 8401,
+    "start": "dock",
+    "target_object": "crate",
+    "terminal_action": "unpack",
+    "unsafe_rooms": [],
+    "variant": "novelty"
+  },
+  "score": {
+    "action_cost": 12.0,
+    "memory_staleness": 5.5,
+    "mission_complete": false,
+    "progress": 0.3333333333333333,
+    "retries": 0,
+    "safe": true,
+    "semantic_replans": 0,
+    "steps": 12
+  },
+  "terminal_state": {
+    "active_goal": "goal",
+    "agent_room": "room_1",
+    "blocked_edges": [],
+    "effects": [],
+    "inventory": [
+      "crate"
+    ],
+    "object_locations": [
+      [
+        "badge",
+        "dock"
+      ]
+    ],
+    "safety_violations": 0,
+    "unsafe_rooms": []
+  }
+}

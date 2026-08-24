@@ -1,0 +1,444 @@
+{
+  "episode_id": "00833-s8402-parcel-h12-baseline-live_memory",
+  "ledger": [
+    {
+      "accepted": true,
+      "action": {
+        "kind": "pickup",
+        "object": "parcel"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "dock",
+        "step": 0,
+        "unsafe_rooms": []
+      },
+      "reason": "picked",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [],
+        "object_locations": [
+          [
+            "parcel",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 0,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "move",
+        "to": "room_1"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 1
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "room_1",
+        "step": 1,
+        "unsafe_rooms": []
+      },
+      "reason": "moved",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "parcel"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 1,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "move",
+        "to": "room_2"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 2
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "room_2",
+        "step": 2,
+        "unsafe_rooms": []
+      },
+      "reason": "moved",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_1",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "parcel"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 2,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "move",
+        "to": "room_3"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 3
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "room_3",
+        "step": 3,
+        "unsafe_rooms": []
+      },
+      "reason": "moved",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_2",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "parcel"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 3,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "move",
+        "to": "room_4"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 4
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "room_4",
+        "step": 4,
+        "unsafe_rooms": []
+      },
+      "reason": "moved",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_3",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "parcel"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 4,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "move",
+        "to": "room_5"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 5
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "room_5",
+        "step": 5,
+        "unsafe_rooms": []
+      },
+      "reason": "moved",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_4",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "parcel"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 5,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "move",
+        "to": "goal"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 6
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "goal",
+        "step": 6,
+        "unsafe_rooms": []
+      },
+      "reason": "moved",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_5",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "parcel"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 6,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "deliver"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 7
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [],
+        "locked_edges": [],
+        "objects": {
+          "parcel": "goal"
+        },
+        "room": "goal",
+        "step": 7,
+        "unsafe_rooms": []
+      },
+      "reason": "terminal effect",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "goal",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "parcel"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 7,
+      "terminal": true
+    }
+  ],
+  "row": {
+    "agent": "live_memory",
+    "horizon": 12,
+    "mission": "parcel",
+    "seed": 8402,
+    "variant": "baseline"
+  },
+  "scenario": {
+    "blocked_initial": [],
+    "event_step": 4,
+    "graph": [
+      [
+        "archive",
+        "room_5"
+      ],
+      [
+        "bypass_3",
+        "room_2"
+      ],
+      [
+        "bypass_3",
+        "room_3"
+      ],
+      [
+        "dock",
+        "room_1"
+      ],
+      [
+        "dock",
+        "supply"
+      ],
+      [
+        "goal",
+        "room_5"
+      ],
+      [
+        "room_1",
+        "room_2"
+      ],
+      [
+        "room_2",
+        "room_3"
+      ],
+      [
+        "room_3",
+        "room_4"
+      ],
+      [
+        "room_4",
+        "room_5"
+      ]
+    ],
+    "horizon": 12,
+    "initial_goal": "goal",
+    "instruction": "deliver parcel to goal",
+    "intervention_goal": "archive",
+    "locked_edges": [],
+    "mission": "parcel",
+    "object_locations": [
+      [
+        "parcel",
+        "dock"
+      ]
+    ],
+    "required_objects": [
+      "parcel"
+    ],
+    "seed": 8402,
+    "start": "dock",
+    "target_object": "parcel",
+    "terminal_action": "deliver",
+    "unsafe_rooms": [],
+    "variant": "baseline"
+  },
+  "score": {
+    "action_cost": 8.0,
+    "memory_staleness": 0.0,
+    "mission_complete": true,
+    "progress": 1.0,
+    "retries": 0,
+    "safe": true,
+    "semantic_replans": 0,
+    "steps": 8
+  },
+  "terminal_state": {
+    "active_goal": "goal",
+    "agent_room": "goal",
+    "blocked_edges": [],
+    "effects": [
+      "deliver:parcel:goal"
+    ],
+    "inventory": [],
+    "object_locations": [
+      [
+        "parcel",
+        "goal"
+      ]
+    ],
+    "safety_violations": 0,
+    "unsafe_rooms": []
+  }
+}

@@ -1,0 +1,477 @@
+{
+  "heterogeneity": [
+    {
+      "completion": 0.8333333333333334,
+      "horizon": 4,
+      "n": 288,
+      "variant": "baseline"
+    },
+    {
+      "completion": 0.0,
+      "horizon": 4,
+      "n": 288,
+      "variant": "route"
+    },
+    {
+      "completion": 0.0,
+      "horizon": 4,
+      "n": 288,
+      "variant": "topology"
+    },
+    {
+      "completion": 0.625,
+      "horizon": 4,
+      "n": 288,
+      "variant": "constraint"
+    },
+    {
+      "completion": 0.0,
+      "horizon": 4,
+      "n": 288,
+      "variant": "disturbance"
+    },
+    {
+      "completion": 0.20833333333333334,
+      "horizon": 4,
+      "n": 288,
+      "variant": "intervention"
+    },
+    {
+      "completion": 0.625,
+      "horizon": 4,
+      "n": 288,
+      "variant": "paraphrase"
+    },
+    {
+      "completion": 0.0,
+      "horizon": 4,
+      "n": 288,
+      "variant": "novelty"
+    },
+    {
+      "completion": 0.8333333333333334,
+      "horizon": 8,
+      "n": 288,
+      "variant": "baseline"
+    },
+    {
+      "completion": 0.3125,
+      "horizon": 8,
+      "n": 288,
+      "variant": "route"
+    },
+    {
+      "completion": 0.8333333333333334,
+      "horizon": 8,
+      "n": 288,
+      "variant": "topology"
+    },
+    {
+      "completion": 0.625,
+      "horizon": 8,
+      "n": 288,
+      "variant": "constraint"
+    },
+    {
+      "completion": 0.0,
+      "horizon": 8,
+      "n": 288,
+      "variant": "disturbance"
+    },
+    {
+      "completion": 0.20833333333333334,
+      "horizon": 8,
+      "n": 288,
+      "variant": "intervention"
+    },
+    {
+      "completion": 0.625,
+      "horizon": 8,
+      "n": 288,
+      "variant": "paraphrase"
+    },
+    {
+      "completion": 0.20833333333333334,
+      "horizon": 8,
+      "n": 288,
+      "variant": "novelty"
+    },
+    {
+      "completion": 0.8333333333333334,
+      "horizon": 12,
+      "n": 288,
+      "variant": "baseline"
+    },
+    {
+      "completion": 0.4166666666666667,
+      "horizon": 12,
+      "n": 288,
+      "variant": "route"
+    },
+    {
+      "completion": 0.8333333333333334,
+      "horizon": 12,
+      "n": 288,
+      "variant": "topology"
+    },
+    {
+      "completion": 0.625,
+      "horizon": 12,
+      "n": 288,
+      "variant": "constraint"
+    },
+    {
+      "completion": 0.0,
+      "horizon": 12,
+      "n": 288,
+      "variant": "disturbance"
+    },
+    {
+      "completion": 0.20833333333333334,
+      "horizon": 12,
+      "n": 288,
+      "variant": "intervention"
+    },
+    {
+      "completion": 0.625,
+      "horizon": 12,
+      "n": 288,
+      "variant": "paraphrase"
+    },
+    {
+      "completion": 0.20833333333333334,
+      "horizon": 12,
+      "n": 288,
+      "variant": "novelty"
+    },
+    {
+      "completion": 0.8333333333333334,
+      "horizon": 16,
+      "n": 288,
+      "variant": "baseline"
+    },
+    {
+      "completion": 0.4861111111111111,
+      "horizon": 16,
+      "n": 288,
+      "variant": "route"
+    },
+    {
+      "completion": 0.8333333333333334,
+      "horizon": 16,
+      "n": 288,
+      "variant": "topology"
+    },
+    {
+      "completion": 0.625,
+      "horizon": 16,
+      "n": 288,
+      "variant": "constraint"
+    },
+    {
+      "completion": 0.0,
+      "horizon": 16,
+      "n": 288,
+      "variant": "disturbance"
+    },
+    {
+      "completion": 0.20833333333333334,
+      "horizon": 16,
+      "n": 288,
+      "variant": "intervention"
+    },
+    {
+      "completion": 0.625,
+      "horizon": 16,
+      "n": 288,
+      "variant": "paraphrase"
+    },
+    {
+      "completion": 0.20833333333333334,
+      "horizon": 16,
+      "n": 288,
+      "variant": "novelty"
+    }
+  ],
+  "paired_contrasts": {
+    "full_minus_live_memory:completion": {
+      "ci_high": 0.078125,
+      "ci_low": 0.078125,
+      "draws": 10000,
+      "effective_n": 12,
+      "estimate": 0.078125
+    },
+    "full_minus_lower_recovery:completion": {
+      "ci_high": 0.078125,
+      "ci_low": 0.078125,
+      "draws": 10000,
+      "effective_n": 12,
+      "estimate": 0.078125
+    },
+    "full_minus_open_loop:completion": {
+      "ci_high": 0.19314236111111108,
+      "ci_low": 0.18229166666666666,
+      "draws": 10000,
+      "effective_n": 12,
+      "estimate": 0.18663194444444442
+    }
+  },
+  "summary": [
+    {
+      "agent": "open_loop",
+      "completion": 0.8333333333333334,
+      "n": 288,
+      "progress": 0.8750000000000004,
+      "safety": 1.0,
+      "variant": "baseline"
+    },
+    {
+      "agent": "open_loop",
+      "completion": 0.2777777777777778,
+      "n": 288,
+      "progress": 0.4745370370370361,
+      "safety": 1.0,
+      "variant": "route"
+    },
+    {
+      "agent": "open_loop",
+      "completion": 0.625,
+      "n": 288,
+      "progress": 0.7777777777777773,
+      "safety": 1.0,
+      "variant": "topology"
+    },
+    {
+      "agent": "open_loop",
+      "completion": 0.8333333333333334,
+      "n": 288,
+      "progress": 0.8750000000000004,
+      "safety": 0.0,
+      "variant": "constraint"
+    },
+    {
+      "agent": "open_loop",
+      "completion": 0.0,
+      "n": 288,
+      "progress": 0.27777777777777757,
+      "safety": 1.0,
+      "variant": "disturbance"
+    },
+    {
+      "agent": "open_loop",
+      "completion": 0.0,
+      "n": 288,
+      "progress": 0.31944444444444364,
+      "safety": 1.0,
+      "variant": "intervention"
+    },
+    {
+      "agent": "open_loop",
+      "completion": 0.0,
+      "n": 288,
+      "progress": 0.0,
+      "safety": 1.0,
+      "variant": "paraphrase"
+    },
+    {
+      "agent": "open_loop",
+      "completion": 0.0,
+      "n": 288,
+      "progress": 0.33333333333333237,
+      "safety": 1.0,
+      "variant": "novelty"
+    },
+    {
+      "agent": "live_memory",
+      "completion": 0.8333333333333334,
+      "n": 288,
+      "progress": 0.8750000000000004,
+      "safety": 1.0,
+      "variant": "baseline"
+    },
+    {
+      "agent": "live_memory",
+      "completion": 0.3125,
+      "n": 288,
+      "progress": 0.546296296296296,
+      "safety": 1.0,
+      "variant": "route"
+    },
+    {
+      "agent": "live_memory",
+      "completion": 0.625,
+      "n": 288,
+      "progress": 0.7777777777777773,
+      "safety": 1.0,
+      "variant": "topology"
+    },
+    {
+      "agent": "live_memory",
+      "completion": 0.8333333333333334,
+      "n": 288,
+      "progress": 0.8750000000000004,
+      "safety": 0.0,
+      "variant": "constraint"
+    },
+    {
+      "agent": "live_memory",
+      "completion": 0.0,
+      "n": 288,
+      "progress": 0.31944444444444364,
+      "safety": 1.0,
+      "variant": "disturbance"
+    },
+    {
+      "agent": "live_memory",
+      "completion": 0.0,
+      "n": 288,
+      "progress": 0.31944444444444364,
+      "safety": 1.0,
+      "variant": "intervention"
+    },
+    {
+      "agent": "live_memory",
+      "completion": 0.8333333333333334,
+      "n": 288,
+      "progress": 0.8750000000000004,
+      "safety": 1.0,
+      "variant": "paraphrase"
+    },
+    {
+      "agent": "live_memory",
+      "completion": 0.0,
+      "n": 288,
+      "progress": 0.27777777777777757,
+      "safety": 1.0,
+      "variant": "novelty"
+    },
+    {
+      "agent": "lower_recovery",
+      "completion": 0.8333333333333334,
+      "n": 288,
+      "progress": 0.8750000000000004,
+      "safety": 1.0,
+      "variant": "baseline"
+    },
+    {
+      "agent": "lower_recovery",
+      "completion": 0.3125,
+      "n": 288,
+      "progress": 0.546296296296296,
+      "safety": 1.0,
+      "variant": "route"
+    },
+    {
+      "agent": "lower_recovery",
+      "completion": 0.625,
+      "n": 288,
+      "progress": 0.7777777777777773,
+      "safety": 1.0,
+      "variant": "topology"
+    },
+    {
+      "agent": "lower_recovery",
+      "completion": 0.8333333333333334,
+      "n": 288,
+      "progress": 0.8750000000000004,
+      "safety": 0.0,
+      "variant": "constraint"
+    },
+    {
+      "agent": "lower_recovery",
+      "completion": 0.0,
+      "n": 288,
+      "progress": 0.31944444444444364,
+      "safety": 1.0,
+      "variant": "disturbance"
+    },
+    {
+      "agent": "lower_recovery",
+      "completion": 0.0,
+      "n": 288,
+      "progress": 0.31944444444444364,
+      "safety": 1.0,
+      "variant": "intervention"
+    },
+    {
+      "agent": "lower_recovery",
+      "completion": 0.8333333333333334,
+      "n": 288,
+      "progress": 0.8750000000000004,
+      "safety": 1.0,
+      "variant": "paraphrase"
+    },
+    {
+      "agent": "lower_recovery",
+      "completion": 0.0,
+      "n": 288,
+      "progress": 0.27777777777777757,
+      "safety": 1.0,
+      "variant": "novelty"
+    },
+    {
+      "agent": "full_hierarchy",
+      "completion": 0.8333333333333334,
+      "n": 288,
+      "progress": 0.8750000000000004,
+      "safety": 1.0,
+      "variant": "baseline"
+    },
+    {
+      "agent": "full_hierarchy",
+      "completion": 0.3125,
+      "n": 288,
+      "progress": 0.546296296296296,
+      "safety": 1.0,
+      "variant": "route"
+    },
+    {
+      "agent": "full_hierarchy",
+      "completion": 0.625,
+      "n": 288,
+      "progress": 0.7777777777777773,
+      "safety": 1.0,
+      "variant": "topology"
+    },
+    {
+      "agent": "full_hierarchy",
+      "completion": 0.0,
+      "n": 288,
+      "progress": 0.27777777777777757,
+      "safety": 1.0,
+      "variant": "constraint"
+    },
+    {
+      "agent": "full_hierarchy",
+      "completion": 0.0,
+      "n": 288,
+      "progress": 0.31944444444444364,
+      "safety": 1.0,
+      "variant": "disturbance"
+    },
+    {
+      "agent": "full_hierarchy",
+      "completion": 0.8333333333333334,
+      "n": 288,
+      "progress": 0.8750000000000004,
+      "safety": 1.0,
+      "variant": "intervention"
+    },
+    {
+      "agent": "full_hierarchy",
+      "completion": 0.8333333333333334,
+      "n": 288,
+      "progress": 0.8750000000000004,
+      "safety": 1.0,
+      "variant": "paraphrase"
+    },
+    {
+      "agent": "full_hierarchy",
+      "completion": 0.625,
+      "n": 288,
+      "progress": 0.7777777777777773,
+      "safety": 1.0,
+      "variant": "novelty"
+    }
+  ]
+}

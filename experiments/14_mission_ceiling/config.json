@@ -1,0 +1,13 @@
+{
+  "schema": "exp14-mission-ceiling-v1",
+  "experiment_id": "mission-space-semantic-ceiling-preflight",
+  "calibration_seeds": [7401, 7402, 7403, 7404],
+  "seeds": [8401, 8402, 8403, 8404, 8405, 8406, 8407, 8408, 8409, 8410, 8411, 8412],
+  "missions": ["parcel", "retrieve", "tool", "unpack", "store", "rearrange"],
+  "horizons": [4, 8, 12, 16],
+  "variants": ["baseline", "route", "topology", "constraint", "disturbance", "intervention", "paraphrase", "novelty"],
+  "agents": ["open_loop", "live_memory", "lower_recovery", "full_hierarchy"],
+  "bootstrap_draws": 10000,
+  "bootstrap_seed": 140824,
+  "claim_scope": "experiment-first mission-space semantic ceiling preflight; not pi0.5, not final, not real-world"
+}

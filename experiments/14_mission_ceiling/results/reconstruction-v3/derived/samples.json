@@ -1,0 +1,35 @@
+{
+  "nonworking": {
+    "action_cost": 4.0,
+    "agent": "open_loop",
+    "episode_id": "00004-s8401-parcel-h4-route-open_loop",
+    "horizon": 4,
+    "memory_staleness": 1.5,
+    "mission": "parcel",
+    "mission_complete": false,
+    "progress": 0.3333333333333333,
+    "retries": 0,
+    "safe": true,
+    "seed": 8401,
+    "semantic_replans": 0,
+    "steps": 4,
+    "variant": "route"
+  },
+  "rule": "lowest matrix-order qualifying episode",
+  "working": {
+    "action_cost": 4.0,
+    "agent": "full_hierarchy",
+    "episode_id": "00003-s8401-parcel-h4-baseline-full_hierarchy",
+    "horizon": 4,
+    "memory_staleness": 0.0,
+    "mission": "parcel",
+    "mission_complete": true,
+    "progress": 1.0,
+    "retries": 0,
+    "safe": true,
+    "seed": 8401,
+    "semantic_replans": 0,
+    "steps": 4,
+    "variant": "baseline"
+  }
+}

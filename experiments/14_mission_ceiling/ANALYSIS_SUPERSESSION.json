@@ -1,0 +1,18 @@
+{
+  "schema": "exp14-analysis-supersession-v1",
+  "status": "COMPLETE",
+  "outcome_source_commit": "23a300fc643da1bc1c65a3bab352448e20b3f8a1",
+  "analysis_fix_commit": "d65bb16277158cd08df086a0a994a7abf5a9e0db",
+  "invalid_attempts": {
+    "shard-01": "incorrect expanded source commit receipt",
+    "shard-02-derived": "preliminary cell-level bootstrap pseudoreplication; raw remains valid",
+    "shard-03-analysis": "incorrect expanded analysis commit receipt",
+    "qualification-v1-derived": "cell-level bootstrap pseudoreplication; raw remains valid",
+    "qualification-v2": "incorrect expanded analysis commit receipt"
+  },
+  "canonical_shard": "results/shard-04-analysis",
+  "canonical_qualification": "results/qualification-v3",
+  "canonical_reconstruction": "results/reconstruction-v3",
+  "correction": "bootstrap resamples seed clusters and retains all within-seed mission, horizon, variant cells together; one-seed analyses have no inferential interval",
+  "claim_scope": "deterministic mission-logic ceiling/stress screen only; not pi0.5, not final, not semantic-memory causality, not hierarchy-mechanism causality, not real-world"
+}

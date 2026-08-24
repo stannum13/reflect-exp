@@ -1,0 +1,649 @@
+{
+  "episode_id": "06991-s8410-parcel-h12-constraint-full_hierarchy",
+  "ledger": [
+    {
+      "accepted": true,
+      "action": {
+        "kind": "pickup",
+        "object": "parcel"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": "parcel",
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "dock",
+        "step": 0,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "reason": "picked",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [],
+        "object_locations": [
+          [
+            "parcel",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "step": 0,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "deliver"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": "parcel",
+        "fresh_at_step": 1
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "dock",
+        "step": 1,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "reason": "terminal precondition",
+      "retry": true,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "parcel"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "step": 1,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "deliver"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": "parcel",
+        "fresh_at_step": 2
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "dock",
+        "step": 2,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "reason": "terminal precondition",
+      "retry": true,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "parcel"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "step": 2,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "deliver"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": "parcel",
+        "fresh_at_step": 3
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "dock",
+        "step": 3,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "reason": "terminal precondition",
+      "retry": true,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "parcel"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "step": 3,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "deliver"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": "parcel",
+        "fresh_at_step": 4
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "dock",
+        "step": 4,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "reason": "terminal precondition",
+      "retry": true,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "parcel"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "step": 4,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "deliver"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": "parcel",
+        "fresh_at_step": 5
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "dock",
+        "step": 5,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "reason": "terminal precondition",
+      "retry": true,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "parcel"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "step": 5,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "deliver"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": "parcel",
+        "fresh_at_step": 6
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "dock",
+        "step": 6,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "reason": "terminal precondition",
+      "retry": true,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "parcel"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "step": 6,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "deliver"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": "parcel",
+        "fresh_at_step": 7
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "dock",
+        "step": 7,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "reason": "terminal precondition",
+      "retry": true,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "parcel"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "step": 7,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "deliver"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": "parcel",
+        "fresh_at_step": 8
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "dock",
+        "step": 8,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "reason": "terminal precondition",
+      "retry": true,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "parcel"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "step": 8,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "deliver"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": "parcel",
+        "fresh_at_step": 9
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "dock",
+        "step": 9,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "reason": "terminal precondition",
+      "retry": true,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "parcel"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "step": 9,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "deliver"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": "parcel",
+        "fresh_at_step": 10
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "dock",
+        "step": 10,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "reason": "terminal precondition",
+      "retry": true,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "parcel"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "step": 10,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "deliver"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": "parcel",
+        "fresh_at_step": 11
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "deliver parcel to goal",
+        "inventory": [
+          "parcel"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "dock",
+        "step": 11,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "reason": "terminal precondition",
+      "retry": true,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "parcel"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": [
+          "room_1"
+        ]
+      },
+      "step": 11,
+      "terminal": false
+    }
+  ],
+  "row": {
+    "agent": "full_hierarchy",
+    "horizon": 12,
+    "mission": "parcel",
+    "seed": 8410,
+    "variant": "constraint"
+  },
+  "scenario": {
+    "blocked_initial": [],
+    "event_step": 4,
+    "graph": [
+      [
+        "archive",
+        "room_5"
+      ],
+      [
+        "bypass_1",
+        "dock"
+      ],
+      [
+        "bypass_1",
+        "room_1"
+      ],
+      [
+        "dock",
+        "room_1"
+      ],
+      [
+        "dock",
+        "supply"
+      ],
+      [
+        "goal",
+        "room_5"
+      ],
+      [
+        "room_1",
+        "room_2"
+      ],
+      [
+        "room_2",
+        "room_3"
+      ],
+      [
+        "room_3",
+        "room_4"
+      ],
+      [
+        "room_4",
+        "room_5"
+      ]
+    ],
+    "horizon": 12,
+    "initial_goal": "goal",
+    "instruction": "deliver parcel to goal",
+    "intervention_goal": "archive",
+    "locked_edges": [],
+    "mission": "parcel",
+    "object_locations": [
+      [
+        "parcel",
+        "dock"
+      ]
+    ],
+    "required_objects": [
+      "parcel"
+    ],
+    "seed": 8410,
+    "start": "dock",
+    "target_object": "parcel",
+    "terminal_action": "deliver",
+    "unsafe_rooms": [
+      "room_1"
+    ],
+    "variant": "constraint"
+  },
+  "score": {
+    "action_cost": 14.75,
+    "memory_staleness": 0.0,
+    "mission_complete": false,
+    "progress": 0.3333333333333333,
+    "retries": 11,
+    "safe": true,
+    "semantic_replans": 0,
+    "steps": 12
+  },
+  "terminal_state": {
+    "active_goal": "goal",
+    "agent_room": "dock",
+    "blocked_edges": [],
+    "effects": [],
+    "inventory": [
+      "parcel"
+    ],
+    "object_locations": [],
+    "safety_violations": 0,
+    "unsafe_rooms": [
+      "room_1"
+    ]
+  }
+}
