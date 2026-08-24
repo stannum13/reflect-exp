@@ -60,6 +60,36 @@ def test_sensitivity_plan_and_actual_n_eff_are_exactly_preregistered() -> None:
     assert len(draws) == 10_000
 
 
+def test_reconstruction_effect_path_reports_actual_missing_clusters_without_keyerror() -> None:
+    module = _module()
+    rows = []
+    for seed in range(20262301, 20262310):
+        for architecture in ("R0", "R1", "R2", "R3"):
+            rows.append({
+                "disposition": "COMPLETE", "matrix_role": "PRIMARY",
+                "architecture": architecture, "family": "control-impulse",
+                "severity": "LOW", "seed": seed, "mission_success": True,
+                "safety_composite": False, "progress": .8,
+                "control_wakes": 1, "motion_wakes": 0, "semantic_wakes": 0,
+            })
+    for seed in range(20262301, 20262305):
+        rows.append({
+            "disposition": "COMPLETE", "matrix_role": "SENSITIVITY",
+            "architecture": "R3", "family": "control-impulse", "severity": "LOW",
+            "seed": seed, "mission_success": False, "safety_composite": False,
+            "progress": .4, "control_wakes": 1, "motion_wakes": 0, "semantic_wakes": 0,
+        })
+    effects, sensitivity, draws, plans = module._registered_effects(rows)
+    assert effects["R2"]["mission_success"]["n_eff"] == 9
+    assert effects["R2"]["mission_success"]["draws"] == 10_000
+    assert set(plans["R3-R2:mission_success"].ravel()) == set(range(20262301, 20262310))
+    assert sensitivity["mission_success"]["n_eff"] == 4
+    assert sensitivity["mission_success"]["draws"] == 0
+    assert sensitivity["mission_success"]["lower_95"] is None
+    assert plans["P4-P6:mission_success"] is None
+    assert all(value is None for value in draws["P4-P6:mission_success"])
+
+
 @pytest.fixture(scope="module")
 def compact_pack() -> Path:
     return _repository_root() / "reports/evidence/exp15-direct-hierarchy-replication-v2"

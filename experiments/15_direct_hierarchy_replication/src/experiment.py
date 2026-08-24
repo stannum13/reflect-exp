@@ -9,6 +9,7 @@ import json
 import math
 import os
 from pathlib import Path
+import subprocess
 from types import MappingProxyType
 from typing import Mapping
 
@@ -32,6 +33,8 @@ run_episode = _runtime.run_episode
 
 
 EXPERIMENT_ID = "exp15-direct-hierarchy-replication-v2"
+SOURCE_APPROVAL_PATH = "experiments/15_direct_hierarchy_replication/EXP15_V2_SOURCE_AUDIT_APPROVAL.json"
+FIRST50_APPROVAL_PATH = "experiments/15_direct_hierarchy_replication/EXP15_V2_FIRST50_APPROVAL.json"
 PRIMARY_SEEDS = tuple(range(20262301, 20262311))
 SENSITIVITY_SEEDS = PRIMARY_SEEDS[:5]
 FAMILIES = (
@@ -50,6 +53,20 @@ OUTCOME_ROW_FIELDS = (
     "recovery_latency_ticks", "aborts", "peak_torque_nm", "rms_torque_nm",
     "peak_contact_force_n", "trajectory_length_rad", "action_cost",
 )
+COMPLETE_DISPOSITION_KEYS = set(OUTCOME_ROW_FIELDS) | {
+    "disposition", "parameter_sha256", "episode_manifest_sha256",
+}
+NOT_RUN_DISPOSITION_KEYS = {
+    "architecture", "architecture_independent", "controller_id", "disposition",
+    "episode_id", "family", "matrix_role", "parameter_sha256",
+    "precheck_receipt", "precheck_receipt_sha256", "seed", "severity",
+}
+INVALID_DISPOSITION_KEYS = {
+    "architecture", "controller_id", "disposition", "episode_id",
+    "exception_class", "exception_message", "execution_stage", "family",
+    "freeze_sha256", "matrix_role", "parameter_sha256", "seed", "severity",
+    "source_commit",
+}
 
 
 @dataclass(frozen=True)
@@ -312,11 +329,46 @@ def _write(path: Path, payload: bytes) -> None:
         os.fsync(stream.fileno())
 
 
-def _validate_source_approval(path: Path | None, source_commit: str) -> tuple[dict[str, object], str]:
-    if path is None or not path.is_file():
+def _load_git_approval(approval_ref: str | None, expected_path: str) -> tuple[dict[str, object], bytes, str, str]:
+    if approval_ref is None or ":" not in approval_ref:
+        raise RuntimeError("Exp15 V2 independent approval Git ref is required")
+    commit, path = approval_ref.split(":", 1)
+    if (
+        len(commit) != 40
+        or any(char not in "0123456789abcdef" for char in commit)
+        or path != expected_path
+    ):
+        raise RuntimeError("Exp15 V2 independent approval Git ref mismatch")
+    try:
+        subprocess.run(
+            ("git", "merge-base", "--is-ancestor", commit, "HEAD"), cwd=_root(),
+            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        ancestry = subprocess.check_output(
+            ("git", "rev-list", "--parents", "-n", "1", commit), cwd=_root(), text=True,
+        ).strip().split()
+        changed = subprocess.check_output(
+            ("git", "diff-tree", "--no-commit-id", "--name-only", "-r", f"{commit}^", commit),
+            cwd=_root(), text=True,
+        ).splitlines()
+        payload = subprocess.check_output(("git", "show", approval_ref), cwd=_root())
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError("Exp15 V2 independent approval Git object unavailable") from error
+    if len(ancestry) != 2 or ancestry[0] != commit or changed != [expected_path]:
+        raise RuntimeError("Exp15 V2 approval must be a separate one-file Git commit")
+    try:
+        approval = json.loads(payload.decode("ascii"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RuntimeError("Exp15 V2 independent approval encoding mismatch") from error
+    if canonical_bytes(approval) != payload:
+        raise RuntimeError("Exp15 V2 independent approval is not canonical")
+    return approval, payload, commit, ancestry[1]
+
+
+def _validate_source_approval(approval_ref: str | None, source_commit: str) -> tuple[dict[str, object], str, str, str]:
+    if approval_ref is None:
         raise RuntimeError("Exp15 V2 source audit approval is required before freeze")
-    payload = path.read_bytes()
-    approval = json.loads(payload.decode("ascii"))
+    approval, payload, approval_commit, approval_parent = _load_git_approval(approval_ref, SOURCE_APPROVAL_PATH)
     expected_keys = {
         "schema_version", "experiment_id", "source_commit", "verdict",
         "review_scope", "reviewer",
@@ -330,9 +382,53 @@ def _validate_source_approval(path: Path | None, source_commit: str) -> tuple[di
         or approval["verdict"] != "APPROVE"
         or approval["review_scope"] != "SOURCE_PREREGISTRATION_BEFORE_FREEZE"
         or not approval["reviewer"]
+        or approval_parent != source_commit
     ):
         raise RuntimeError("Exp15 V2 source audit approval mismatch")
-    return approval, sha256_bytes(payload)
+    return approval, sha256_bytes(payload), approval_ref, approval_commit
+
+
+def _verify_source_commit_closure(source_commit: str, closure: list[dict[str, object]]) -> None:
+    if len(source_commit) != 40 or any(char not in "0123456789abcdef" for char in source_commit):
+        raise RuntimeError("Exp15 V2 source commit closure requires a full lowercase commit SHA")
+    try:
+        subprocess.run(
+            ("git", "merge-base", "--is-ancestor", source_commit, "HEAD"),
+            cwd=_root(), check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError("Exp15 V2 source commit is not an ancestor of current HEAD") from error
+    paths = [str(item["path"]) for item in closure]
+    if paths != sorted(set(paths)):
+        raise RuntimeError("Exp15 V2 source commit closure path set is not exact")
+    try:
+        tree_paths = set(subprocess.check_output(
+            ("git", "ls-tree", "-r", "--name-only", source_commit),
+            cwd=_root(), text=True,
+        ).splitlines())
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError("Exp15 V2 source commit tree is unavailable") from error
+    if not set(paths) <= tree_paths:
+        raise RuntimeError("Exp15 V2 source commit closure contains untracked paths")
+    for item in closure:
+        path = str(item["path"])
+        current = _root() / path
+        if current.is_symlink() or not current.is_file():
+            raise RuntimeError(f"Exp15 V2 source commit closure path invalid: {path}")
+        try:
+            committed = subprocess.check_output(
+                ("git", "show", f"{source_commit}:{path}"), cwd=_root(),
+            )
+        except subprocess.CalledProcessError as error:
+            raise RuntimeError(f"Exp15 V2 source commit closure missing path: {path}") from error
+        current_payload = current.read_bytes()
+        expected = {
+            "path": path,
+            "bytes": len(committed),
+            "sha256": sha256_bytes(committed),
+        }
+        if item != expected or current_payload != committed:
+            raise RuntimeError(f"Exp15 V2 source commit closure drift: {path}")
 
 
 def freeze(
@@ -340,14 +436,15 @@ def freeze(
     *,
     source_commit: str,
     tracked_path: Path | None = None,
-    source_approval: Path | None = None,
+    source_approval_ref: str | None = None,
 ) -> dict[str, object]:
     if output.exists():
         raise FileExistsError(output)
     if len(source_commit) != 40:
         raise ValueError("Exp15 freeze requires a full source commit")
-    approval, approval_sha256 = _validate_source_approval(source_approval, source_commit)
+    approval, approval_sha256, approval_ref, approval_commit = _validate_source_approval(source_approval_ref, source_commit)
     closure = _source_closure()
+    _verify_source_commit_closure(source_commit, closure)
     configuration = dict(frozen_configuration())
     configuration["episode_ids"] = [item.episode_id for item in matrix_specs()]
     document = {
@@ -359,6 +456,8 @@ def freeze(
         "source_commit": source_commit,
         "source_audit_approval": approval,
         "source_audit_approval_sha256": approval_sha256,
+        "source_audit_approval_ref": approval_ref,
+        "source_audit_approval_commit": approval_commit,
         "source_closure": closure,
         "source_closure_sha256": sha256_bytes(canonical_bytes(closure)),
         "configuration": configuration,
@@ -394,13 +493,48 @@ def _episode_manifest(output: Path, raw: object) -> dict[str, object]:
 def _validate_freeze(output: Path) -> dict[str, object]:
     payload = (output / "freeze.json").read_bytes()
     document = json.loads(payload.decode("ascii"))
-    if canonical_bytes(document) != payload:
-        raise RuntimeError("Exp15 freeze is not canonical")
+    expected_keys = {
+        "schema_version", "stage", "self_authorizes_claims", "study_type",
+        "causal_lowest_claim", "source_commit", "source_audit_approval",
+        "source_audit_approval_sha256", "source_audit_approval_ref",
+        "source_audit_approval_commit", "source_closure", "source_closure_sha256",
+        "configuration", "configuration_sha256", "environment", "environment_sha256",
+    }
+    if (
+        canonical_bytes(document) != payload
+        or set(document) != expected_keys
+        or document["schema_version"] != 1
+        or document["stage"] != "FROZEN_BEFORE_OUTCOME"
+        or document["self_authorizes_claims"] is not False
+        or document["causal_lowest_claim"] is not False
+        or document["study_type"] != "PREREGISTERED_REPLICATION_INFORMED_BY_EXP13"
+    ):
+        raise RuntimeError("Exp15 freeze schema/canonical mismatch")
     closure = _source_closure()
     if document["source_closure"] != closure or document["source_closure_sha256"] != sha256_bytes(canonical_bytes(closure)):
         raise RuntimeError("Exp15 source closure drift")
-    if document["configuration"]["episode_ids"] != [item.episode_id for item in matrix_specs()]:
+    _verify_source_commit_closure(document["source_commit"], closure)
+    configuration = dict(frozen_configuration())
+    configuration["episode_ids"] = [item.episode_id for item in matrix_specs()]
+    configuration = json.loads(canonical_bytes(configuration).decode("ascii"))
+    if (
+        document["configuration"] != configuration
+        or document["configuration_sha256"] != sha256_bytes(canonical_bytes(configuration))
+    ):
         raise RuntimeError("Exp15 matrix drift")
+    if document["environment_sha256"] != sha256_bytes(canonical_bytes(document["environment"])):
+        raise RuntimeError("Exp15 environment binding mismatch")
+    approval, approval_sha256, approval_ref, approval_commit = _validate_source_approval(
+        document["source_audit_approval_ref"], document["source_commit"],
+    )
+    if (
+        document["source_audit_approval"] != approval
+        or document["source_audit_approval_sha256"] != approval_sha256
+        or document["source_audit_approval_ref"] != approval_ref
+        or document["source_audit_approval_commit"] != approval_commit
+        or approval["source_commit"] != document["source_commit"]
+    ):
+        raise RuntimeError("Exp15 freeze source approval binding mismatch")
     return document
 
 
@@ -534,34 +668,203 @@ def disposition_inventory_sha256(output: Path, *, limit: int | None = None) -> s
     return sha256_bytes(canonical_bytes(_disposition_inventory(output, limit=limit)))
 
 
-def release_first50(output: Path, approval_path: Path) -> dict[str, object]:
-    _validate_freeze(output)
+def _is_sha256(value: object) -> bool:
+    return isinstance(value, str) and len(value) == 64 and set(value) <= set("0123456789abcdef")
+
+
+def _validate_disposition(
+    output: Path,
+    path: Path,
+    spec: DirectSpec,
+    freeze_document: dict[str, object],
+) -> dict[str, object]:
+    payload = path.read_bytes()
+    try:
+        row = json.loads(payload.decode("ascii"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RuntimeError("Exp15 V2 first-50 disposition encoding invalid") from error
+    if canonical_bytes(row) != payload or row.get("episode_id") != spec.episode_id or path.stem != spec.episode_id:
+        raise RuntimeError("Exp15 V2 first-50 disposition identity/canonical mismatch")
+    common = {
+        "architecture": spec.architecture.value,
+        "family": spec.family,
+        "severity": spec.severity,
+        "seed": spec.seed,
+        "controller_id": spec.controller_id,
+        "matrix_role": spec.matrix_role,
+    }
+    if any(row.get(key) != value for key, value in common.items()):
+        raise RuntimeError("Exp15 V2 first-50 disposition matrix binding mismatch")
+    disposition = row.get("disposition")
+    expected_keys = {
+        "COMPLETE": COMPLETE_DISPOSITION_KEYS,
+        "NOT_RUN": NOT_RUN_DISPOSITION_KEYS,
+        "INVALID_EXECUTION": INVALID_DISPOSITION_KEYS,
+    }.get(disposition)
+    if expected_keys is None or set(row) != expected_keys:
+        raise RuntimeError("Exp15 V2 first-50 disposition schema mismatch")
+    episode = output / "raw/episodes" / spec.episode_id
+    if disposition == "COMPLETE":
+        if not _is_sha256(row["parameter_sha256"]) or not _is_sha256(row["episode_manifest_sha256"]):
+            raise RuntimeError("Exp15 V2 COMPLETE hash schema mismatch")
+        if row["terminal"] not in {"SUCCESS", "FAILURE"} or not isinstance(row["mission_success"], bool):
+            raise RuntimeError("Exp15 V2 COMPLETE terminal schema mismatch")
+        if row["mission_success"] != (row["terminal"] == "SUCCESS") or not isinstance(row["safety_composite"], bool):
+            raise RuntimeError("Exp15 V2 COMPLETE outcome binding mismatch")
+        integer_fields = (
+            "retry_count", "control_wakes", "motion_wakes", "semantic_wakes",
+            "recovery_latency_ticks", "aborts",
+        )
+        if any(not isinstance(row[name], int) or isinstance(row[name], bool) or row[name] < 0 for name in integer_fields):
+            raise RuntimeError("Exp15 V2 COMPLETE count schema mismatch")
+        numeric_fields = (
+            "progress", "peak_torque_nm", "rms_torque_nm", "peak_contact_force_n",
+            "trajectory_length_rad", "action_cost",
+        )
+        if any(
+            not isinstance(row[name], (int, float))
+            or isinstance(row[name], bool)
+            or not math.isfinite(float(row[name]))
+            for name in numeric_fields
+        ):
+            raise RuntimeError("Exp15 V2 COMPLETE metric schema mismatch")
+        if not 0.0 <= float(row["progress"]) <= 1.0 or any(float(row[name]) < 0 for name in numeric_fields[1:]):
+            raise RuntimeError("Exp15 V2 COMPLETE metric range mismatch")
+        manifest_path = episode / "manifest.json"
+        if not manifest_path.is_file() or manifest_path.is_symlink():
+            raise RuntimeError("Exp15 V2 COMPLETE manifest missing")
+        manifest_payload = manifest_path.read_bytes()
+        manifest = json.loads(manifest_payload.decode("ascii"))
+        if (
+            canonical_bytes(manifest) != manifest_payload
+            or set(manifest) != {"schema_version", "episode_id", "seed", "injection_tick", "files"}
+            or manifest["schema_version"] != 1
+            or manifest["episode_id"] != spec.episode_id
+            or manifest["seed"] != spec.seed
+            or not isinstance(manifest["injection_tick"], int)
+            or not isinstance(manifest["files"], list)
+            or sha256_bytes(manifest_payload) != row["episode_manifest_sha256"]
+        ):
+            raise RuntimeError("Exp15 V2 COMPLETE manifest binding mismatch")
+        actual_files = []
+        seen = set()
+        for item in manifest["files"]:
+            if set(item) != {"path", "bytes", "sha256"} or not isinstance(item["path"], str):
+                raise RuntimeError("Exp15 V2 COMPLETE manifest member schema mismatch")
+            relative = Path(item["path"])
+            if relative.is_absolute() or ".." in relative.parts or item["path"] in seen:
+                raise RuntimeError("Exp15 V2 COMPLETE manifest member path mismatch")
+            seen.add(item["path"])
+            member = episode / relative
+            if member.is_symlink() or not member.is_file():
+                raise RuntimeError("Exp15 V2 COMPLETE manifest member missing")
+            member_payload = member.read_bytes()
+            actual_files.append({
+                "path": item["path"], "bytes": len(member_payload),
+                "sha256": sha256_bytes(member_payload),
+            })
+        if manifest["files"] != actual_files or "failure-event-states.jsonl" not in seen:
+            raise RuntimeError("Exp15 V2 COMPLETE manifest inventory mismatch")
+    elif disposition == "NOT_RUN":
+        receipt = row["precheck_receipt"]
+        receipt_keys = {
+            "disposition", "reason", "architecture_independent", "precheck_input",
+            "realization_sha256", "geometry_sha256", "straight_path_blocked",
+            "waypoint_path_clear", "target_a_ik_error_m", "target_b_ik_error_m",
+        }
+        if (
+            set(receipt) != receipt_keys
+            or receipt["disposition"] != "NOT_RUN"
+            or receipt["architecture_independent"] is not True
+            or row["architecture_independent"] is not True
+            or not _is_sha256(row["parameter_sha256"])
+            or not _is_sha256(row["precheck_receipt_sha256"])
+            or row["precheck_receipt_sha256"] != sha256_bytes(canonical_bytes(receipt))
+            or not _is_sha256(receipt["realization_sha256"])
+            or not _is_sha256(receipt["geometry_sha256"])
+        ):
+            raise RuntimeError("Exp15 V2 NOT_RUN receipt binding mismatch")
+        preflight_path = output / "preflight/receipts" / f"{spec.episode_id}.json"
+        preflight_payload = preflight_path.read_bytes()
+        preflight_row = json.loads(preflight_payload.decode("ascii"))
+        if (
+            canonical_bytes(preflight_row) != preflight_payload
+            or preflight_row.get("disposition") != "NOT_RUN"
+            or preflight_row.get("parameter_sha256") != row["parameter_sha256"]
+            or preflight_row.get("receipt") != receipt
+        ):
+            raise RuntimeError("Exp15 V2 NOT_RUN preflight binding mismatch")
+        if episode.exists():
+            raise RuntimeError("Exp15 V2 NOT_RUN unexpectedly has episode evidence")
+    else:
+        freeze_sha256 = sha256_bytes((output / "freeze.json").read_bytes())
+        if (
+            row["source_commit"] != freeze_document["source_commit"]
+            or row["freeze_sha256"] != freeze_sha256
+            or row["execution_stage"] not in {"PRECHECK", "RUNTIME", "SCORER", "EVIDENCE"}
+            or not isinstance(row["exception_class"], str) or not row["exception_class"]
+            or not isinstance(row["exception_message"], str)
+            or (row["parameter_sha256"] is not None and not _is_sha256(row["parameter_sha256"]))
+            or episode.exists()
+        ):
+            raise RuntimeError("Exp15 V2 INVALID_EXECUTION binding mismatch")
+    return row
+
+
+def _validate_first50_dispositions(output: Path) -> None:
+    freeze_document = _validate_freeze(output)
+    paths = sorted((output / "raw/dispositions").glob("*.json"))
+    specs = matrix_specs()[:50]
+    if len(paths) < 50 or [path.stem for path in paths[:50]] != [spec.episode_id for spec in specs]:
+        raise RuntimeError("Exp15 V2 first-50 disposition identity mismatch")
+    for path, spec in zip(paths[:50], specs, strict=True):
+        _validate_disposition(output, path, spec, freeze_document)
+
+
+def release_first50(output: Path, approval_ref: str) -> dict[str, object]:
+    freeze_document = _validate_freeze(output)
     _validate_preflight(output)
     dispositions = sorted((output / "raw/dispositions").glob("*.json"))
     if len(dispositions) != 50:
         raise RuntimeError("Exp15 V2 first-50 release requires exactly 50 sealed dispositions")
-    payload = approval_path.read_bytes()
-    approval = json.loads(payload.decode("ascii"))
+    _validate_first50_dispositions(output)
+    approval, payload, approval_commit, approval_parent = _load_git_approval(approval_ref, FIRST50_APPROVAL_PATH)
     expected = {
         "schema_version", "experiment_id", "verdict", "review_scope", "reviewer",
-        "freeze_sha256", "disposition_count", "disposition_inventory_sha256",
+        "source_commit", "freeze_sha256", "disposition_count",
+        "disposition_inventory_sha256", "approval_parent_commit",
     }
     freeze_sha256 = sha256_bytes((output / "freeze.json").read_bytes())
     if (
-        canonical_bytes(approval) != payload
-        or set(approval) != expected
+        set(approval) != expected
         or approval["schema_version"] != 1
         or approval["experiment_id"] != EXPERIMENT_ID
         or approval["verdict"] != "APPROVE"
         or approval["review_scope"] != "FIRST_50_CONTINUATION"
         or not approval["reviewer"]
+        or approval["source_commit"] != freeze_document["source_commit"]
         or approval["freeze_sha256"] != freeze_sha256
         or approval["disposition_count"] != 50
         or approval["disposition_inventory_sha256"] != disposition_inventory_sha256(output)
+        or approval["approval_parent_commit"] != approval_parent
     ):
         raise RuntimeError("Exp15 V2 first-50 approval mismatch")
+    try:
+        subprocess.run(
+            ("git", "merge-base", "--is-ancestor", freeze_document["source_commit"], approval_parent),
+            cwd=_root(), check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError("Exp15 V2 first-50 approval ancestry mismatch") from error
     release = {
-        **approval,
+        "schema_version": 1,
+        "experiment_id": EXPERIMENT_ID,
+        "source_commit": freeze_document["source_commit"],
+        "freeze_sha256": freeze_sha256,
+        "disposition_count": 50,
+        "disposition_inventory_sha256": approval["disposition_inventory_sha256"],
+        "approval_ref": approval_ref,
+        "approval_commit": approval_commit,
         "approval_sha256": sha256_bytes(payload),
         "stage": "FIRST_50_INDEPENDENT_RELEASE",
     }
@@ -582,29 +885,45 @@ def _validate_first50_release(output: Path) -> None:
     path = output / "first50-release.json"
     if not path.is_file():
         raise RuntimeError("Exp15 V2 paused at first 50; independent continuation approval required")
+    _validate_first50_dispositions(output)
     payload = path.read_bytes()
     release = json.loads(payload.decode("ascii"))
     expected = {
-        "schema_version", "experiment_id", "verdict", "review_scope", "reviewer",
-        "freeze_sha256", "disposition_count", "disposition_inventory_sha256",
-        "approval_sha256", "stage",
+        "schema_version", "experiment_id", "source_commit", "freeze_sha256",
+        "disposition_count", "disposition_inventory_sha256", "approval_ref",
+        "approval_commit", "approval_sha256", "stage",
     }
-    approval_payload = {key: value for key, value in release.items() if key not in {"approval_sha256", "stage"}}
     first50_ids = [path.stem for path in dispositions[:50]]
+    freeze_document = _validate_freeze(output)
+    try:
+        approval, approval_payload, approval_commit, approval_parent = _load_git_approval(
+            release.get("approval_ref"), FIRST50_APPROVAL_PATH,
+        )
+    except RuntimeError as error:
+        raise RuntimeError("Exp15 V2 first-50 release state mismatch") from error
     if (
         canonical_bytes(release) != payload
         or set(release) != expected
         or release["schema_version"] != 1
         or release["experiment_id"] != EXPERIMENT_ID
-        or release["verdict"] != "APPROVE"
-        or release["review_scope"] != "FIRST_50_CONTINUATION"
-        or not release["reviewer"]
         or release["stage"] != "FIRST_50_INDEPENDENT_RELEASE"
+        or release["source_commit"] != freeze_document["source_commit"]
         or release["freeze_sha256"] != sha256_bytes((output / "freeze.json").read_bytes())
         or release["disposition_count"] != 50
         or first50_ids != [spec.episode_id for spec in matrix_specs()[:50]]
         or release["disposition_inventory_sha256"] != disposition_inventory_sha256(output, limit=50)
-        or release["approval_sha256"] != sha256_bytes(canonical_bytes(approval_payload))
+        or release["approval_commit"] != approval_commit
+        or release["approval_sha256"] != sha256_bytes(approval_payload)
+        or approval.get("schema_version") != 1
+        or approval.get("experiment_id") != EXPERIMENT_ID
+        or approval.get("verdict") != "APPROVE"
+        or approval.get("review_scope") != "FIRST_50_CONTINUATION"
+        or not approval.get("reviewer")
+        or approval.get("source_commit") != freeze_document["source_commit"]
+        or approval.get("freeze_sha256") != release["freeze_sha256"]
+        or approval.get("disposition_count") != 50
+        or approval.get("disposition_inventory_sha256") != release["disposition_inventory_sha256"]
+        or approval.get("approval_parent_commit") != approval_parent
     ):
         raise RuntimeError("Exp15 V2 first-50 release state mismatch")
 

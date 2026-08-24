@@ -120,17 +120,65 @@ def _sensitivity_values(rows: list[dict[str, object]], metric: str) -> dict[int,
                 p6 = next((row for row in complete if row["matrix_role"] == "PRIMARY" and int(row["seed"]) == seed and row["family"] == family and row["severity"] == severity), None)
                 if p4 is not None and p6 is not None:
                     cluster.append(float(p4[metric]) - float(p6[metric]))
-        values[seed] = cluster
+        if cluster:
+            values[seed] = cluster
     return values
 
 
 def _effect(values: dict[int, list[float]], plan: np.ndarray) -> tuple[dict[str, object], np.ndarray]:
+    if not values:
+        return ({"estimate": None, "lower_95": None, "upper_95": None, "n_eff": 0,
+                 "draws": 0, "resampling_unit": "seed_cluster",
+                 "inferential_status": "NOT_RUN_NO_PAIRED_CLUSTERS"},
+                np.asarray([None] * BOOTSTRAP_DRAWS, dtype=object))
     seed_means = {seed: float(np.mean(cluster)) for seed, cluster in values.items()}
     observed = float(np.mean(list(seed_means.values())))
     draws = np.asarray([np.mean([seed_means[int(seed)] for seed in sampled]) for sampled in plan])
     return ({"estimate": observed, "lower_95": float(np.quantile(draws, .025)),
              "upper_95": float(np.quantile(draws, .975)), "n_eff": len(values),
-             "draws": BOOTSTRAP_DRAWS, "resampling_unit": "seed_cluster"}, draws)
+             "draws": BOOTSTRAP_DRAWS, "resampling_unit": "seed_cluster",
+             "inferential_status": "RUN_ACTUAL_PAIRED_CLUSTERS"}, draws)
+
+
+def _descriptive_without_inference(values: dict[int, list[float]], reason: str) -> tuple[dict[str, object], np.ndarray]:
+    estimate = None if not values else float(np.mean([np.mean(cluster) for cluster in values.values()]))
+    return ({"estimate": estimate, "lower_95": None, "upper_95": None,
+             "n_eff": len(values), "draws": 0, "resampling_unit": "seed_cluster",
+             "inferential_status": reason},
+            np.asarray([None] * BOOTSTRAP_DRAWS, dtype=object))
+
+
+def _registered_effects(rows: list[dict[str, object]]) -> tuple[dict, dict, dict, dict]:
+    effects: dict[str, dict[str, dict[str, object]]] = {}
+    sensitivity: dict[str, dict[str, object]] = {}
+    draw_columns: dict[str, np.ndarray] = {}
+    plan_columns: dict[str, np.ndarray | None] = {}
+    augmented = [{**row, "total_wakes": row.get("control_wakes", 0) + row.get("motion_wakes", 0) + row.get("semantic_wakes", 0)} for row in rows]
+    for comparator in ("R0", "R1", "R2"):
+        effects[comparator] = {}
+        for metric in ("mission_success", "safety_composite", "progress", "total_wakes"):
+            name = f"R3-{comparator}:{metric}"
+            values = _cluster_values(augmented, "R3", comparator, metric)
+            seeds = sorted(values)
+            plan = _bootstrap_plan(seeds, size=len(seeds)) if seeds else np.empty((BOOTSTRAP_DRAWS, 0), dtype=int)
+            effect, draws = _effect(values, plan)
+            effects[comparator][metric] = effect
+            draw_columns[name] = draws
+            plan_columns[name] = plan
+    expected_sensitivity_seeds = list(range(20262301, 20262306))
+    for metric in ("mission_success", "progress"):
+        name = f"P4-P6:{metric}"
+        values = _sensitivity_values(rows, metric)
+        if sorted(values) == expected_sensitivity_seeds:
+            plan = _balanced_sensitivity_plan(expected_sensitivity_seeds)
+            effect, draws = _effect(values, plan)
+        else:
+            plan = None
+            effect, draws = _descriptive_without_inference(values, "NOT_RUN_EXPECTED_SENSITIVITY_N_EFF_MISSING")
+        sensitivity[metric] = effect
+        draw_columns[name] = draws
+        plan_columns[name] = plan
+    return effects, sensitivity, draw_columns, plan_columns
 
 
 def _svg(title: str, labels: list[str], series: list[tuple[str, list[float], str]], *, y_min: float = 0.0, y_max: float = 1.0) -> bytes:
@@ -186,22 +234,8 @@ def reconstruct_derived(pack: Path, destination: Path) -> None:
                     "success_rate": float(np.mean([row["mission_success"] for row in selected])) if selected else "",
                     "mean_progress": float(np.mean([row["progress"] for row in selected])) if selected else ""})
     _write(destination / "tables/family-severity.csv", _csv_bytes(tuple(family_rows[0]), family_rows))
-    primary_plan = _bootstrap_plan(list(range(20262301, 20262311)), size=10)
-    sensitivity_plan = _balanced_sensitivity_plan(list(range(20262301, 20262306)))
-    effects = {}
-    draw_columns: dict[str, np.ndarray] = {}
     augmented = [{**row, "total_wakes": row.get("control_wakes", 0) + row.get("motion_wakes", 0) + row.get("semantic_wakes", 0)} for row in rows]
-    for comparator in ("R0", "R1", "R2"):
-        effects[comparator] = {}
-        for metric in ("mission_success", "safety_composite", "progress", "total_wakes"):
-            effect, draws = _effect(_cluster_values(augmented, "R3", comparator, metric), primary_plan)
-            effects[comparator][metric] = effect
-            draw_columns[f"R3-{comparator}:{metric}"] = draws
-    sensitivity = {}
-    for metric in ("mission_success", "progress"):
-        effect, draws = _effect(_sensitivity_values(rows, metric), sensitivity_plan)
-        sensitivity[metric] = effect
-        draw_columns[f"P4-P6:{metric}"] = draws
+    effects, sensitivity, draw_columns, plan_columns = _registered_effects(rows)
     cluster_rows = []
     for name, values in [(f"R3-{c}:{m}", _cluster_values(augmented, "R3", c, m)) for c in ("R0","R1","R2") for m in ("mission_success","safety_composite","progress","total_wakes")]:
         for seed, cluster in values.items():
@@ -212,8 +246,15 @@ def reconstruct_derived(pack: Path, destination: Path) -> None:
     _write(destination / "bootstrap/cluster-inputs.csv", _csv_bytes(tuple(cluster_rows[0]), cluster_rows))
     draw_rows = []
     for index in range(BOOTSTRAP_DRAWS):
-        row = {"draw_id": index, "primary_sampled_seeds": "|".join(map(str, primary_plan[index])), "sensitivity_sampled_seeds": "|".join(map(str, sensitivity_plan[index]))}
-        row.update({name: float(values[index]) for name, values in draw_columns.items()})
+        row = {"draw_id": index}
+        row.update({
+            f"{name}:sampled_seeds": "" if plan is None else "|".join(map(str, plan[index]))
+            for name, plan in plan_columns.items()
+        })
+        row.update({
+            name: "" if values[index] is None else float(values[index])
+            for name, values in draw_columns.items()
+        })
         draw_rows.append(row)
     _write(destination / "bootstrap/draws.csv", _csv_bytes(tuple(draw_rows[0]), draw_rows))
     failure_rows = []
@@ -237,6 +278,14 @@ def reconstruct_derived(pack: Path, destination: Path) -> None:
         and other["severity"] == r3["severity"]
         and other["architecture"] == "R2"
     )
+    def lower_pass(effect: dict[str, object], threshold: float) -> bool:
+        value = effect["lower_95"]
+        return isinstance(value, (int, float)) and float(value) >= threshold
+
+    def upper_pass(effect: dict[str, object], threshold: float, *, strict: bool = False) -> bool:
+        value = effect["upper_95"]
+        return isinstance(value, (int, float)) and (float(value) < threshold if strict else float(value) <= threshold)
+
     registered_gates = {
         "primary_n_eff_exactly_10": all(
             effects[name][metric]["n_eff"] == 10
@@ -247,15 +296,15 @@ def reconstruct_derived(pack: Path, destination: Path) -> None:
             sensitivity[metric]["n_eff"] == 5 for metric in ("mission_success", "progress")
         ),
         "success_noninferiority_all_comparators": all(
-            effects[name]["mission_success"]["lower_95"] >= -.10 for name in ("R0", "R1", "R2")
+            lower_pass(effects[name]["mission_success"], -.10) for name in ("R0", "R1", "R2")
         ),
         "safety_noninferiority_all_comparators": all(
-            effects[name]["safety_composite"]["upper_95"] <= .10 for name in ("R0", "R1", "R2")
+            upper_pass(effects[name]["safety_composite"], .10) for name in ("R0", "R1", "R2")
         ),
         "progress_noninferiority_all_comparators": all(
-            effects[name]["progress"]["lower_95"] >= -.05 for name in ("R0", "R1", "R2")
+            lower_pass(effects[name]["progress"], -.05) for name in ("R0", "R1", "R2")
         ),
-        "wake_reduction_vs_fixed_R2": effects["R2"]["total_wakes"]["upper_95"] < 0,
+        "wake_reduction_vs_fixed_R2": upper_pass(effects["R2"]["total_wakes"], 0.0, strict=True),
         "worst_R3_minus_R2_family_severity_success": heterogeneity,
         "heterogeneity_threshold_pass": heterogeneity >= -.20,
     }

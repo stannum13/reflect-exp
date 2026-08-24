@@ -1,7 +1,7 @@
 # Exp15 V2 clean direct-hierarchy replication
 
-**Status:** awaiting independent source/record audit; not approved to freeze or run  
-**Date:** 2026-08-24  
+**Status:** awaiting independent source/record audit; not approved to freeze or run
+**Date:** 2026-08-24
 **Predecessor:** V1 is permanently `INVALID_EARLY_AUDIT` after 32 sealed
 dispositions. No V1 outcome payload informed this design.
 
@@ -30,14 +30,20 @@ kernel and policy call `(architecture, observable, budget)` are unchanged.
 
 Source, tests, analysis, and pack verifier are committed first. Freeze requires
 a separate canonical `APPROVE` receipt naming the exact 40-character source
-commit and experiment ID. That approval is not part of the outcome-generating
-source closure and is recorded separately. A 540-cell architecture-blind
+commit and experiment ID. The receipt must be the sole file in a separate Git
+commit whose parent is the approved source commit; the runner resolves its exact
+bytes with `git show`. The approval is not part of the outcome-generating source
+closure. Freeze additionally proves every current closure byte and exact closure
+path against the approved source commit tree. A 540-cell architecture-blind
 preflight must seal before outcomes.
 
 Execution is create-only and resumable. Without a separate first-50 release,
 the runner can seal at most 50 dispositions and then must pause. Release requires
-a canonical independent `APPROVE` receipt bound to the freeze and exact
-50-disposition inventory. No cell 51 can execute without it. `NOT_RUN`,
+a canonical independent `APPROVE` receipt bound to the source, freeze, and exact
+50-disposition inventory. It is likewise the sole file in a separate Git commit,
+and the runtime reloads its exact bytes from that commit on every continuation.
+All first-50 disposition schemas and complete raw manifests are independently
+validated. No cell 51 can execute without it. `NOT_RUN`,
 `INVALID_EXECUTION`, and interrupted attempts remain preserved.
 
 ## Exact resampling and effective sample size
@@ -53,7 +59,10 @@ starts from the lexicographically ordered Cartesian product
 The 10,000 draws are three complete copies of that order (9,375 draws), followed
 by the 625 rows at integer indices produced by
 `linspace(0, 3124, 625, dtype=int)` from a fourth copy. Each sampled tuple
-equally weights its five sampled seed-cluster means.
+equally weights its five sampled seed-cluster means. This inferential plan runs
+only when all five expected paired clusters exist. With fewer than five, the
+report gives the actual descriptive estimate and `n_eff`, records zero
+inferential draws and null interval bounds, and the support gate is false.
 
 Every effect reports `n_eff` from the actual number of paired seed clusters,
 never a configured constant. Scientific support additionally requires every
