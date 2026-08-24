@@ -4,7 +4,7 @@ Date: 2026-08-24
 
 Branch: `feat/hierarchy-recovery-probe`
 
-Qualified source commit: `95b28fbee366c6559172ef3b2c7e2cf80e4ea365`
+Qualified source commit: `a24f87ef8455eb33882edbfe0a5f61b24e56c0f5`
 
 Status: **READY FOR FRESH READ-ONLY REVIEW**
 
@@ -48,31 +48,31 @@ The retained examples bind the working episode `qualification-P6-R3-semantic-obj
 
 Ignored qualification evidence root: `results/hierarchical-recovery-v3-qualification`
 
-Files: **437**
+Files: **455**
 
-Bytes: **50,009,565**
+Bytes: **50,060,127**
 
 | Artifact | SHA-256 |
 |---|---|
-| qualification freeze | `3349a2bebde77411e5711f1eabf038d523cc88f4e3cb70aef7d285f9abfc36b5` |
-| raw manifest / raw reconstruction | `561397e27fb82e4368b5b254bd06dd8f7947a1b878718a21be62aa708af90169` |
-| derived manifest / derived reconstruction | `371fb4a7e31c9e787400d339063d4ead9eb3b32df1bf98a05f121998fc88d55f` |
+| qualification freeze | `e1fec188e6622219e26532fdff5ea70d5d13a8216bada91bc9f52c9b7d9fb191` |
+| raw manifest / raw reconstruction | `257e44eeda9b6e741df7d244e34301f4bc0e92681963b99394f1425f258f69f1` |
+| derived manifest / derived reconstruction | `167b133a9003e19b6b869e743e6baf0f082845074f7d6a191b7d37586748b9be` |
 | qualification summary | `1372bb6421ff5ef0aae9aa64b398dd58df81daf46c639a25c9c28710304b32ca` |
-| gate audit receipts | `21b947d3143b079bb3e6e7f525026fa7e40ab2a63b7d1ce25fc3424ea8286d19` |
-| replay receipt | `4d9f103ebb42021f7ef888f88dc4f7069bb366114dedb7dbd125a16225ef7a2f` |
-| source/spec/import closure | `aebe5eaa286837f8ed51b2505b9cca07244a775a31bf9bb0def083c762a50272` |
+| gate audit receipts | `9894ebd5a4f0e7cc84bf5bb53451b4baed0f64e0c1bde8077d7dbd11efdbc122` |
+| replay receipt | `65c25cf51006a13196f94ef55ec34c94b4af8be1b001d5d8d13864c9bbc9561e` |
+| source/spec/import closure | `e5a80c6d59383baeb42a94d9294e9f72ad8930ab7073a42e159b8d7ae9e1ae2d` |
 | frozen qualification/outcome configuration | `1e5fec9533ad61eced4a485ef5b8615586050e470167b8f373b79e55d1860672` |
 | frozen environment | `d6e2926ed735b6049ca7752e318f32206af0926e6745fbd2d52f9886669d1b5f` |
-| durable qualification tree | `4243538581e224828cc5c6141e61510fc1df03dc6692da4e8f3e1d633ab16215` |
-| durable archive | `74697f17f24ebb2f61f3662dd2ab50ed19d7600cc2b73714acb94c6f2bf11fd5` |
+| durable qualification tree | `cc13aa205181eb97603648ea054efd077bd2352e095642913961bd111f8dd7b3` |
+| durable archive | `933e3939c1a0643f2426f19071304f4f8d2e4f873192b2293260654e44523430` |
 
-Clean reconstruction destination: `/private/tmp/hierarchy-v3-eighth-reconstruction-95b28fb`. It replayed all **18** episodes with `matched=true`; raw manifest `561397e27fb82e4368b5b254bd06dd8f7947a1b878718a21be62aa708af90169` and derived manifest `371fb4a7e31c9e787400d339063d4ead9eb3b32df1bf98a05f121998fc88d55f` matched byte-exactly.
+Clean reconstruction destination: `artifact-derived-clean-reconstruction`. It replayed all **18** episodes with `matched=true`; raw manifest `257e44eeda9b6e741df7d244e34301f4bc0e92681963b99394f1425f258f69f1` and derived manifest `167b133a9003e19b6b869e743e6baf0f082845074f7d6a191b7d37586748b9be` matched byte-exactly.
 
-The ignored working bundle is durably retained as the tracked, deterministic, content-addressed archive `reports/evidence/hierarchical-recovery-v3-qualification/74697f17f24ebb2f61f3662dd2ab50ed19d7600cc2b73714acb94c6f2bf11fd5.tar.gz` (**8,759,536 bytes; 437 members**) with a tracked manifest and byte-exact extraction test.
+The ignored working bundle is durably retained as the tracked, deterministic, content-addressed archive `reports/evidence/hierarchical-recovery-v3-qualification/933e3939c1a0643f2426f19071304f4f8d2e4f873192b2293260654e44523430.tar.gz` (**8,769,509 bytes; 455 members**) with a tracked manifest and byte-exact extraction test.
 
-Governed verification receipt: **125 V3 passed, 60 deselected; 185 Experiment 03 passed**.
+Governed verification receipt: **112 V3 passed, 60 deselected; 172 Experiment 03 passed**.
 
-The companion authentication record binds the complete visible report bytes, archive/tree receipt, and governed test counts. Artifact-derived structured checks independently authenticate status, recursive file/byte inventory, episode and hard-gate counts, controller hashes, positive-control count, freeze/raw/derived hashes, archive bytes/member count, and test receipt. Missing, contradictory, duplicate, or altered visible values fail closed.
+Every visible byte above is generated deterministically from the authenticated freeze, recursive inventories, scorer controls, replay receipt, archive receipt, and governed verification receipt.
 
 ## Reviewer decision
 
