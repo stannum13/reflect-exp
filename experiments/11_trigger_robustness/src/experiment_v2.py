@@ -14,6 +14,7 @@ import platform
 import random
 import struct
 import subprocess
+import types
 from typing import Any, Iterable, Mapping, Sequence
 import zlib
 
@@ -169,19 +170,50 @@ def _validate_source(freeze: Mapping[str, Any], cells: Sequence[Mapping[str, Any
     fixture = bool(freeze.get("fixture"))
     if fixture and not allow_fixture:
         raise IntegrityError("fixture evidence is not canonical evidence")
-    expected = freeze_receipt(cells, str(freeze.get("implementation_git_sha")), fixture=fixture)
-    if dict(freeze) != expected:
-        raise IntegrityError("canonical freeze/config/seed/matrix/source mismatch")
     commit = str(freeze["implementation_git_sha"])
+    if fixture:
+        expected = freeze_receipt(cells, commit, fixture=True)
+        if dict(freeze) != expected:
+            raise IntegrityError("canonical freeze/config/seed/matrix/source mismatch")
+    else:
+        closure = freeze.get("source_closure")
+        if not isinstance(closure, list) or {str(row.get("path")) for row in closure} != set(SOURCE_PATHS):
+            raise IntegrityError("frozen source closure path mismatch")
+        for member in closure:
+            if set(member) != {"bytes", "path", "sha256"}:
+                raise IntegrityError("frozen source closure schema mismatch")
+            blob = _git_blob(commit, str(member["path"]))
+            if len(blob) != member["bytes"] or sha(blob) != member["sha256"]:
+                raise IntegrityError("implementation source commit closure mismatch")
+        expected = {
+            "claim_scope": CLAIM_SCOPE, "config_sha256": sha(CONFIG_PATH.read_bytes()),
+            "environment": {"platform": platform.platform(), "python": platform.python_version()}, "fixture": False,
+            "implementation_git_sha": commit, "matrix_count": len(cells), "matrix_sha256": sha(jsonl(cells)),
+            "planner_id": PLANNER_ID, "retirement_registry_sha256": sha(RETIREMENT_PATH.read_bytes()), "schema_version": 2,
+            "seed_manifest_sha256": sha(SEEDS_PATH.read_bytes()), "source_closure": closure,
+            "source_closure_sha256": sha(canonical(closure)), "study_id": CONFIG["study_id"],
+        }
+        if dict(freeze) != expected:
+            raise IntegrityError("canonical freeze/config/seed/matrix/source mismatch")
     if commit != _head():
         try:
             subprocess.check_call(("git", "merge-base", "--is-ancestor", commit, "HEAD"), cwd=REPO)
         except subprocess.CalledProcessError as exc:
             raise IntegrityError("implementation commit is not an ancestor") from exc
-    if not fixture:
-        for member in freeze["source_closure"]:
-            if sha(_git_blob(commit, str(member["path"]))) != member["sha256"]:
-                raise IntegrityError("implementation source commit closure mismatch")
+
+
+def _frozen_score_function(freeze: Mapping[str, Any]):
+    if freeze.get("fixture"):
+        return score_episode
+    commit = str(freeze["implementation_git_sha"])
+    path = "experiments/11_trigger_robustness/src/replay_v2.py"
+    payload = _git_blob(commit, path)
+    member = next((row for row in freeze["source_closure"] if row["path"] == path), None)
+    if member is None or len(payload) != member["bytes"] or sha(payload) != member["sha256"]:
+        raise IntegrityError("frozen replay scorer blob mismatch")
+    module = types.ModuleType("exp11_frozen_replay_v2")
+    exec(compile(payload, f"{commit}:{path}", "exec"), module.__dict__)
+    return module.score_episode
 
 
 def inventory(root: Path, *, exclude: Sequence[str] = ()) -> list[dict[str, Any]]:
@@ -217,6 +249,10 @@ def _validate_manifest(root: Path, name: str, *, schema: int = 2) -> dict[str, A
     names = [row.get("path") for row in declared]
     if len(names) != len(set(names)) or any(Path(str(item)).is_absolute() or ".." in Path(str(item)).parts for item in names):
         raise IntegrityError("invalid manifest member path")
+    expected_dirs = {Path(str(item)).parent.as_posix() for item in names if Path(str(item)).parent.as_posix() != "."}
+    actual_dirs = {path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_dir() and not path.is_symlink()}
+    if actual_dirs != expected_dirs:
+        raise IntegrityError("recursive inventory extra directory mismatch")
     return manifest
 
 
@@ -224,7 +260,65 @@ def _write_manifest(root: Path, name: str = "manifest.json") -> None:
     (root / name).write_bytes(canonical({"members": inventory(root), "schema_version": 2}))
 
 
-def load_retirement_registry() -> dict[str, Any]:
+def validate_legacy_manifest(root: Path) -> None:
+    if root.is_symlink() or not root.is_dir():
+        raise IntegrityError("retired V1 root must be a regular directory")
+    path = root / "manifest.json"
+    if path.is_symlink() or not path.is_file():
+        raise IntegrityError("retired V1 manifest must be a regular file")
+    payload = path.read_bytes()
+    manifest = json.loads(payload)
+    expected_keys = {"files", "schema_version", "raw_tree_sha256"} if root.name == "derived" else {"files", "schema_version"}
+    if canonical(manifest) != payload or set(manifest) != expected_keys or manifest["schema_version"] != 1:
+        raise IntegrityError("retired V1 manifest canonical schema mismatch")
+    files = manifest["files"]
+    if not isinstance(files, dict) or any(Path(name).is_absolute() or ".." in Path(name).parts or "/" in name for name in files):
+        raise IntegrityError("retired V1 manifest member path mismatch")
+    actual = inventory(root, exclude=("manifest.json",))
+    expected = [{"bytes": receipt["bytes"], "path": name, "sha256": receipt["sha256"]} for name, receipt in sorted(files.items())]
+    if actual != expected:
+        raise IntegrityError("retired V1 recursive inventory or manifest mismatch")
+    actual_dirs = {item.relative_to(root).as_posix() for item in root.rglob("*") if item.is_dir() and not item.is_symlink()}
+    if actual_dirs:
+        raise IntegrityError("retired V1 inventory contains extra directory")
+    if root.name == "derived":
+        raw = root.parent / "raw"
+        raw_receipt = sha(canonical({row["path"]: row["sha256"] for row in inventory(raw, exclude=("manifest.json",))}))
+        if manifest["raw_tree_sha256"] != raw_receipt:
+            raise IntegrityError("retired V1 derived/raw tree mismatch")
+
+
+def _validate_retired_v1(published: Mapping[str, Any]) -> None:
+    result_root = ROOT / "results/v1"
+    validate_legacy_manifest(result_root / "raw")
+    validate_legacy_manifest(result_root / "derived")
+    commit = str(published["ledger"]["publication_commit"])
+    prefix = "experiments/11_trigger_robustness/results/v1"
+    listing = subprocess.check_output(("git", "ls-tree", "-r", commit, "--", prefix), cwd=REPO)
+    if sha(listing) != published["result_tree_git_sha256"]:
+        raise IntegrityError("retired V1 frozen Git tree receipt mismatch")
+    expected_paths = []
+    for line in listing.decode("ascii").splitlines():
+        metadata, tracked_path = line.split("\t", 1)
+        if not metadata.startswith(("100644 blob ", "100755 blob ")):
+            raise IntegrityError("retired V1 Git tree contains non-regular object")
+        expected_paths.append(tracked_path.removeprefix(prefix + "/"))
+    actual_paths = [row["path"] for row in inventory(result_root)]
+    if actual_paths != sorted(expected_paths):
+        raise IntegrityError("retired V1 exact Git inventory mismatch")
+    for relative in expected_paths:
+        current = (result_root / relative).read_bytes()
+        if current != _git_blob(commit, f"{prefix}/{relative}"):
+            raise IntegrityError(f"retired V1 Git member mismatch: {relative}")
+
+
+def validate_retired_v1() -> None:
+    registry = load_retirement_registry(validate_tree=False)
+    published = next(row for row in registry["attempts"] if row["attempt_id"] == "EXP11_V1_PUBLISHED")
+    _validate_retired_v1(published)
+
+
+def load_retirement_registry(*, validate_tree: bool = True) -> dict[str, Any]:
     payload = RETIREMENT_PATH.read_bytes()
     registry = json.loads(payload)
     if canonical(registry) != payload:
@@ -247,6 +341,8 @@ def load_retirement_registry() -> dict[str, Any]:
         raise IntegrityError("retired raw manifest mismatch")
     if published["derived_manifest_sha256"] != sha((ROOT / "results/v1/derived/manifest.json").read_bytes()):
         raise IntegrityError("retired derived manifest mismatch")
+    if validate_tree:
+        _validate_retired_v1(published)
     return registry
 
 
@@ -279,11 +375,12 @@ def _validate_raw(raw: Path, *, allow_fixture: bool) -> tuple[list[dict[str, Any
             raise IntegrityError("unknown tick episode")
         ticks_by[str(row["episode_id"])].append(row)
     scores = []
+    frozen_score = _frozen_score_function(freeze)
     for cell, start, terminal in zip(cells, starts, terminals, strict=True):
         if start.get("cell") != cell or terminal.get("episode_id") != cell["episode_id"]:
             raise IntegrityError("ordered episode identity mismatch")
         try:
-            scores.append(score_episode(start, ticks_by[cell["episode_id"]], terminal, CONFIG))
+            scores.append(frozen_score(start, ticks_by[cell["episode_id"]], terminal, CONFIG))
         except ReplayError as exc:
             raise IntegrityError(str(exc)) from exc
     return cells, scores
@@ -489,7 +586,7 @@ def validate(root: Path, *, allow_fixture: bool = False) -> tuple[int, int]:
     _validate_manifest(root, "manifest.json")
     if {row["path"] for row in inventory(root, exclude=("manifest.json",)) if "/" not in str(row["path"])}:
         raise IntegrityError("unlisted root sibling")
-    load_retirement_registry()
+    load_retirement_registry(validate_tree=not allow_fixture)
     cells, scores = _validate_raw(root / "raw", allow_fixture=allow_fixture)
     _validate_derived(root / "raw", root / "derived")
     return len(cells), sum(int(row["tick_count"]) for row in scores)
@@ -534,9 +631,21 @@ def reconstruct(source: Path, target: Path, *, expected_root_manifest_sha256: st
     if not manifest.is_file() or manifest.is_symlink() or sha(manifest.read_bytes()) != expected_root_manifest_sha256:
         raise IntegrityError("root manifest receipt mismatch")
     validate(source, allow_fixture=allow_fixture)
-    freeze = json.loads((source / "raw/freeze.json").read_text(encoding="ascii"))
-    cells = fixture_matrix() if freeze["fixture"] else frozen_matrix()
-    publish(target, cells, implementation_git_sha=str(freeze["implementation_git_sha"]), fixture=bool(freeze["fixture"]))
+    if target.exists():
+        raise IntegrityError("create-only reconstruction target exists")
+    target_raw = target / "raw"
+    target_derived = target / "derived"
+    target_raw.mkdir(parents=True)
+    for member in inventory(source / "raw"):
+        destination = target_raw / str(member["path"])
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes((source / "raw" / str(member["path"])).read_bytes())
+    target_derived.mkdir()
+    for name, payload in _derived_payloads(target_raw).items():
+        (target_derived / name).write_bytes(payload)
+    _write_manifest(target_derived)
+    _write_manifest(target)
+    validate(target, allow_fixture=allow_fixture)
     if inventory(source) != inventory(target):
         raise IntegrityError("full reconstruction mismatch")
 

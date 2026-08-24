@@ -209,3 +209,54 @@ def test_fixture_reconstruction_is_exact_and_requires_root_receipt(tmp_path: Pat
     assert exp.inventory(root) == exp.inventory(rebuilt)
     with pytest.raises(exp.IntegrityError, match="root manifest receipt"):
         exp.reconstruct(root, tmp_path / "wrong", expected_root_manifest_sha256="0" * 64, allow_fixture=True)
+
+
+def test_reconstruction_at_descendant_head_uses_frozen_replay_without_generator(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setitem(exp.CONFIG, "bootstrap_draws", 50)
+    root = tmp_path / "source"
+    exp.publish(root, exp.fixture_matrix(), implementation_git_sha=_head(), fixture=True)
+    frozen_commit = json.loads((exp.ROOT / "results/v2/raw/freeze.json").read_text(encoding="ascii"))["implementation_git_sha"]
+    freeze = exp.freeze_receipt(exp.fixture_matrix(), frozen_commit, fixture=True)
+    (root / "raw/freeze.json").write_bytes(exp.canonical(freeze))
+    _rewrite_manifest(root / "raw", "manifest.json")
+    _rewrite_root_manifest(root)
+    receipt = hashlib.sha256((root / "manifest.json").read_bytes()).hexdigest()
+    monkeypatch.setattr(exp, "run_episode", lambda _cell: pytest.fail("reconstruction called the outcome generator"))
+    rebuilt = tmp_path / "rebuilt"
+    exp.reconstruct(root, rebuilt, expected_root_manifest_sha256=receipt, allow_fixture=True)
+    assert exp.inventory(root) == exp.inventory(rebuilt)
+
+
+def test_retained_v1_authentication_rejects_forged_cells_and_extra_objects(monkeypatch, tmp_path: Path) -> None:
+    exp.validate_retired_v1()
+    cells = exp.ROOT / "results/v1/raw/cells.jsonl"
+    original_read = Path.read_bytes
+
+    def forged_read(path: Path) -> bytes:
+        payload = original_read(path)
+        if path == cells:
+            return payload.replace(b'"seed":20266201', b'"seed":90266201', 1)
+        return payload
+
+    monkeypatch.setattr(Path, "read_bytes", forged_read)
+    with pytest.raises(exp.IntegrityError, match="V1|retired|manifest|Git"):
+        exp.validate_retired_v1()
+    monkeypatch.undo()
+
+    legacy = tmp_path / "legacy"
+    legacy.mkdir()
+    (legacy / "payload.json").write_text("{}\n", encoding="ascii")
+    receipt = hashlib.sha256((legacy / "payload.json").read_bytes()).hexdigest()
+    (legacy / "manifest.json").write_bytes(exp.canonical({"files": {"payload.json": {"bytes": 3, "sha256": receipt}}, "schema_version": 1}))
+    exp.validate_legacy_manifest(legacy)
+    (legacy / "nested").mkdir()
+    with pytest.raises(exp.IntegrityError, match="inventory|extra"):
+        exp.validate_legacy_manifest(legacy)
+
+    legacy2 = tmp_path / "legacy-link"
+    legacy2.mkdir()
+    (legacy2 / "payload.json").write_text("{}\n", encoding="ascii")
+    (legacy2 / "manifest.json").write_bytes(exp.canonical({"files": {"payload.json": {"bytes": 3, "sha256": receipt}}, "schema_version": 1}))
+    (legacy2 / "link").symlink_to(legacy2 / "payload.json")
+    with pytest.raises(exp.IntegrityError, match="symlink"):
+        exp.validate_legacy_manifest(legacy2)
