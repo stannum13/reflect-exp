@@ -1,0 +1,23 @@
+<mujoco model="opaque_glass_transfer_v2">
+  <option timestep="0.02" gravity="0 0 0" integrator="implicitfast"/>
+  <visual><global offwidth="96" offheight="96"/><quality shadowsize="1024"/></visual>
+  <worldbody>
+    <light pos="-1.5 -1.0 3.0" dir="0.3 0.2 -1" diffuse="0.75 0.75 0.75"/>
+    <light pos="1.5 1.0 2.5" dir="-0.3 -0.2 -1" diffuse="0.35 0.35 0.35"/>
+    <camera name="overhead" pos="0 0 3.2" xyaxes="1 0 0 0 1 0" fovy="42"/>
+    <geom name="floor" type="plane" size="2 1.1 0.05" rgba="0.42 0.44 0.47 1" contype="0" conaffinity="0"/>
+    <geom name="wall_top" type="box" pos="0 0.92 0.12" size="1.55 0.04 0.12" rgba="0.18 0.2 0.22 1"/>
+    <geom name="wall_bottom" type="box" pos="0 -0.92 0.12" size="1.55 0.04 0.12" rgba="0.18 0.2 0.22 1"/>
+    <geom name="obstacle" type="box" pos="0.003079973614184439 -0.03179890003376364 0.16" size="0.12 0.28 0.16" rgba="0.86 0.05 0.04 1.0" friction="0.9 0.02 0.002" contype="1" conaffinity="1"/>
+    <body name="robot" pos="-1.2 -0.0645056169620727 0.09">
+      <joint name="x" type="slide" axis="1 0 0" damping="2"/>
+      <joint name="y" type="slide" axis="0 1 0" damping="2"/>
+      <geom name="robot_geom" type="sphere" size="0.08" rgba="0.05 0.25 0.95 1" mass="0.45" friction="0.8 0.02 0.002"/>
+    </body>
+    <site name="goal" pos="1.2 0.0 0.03" size="0.07" rgba="0.1 0.9 0.2 1"/>
+  </worldbody>
+  <actuator>
+    <motor name="fx" joint="x" gear="1" ctrlrange="-5 5" ctrllimited="true"/>
+    <motor name="fy" joint="y" gear="1" ctrlrange="-5 5" ctrllimited="true"/>
+  </actuator>
+</mujoco>

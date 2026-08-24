@@ -1,0 +1,23 @@
+{
+  "condition": "EVAL_X3",
+  "condition_from_xml": "EVAL_X3",
+  "controller": "HIERARCHICAL",
+  "controller_contract": {
+    "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+    "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+    "controller_id": "HIERARCHICAL",
+    "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+    "path": [
+      "rgbd_detector",
+      "semantic_route",
+      "motion_route",
+      "pd_control"
+    ]
+  },
+  "replans": 0,
+  "retries": 0,
+  "scene_relpath": "raw/scenes/seed-7210-eval_x3",
+  "seed": 7210,
+  "semantic_wakes": 0,
+  "tick_count": 273
+}

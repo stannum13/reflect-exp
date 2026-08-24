@@ -1,0 +1,22 @@
+{
+  "condition": "EVAL_X3",
+  "condition_from_xml": "EVAL_X3",
+  "controller": "RGB_ONLY",
+  "controller_contract": {
+    "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+    "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+    "controller_id": "RGB_ONLY",
+    "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+    "path": [
+      "rgb_detector",
+      "single_geometric_route",
+      "pd_control"
+    ]
+  },
+  "replans": 0,
+  "retries": 0,
+  "scene_relpath": "raw/scenes/seed-7204-eval_x3",
+  "seed": 7204,
+  "semantic_wakes": 0,
+  "tick_count": 300
+}

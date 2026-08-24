@@ -1,0 +1,22 @@
+{
+  "condition": "NO_OBSTACLE",
+  "condition_from_xml": "NO_OBSTACLE",
+  "controller": "RGBD_MOTION",
+  "controller_contract": {
+    "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+    "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+    "controller_id": "RGBD_MOTION",
+    "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+    "path": [
+      "rgbd_detector",
+      "motion_route",
+      "pd_control"
+    ]
+  },
+  "replans": 0,
+  "retries": 0,
+  "scene_relpath": "raw/scenes/seed-7212-no_obstacle",
+  "seed": 7212,
+  "semantic_wakes": 0,
+  "tick_count": 134
+}
