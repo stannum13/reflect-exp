@@ -1,0 +1,3 @@
+disposition,failure_class,reason,count
+NOT_RUN,NOT_RUN,IK_ERROR_EXCEEDS_TOLERANCE,39
+INVALID_EXECUTION,ValueError,no frozen waypoint route,1
