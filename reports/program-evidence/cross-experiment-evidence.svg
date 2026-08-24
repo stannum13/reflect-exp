@@ -1,17 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="520" viewBox="0 0 1040 520" role="img" aria-labelledby="title desc">
   <title id="title">Reflect Lite evidence disposition, 24 August 2026</title>
-  <desc id="desc">Counts derived one row per experiment from cross-experiment-evidence.csv: five accepted bounded evidence, two approved bounded invalid archives, one rejected, and one not run.</desc>
+  <desc id="desc">Counts derived one row per experiment from cross-experiment-evidence.csv: six accepted bounded evidence, two approved bounded invalid archives, one rejected, and one not run.</desc>
   <!-- Reconstruction contract: group rows by plot_group; count rows; order by plot_order; fill with plot_color. No experimental effect sizes are pooled or compared. -->
   <rect width="1040" height="520" fill="#fbfaf7"/>
   <text x="60" y="58" font-family="system-ui, sans-serif" font-size="28" font-weight="700" fill="#182230">Program evidence disposition</text>
-  <text x="60" y="88" font-family="system-ui, sans-serif" font-size="15" fill="#475467">Nine bounded workstreams; status counts only—not a quality score or pooled effect</text>
-  <line x1="300" y1="424" x2="940" y2="424" stroke="#98a2b3" stroke-width="1"/>
+  <text x="60" y="88" font-family="system-ui, sans-serif" font-size="15" fill="#475467">Ten bounded workstreams; status counts only—not a quality score or pooled effect</text>
+  <line x1="300" y1="424" x2="900" y2="424" stroke="#98a2b3" stroke-width="1"/>
   <line x1="300" y1="128" x2="300" y2="424" stroke="#98a2b3" stroke-width="1"/>
   <g font-family="system-ui, sans-serif" font-size="13" fill="#667085">
-    <text x="294" y="447" text-anchor="middle">0</text><text x="422" y="447" text-anchor="middle">1</text><text x="550" y="447" text-anchor="middle">2</text><text x="678" y="447" text-anchor="middle">3</text><text x="806" y="447" text-anchor="middle">4</text><text x="934" y="447" text-anchor="middle">5</text>
+    <text x="294" y="447" text-anchor="middle">0</text><text x="400" y="447" text-anchor="middle">1</text><text x="500" y="447" text-anchor="middle">2</text><text x="600" y="447" text-anchor="middle">3</text><text x="700" y="447" text-anchor="middle">4</text><text x="800" y="447" text-anchor="middle">5</text><text x="900" y="447" text-anchor="middle">6</text>
   </g>
   <g stroke="#e4e7ec" stroke-width="1">
-    <line x1="422" y1="128" x2="422" y2="424"/><line x1="550" y1="128" x2="550" y2="424"/><line x1="678" y1="128" x2="678" y2="424"/><line x1="806" y1="128" x2="806" y2="424"/><line x1="934" y1="128" x2="934" y2="424"/>
+    <line x1="400" y1="128" x2="400" y2="424"/><line x1="500" y1="128" x2="500" y2="424"/><line x1="600" y1="128" x2="600" y2="424"/><line x1="700" y1="128" x2="700" y2="424"/><line x1="800" y1="128" x2="800" y2="424"/><line x1="900" y1="128" x2="900" y2="424"/>
   </g>
   <g font-family="system-ui, sans-serif" font-size="17" fill="#182230">
     <text x="280" y="176" text-anchor="end">Accepted bounded evidence</text>
@@ -19,9 +19,9 @@
     <text x="280" y="316" text-anchor="end">Rejected</text>
     <text x="280" y="386" text-anchor="end">Not run</text>
   </g>
-  <rect x="300" y="148" width="640" height="38" rx="5" fill="#287a5f"/><text x="952" y="174" font-family="system-ui, sans-serif" font-size="18" font-weight="700" fill="#182230">5</text>
-  <rect x="300" y="218" width="256" height="38" rx="5" fill="#c68a2b"/><text x="568" y="244" font-family="system-ui, sans-serif" font-size="18" font-weight="700" fill="#182230">2</text>
-  <rect x="300" y="288" width="128" height="38" rx="5" fill="#b74f4f"/><text x="440" y="314" font-family="system-ui, sans-serif" font-size="18" font-weight="700" fill="#182230">1</text>
-  <rect x="300" y="358" width="128" height="38" rx="5" fill="#667085"/><text x="440" y="384" font-family="system-ui, sans-serif" font-size="18" font-weight="700" fill="#182230">1</text>
-  <text x="60" y="486" font-family="system-ui, sans-serif" font-size="13" fill="#667085">Accepted: Exp04/05/10/11/12. Approved invalid archives: Exp13/15. Rejected: Exp14. Not run: pi0.5.</text>
+  <rect x="300" y="148" width="600" height="38" rx="5" fill="#287a5f"/><text x="912" y="174" font-family="system-ui, sans-serif" font-size="18" font-weight="700" fill="#182230">6</text>
+  <rect x="300" y="218" width="200" height="38" rx="5" fill="#c68a2b"/><text x="512" y="244" font-family="system-ui, sans-serif" font-size="18" font-weight="700" fill="#182230">2</text>
+  <rect x="300" y="288" width="100" height="38" rx="5" fill="#b74f4f"/><text x="412" y="314" font-family="system-ui, sans-serif" font-size="18" font-weight="700" fill="#182230">1</text>
+  <rect x="300" y="358" width="100" height="38" rx="5" fill="#667085"/><text x="412" y="384" font-family="system-ui, sans-serif" font-size="18" font-weight="700" fill="#182230">1</text>
+  <text x="60" y="486" font-family="system-ui, sans-serif" font-size="13" fill="#667085">Accepted: Exp04/05/10/11/12/16. Approved invalid archives: Exp13/15. Rejected: Exp14. Not run: pi0.5.</text>
 </svg>

@@ -1,0 +1,1 @@
+{"dwell_satisfied":true,"mission_postcondition":true,"terminal":"SUCCESS","violation_counts":{"collision":0,"forbidden":0,"invalid_action":0,"loop":0,"nonfinite":0,"reset":0,"stale":0,"unsafe":0,"wrong_object":0}}

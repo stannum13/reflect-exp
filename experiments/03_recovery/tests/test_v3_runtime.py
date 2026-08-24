@@ -10,6 +10,7 @@ import pytest
 
 contracts = importlib.import_module("experiments.03_recovery.src.v3_contracts")
 runtime = importlib.import_module("experiments.03_recovery.src.v3_runtime")
+scorer = importlib.import_module("experiments.03_recovery.src.v3_scorer")
 v1_contracts = importlib.import_module("experiments.03_recovery.src.contracts")
 
 
@@ -37,6 +38,51 @@ def test_realization_pairs_share_physics_and_precheck_can_retain_not_run() -> No
     assert not_run.architecture_independent is True
     assert not_run.reason == "TARGET_OUTSIDE_REACH"
     assert not_run.target_a_ik_error_m > 0.025
+
+
+@pytest.mark.parametrize(
+    ("architecture", "controller"),
+    (
+        (Architecture.R2, PRIMARY),
+        (Architecture.R3, PRIMARY),
+        (Architecture.R3, P4),
+    ),
+    ids=("p6-r2", "p6-r3", "p4-r3"),
+)
+def test_runtime_motion_route_exhaustion_safe_aborts_once_and_holds(
+    monkeypatch: pytest.MonkeyPatch,
+    architecture: Architecture,
+    controller: str,
+) -> None:
+    episode_spec = spec("motion-path-infeasible", architecture, controller=controller)
+    assert runtime.precheck(episode_spec).disposition == "READY"
+    class RuntimeRouteUnavailable(Exception):
+        pass
+
+    monkeypatch.setattr(runtime, "MotionPlanUnavailable", RuntimeRouteUnavailable, raising=False)
+    frozen_waypoint_path = runtime._waypoint_path
+    route_calls = 0
+
+    def runtime_route_unavailable(*args: object) -> tuple[tuple[float, float], ...]:
+        nonlocal route_calls
+        route_calls += 1
+        if route_calls == 1:
+            return frozen_waypoint_path(*args)
+        raise RuntimeRouteUnavailable("runtime route unavailable")
+
+    monkeypatch.setattr(runtime, "_waypoint_path", runtime_route_unavailable)
+    raw = runtime.run_episode(episode_spec)
+
+    aborts = [event for event in raw.decisions if event.level is DecisionLevel.SAFE_ABORT]
+    assert len(aborts) == 1
+    assert aborts[0].reason == "MOTION_PLANNER_NO_ROUTE"
+    assert raw.executor_debug["aborted"] is True
+    abort_tick = aborts[0].observed_tick
+    assert all(action["mode"] == "HOLD" for action in raw.action_envelopes[abort_tick:])
+    result = scorer.score_episode(raw)
+    assert result.terminal == "FAILURE"
+    assert result.violation_counts["loop"] == 0
+    assert result.violation_counts["invalid_action"] == 0
 
 
 @pytest.fixture(scope="module")
