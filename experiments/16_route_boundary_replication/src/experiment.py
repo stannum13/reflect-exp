@@ -37,6 +37,33 @@ SOURCE_APPROVAL_PATH = "experiments/16_route_boundary_replication/EXP16_V1_SOURC
 FIRST50_APPROVAL_PATH = "experiments/16_route_boundary_replication/EXP16_V1_FIRST50_APPROVAL.json"
 PRIMARY_SEEDS = tuple(range(20262401, 20262411))
 SENSITIVITY_SEEDS = PRIMARY_SEEDS[:5]
+REQUIRED_RECOVERY_SOURCE_PATHS = (
+    "docs/superpowers/specs/2026-08-23-hierarchical-recovery-v3-preregistered.md",
+    "experiments/01_policy_control/__init__.py",
+    "experiments/01_policy_control/configs/base.yaml",
+    "experiments/01_policy_control/src/__init__.py",
+    "experiments/01_policy_control/src/arm.py",
+    "experiments/01_policy_control/src/contracts.py",
+    "experiments/01_policy_control/src/kinematics.py",
+    "experiments/01_policy_control/src/representations.py",
+    "experiments/03_recovery/__init__.py",
+    "experiments/03_recovery/run_v3_outcome.py",
+    "experiments/03_recovery/run_v3_qualification.py",
+    "experiments/03_recovery/src/__init__.py",
+    "experiments/03_recovery/src/contracts.py",
+    "experiments/03_recovery/src/v3_contracts.py",
+    "experiments/03_recovery/src/v3_evidence.py",
+    "experiments/03_recovery/src/v3_outcome.py",
+    "experiments/03_recovery/src/v3_outcome_analysis.py",
+    "experiments/03_recovery/src/v3_policy.py",
+    "experiments/03_recovery/src/v3_runtime.py",
+    "experiments/03_recovery/src/v3_scorer.py",
+    "experiments/__init__.py",
+    "pyproject.toml",
+    "reflect/__init__.py",
+    "reflect/types.py",
+    "uv.lock",
+)
 FAMILIES = (
     "control-impulse",
     "control-dropout",
@@ -296,9 +323,10 @@ def _root() -> Path:
 
 
 def _source_closure() -> list[dict[str, object]]:
-    paths = {
-        _root() / item["path"] for item in _evidence.source_closure()
-    }
+    provider_paths = tuple(str(item["path"]) for item in _evidence.source_closure())
+    if provider_paths != REQUIRED_RECOVERY_SOURCE_PATHS:
+        raise RuntimeError("Exp16 source closure provider membership drift")
+    paths = {_root() / path for path in REQUIRED_RECOVERY_SOURCE_PATHS}
     paths.update({
         Path(__file__),
         _root() / "experiments/16_route_boundary_replication/__init__.py",

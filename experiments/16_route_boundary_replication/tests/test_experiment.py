@@ -333,15 +333,25 @@ def test_freeze_rejects_source_closure_not_identical_to_approved_commit(tmp_path
         experiment.freeze(tmp_path / "closure-attack", source_commit=source_commit, source_approval_ref=approval)
 
 
-def test_source_closure_rejects_a_missing_required_member(monkeypatch) -> None:
+@pytest.mark.parametrize("mutation", ("extra", "shrink"))
+def test_source_closure_rejects_provider_membership_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
     experiment = _module()
     original = experiment._evidence.source_closure
 
-    def closure_with_missing_member():
-        return [*original(), {"path": "experiments/16_route_boundary_replication/tests/deleted-required-test.py"}]
+    def drifted_closure():
+        rows = original()
+        if mutation == "shrink":
+            return rows[1:]
+        return [
+            *rows,
+            {"path": "experiments/16_route_boundary_replication/tests/unregistered-extra.py"},
+        ]
 
-    monkeypatch.setattr(experiment._evidence, "source_closure", closure_with_missing_member)
-    with pytest.raises(RuntimeError, match="required source closure member missing"):
+    monkeypatch.setattr(experiment._evidence, "source_closure", drifted_closure)
+    with pytest.raises(RuntimeError, match="source closure provider membership drift"):
         experiment._source_closure()
 
 

@@ -114,7 +114,7 @@ def test_invalid_execution_has_invalid_experiment_precedence() -> None:
 
 @pytest.mark.parametrize(
     ("invalid_scope", "expected_invalid"),
-    (("stratum", 10), ("all_r3", 180), ("all", 540)),
+    (("stratum", 10), ("family", 90), ("all_r3", 180), ("all", 540)),
 )
 def test_reconstruction_survives_invalid_patterns_and_marks_invalid(
     tmp_path: Path,
@@ -144,8 +144,10 @@ def test_reconstruction_survives_invalid_patterns_and_marks_invalid(
             and spec.severity == "HIGH"
         )
         all_r3_invalid = spec.architecture.value == "R3"
+        family_invalid = spec.family == "motion-path-infeasible"
         if (
             invalid_scope == "all"
+            or (invalid_scope == "family" and family_invalid)
             or (invalid_scope == "all_r3" and all_r3_invalid)
             or (invalid_scope == "stratum" and stratum_invalid)
         ):
@@ -176,7 +178,7 @@ def test_reconstruction_survives_invalid_patterns_and_marks_invalid(
         for row in (destination / "tables/family-severity.csv").read_text().splitlines()
         if row.startswith("motion-path-infeasible,HIGH,R3,")
     ]
-    if invalid_scope != "all":
+    if invalid_scope not in {"all", "family"}:
         assert len(missing) == 1
         assert missing[0].endswith(",,")
 
