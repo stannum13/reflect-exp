@@ -1,0 +1,12 @@
+{
+  "disposition": "INVALID_REJECTED",
+  "preserved_evidence_commit": "781097a4d5ab784aac82c0c540bcd1111eb5c791",
+  "reasons": [
+    "evaluation appearance was rendered in pre-freeze tests",
+    "the scorer consumed controller aggregate fields instead of reconstructing from raw arrays and aligned physical ledgers",
+    "reconstruction copied raw and most derived artifacts instead of independently rebuilding every scored output",
+    "tick rows mixed pre-step contacts with post-step state"
+  ],
+  "authority": "V1 has no scientific claim authority; bytes are retained for audit only",
+  "replacement": "opaque-glass-transfer-v2"
+}
