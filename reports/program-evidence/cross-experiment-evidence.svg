@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="520" viewBox="0 0 1040 520" role="img" aria-labelledby="title desc">
   <title id="title">Reflect Lite evidence disposition, 24 August 2026</title>
-  <desc id="desc">Counts derived one row per experiment from cross-experiment-evidence.csv: five accepted bounded evidence, one pending re-review, one rejected, and one not run.</desc>
+  <desc id="desc">Counts derived one row per experiment from cross-experiment-evidence.csv: five accepted bounded evidence, one approved portable exploratory pack, one rejected, and one not run.</desc>
   <!-- Reconstruction contract: group rows by plot_group; count rows; order by plot_order; fill with plot_color. No experimental effect sizes are pooled or compared. -->
   <rect width="1040" height="520" fill="#fbfaf7"/>
   <text x="60" y="58" font-family="system-ui, sans-serif" font-size="28" font-weight="700" fill="#182230">Program evidence disposition</text>
@@ -15,7 +15,7 @@
   </g>
   <g font-family="system-ui, sans-serif" font-size="17" fill="#182230">
     <text x="280" y="176" text-anchor="end">Accepted bounded evidence</text>
-    <text x="280" y="246" text-anchor="end">Pending re-review</text>
+    <text x="280" y="246" text-anchor="end">Approved exploratory pack</text>
     <text x="280" y="316" text-anchor="end">Rejected</text>
     <text x="280" y="386" text-anchor="end">Not run</text>
   </g>
@@ -23,5 +23,5 @@
   <rect x="300" y="218" width="128" height="38" rx="5" fill="#c68a2b"/><text x="440" y="244" font-family="system-ui, sans-serif" font-size="18" font-weight="700" fill="#182230">1</text>
   <rect x="300" y="288" width="128" height="38" rx="5" fill="#b74f4f"/><text x="440" y="314" font-family="system-ui, sans-serif" font-size="18" font-weight="700" fill="#182230">1</text>
   <rect x="300" y="358" width="128" height="38" rx="5" fill="#667085"/><text x="440" y="384" font-family="system-ui, sans-serif" font-size="18" font-weight="700" fill="#182230">1</text>
-  <text x="60" y="486" font-family="system-ui, sans-serif" font-size="13" fill="#667085">Accepted: Exp04/05/10/11/12. Pending: Exp13. Rejected: Exp14. Not run: pi0.5 inference.</text>
+  <text x="60" y="486" font-family="system-ui, sans-serif" font-size="13" fill="#667085">Accepted bounded: Exp04/05/10/11/12. Portable exploratory: Exp13. Rejected: Exp14. Not run: pi0.5.</text>
 </svg>
