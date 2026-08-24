@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import itertools
 import json
 from pathlib import Path
 import shutil
@@ -20,6 +21,20 @@ EXPECTED_FREEZE_SHA256 = "324e8c4f3b79e0e84447590012cf915db4f1c75f9eb80d7bc1e499
 EXPECTED_RAW_INVENTORY_SHA256 = "552cb44e65e5f7cce6580d19a5afa4751a7fa63af45977548b60e2cf1dda1f93"
 BOOTSTRAP_SEED = 1313
 BOOTSTRAP_DRAWS = 10_000
+PACK_MANIFEST_KEYS = {"schema_version", "external_binding", "files"}
+COMPLETE_KEYS = {"aborts", "action_cost", "architecture", "control_wakes", "controller_id", "disposition", "episode_id", "episode_manifest_sha256", "family", "matrix_role", "mission_success", "motion_wakes", "parameter_sha256", "peak_contact_force_n", "peak_torque_nm", "progress", "recovery_latency_ticks", "retry_count", "rms_torque_nm", "safety_composite", "seed", "semantic_wakes", "severity", "terminal", "trajectory_length_rad"}
+NOT_RUN_KEYS = {"architecture", "architecture_independent", "controller_id", "disposition", "episode_id", "family", "matrix_role", "parameter_sha256", "precheck_receipt", "precheck_receipt_sha256", "seed", "severity"}
+INVALID_KEYS = {"architecture", "controller_id", "disposition", "episode_id", "exception_class", "exception_message", "execution_stage", "family", "freeze_sha256", "matrix_role", "parameter_sha256", "seed", "severity", "source_commit"}
+DERIVED_PATHS = {
+    "derived/REPORT.md", "derived/bootstrap/cluster-inputs.csv", "derived/bootstrap/draws.csv",
+    "derived/graphs/controller-sensitivity.png", "derived/graphs/controller-sensitivity.svg",
+    "derived/graphs/family-heterogeneity.png", "derived/graphs/family-heterogeneity.svg",
+    "derived/graphs/plot-data.csv", "derived/graphs/style.json",
+    "derived/graphs/success-progress.png", "derived/graphs/success-progress.svg",
+    "derived/graphs/wake-profiles.png", "derived/graphs/wake-profiles.svg", "derived/report.json",
+    "derived/tables/annotated-samples.json", "derived/tables/architecture-summary.csv",
+    "derived/tables/failure-taxonomy.csv", "derived/tables/family-severity.csv",
+}
 
 
 def _sha(payload: bytes) -> str:
@@ -71,6 +86,12 @@ def _bootstrap_plan(seeds: list[int], *, size: int) -> np.ndarray:
     return rng.choice(np.asarray(seeds), size=(BOOTSTRAP_DRAWS, size), replace=True)
 
 
+def _balanced_sensitivity_plan(seeds: list[int]) -> np.ndarray:
+    exhaustive = np.asarray(list(itertools.product(seeds, repeat=len(seeds))))
+    supplement = exhaustive[np.linspace(0, len(exhaustive) - 1, BOOTSTRAP_DRAWS - 3 * len(exhaustive), dtype=int)]
+    return np.concatenate((exhaustive, exhaustive, exhaustive, supplement))
+
+
 def _cluster_values(rows: list[dict[str, object]], left: str, right: str, metric: str) -> dict[int, list[float]]:
     complete = [row for row in rows if row["disposition"] == "COMPLETE" and row["matrix_role"] == "PRIMARY"]
     lookup = {(row["architecture"], row["family"], row["severity"], int(row["seed"])): row for row in complete}
@@ -104,8 +125,9 @@ def _sensitivity_values(rows: list[dict[str, object]], metric: str) -> dict[int,
 
 
 def _effect(values: dict[int, list[float]], plan: np.ndarray) -> tuple[dict[str, object], np.ndarray]:
-    observed = float(np.mean([value for cluster in values.values() for value in cluster]))
-    draws = np.asarray([np.mean([value for seed in sampled for value in values[int(seed)]]) for sampled in plan])
+    seed_means = {seed: float(np.mean(cluster)) for seed, cluster in values.items()}
+    observed = float(np.mean(list(seed_means.values())))
+    draws = np.asarray([np.mean([seed_means[int(seed)] for seed in sampled]) for sampled in plan])
     return ({"estimate": observed, "lower_95": float(np.quantile(draws, .025)),
              "upper_95": float(np.quantile(draws, .975)), "n_eff": len(values),
              "draws": BOOTSTRAP_DRAWS, "resampling_unit": "seed_cluster"}, draws)
@@ -165,7 +187,7 @@ def reconstruct_derived(pack: Path, destination: Path) -> None:
                     "mean_progress": float(np.mean([row["progress"] for row in selected])) if selected else ""})
     _write(destination / "tables/family-severity.csv", _csv_bytes(tuple(family_rows[0]), family_rows))
     primary_plan = _bootstrap_plan(list(range(20262101, 20262111)), size=10)
-    sensitivity_plan = _bootstrap_plan(list(range(20262101, 20262106)), size=5)
+    sensitivity_plan = _balanced_sensitivity_plan(list(range(20262101, 20262106)))
     effects = {}
     draw_columns: dict[str, np.ndarray] = {}
     augmented = [{**row, "total_wakes": row.get("control_wakes", 0) + row.get("motion_wakes", 0) + row.get("semantic_wakes", 0)} for row in rows]
@@ -217,7 +239,7 @@ def reconstruct_derived(pack: Path, destination: Path) -> None:
             "progress_noninferiority": effects["R2"]["progress"]["lower_95"] >= -.05,
             "wake_reduction": effects["R2"]["total_wakes"]["upper_95"] < 0,
             "worst_family_success_difference": heterogeneity, "heterogeneity_threshold_pass": heterogeneity >= -.20},
-        "worst_r3_cell_success_rate": worst, "bootstrap": {"seed": BOOTSTRAP_SEED, "draws": BOOTSTRAP_DRAWS, "primary_n_eff": 10, "sensitivity_n_eff": 5},
+        "worst_r3_cell_success_rate": worst, "bootstrap": {"seed": BOOTSTRAP_SEED, "draws": BOOTSTRAP_DRAWS, "primary_n_eff": 10, "sensitivity_n_eff": 5, "primary_plan": "PCG64 seed-cluster bootstrap", "sensitivity_plan": "three exhaustive 5^5 cycles plus 625 evenly spaced exhaustive tuples"},
         "portability_limit": "The full 1.3G physical tick/contact/command trace root remains local and is not included; its recursive inventory and selected full working/nonworking episodes are portable.",
         "reconstruction_scope": "All compact statistics, tables, bootstrap draws, SVGs and PNGs reconstruct from tracked dispositions; only selected episodes permit raw-physics rescoring."}
     _write(destination / "report.json", canonical_bytes(report))
@@ -252,6 +274,43 @@ def _raw_inventory_lookup(pack: Path) -> dict[str, dict[str, object]]:
     return {item["path"]: item for item in document["files"]}
 
 
+def _selected_annotations(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    working = next(row for row in rows if row["disposition"] == "COMPLETE" and row["matrix_role"] == "PRIMARY" and row["architecture"] == "R3" and row["mission_success"] and not row["safety_composite"])
+    nonworking = next(row for row in rows if row["disposition"] == "COMPLETE" and row["matrix_role"] == "PRIMARY" and row["architecture"] == "R3" and (not row["mission_success"] or row["safety_composite"]))
+    return [{"label": label, "episode_id": row["episode_id"], "mission_success": row["mission_success"],
+             "safety_composite": row["safety_composite"], "progress": row["progress"],
+             "selection_rule": "first lexicographic primary R3 cell matching label; registered outcomes were not tuned"}
+            for label, row in (("working", working), ("nonworking", nonworking))]
+
+
+def _validate_exact_closure(pack: Path, rows: list[dict[str, object]], manifest: dict[str, object]) -> None:
+    if set(manifest) != PACK_MANIFEST_KEYS or manifest.get("schema_version") != 1:
+        raise RuntimeError("compact evidence schema mismatch")
+    expected_dispositions = {item.episode_id for item in matrix_specs()}
+    complete_ids = {str(row["episode_id"]) for row in rows if row["disposition"] == "COMPLETE"}
+    manifest_ids = {path.stem for path in (pack / "inputs/manifests").glob("*.json")}
+    if manifest_ids != complete_ids or len(manifest_ids) != 500:
+        raise RuntimeError("compact manifest identity mismatch")
+    annotations = json.loads((pack / "inputs/sample-annotations.json").read_text())
+    if annotations != _selected_annotations(rows):
+        raise RuntimeError("compact deterministic selection mismatch")
+    expected = {"pack-manifest.json", "inputs/freeze.json", "inputs/local-raw-inventory.json", "inputs/sample-annotations.json", *DERIVED_PATHS}
+    expected.update(f"inputs/dispositions/{episode_id}.json" for episode_id in expected_dispositions)
+    expected.update(f"inputs/manifests/{episode_id}.json" for episode_id in complete_ids)
+    for annotation in annotations:
+        episode_id = annotation["episode_id"]
+        episode_manifest = json.loads((pack / "inputs/manifests" / f"{episode_id}.json").read_text())
+        if set(episode_manifest) != {"schema_version", "episode_id", "seed", "injection_tick", "files"} or episode_manifest.get("schema_version") != 1:
+            raise RuntimeError("compact episode manifest schema mismatch")
+        members = {"manifest.json", *(item["path"] for item in episode_manifest["files"])}
+        if any(set(item) != {"path", "bytes", "sha256"} for item in episode_manifest["files"]):
+            raise RuntimeError("compact episode member schema mismatch")
+        expected.update(f"inputs/selected-episodes/{annotation['label']}/{member}" for member in members)
+    actual = {item["path"] for item in tree_inventory(pack)}
+    if actual != expected:
+        raise RuntimeError("compact evidence root allowlist mismatch")
+
+
 def reseal_inventory_for_test(pack: Path) -> None:
     manifest = {"schema_version": 1, "external_binding": "git tracked pack plus expected raw inventory hash", "files": tree_inventory(pack, exclude_manifest=True)}
     _write(pack / "pack-manifest.json", canonical_bytes(manifest))
@@ -276,12 +335,11 @@ def publish_compact_pack(raw_root: Path, destination: Path) -> None:
             target = destination / "inputs/manifests" / f"{path.stem}.json"
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
-    working = next(row for row in rows if row["disposition"] == "COMPLETE" and row["matrix_role"] == "PRIMARY" and row["architecture"] == "R3" and row["mission_success"] and not row["safety_composite"])
-    nonworking = next(row for row in rows if row["disposition"] == "COMPLETE" and row["matrix_role"] == "PRIMARY" and row["architecture"] == "R3" and (not row["mission_success"] or row["safety_composite"]))
-    annotations = []
-    for label, row in (("working", working), ("nonworking", nonworking)):
+    annotations = _selected_annotations(rows)
+    for annotation in annotations:
+        label = annotation["label"]
+        row = next(row for row in rows if row["episode_id"] == annotation["episode_id"])
         shutil.copytree(raw_root / "raw/episodes" / row["episode_id"], destination / "inputs/selected-episodes" / label)
-        annotations.append({"label": label, "episode_id": row["episode_id"], "mission_success": row["mission_success"], "safety_composite": row["safety_composite"], "progress": row["progress"], "selection_rule": "first lexicographic primary R3 cell matching label; registered outcomes were not tuned"})
     _write(destination / "inputs/sample-annotations.json", canonical_bytes(annotations))
     reconstruct_derived(destination, destination / "derived")
     reseal_inventory_for_test(destination)
@@ -290,8 +348,14 @@ def publish_compact_pack(raw_root: Path, destination: Path) -> None:
 def verify_compact_pack(pack: Path) -> dict[str, object]:
     manifest_payload = (pack / "pack-manifest.json").read_bytes()
     manifest = json.loads(manifest_payload.decode("ascii"))
-    if canonical_bytes(manifest) != manifest_payload or manifest["files"] != tree_inventory(pack, exclude_manifest=True):
+    if canonical_bytes(manifest) != manifest_payload or manifest.get("files") != tree_inventory(pack, exclude_manifest=True):
         raise RuntimeError("compact evidence inventory mismatch")
+    rows = _rows(pack)
+    expected_keys = {"COMPLETE": COMPLETE_KEYS, "NOT_RUN": NOT_RUN_KEYS, "INVALID_EXECUTION": INVALID_KEYS}
+    for row in rows:
+        if set(row) != expected_keys[row["disposition"]]:
+            raise RuntimeError("compact disposition schema mismatch")
+    _validate_exact_closure(pack, rows, manifest)
     freeze_payload = (pack / "inputs/freeze.json").read_bytes()
     if _sha(freeze_payload) != EXPECTED_FREEZE_SHA256:
         raise RuntimeError("compact freeze binding mismatch")
@@ -320,7 +384,7 @@ def verify_compact_pack(pack: Path) -> dict[str, object]:
         reconstruct_derived(pack, rebuilt)
         if tree_inventory(rebuilt) != tree_inventory(pack / "derived"):
             raise RuntimeError("derived reconstruction mismatch")
-    counts = {name: sum(row["disposition"] == name for row in _rows(pack)) for name in ("COMPLETE", "NOT_RUN", "INVALID_EXECUTION")}
+    counts = {name: sum(row["disposition"] == name for row in rows) for name in ("COMPLETE", "NOT_RUN", "INVALID_EXECUTION")}
     return {"status": "PASS", "dispositions": counts, "pack_manifest_sha256": _sha(manifest_payload)}
 
 
