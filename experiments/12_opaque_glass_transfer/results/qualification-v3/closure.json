@@ -1,4 +1,10 @@
 {
+  "attestation_hashes": {
+    "V1_V2_INVALID_REJECTED.json": "8a8b46269f6778a74674d1451d0b84e40395a47858bc1d527ff3f2ca4d45a53b",
+    "V3_EVIDENCE_RECEIPT.json": "c522ddf0863196a78bfa7d33dddfd767ff2cd6caddee87ad43573d0d46f66cca",
+    "episode-receipts.json": "720a4da63e2925e4ecf4562cfb8c6684ce75f0e41a3bf4aa9f3961fc66ac5fa1"
+  },
+  "chronology_receipt_commit": "44546fb62b341dcf783c822e1c77ce110901267a",
   "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
   "environment": {
     "mujoco": "3.12.0",
@@ -6,7 +12,9 @@
     "platform": "macOS-15.6.1-arm64-arm-64bit",
     "python": "3.11.13 (main, Jun  3 2025, 18:38:25) [Clang 17.0.0 (clang-1700.0.13.3)]"
   },
-  "evidence_commit_policy": "evidence tree commit must be a descendant of source_commit; exact receipt is external because Git commits cannot self-hash",
+  "evidence_commit": "1ef923f81c913960342298ced6ecc2bd63d7d529",
+  "evidence_parent_commit": "f0bd0ca6d4affe0e9ecc6eff392f81cb53247512",
+  "material_namespace": "xfer-material-v3-cyan-a005",
   "matrix": [
     {
       "condition": "NO_OBSTACLE",
@@ -550,7 +558,7 @@
     }
   ],
   "mode": "HELDOUT",
-  "schema": "opaque-glass-transfer-closure-v3",
+  "schema": "opaque-glass-transfer-lifecycle-v3",
   "seed_namespace": [
     7201,
     7202,

@@ -1,0 +1,12 @@
+{
+  "schema": "exp12-v3-evidence-receipt-v1",
+  "status": "COMPLETE",
+  "source_freeze_commit": "f0bd0ca6d4affe0e9ecc6eff392f81cb53247512",
+  "evidence_commit": "1ef923f81c913960342298ced6ecc2bd63d7d529",
+  "evidence_parent_commit": "f0bd0ca6d4affe0e9ecc6eff392f81cb53247512",
+  "evidence_tree": "93ec7147bda4ab30189c68ee33c91841d8af3d1c",
+  "chronology_valid": true,
+  "qualification_manifest_sha256": "36694e7c6fd20397e05a8e50a7f120e8e2494671366e6e6719f76e5fa0170497",
+  "reconstruction_manifest_sha256": "36694e7c6fd20397e05a8e50a7f120e8e2494671366e6e6719f76e5fa0170497",
+  "receipt_note": "External receipt is required because a Git commit cannot contain its own hash. This receipt changes no source, raw, derived, report, or manifest byte."
+}

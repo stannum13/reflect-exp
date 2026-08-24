@@ -24,8 +24,26 @@ ROOT = Path(__file__).parents[1]
 CONFIG = ROOT / "config-v3.json"
 CLOSURE_KEYS = {
     "schema", "status", "mode", "source_commit", "source_parent_commit",
+    "evidence_commit", "evidence_parent_commit", "chronology_receipt_commit",
+    "config_sha256", "source_hashes", "matrix", "seed_namespace",
+    "material_namespace", "environment", "attestation_hashes",
+}
+LEGACY_CLOSURE_KEYS = {
+    "schema", "status", "mode", "source_commit", "source_parent_commit",
     "evidence_commit_policy", "config_sha256", "source_hashes", "matrix",
     "seed_namespace", "environment",
+}
+
+SOURCE_COMMIT = "f0bd0ca6d4affe0e9ecc6eff392f81cb53247512"
+SOURCE_PARENT_COMMIT = "34f063e26d992594ebf77e2066802be96a1c017d"
+EVIDENCE_COMMIT = "1ef923f81c913960342298ced6ecc2bd63d7d529"
+CHRONOLOGY_RECEIPT_COMMIT = "44546fb62b341dcf783c822e1c77ce110901267a"
+CHRONOLOGY_PATH = "experiments/12_opaque_glass_transfer/V3_EVIDENCE_RECEIPT.json"
+INVALIDATION_PATH = "experiments/12_opaque_glass_transfer/V1_V2_INVALID_REJECTED.json"
+RUN_RECEIPT_KEYS = {
+    "condition", "condition_from_xml", "controller", "controller_contract",
+    "episode_id", "replans", "retries", "scene_relpath", "seed",
+    "semantic_wakes", "tick_count",
 }
 
 
@@ -365,13 +383,196 @@ def verify_manifest(root: Path) -> None:
     allowed = {"raw", "closure.json", "manifest.json"}
     if (root / "derived").exists():
         allowed.add("derived")
+    if (root / "attestations").exists():
+        allowed.add("attestations")
     if {path.name for path in root.iterdir()} != allowed:
         raise IntegrityError("root allowlist mismatch")
 
 
+def _git_blob(commit: str, path: str) -> bytes:
+    try:
+        return subprocess.run(
+            ["git", "show", f"{commit}:{path}"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+        ).stdout
+    except subprocess.CalledProcessError as error:
+        raise IntegrityError("lifecycle declared Git blob unavailable") from error
+
+
+def _config_at_source() -> dict[str, Any]:
+    return json.loads(_git_blob(SOURCE_COMMIT, "experiments/12_opaque_glass_transfer/config-v3.json"))
+
+
+def _matrix_from_config(cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {"seed": seed, "condition": condition, "controller": controller}
+        for seed in cfg["heldout_seeds"]
+        for condition in cfg["heldout_conditions"]
+        for controller in cfg["controllers"]
+    ]
+
+
+def _episode_receipts(root: Path) -> dict[str, Any]:
+    episodes = []
+    for episode_path in sorted(path for path in (root / "raw/episodes").iterdir() if path.is_dir()):
+        meta_path = episode_path / "episode.json"
+        ticks_path = episode_path / "ticks.jsonl"
+        meta = json.loads(meta_path.read_text())
+        scene_path = root / meta["scene_relpath"]
+        scene_hashes = {
+            name: v1.sha256_file(scene_path / name)
+            for name in ("scene.json", "scene.xml", "rgb.npy", "depth.npy", "rgb.png")
+        }
+        episodes.append({
+            "episode_id": episode_path.name,
+            "seed": meta["seed"],
+            "condition": meta["condition"],
+            "controller": meta["controller"],
+            "scene_relpath": meta["scene_relpath"],
+            "episode_json_sha256": v1.sha256_file(meta_path),
+            "ticks_jsonl_sha256": v1.sha256_file(ticks_path),
+            "scene_hashes": scene_hashes,
+        })
+    return {
+        "schema": "exp12-v3-episode-receipts-v1",
+        "run_json_sha256": v1.sha256_file(root / "raw/run.json"),
+        "episodes": episodes,
+    }
+
+
+def seal_lifecycle(root: Path) -> None:
+    cfg = _config_at_source()
+    attestations = root / "attestations"
+    attestations.mkdir(exist_ok=True)
+    chronology = _git_blob(CHRONOLOGY_RECEIPT_COMMIT, CHRONOLOGY_PATH)
+    invalidation = _git_blob(SOURCE_COMMIT, INVALIDATION_PATH)
+    (attestations / "V3_EVIDENCE_RECEIPT.json").write_bytes(chronology)
+    (attestations / "V1_V2_INVALID_REJECTED.json").write_bytes(invalidation)
+    _strict(attestations / "episode-receipts.json", _episode_receipts(root))
+    old = json.loads((root / "closure.json").read_text())
+    closure = {
+        "schema": "opaque-glass-transfer-lifecycle-v3",
+        "status": "COMPLETE",
+        "mode": "HELDOUT",
+        "source_commit": SOURCE_COMMIT,
+        "source_parent_commit": SOURCE_PARENT_COMMIT,
+        "evidence_commit": EVIDENCE_COMMIT,
+        "evidence_parent_commit": SOURCE_COMMIT,
+        "chronology_receipt_commit": CHRONOLOGY_RECEIPT_COMMIT,
+        "config_sha256": _sha(_git_blob(SOURCE_COMMIT, "experiments/12_opaque_glass_transfer/config-v3.json")),
+        "source_hashes": _source_hashes(SOURCE_COMMIT),
+        "matrix": _matrix_from_config(cfg),
+        "seed_namespace": cfg["heldout_seeds"],
+        "material_namespace": cfg["material_namespace"],
+        "environment": old["environment"],
+        "attestation_hashes": {
+            "V3_EVIDENCE_RECEIPT.json": _sha(chronology),
+            "V1_V2_INVALID_REJECTED.json": _sha(invalidation),
+            "episode-receipts.json": v1.sha256_file(attestations / "episode-receipts.json"),
+        },
+    }
+    _strict(root / "closure.json", closure)
+    write_manifest(root)
+
+
+def _validate_lifecycle_closure(root: Path) -> dict[str, Any]:
+    closure = json.loads((root / "closure.json").read_text())
+    cfg = _config_at_source()
+    exact = {
+        "schema": "opaque-glass-transfer-lifecycle-v3",
+        "status": "COMPLETE",
+        "mode": "HELDOUT",
+        "source_commit": SOURCE_COMMIT,
+        "source_parent_commit": SOURCE_PARENT_COMMIT,
+        "evidence_commit": EVIDENCE_COMMIT,
+        "evidence_parent_commit": SOURCE_COMMIT,
+        "chronology_receipt_commit": CHRONOLOGY_RECEIPT_COMMIT,
+        "config_sha256": _sha(_git_blob(SOURCE_COMMIT, "experiments/12_opaque_glass_transfer/config-v3.json")),
+        "source_hashes": _source_hashes(SOURCE_COMMIT),
+        "matrix": _matrix_from_config(cfg),
+        "seed_namespace": cfg["heldout_seeds"],
+        "material_namespace": cfg["material_namespace"],
+    }
+    if set(closure) != CLOSURE_KEYS or any(closure.get(key) != value for key, value in exact.items()):
+        raise IntegrityError("lifecycle closure identity mismatch")
+    try:
+        if _git("rev-parse", f"{SOURCE_COMMIT}^") != SOURCE_PARENT_COMMIT:
+            raise IntegrityError("lifecycle source parent mismatch")
+        if _git("rev-parse", f"{EVIDENCE_COMMIT}^") != SOURCE_COMMIT:
+            raise IntegrityError("lifecycle evidence parent mismatch")
+        if _git("rev-parse", f"{CHRONOLOGY_RECEIPT_COMMIT}^") != EVIDENCE_COMMIT:
+            raise IntegrityError("lifecycle receipt parent mismatch")
+    except subprocess.CalledProcessError as error:
+        raise IntegrityError("lifecycle commit unavailable") from error
+    return closure
+
+
+def validate_lifecycle(root: Path) -> None:
+    try:
+        verify_manifest(root)
+        closure = _validate_lifecycle_closure(root)
+        attestations = root / "attestations"
+        expected_files = {
+            "V3_EVIDENCE_RECEIPT.json": _git_blob(CHRONOLOGY_RECEIPT_COMMIT, CHRONOLOGY_PATH),
+            "V1_V2_INVALID_REJECTED.json": _git_blob(SOURCE_COMMIT, INVALIDATION_PATH),
+        }
+        if {path.name for path in attestations.iterdir()} != {*expected_files, "episode-receipts.json"}:
+            raise IntegrityError("lifecycle attestation allowlist mismatch")
+        for name, expected in expected_files.items():
+            if (attestations / name).read_bytes() != expected:
+                raise IntegrityError("lifecycle attestation blob mismatch")
+        expected_receipts = _episode_receipts(root)
+        if json.loads((attestations / "episode-receipts.json").read_text()) != expected_receipts:
+            raise IntegrityError("lifecycle episode hash receipt mismatch")
+        expected_hashes = {
+            name: _sha(value) for name, value in expected_files.items()
+        }
+        expected_hashes["episode-receipts.json"] = v1.sha256_file(attestations / "episode-receipts.json")
+        if closure["attestation_hashes"] != expected_hashes:
+            raise IntegrityError("lifecycle attestation closure mismatch")
+        run = json.loads((root / "raw/run.json").read_text())
+        if set(run) != {"mode", "episodes"} or run["mode"] != "HELDOUT" or len(run["episodes"]) != 108:
+            raise IntegrityError("lifecycle run schema/mode mismatch")
+        run_by_id = {}
+        for receipt in run["episodes"]:
+            if set(receipt) != RUN_RECEIPT_KEYS:
+                raise IntegrityError("lifecycle run receipt schema mismatch")
+            episode_id = receipt["episode_id"]
+            if episode_id in run_by_id:
+                raise IntegrityError("lifecycle duplicate episode receipt")
+            meta = json.loads((root / "raw/episodes" / episode_id / "episode.json").read_text())
+            if receipt != {**meta, "episode_id": episode_id}:
+                raise IntegrityError("lifecycle arbitrary run receipt mismatch")
+            run_by_id[episode_id] = receipt
+        cfg = _config_at_source()
+        matrix = _matrix_from_config(cfg)
+        expected_ids = {
+            f"seed-{row['seed']}-{row['condition'].lower()}-{row['controller'].lower()}"
+            for row in matrix
+        }
+        raw_ids = {path.name for path in (root / "raw/episodes").iterdir() if path.is_dir()}
+        if set(run_by_id) != expected_ids or raw_ids != expected_ids:
+            raise IntegrityError("lifecycle raw episode identity mismatch")
+        expected_scenes = {
+            f"seed-{seed}-{condition.lower()}"
+            for seed in cfg["heldout_seeds"]
+            for condition in cfg["heldout_conditions"]
+        }
+        if {path.name for path in (root / "raw/scenes").iterdir() if path.is_dir()} != expected_scenes:
+            raise IntegrityError("lifecycle raw scene identity mismatch")
+    except IntegrityError:
+        raise
+    except Exception as error:
+        raise IntegrityError("lifecycle validation failure") from error
+
+
 def _validate_closure(root: Path) -> dict[str, Any]:
     closure = json.loads((root / "closure.json").read_text())
-    if set(closure) != CLOSURE_KEYS or closure["schema"] != "opaque-glass-transfer-closure-v3" or closure["status"] != "COMPLETE":
+    if closure.get("schema") == "opaque-glass-transfer-lifecycle-v3":
+        return _validate_lifecycle_closure(root)
+    if set(closure) != LEGACY_CLOSURE_KEYS or closure["schema"] != "opaque-glass-transfer-closure-v3" or closure["status"] != "COMPLETE":
         raise IntegrityError("closure schema/status mismatch")
     if closure["config_sha256"] != v1.sha256_file(CONFIG):
         raise IntegrityError("closure config mismatch")
@@ -495,12 +696,16 @@ def _compare_derived(reference: Path, rebuilt: Path) -> None:
 
 def validate_qualification(root: Path) -> None:
     verify_manifest(root)
+    if json.loads((root / "closure.json").read_text()).get("schema") == "opaque-glass-transfer-lifecycle-v3":
+        validate_lifecycle(root)
     scores = validate_raw(root)
     with tempfile.TemporaryDirectory() as directory:
         rebuilt = Path(directory) / "rebuilt"
         rebuilt.mkdir()
         shutil.copytree(root / "raw", rebuilt / "raw")
         shutil.copy2(root / "closure.json", rebuilt / "closure.json")
+        if (root / "attestations").exists():
+            shutil.copytree(root / "attestations", rebuilt / "attestations")
         derive(rebuilt, scores)
         _compare_derived(root / "derived", rebuilt / "derived")
 
@@ -560,6 +765,8 @@ def reconstruct(source: Path, target: Path) -> None:
     target.mkdir()
     shutil.copytree(source/"raw", target/"raw")
     shutil.copy2(source/"closure.json", target/"closure.json")
+    if (source / "attestations").exists():
+        shutil.copytree(source / "attestations", target / "attestations")
     scores = validate_raw(target, verify_manifest=False)
     derive(target, scores)
     write_manifest(target)

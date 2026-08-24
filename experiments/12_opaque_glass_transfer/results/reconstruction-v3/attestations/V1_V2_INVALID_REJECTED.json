@@ -1,0 +1,16 @@
+{
+  "schema": "exp12-supersession-v3",
+  "disposition": "INVALID_REJECTED",
+  "v1": {
+    "source_freeze_commit": "d779684f4ce4a7216ec9e3bd8373222c1c7b6e81",
+    "evidence_commit": "781097a0e8c18bd0b8439f2c1b154020ded58562",
+    "reason": "pre-freeze evaluation rendering, mixed tick domains, aggregate-trusting scorer, incomplete raw reconstruction"
+  },
+  "v2": {
+    "source_freeze_commit": "a50520959680a3be8959420e3df38bc0ffdc68fa",
+    "evidence_commit": "34f063e26d992594ebf77e2066802be96a1c017d",
+    "reason": "stored state remained a scoring input, controller labels/path were not causally authenticated, and rendered arrays/XML/scene substitutions were not independently rerendered and identity-checked"
+  },
+  "byte_preservation": "V1 and V2 evidence members remain unchanged and have no claim authority",
+  "replacement": "opaque-glass-transfer-v3"
+}

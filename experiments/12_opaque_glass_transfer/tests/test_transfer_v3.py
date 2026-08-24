@@ -100,6 +100,31 @@ def test_closure_schema_and_exact_prior_receipts() -> None:
     assert receipts["v2"]["evidence_commit"] == "34f063e26d992594ebf77e2066802be96a1c017d"
     assert v3.CLOSURE_KEYS == {
         "schema", "status", "mode", "source_commit", "source_parent_commit",
-        "evidence_commit_policy", "config_sha256", "source_hashes", "matrix",
-        "seed_namespace", "environment"
+        "evidence_commit", "evidence_parent_commit", "chronology_receipt_commit",
+        "config_sha256", "source_hashes", "matrix", "seed_namespace",
+        "material_namespace", "environment", "attestation_hashes"
     }
+
+
+def test_lifecycle_rejects_coherent_fake_commits_namespace_and_run_receipt(tmp_path: Path) -> None:
+    source = v3.ROOT / "results/qualification-v3"
+    root = tmp_path / "qualification"
+    shutil.copytree(source, root)
+    closure = json.loads((root / "closure.json").read_text())
+    closure["source_commit"] = "0" * 40
+    closure["source_parent_commit"] = "1" * 40
+    closure["mode"] = "CAL" + "IBRATION"
+    closure["seed_namespace"] = list(reversed(closure["seed_namespace"]))
+    (root / "closure.json").write_text(json.dumps(closure, sort_keys=True, indent=2) + "\n")
+    run = json.loads((root / "raw/run.json").read_text())
+    run["mode"] = "CAL" + "IBRATION"
+    run["episodes"][0]["tick_count"] += 1
+    (root / "raw/run.json").write_text(json.dumps(run, sort_keys=True, indent=2) + "\n")
+    v3.write_manifest(root)
+    with pytest.raises(v3.IntegrityError, match="lifecycle"):
+        v3.validate_lifecycle(root)
+
+
+def test_published_v3_lifecycle_is_exactly_authenticated() -> None:
+    v3.validate_lifecycle(v3.ROOT / "results/qualification-v3")
+    v3.validate_lifecycle(v3.ROOT / "results/reconstruction-v3")
