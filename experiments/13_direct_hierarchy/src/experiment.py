@@ -30,8 +30,8 @@ precheck = _runtime.precheck
 run_episode = _runtime.run_episode
 
 
-EXPERIMENT_ID = "exp13-direct-hierarchy-v1"
-PRIMARY_SEEDS = tuple(range(20261901, 20261911))
+EXPERIMENT_ID = "exp13-direct-hierarchy-v2"
+PRIMARY_SEEDS = tuple(range(20262001, 20262011))
 SENSITIVITY_SEEDS = PRIMARY_SEEDS[:5]
 FAMILIES = (
     "control-impulse",
@@ -153,8 +153,8 @@ def make_realization(spec: DirectSpec) -> DirectRealization:
     return DirectRealization(**values, parameter_sha256=sha256_bytes(canonical_bytes(identity)))
 
 
-def run_cell(spec: DirectSpec) -> object:
-    realization = make_realization(spec)
+def _cell_precheck(spec: DirectSpec, realization: DirectRealization | None = None) -> tuple[DirectRealization, object]:
+    realization = realization or make_realization(spec)
     receipt = precheck(PrecheckControlSpec(
         f"{EXPERIMENT_ID}:{spec.family}:{spec.severity}:{spec.seed}",
         realization.q0,
@@ -163,7 +163,42 @@ def run_cell(spec: DirectSpec) -> object:
         realization.obstacle_xy,
         realization.obstacle_radius_m,
     ))
+    return realization, receipt
+
+
+def run_cell(spec: DirectSpec, *, realization: DirectRealization | None = None, receipt: object | None = None) -> object:
+    if realization is None or receipt is None:
+        realization, receipt = _cell_precheck(spec, realization)
     return run_episode(spec, realization_override=realization, precheck_override=receipt)
+
+
+def _not_run_row(spec: DirectSpec, realization: DirectRealization, receipt: object) -> dict[str, object]:
+    receipt_payload = {
+        "disposition": receipt.disposition,
+        "reason": receipt.reason,
+        "architecture_independent": receipt.architecture_independent,
+        "precheck_input": dict(receipt.precheck_input),
+        "realization_sha256": receipt.realization_sha256,
+        "geometry_sha256": receipt.geometry_sha256,
+        "straight_path_blocked": receipt.straight_path_blocked,
+        "waypoint_path_clear": receipt.waypoint_path_clear,
+        "target_a_ik_error_m": receipt.target_a_ik_error_m,
+        "target_b_ik_error_m": receipt.target_b_ik_error_m,
+    }
+    return {
+        "episode_id": spec.episode_id,
+        "architecture": spec.architecture.value,
+        "family": spec.family,
+        "severity": spec.severity,
+        "seed": spec.seed,
+        "controller_id": spec.controller_id,
+        "matrix_role": spec.matrix_role,
+        "disposition": "NOT_RUN",
+        "parameter_sha256": realization.parameter_sha256,
+        "architecture_independent": receipt.architecture_independent,
+        "precheck_receipt": receipt_payload,
+        "precheck_receipt_sha256": sha256_bytes(canonical_bytes(receipt_payload)),
+    }
 
 
 def score_cell(raw: object) -> dict[str, object]:
@@ -313,7 +348,16 @@ def execute(output: Path, *, limit: int | None = None) -> dict[str, int]:
             continue
         if written >= allowance:
             break
-        raw = run_cell(spec)
+        realization, receipt = _cell_precheck(spec)
+        if receipt.disposition == "NOT_RUN":
+            if not receipt.architecture_independent:
+                raise RuntimeError("Exp13 NOT_RUN precheck must be architecture-independent")
+            _write(path, canonical_bytes(_not_run_row(spec, realization, receipt)))
+            written += 1
+            continue
+        if receipt.disposition != "READY":
+            raise RuntimeError(f"Exp13 unknown precheck disposition: {receipt.disposition}")
+        raw = run_cell(spec, realization=realization, receipt=receipt)
         manifest = _episode_manifest(output, raw)
         row = {
             **score_cell(raw),

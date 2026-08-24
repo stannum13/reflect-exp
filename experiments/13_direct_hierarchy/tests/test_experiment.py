@@ -5,6 +5,7 @@ import inspect
 import json
 from pathlib import Path
 import subprocess
+from types import SimpleNamespace
 
 
 def _module():
@@ -17,14 +18,14 @@ def test_frozen_matrix_is_exactly_480_primary_plus_60_sensitivity() -> None:
     assert len(specs) == len({item.episode_id for item in specs}) == 540
     assert sum(item.matrix_role == "PRIMARY" for item in specs) == 480
     assert sum(item.matrix_role == "SENSITIVITY" for item in specs) == 60
-    assert sorted({item.seed for item in specs if item.matrix_role == "PRIMARY"}) == list(range(20261901, 20261911))
-    assert sorted({item.seed for item in specs if item.matrix_role == "SENSITIVITY"}) == list(range(20261901, 20261906))
+    assert sorted({item.seed for item in specs if item.matrix_role == "PRIMARY"}) == list(range(20262001, 20262011))
+    assert sorted({item.seed for item in specs if item.matrix_role == "SENSITIVITY"}) == list(range(20262001, 20262006))
 
 
 def test_realization_is_paired_and_registered_dose_is_used() -> None:
     experiment = _module()
     specs = experiment.matrix_specs()
-    cells = [item for item in specs if item.family == "control-dropout" and item.severity == "HIGH" and item.seed == 20261901]
+    cells = [item for item in specs if item.family == "control-dropout" and item.severity == "HIGH" and item.seed == 20262001]
     realizations = [experiment.make_realization(item) for item in cells]
     assert {item.parameter_sha256 for item in realizations} == {realizations[0].parameter_sha256}
     assert {item.dropout_ticks for item in realizations} == {50}
@@ -69,3 +70,25 @@ def test_freeze_then_one_cell_is_create_only_and_resumable(tmp_path: Path) -> No
     dispositions = sorted((root / "raw/dispositions").glob("*.json"))
     assert len(dispositions) == 2
     assert all(json.loads(path.read_text())["disposition"] == "COMPLETE" for path in dispositions)
+
+
+def test_not_run_is_sealed_without_episode_and_resume_continues(tmp_path: Path, monkeypatch) -> None:
+    experiment = _module()
+    root = tmp_path / experiment.EXPERIMENT_ID
+    source_commit = subprocess.check_output(("git", "rev-parse", "HEAD"), text=True).strip()
+    experiment.freeze(root, source_commit=source_commit)
+    receipt = SimpleNamespace(
+        disposition="NOT_RUN", reason="registered geometry infeasible",
+        architecture_independent=True, precheck_input={"control_id": "test"},
+        realization_sha256="a" * 64, geometry_sha256="b" * 64,
+        straight_path_blocked=True, waypoint_path_clear=False,
+        target_a_ik_error_m=0.0, target_b_ik_error_m=0.0,
+    )
+    monkeypatch.setattr(experiment, "precheck", lambda _spec: receipt)
+    assert experiment.execute(root, limit=1) == {"completed": 1, "remaining": 539, "total": 540}
+    path = next((root / "raw/dispositions").glob("*.json"))
+    row = json.loads(path.read_text())
+    assert row["disposition"] == "NOT_RUN"
+    assert row["architecture_independent"] is True
+    assert row["precheck_receipt_sha256"]
+    assert not (root / "raw/episodes" / row["episode_id"]).exists()
