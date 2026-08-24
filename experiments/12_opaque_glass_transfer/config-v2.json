@@ -1,0 +1,18 @@
+{
+  "experiment_id": "opaque-glass-transfer-v2",
+  "calibration_seeds": [4201, 4202, 4203, 4204],
+  "heldout_seeds": [6201, 6202, 6203, 6204, 6205, 6206, 6207, 6208, 6209, 6210, 6211, 6212],
+  "calibration_conditions": ["NO_OBSTACLE", "OPAQUE"],
+  "heldout_conditions": ["NO_OBSTACLE", "OPAQUE", "EVAL_X2"],
+  "controllers": ["RGB_ONLY", "RGBD_MOTION", "HIERARCHICAL"],
+  "material_namespace": "xfer-material-v2-blue-a006",
+  "eval_rgba": [0.35, 0.65, 0.9, 0.06],
+  "opaque_rgba": [0.86, 0.05, 0.04, 1.0],
+  "image_size": 96,
+  "control_hz": 50,
+  "max_ticks": 300,
+  "goal_tolerance_m": 0.10,
+  "localization_tolerance_m": 0.12,
+  "bootstrap_draws": 10000,
+  "bootstrap_seed": 220824
+}

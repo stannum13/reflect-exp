@@ -1,0 +1,3661 @@
+{
+  "entries": [
+    {
+      "bytes": 11485,
+      "path": "closure.json",
+      "sha256": "a973f7ada64c97b24ba8ec7fc96235a06ceed5093f8abfb032cb8d7e0807ae54",
+      "type": "file"
+    },
+    {
+      "path": "derived",
+      "type": "directory"
+    },
+    {
+      "bytes": 3842,
+      "path": "derived/analysis.json",
+      "sha256": "4238143ec639515bedbf8cdb9cb2fc654384969f01b59e65d227683de87ed2ef",
+      "type": "file"
+    },
+    {
+      "bytes": 16251,
+      "path": "derived/episodes.csv",
+      "sha256": "ae4b0ac074e1cbddf98f90d854c9e192b141c05cd0f1afa4619cceca58f207fa",
+      "type": "file"
+    },
+    {
+      "bytes": 869,
+      "path": "derived/safe-completion.svg",
+      "sha256": "5b65517e2b3493a0dce9b98c86a6eb0f9686b0b92d411c90f83e93d2319314a4",
+      "type": "file"
+    },
+    {
+      "bytes": 1167,
+      "path": "derived/samples.json",
+      "sha256": "3808c817a51a4d27ae44d33bbec05fe0dcace6473a1d70c751241cea51af953d",
+      "type": "file"
+    },
+    {
+      "path": "derived/scores",
+      "type": "directory"
+    },
+    {
+      "bytes": 505,
+      "path": "derived/scores/seed-6201-eval_x2-hierarchical.json",
+      "sha256": "4fb07492f8bd981d77981f8941a7298d19bb46faf9d57f0771d99a3dbb9e77f8",
+      "type": "file"
+    },
+    {
+      "bytes": 487,
+      "path": "derived/scores/seed-6201-eval_x2-rgb_only.json",
+      "sha256": "67c349844c681842a7fd453f386bbe209fd79a91bd467eacb650af6ac4701a07",
+      "type": "file"
+    },
+    {
+      "bytes": 503,
+      "path": "derived/scores/seed-6201-eval_x2-rgbd_motion.json",
+      "sha256": "248a127274af2e198fc02e60199a943335fdf135b12c192d7e40a16ec4231c43",
+      "type": "file"
+    },
+    {
+      "bytes": 498,
+      "path": "derived/scores/seed-6201-no_obstacle-hierarchical.json",
+      "sha256": "4a47ab6f75892dbceb696fc7efa0f13b6900e144e15520ac39c546ed07cbbfd1",
+      "type": "file"
+    },
+    {
+      "bytes": 490,
+      "path": "derived/scores/seed-6201-no_obstacle-rgb_only.json",
+      "sha256": "1902aca16391ef353bbfa5ba54d2838051438e9eb16acf01092811497f701027",
+      "type": "file"
+    },
+    {
+      "bytes": 496,
+      "path": "derived/scores/seed-6201-no_obstacle-rgbd_motion.json",
+      "sha256": "dd8e7e1f2d22dc5fc7991721c95e665a2568a3e8f9134ab4f1f381bfd602f851",
+      "type": "file"
+    },
+    {
+      "bytes": 503,
+      "path": "derived/scores/seed-6201-opaque-hierarchical.json",
+      "sha256": "68d31e7b9294b41646db1fe44bff91584db6d2d58fd6868333675aaeb097e81d",
+      "type": "file"
+    },
+    {
+      "bytes": 496,
+      "path": "derived/scores/seed-6201-opaque-rgb_only.json",
+      "sha256": "8a46add5582f4becec03b43cbe42818eaf64ecf3a1d812ccef846f7a5fc87128",
+      "type": "file"
+    },
+    {
+      "bytes": 501,
+      "path": "derived/scores/seed-6201-opaque-rgbd_motion.json",
+      "sha256": "b22e390a23b589d7b95152a5c8f81306164474e99ad4c3ffa5a28d48abb108cd",
+      "type": "file"
+    },
+    {
+      "bytes": 505,
+      "path": "derived/scores/seed-6202-eval_x2-hierarchical.json",
+      "sha256": "6daa226bcf8d66fcef32787c50a0d44a7124dc234b4c1302273326479421c743",
+      "type": "file"
+    },
+    {
+      "bytes": 488,
+      "path": "derived/scores/seed-6202-eval_x2-rgb_only.json",
+      "sha256": "d915da05744d35a00e2dcfec08d960c9c86d922907f6fc1648566694fcd5c64b",
+      "type": "file"
+    },
+    {
+      "bytes": 503,
+      "path": "derived/scores/seed-6202-eval_x2-rgbd_motion.json",
+      "sha256": "64bdffea5c948c7c8bc2e760c6a86169c4cdc5fa0acabe1f9a183d0079f59352",
+      "type": "file"
+    },
+    {
+      "bytes": 498,
+      "path": "derived/scores/seed-6202-no_obstacle-hierarchical.json",
+      "sha256": "693793e158f02be3da0d184e8389bc45dc8a65ada62ba1327211449e8b929a63",
+      "type": "file"
+    },
+    {
+      "bytes": 490,
+      "path": "derived/scores/seed-6202-no_obstacle-rgb_only.json",
+      "sha256": "ac0c11c9f4b038533386d3bfb529ce6543caa61f72b7efe1a1b90dbbff974b02",
+      "type": "file"
+    },
+    {
+      "bytes": 496,
+      "path": "derived/scores/seed-6202-no_obstacle-rgbd_motion.json",
+      "sha256": "faf186358386d93c452e658bbe0b10e98b5a88d2bc2f08d7f337eeb7e1886537",
+      "type": "file"
+    },
+    {
+      "bytes": 503,
+      "path": "derived/scores/seed-6202-opaque-hierarchical.json",
+      "sha256": "845526d2c1ea42e9266e3c62a3d8aa1f8c226271cfe9a75c7f7d91006e2b8d7f",
+      "type": "file"
+    },
+    {
+      "bytes": 496,
+      "path": "derived/scores/seed-6202-opaque-rgb_only.json",
+      "sha256": "89ceac0d881c7b07c21ca4626d99f114ae8e88ce53bc8b422a7b1b3b38d9972b",
+      "type": "file"
+    },
+    {
+      "bytes": 501,
+      "path": "derived/scores/seed-6202-opaque-rgbd_motion.json",
+      "sha256": "00922a4d6ed387d2c9fd996e0dadb525c8a3ae22aa098ce9fa40ee99864fb3b1",
+      "type": "file"
+    },
+    {
+      "bytes": 507,
+      "path": "derived/scores/seed-6203-eval_x2-hierarchical.json",
+      "sha256": "58a69824fe32e1322fd3988518afc3eadfa8a8f47550a81bdae8db84cdaabbf1",
+      "type": "file"
+    },
+    {
+      "bytes": 487,
+      "path": "derived/scores/seed-6203-eval_x2-rgb_only.json",
+      "sha256": "a95c6bbb776516021571a5f89119430a24186dc14e43640c7c9c82a7d8efd185",
+      "type": "file"
+    },
+    {
+      "bytes": 505,
+      "path": "derived/scores/seed-6203-eval_x2-rgbd_motion.json",
+      "sha256": "2f7c512a58dfcbef39a7f0fed6563c007573f9f71caaa8d51312bad22dca2235",
+      "type": "file"
+    },
+    {
+      "bytes": 497,
+      "path": "derived/scores/seed-6203-no_obstacle-hierarchical.json",
+      "sha256": "8daafb907b181a513202fd34f388a6bade94544e4f1c7b287431010bfe7a9ff7",
+      "type": "file"
+    },
+    {
+      "bytes": 489,
+      "path": "derived/scores/seed-6203-no_obstacle-rgb_only.json",
+      "sha256": "8a45abec17e14a5bc1fde25720a3e576475884f2d8f03f598520a56fc93cb9e4",
+      "type": "file"
+    },
+    {
+      "bytes": 495,
+      "path": "derived/scores/seed-6203-no_obstacle-rgbd_motion.json",
+      "sha256": "ba40d07155a0619259d8dbb29a37a22597dd439046c0b357401f4abfadc050a1",
+      "type": "file"
+    },
+    {
+      "bytes": 505,
+      "path": "derived/scores/seed-6203-opaque-hierarchical.json",
+      "sha256": "7e060d5085cfc948ced5b007ab6c418991af37593113fb1fbc25da5c0f947a2b",
+      "type": "file"
+    },
+    {
+      "bytes": 495,
+      "path": "derived/scores/seed-6203-opaque-rgb_only.json",
+      "sha256": "dc55ae4b75a1fbda11a2b96b41b410f2ca3488c04108465223855d53d5c55a50",
+      "type": "file"
+    },
+    {
+      "bytes": 503,
+      "path": "derived/scores/seed-6203-opaque-rgbd_motion.json",
+      "sha256": "bc76d1938908902a5acdcda2a1f43e39004d7a7a02da4d5074a5df4a9f9ab238",
+      "type": "file"
+    },
+    {
+      "bytes": 505,
+      "path": "derived/scores/seed-6204-eval_x2-hierarchical.json",
+      "sha256": "c2786074a35581ad7b6363a4285a4fedbcfcecbe5112e02434bd005a1ce4b3d5",
+      "type": "file"
+    },
+    {
+      "bytes": 488,
+      "path": "derived/scores/seed-6204-eval_x2-rgb_only.json",
+      "sha256": "74c6939381328ef3471addbed15b352be0b4ea04b16b21f0b51febc37f332da0",
+      "type": "file"
+    },
+    {
+      "bytes": 503,
+      "path": "derived/scores/seed-6204-eval_x2-rgbd_motion.json",
+      "sha256": "180f8a246999ca361767c65f9a3242ae0f223fd255e8d25cff0ce3e5b00d7f9f",
+      "type": "file"
+    },
+    {
+      "bytes": 498,
+      "path": "derived/scores/seed-6204-no_obstacle-hierarchical.json",
+      "sha256": "6645065f869456495c282258c808fa3a57f1e100fac410b0293d96bd1fd869fe",
+      "type": "file"
+    },
+    {
+      "bytes": 490,
+      "path": "derived/scores/seed-6204-no_obstacle-rgb_only.json",
+      "sha256": "42c5b5cd2fc7211a9acfaa8c1801115351ee987c6fc64a99d2aba2d92ddc1167",
+      "type": "file"
+    },
+    {
+      "bytes": 496,
+      "path": "derived/scores/seed-6204-no_obstacle-rgbd_motion.json",
+      "sha256": "46c673bc730537b108188213bc3bf619edb3e221f92151c75d6df414ae53e747",
+      "type": "file"
+    },
+    {
+      "bytes": 503,
+      "path": "derived/scores/seed-6204-opaque-hierarchical.json",
+      "sha256": "9edddd0ef5600f06dfa5d7ebbda35eab3f5cfca144e975ecb7d7590a8136b6bc",
+      "type": "file"
+    },
+    {
+      "bytes": 494,
+      "path": "derived/scores/seed-6204-opaque-rgb_only.json",
+      "sha256": "ddaaf40dc3da8a65dba7080b11304bfdefce5c1bac7c2a7f978179b567b66aa7",
+      "type": "file"
+    },
+    {
+      "bytes": 501,
+      "path": "derived/scores/seed-6204-opaque-rgbd_motion.json",
+      "sha256": "7d1136ac8678081e049f8c2eaa2710905ffcbb0ec88a849958adc56cb258e283",
+      "type": "file"
+    },
+    {
+      "bytes": 506,
+      "path": "derived/scores/seed-6205-eval_x2-hierarchical.json",
+      "sha256": "78368d6f70fe965ac7ea4a8d92be7fd890bd9a384e84781c7825202e711e840a",
+      "type": "file"
+    },
+    {
+      "bytes": 487,
+      "path": "derived/scores/seed-6205-eval_x2-rgb_only.json",
+      "sha256": "f5ad66b656da0baa67b970814020b61c72a2eb1630e4c57160d3ba305f3cee3f",
+      "type": "file"
+    },
+    {
+      "bytes": 504,
+      "path": "derived/scores/seed-6205-eval_x2-rgbd_motion.json",
+      "sha256": "c5ce4c4141e63413ba3ecdac924148074f3f4bdde9d19cb744e5dff236a4dc95",
+      "type": "file"
+    },
+    {
+      "bytes": 498,
+      "path": "derived/scores/seed-6205-no_obstacle-hierarchical.json",
+      "sha256": "2cc114fdac9e9cb9ec6029e85dc3a04789d2a6d532eaad6c941f57d235a3b82f",
+      "type": "file"
+    },
+    {
+      "bytes": 490,
+      "path": "derived/scores/seed-6205-no_obstacle-rgb_only.json",
+      "sha256": "77de0207288356bfc51f68777a974a06b43c86e17933af24ff560253a898fc24",
+      "type": "file"
+    },
+    {
+      "bytes": 496,
+      "path": "derived/scores/seed-6205-no_obstacle-rgbd_motion.json",
+      "sha256": "9ac41e39e5bb47be636a771dfc63e14b97f54c81d33ec4c3b5ac249fe7c1a077",
+      "type": "file"
+    },
+    {
+      "bytes": 504,
+      "path": "derived/scores/seed-6205-opaque-hierarchical.json",
+      "sha256": "29beb7e56a03d3a90f5fc31362554c3564f1ea9c95e64258fbdf0339c1d368e2",
+      "type": "file"
+    },
+    {
+      "bytes": 495,
+      "path": "derived/scores/seed-6205-opaque-rgb_only.json",
+      "sha256": "257531c2f2531270e1f5d2b6bb7add18f3456b71f7c8281985a7c03aa16783e0",
+      "type": "file"
+    },
+    {
+      "bytes": 502,
+      "path": "derived/scores/seed-6205-opaque-rgbd_motion.json",
+      "sha256": "bf9a85009d38e297a1816004b3252b750f90169fdf6dc7552b2428536311e94f",
+      "type": "file"
+    },
+    {
+      "bytes": 505,
+      "path": "derived/scores/seed-6206-eval_x2-hierarchical.json",
+      "sha256": "061211180a28e454dfae32251ea96c214726abd426ff6d6d679e86fb0d628c8d",
+      "type": "file"
+    },
+    {
+      "bytes": 486,
+      "path": "derived/scores/seed-6206-eval_x2-rgb_only.json",
+      "sha256": "29eae7dbc781287ad3b017b8fd153a5165e6027b5bd5a2a1195ab3bd4f72aeec",
+      "type": "file"
+    },
+    {
+      "bytes": 503,
+      "path": "derived/scores/seed-6206-eval_x2-rgbd_motion.json",
+      "sha256": "2c5480e0f441dcc90f43c63bb942b843ce96ee8ea00a1e292c3894f808312428",
+      "type": "file"
+    },
+    {
+      "bytes": 497,
+      "path": "derived/scores/seed-6206-no_obstacle-hierarchical.json",
+      "sha256": "c3b8211e11911a813a95ed556a6bbd9034c65905e26f3797d1b1f88a32db1ac5",
+      "type": "file"
+    },
+    {
+      "bytes": 489,
+      "path": "derived/scores/seed-6206-no_obstacle-rgb_only.json",
+      "sha256": "82723d0cdf54542d3b1b948a5c7ca3d7b18094620687c5c9889f1c0ece6640c6",
+      "type": "file"
+    },
+    {
+      "bytes": 495,
+      "path": "derived/scores/seed-6206-no_obstacle-rgbd_motion.json",
+      "sha256": "2987f584713c997d4054f9178ca708712416ff519272640be83d309d9014d267",
+      "type": "file"
+    },
+    {
+      "bytes": 503,
+      "path": "derived/scores/seed-6206-opaque-hierarchical.json",
+      "sha256": "c12277144f7a93295ccb336a3a2a5ed7201e26659a2c9ac41cec4e1d9aeb786a",
+      "type": "file"
+    },
+    {
+      "bytes": 495,
+      "path": "derived/scores/seed-6206-opaque-rgb_only.json",
+      "sha256": "8badd95a5f0f0806cac12da6fe50fd3bca413316c366965e7258970713c6eb7c",
+      "type": "file"
+    },
+    {
+      "bytes": 501,
+      "path": "derived/scores/seed-6206-opaque-rgbd_motion.json",
+      "sha256": "d79b3161142642f8350dcd213a978ffbca6154139040734b6a1a82909c31939c",
+      "type": "file"
+    },
+    {
+      "bytes": 504,
+      "path": "derived/scores/seed-6207-eval_x2-hierarchical.json",
+      "sha256": "348ef93f1e2d7887a2129e235f2f128f809d3cec62c48c6d5e863e995fca44ab",
+      "type": "file"
+    },
+    {
+      "bytes": 488,
+      "path": "derived/scores/seed-6207-eval_x2-rgb_only.json",
+      "sha256": "05a9cea4c4b854e8d8f05f427e162270382422fd8a62233ec208d7826f3b9b68",
+      "type": "file"
+    },
+    {
+      "bytes": 502,
+      "path": "derived/scores/seed-6207-eval_x2-rgbd_motion.json",
+      "sha256": "87ae0a3faa885a8ac3980be3ba93dee03f4b1ec3a43b00df586bfc594e97de16",
+      "type": "file"
+    },
+    {
+      "bytes": 498,
+      "path": "derived/scores/seed-6207-no_obstacle-hierarchical.json",
+      "sha256": "856c864df72e6cca785a8afc1bd97bf66c354ff98efb0b88b8ff4639169dd9d2",
+      "type": "file"
+    },
+    {
+      "bytes": 490,
+      "path": "derived/scores/seed-6207-no_obstacle-rgb_only.json",
+      "sha256": "a8f72a83a5c3b729cd9c146602f262311966d296662c7c729c092b3c4bae31d6",
+      "type": "file"
+    },
+    {
+      "bytes": 496,
+      "path": "derived/scores/seed-6207-no_obstacle-rgbd_motion.json",
+      "sha256": "fb96c62f789f101297dbb3850762d8ab32bfbf593eeae1ca150032bbbaa18640",
+      "type": "file"
+    },
+    {
+      "bytes": 502,
+      "path": "derived/scores/seed-6207-opaque-hierarchical.json",
+      "sha256": "f0978df2dbbad888b238fbec5756f143ebdad4529ea217d2af510c06be32fe24",
+      "type": "file"
+    },
+    {
+      "bytes": 494,
+      "path": "derived/scores/seed-6207-opaque-rgb_only.json",
+      "sha256": "bb5b6eb10a53a3f08bde67ac7fc0aacfac8756d02b643610c4e64fc3727acfb0",
+      "type": "file"
+    },
+    {
+      "bytes": 500,
+      "path": "derived/scores/seed-6207-opaque-rgbd_motion.json",
+      "sha256": "9c93d98af8308f4717a5c4d0ffb731f1bb4e5547dbb241fb2f9a980233cc90e9",
+      "type": "file"
+    },
+    {
+      "bytes": 505,
+      "path": "derived/scores/seed-6208-eval_x2-hierarchical.json",
+      "sha256": "1da2ae5c98dc905879edfc9deb23f24e5de66c65ad8cf62347b984c87db2f9d2",
+      "type": "file"
+    },
+    {
+      "bytes": 488,
+      "path": "derived/scores/seed-6208-eval_x2-rgb_only.json",
+      "sha256": "2e7f6327e5c1dce6a05eabf45da02b97244a806723994c915d1f778e23afe48b",
+      "type": "file"
+    },
+    {
+      "bytes": 503,
+      "path": "derived/scores/seed-6208-eval_x2-rgbd_motion.json",
+      "sha256": "06d11eee3dcb24b467165272e41d4f2905297743b91c3f417e617cf0c486a1a8",
+      "type": "file"
+    },
+    {
+      "bytes": 497,
+      "path": "derived/scores/seed-6208-no_obstacle-hierarchical.json",
+      "sha256": "d3ea132a4ac3c7bcf4516292aee495b0142eb286829aab4de2592fa5874a3cfe",
+      "type": "file"
+    },
+    {
+      "bytes": 489,
+      "path": "derived/scores/seed-6208-no_obstacle-rgb_only.json",
+      "sha256": "11e405910f9d56c60ec9f4a4975505f493b596b8f18f8b4e619ae30c1aaf26dc",
+      "type": "file"
+    },
+    {
+      "bytes": 495,
+      "path": "derived/scores/seed-6208-no_obstacle-rgbd_motion.json",
+      "sha256": "95477395c185614d33ace9792ed0dab1565d76f18fa54ed985e3849af1b713cc",
+      "type": "file"
+    },
+    {
+      "bytes": 503,
+      "path": "derived/scores/seed-6208-opaque-hierarchical.json",
+      "sha256": "8a5665cb7db7ac8f19634b5802ca478fba9a003a7191ba601cfd94cbd7af78d3",
+      "type": "file"
+    },
+    {
+      "bytes": 495,
+      "path": "derived/scores/seed-6208-opaque-rgb_only.json",
+      "sha256": "278410a7971236d2dd61091947d58a4760c46ecddf58609445290579e3b824d3",
+      "type": "file"
+    },
+    {
+      "bytes": 501,
+      "path": "derived/scores/seed-6208-opaque-rgbd_motion.json",
+      "sha256": "78f02cad42d2a713f5149d44fa960ae95ab4ab79603e5e463ca3996e46848837",
+      "type": "file"
+    },
+    {
+      "bytes": 506,
+      "path": "derived/scores/seed-6209-eval_x2-hierarchical.json",
+      "sha256": "81d97b08f7e96081b61f0dfeca7207df9518dbab4bafd6a4b858f523750d3e48",
+      "type": "file"
+    },
+    {
+      "bytes": 487,
+      "path": "derived/scores/seed-6209-eval_x2-rgb_only.json",
+      "sha256": "ca4050769a995fdbcda4e66325e669ee1c82bb004780e1de3185f61ebac84cf0",
+      "type": "file"
+    },
+    {
+      "bytes": 504,
+      "path": "derived/scores/seed-6209-eval_x2-rgbd_motion.json",
+      "sha256": "5841d5908867877c5f9303519ccd496f1809a8249c4c62712756f8d02aca86ad",
+      "type": "file"
+    },
+    {
+      "bytes": 497,
+      "path": "derived/scores/seed-6209-no_obstacle-hierarchical.json",
+      "sha256": "5b4ea82ce6944372b0c6723ba923ef32c90ea4bb51961c962f516594320a1014",
+      "type": "file"
+    },
+    {
+      "bytes": 489,
+      "path": "derived/scores/seed-6209-no_obstacle-rgb_only.json",
+      "sha256": "120ec44ddbf55182f3a308ff42419bb32ab3f1faa55d7c84d9a1f4e33178e883",
+      "type": "file"
+    },
+    {
+      "bytes": 495,
+      "path": "derived/scores/seed-6209-no_obstacle-rgbd_motion.json",
+      "sha256": "6137eb2203a9db83b4e475a109ffb7bf187fd683e7be532dfaa81e96a4d4710b",
+      "type": "file"
+    },
+    {
+      "bytes": 504,
+      "path": "derived/scores/seed-6209-opaque-hierarchical.json",
+      "sha256": "7a60116f0ba03887428403a96014949e01e66807d8fede5bb085058273becfa5",
+      "type": "file"
+    },
+    {
+      "bytes": 496,
+      "path": "derived/scores/seed-6209-opaque-rgb_only.json",
+      "sha256": "9fa45c428dde5a569c1e4e32d40032559c83a11fa342d44bf4b7db0659f4643a",
+      "type": "file"
+    },
+    {
+      "bytes": 502,
+      "path": "derived/scores/seed-6209-opaque-rgbd_motion.json",
+      "sha256": "9ae60965a623684d072514633cd02dc13c4cbacdafcd757cfd7d6f97ddfde559",
+      "type": "file"
+    },
+    {
+      "bytes": 506,
+      "path": "derived/scores/seed-6210-eval_x2-hierarchical.json",
+      "sha256": "e3153501f022c18a0f8168c27f7291f40cf7d7b106a9c46279db06136cb6c93d",
+      "type": "file"
+    },
+    {
+      "bytes": 488,
+      "path": "derived/scores/seed-6210-eval_x2-rgb_only.json",
+      "sha256": "5dc0aa70c07fcb8eb299ec758db122d7af85ce918c492e57520f146bfdf9dc97",
+      "type": "file"
+    },
+    {
+      "bytes": 504,
+      "path": "derived/scores/seed-6210-eval_x2-rgbd_motion.json",
+      "sha256": "7e6774f23d96f9461db68d910b633ba3f88c9b64e890d56bf2165be26c1c4777",
+      "type": "file"
+    },
+    {
+      "bytes": 498,
+      "path": "derived/scores/seed-6210-no_obstacle-hierarchical.json",
+      "sha256": "1cbf2ed1ba293ded133613d7d60ecfc6a733e5283440a16d7032bef877bd6650",
+      "type": "file"
+    },
+    {
+      "bytes": 490,
+      "path": "derived/scores/seed-6210-no_obstacle-rgb_only.json",
+      "sha256": "1845add1df24a8f52e85109c66612db834ccf3d2609e2cd0ce18f93ed07a3dc4",
+      "type": "file"
+    },
+    {
+      "bytes": 496,
+      "path": "derived/scores/seed-6210-no_obstacle-rgbd_motion.json",
+      "sha256": "a532167516026baa51507a02e76191d91ee4a3a5f88afc8927ecb796a1d48e36",
+      "type": "file"
+    },
+    {
+      "bytes": 504,
+      "path": "derived/scores/seed-6210-opaque-hierarchical.json",
+      "sha256": "9cd67ef838832790a47ca421d9b8605a7a9a2e7063aa39bc8e2d057d8acc3f9a",
+      "type": "file"
+    },
+    {
+      "bytes": 496,
+      "path": "derived/scores/seed-6210-opaque-rgb_only.json",
+      "sha256": "689311d0be0ae9d4c2b9a9a75a5c3f19b54dc0324e2a9b49fc81a485784d3436",
+      "type": "file"
+    },
+    {
+      "bytes": 502,
+      "path": "derived/scores/seed-6210-opaque-rgbd_motion.json",
+      "sha256": "4b06154cbabdba2e3ddc70a44d83ef4b62105eb036d1314b865a83a2222fe53d",
+      "type": "file"
+    },
+    {
+      "bytes": 506,
+      "path": "derived/scores/seed-6211-eval_x2-hierarchical.json",
+      "sha256": "2484e251312f23ad56c84ce6ea38864d298de3e6471b2e52c3e09fa53bf08acc",
+      "type": "file"
+    },
+    {
+      "bytes": 487,
+      "path": "derived/scores/seed-6211-eval_x2-rgb_only.json",
+      "sha256": "8c8f84245045939d86235fefd91547570e2d8ab3440e0cc6e5f70ca60a68f280",
+      "type": "file"
+    },
+    {
+      "bytes": 504,
+      "path": "derived/scores/seed-6211-eval_x2-rgbd_motion.json",
+      "sha256": "87d3d2f3d245b5ec001ab23fcd999e632120f781bb1c82014406de44b47ea96f",
+      "type": "file"
+    },
+    {
+      "bytes": 498,
+      "path": "derived/scores/seed-6211-no_obstacle-hierarchical.json",
+      "sha256": "2d64348335c4602588b871ef66d388fc300628d936f9ec0d2cc91d107610b461",
+      "type": "file"
+    },
+    {
+      "bytes": 490,
+      "path": "derived/scores/seed-6211-no_obstacle-rgb_only.json",
+      "sha256": "59634a6c2372a1cac9d0e5aba1ecd4fd70a17bc3103ce57b7cafe9982c03ba60",
+      "type": "file"
+    },
+    {
+      "bytes": 496,
+      "path": "derived/scores/seed-6211-no_obstacle-rgbd_motion.json",
+      "sha256": "3dc3bc53ba20e27f218de702e4d18bbbcc8319793f4b1a4fa665d8fba7fec426",
+      "type": "file"
+    },
+    {
+      "bytes": 504,
+      "path": "derived/scores/seed-6211-opaque-hierarchical.json",
+      "sha256": "c54072f8f7ddfecf5f71b231763fe54b394c954925a5823fe38a3f8ec16fd9e3",
+      "type": "file"
+    },
+    {
+      "bytes": 496,
+      "path": "derived/scores/seed-6211-opaque-rgb_only.json",
+      "sha256": "28784ab46ca7de16cbb3cff3c05324ce55de1fb266777d0cf2fe8a3276a2c713",
+      "type": "file"
+    },
+    {
+      "bytes": 502,
+      "path": "derived/scores/seed-6211-opaque-rgbd_motion.json",
+      "sha256": "5cc4b2ac0431dc0a1c72aa1daeab96ee4aa4df128537bd8271682ceeb59e95f7",
+      "type": "file"
+    },
+    {
+      "bytes": 506,
+      "path": "derived/scores/seed-6212-eval_x2-hierarchical.json",
+      "sha256": "c04607ead7caa73380690f313b08e591d1b951525242a27a2ff33bd63d4bf9f3",
+      "type": "file"
+    },
+    {
+      "bytes": 487,
+      "path": "derived/scores/seed-6212-eval_x2-rgb_only.json",
+      "sha256": "89a880c6d7115387d3bed4c864782e4f165f4de1483fa2d028357aea16789479",
+      "type": "file"
+    },
+    {
+      "bytes": 504,
+      "path": "derived/scores/seed-6212-eval_x2-rgbd_motion.json",
+      "sha256": "b60d20207b3dd4e3e265975b908e2d99fa66c602f01877c4a5ba47c5ea25dab2",
+      "type": "file"
+    },
+    {
+      "bytes": 497,
+      "path": "derived/scores/seed-6212-no_obstacle-hierarchical.json",
+      "sha256": "e234704ec0647416463425b3b2a0fe6e6f3886b18abc0c3400125b69de3a545f",
+      "type": "file"
+    },
+    {
+      "bytes": 489,
+      "path": "derived/scores/seed-6212-no_obstacle-rgb_only.json",
+      "sha256": "33d4453c4eb4b177b090231b528aaddff251d6375ff34393836d834b29401237",
+      "type": "file"
+    },
+    {
+      "bytes": 495,
+      "path": "derived/scores/seed-6212-no_obstacle-rgbd_motion.json",
+      "sha256": "a7dba5bec5adf18da1e366b53441fdf421e93dcc7274a245d7b95c2348fc28f1",
+      "type": "file"
+    },
+    {
+      "bytes": 504,
+      "path": "derived/scores/seed-6212-opaque-hierarchical.json",
+      "sha256": "407e8a4e3eb2fae4a0a5a2100a5024eb353e01be275f2e428ffa7b2e5e6488b6",
+      "type": "file"
+    },
+    {
+      "bytes": 496,
+      "path": "derived/scores/seed-6212-opaque-rgb_only.json",
+      "sha256": "df9b8a6997999246cc7c3d719494914bf90e71786754f494e769e1245b5e006f",
+      "type": "file"
+    },
+    {
+      "bytes": 502,
+      "path": "derived/scores/seed-6212-opaque-rgbd_motion.json",
+      "sha256": "9fbba400bd516d50cf0cc90567c0a65012a2f901ef9a8670ce1cc127cf2d2ecc",
+      "type": "file"
+    },
+    {
+      "path": "raw",
+      "type": "directory"
+    },
+    {
+      "path": "raw/episodes",
+      "type": "directory"
+    },
+    {
+      "path": "raw/episodes/seed-6201-eval_x2-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 204,
+      "path": "raw/episodes/seed-6201-eval_x2-hierarchical/episode.json",
+      "sha256": "b27ba2526145fadcf47061ce54b5a240b8d5e69509f1b1d5e7e01ebc3b98d326",
+      "type": "file"
+    },
+    {
+      "bytes": 268608,
+      "path": "raw/episodes/seed-6201-eval_x2-hierarchical/ticks.jsonl",
+      "sha256": "7d3fb5bc7bb5090f459010e8094343d5b6e9faa424a0109478731d47b7f12db4",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6201-eval_x2-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 200,
+      "path": "raw/episodes/seed-6201-eval_x2-rgb_only/episode.json",
+      "sha256": "2abc2f5bf2de461433153d7860e2092e97b791dc0a43fbff8652a92b413a94db",
+      "type": "file"
+    },
+    {
+      "bytes": 292578,
+      "path": "raw/episodes/seed-6201-eval_x2-rgb_only/ticks.jsonl",
+      "sha256": "971c785fce24023af579ddf0aadfbb66fb396a3b9ad49c5add9a9acf11d37ca4",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6201-eval_x2-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 203,
+      "path": "raw/episodes/seed-6201-eval_x2-rgbd_motion/episode.json",
+      "sha256": "5fda43f0345e5d602823fdb2ad50766aa5492d26c622bf3cfa259f6ba7db734f",
+      "type": "file"
+    },
+    {
+      "bytes": 268608,
+      "path": "raw/episodes/seed-6201-eval_x2-rgbd_motion/ticks.jsonl",
+      "sha256": "7d3fb5bc7bb5090f459010e8094343d5b6e9faa424a0109478731d47b7f12db4",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6201-no_obstacle-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 212,
+      "path": "raw/episodes/seed-6201-no_obstacle-hierarchical/episode.json",
+      "sha256": "2fad1f2bcc91aa339db93e9bb751fb759f8a8af42cf92524f531de250d4a8c85",
+      "type": "file"
+    },
+    {
+      "bytes": 125239,
+      "path": "raw/episodes/seed-6201-no_obstacle-hierarchical/ticks.jsonl",
+      "sha256": "6fc5c81c86a2bda054ebd0d0d8e14855dd67debe5eed4eab260a1b2384797e7f",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6201-no_obstacle-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 208,
+      "path": "raw/episodes/seed-6201-no_obstacle-rgb_only/episode.json",
+      "sha256": "4560bccd567c300a0aada47c69c4b15795d800bcefe774910c3afe9c81415656",
+      "type": "file"
+    },
+    {
+      "bytes": 125239,
+      "path": "raw/episodes/seed-6201-no_obstacle-rgb_only/ticks.jsonl",
+      "sha256": "da3eafac304b4b8ef4f9ecf86441be8e45a7ebed8ff77b84196526eab0d9fcd4",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6201-no_obstacle-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 211,
+      "path": "raw/episodes/seed-6201-no_obstacle-rgbd_motion/episode.json",
+      "sha256": "b54ebb8e8d2f9d03279f6531f2cfbe1d8273a67ef74aca698cd5b0cb2e7d1d1d",
+      "type": "file"
+    },
+    {
+      "bytes": 125239,
+      "path": "raw/episodes/seed-6201-no_obstacle-rgbd_motion/ticks.jsonl",
+      "sha256": "6fc5c81c86a2bda054ebd0d0d8e14855dd67debe5eed4eab260a1b2384797e7f",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6201-opaque-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 202,
+      "path": "raw/episodes/seed-6201-opaque-hierarchical/episode.json",
+      "sha256": "abb8e2c3d7bff4ad83084e7a912817e0c5e1fcba815396c7d56b6b721d96d498",
+      "type": "file"
+    },
+    {
+      "bytes": 268608,
+      "path": "raw/episodes/seed-6201-opaque-hierarchical/ticks.jsonl",
+      "sha256": "6e647a603acfa3f59c44c043ef39c9aecdf11306e8182ef7026e6b43ffe0707e",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6201-opaque-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 198,
+      "path": "raw/episodes/seed-6201-opaque-rgb_only/episode.json",
+      "sha256": "4cd7f09b2f9593a936ce61e82dc52bbcf96f681e5f9c2aea1ce8f2c18585c1bc",
+      "type": "file"
+    },
+    {
+      "bytes": 268671,
+      "path": "raw/episodes/seed-6201-opaque-rgb_only/ticks.jsonl",
+      "sha256": "670d2fe5f8627a863a31a11bce34a94785f4401c08d65fb409c2fd0c5e5d84c5",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6201-opaque-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 201,
+      "path": "raw/episodes/seed-6201-opaque-rgbd_motion/episode.json",
+      "sha256": "fb016f79900a0ba453036cf8e698015b5f8b7db6600047ba89968d19258da32d",
+      "type": "file"
+    },
+    {
+      "bytes": 268608,
+      "path": "raw/episodes/seed-6201-opaque-rgbd_motion/ticks.jsonl",
+      "sha256": "6e647a603acfa3f59c44c043ef39c9aecdf11306e8182ef7026e6b43ffe0707e",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6202-eval_x2-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 204,
+      "path": "raw/episodes/seed-6202-eval_x2-hierarchical/episode.json",
+      "sha256": "6fe484806e8d43b20b7db61df6e539ca3081d37c8cd4a2e952cc1ad63445cae5",
+      "type": "file"
+    },
+    {
+      "bytes": 270797,
+      "path": "raw/episodes/seed-6202-eval_x2-hierarchical/ticks.jsonl",
+      "sha256": "4aa5cf10e1eb8226f973bc1a61ae9b00c4d07a409b351ccf2b9d99f222cd66f2",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6202-eval_x2-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 200,
+      "path": "raw/episodes/seed-6202-eval_x2-rgb_only/episode.json",
+      "sha256": "02e038835ab70df92ed446c114f59d4a9dfb69dc1eac7b0543af3091ebbb2e33",
+      "type": "file"
+    },
+    {
+      "bytes": 293065,
+      "path": "raw/episodes/seed-6202-eval_x2-rgb_only/ticks.jsonl",
+      "sha256": "65930d0745c4c42dec03dcccca0c9ebf6ce67bef6cc9815c87b32b3f0d8c73ef",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6202-eval_x2-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 203,
+      "path": "raw/episodes/seed-6202-eval_x2-rgbd_motion/episode.json",
+      "sha256": "087535fecb7951cadbdc8ede2c749cb60faaaea13f7bd59eeaa5e8c65bfec2f4",
+      "type": "file"
+    },
+    {
+      "bytes": 270797,
+      "path": "raw/episodes/seed-6202-eval_x2-rgbd_motion/ticks.jsonl",
+      "sha256": "4aa5cf10e1eb8226f973bc1a61ae9b00c4d07a409b351ccf2b9d99f222cd66f2",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6202-no_obstacle-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 212,
+      "path": "raw/episodes/seed-6202-no_obstacle-hierarchical/episode.json",
+      "sha256": "a373f24e3032355bad942b2c7993844567e25872fe17ba306f0cf09e3bf110a7",
+      "type": "file"
+    },
+    {
+      "bytes": 125218,
+      "path": "raw/episodes/seed-6202-no_obstacle-hierarchical/ticks.jsonl",
+      "sha256": "1ee9c8a19c3246686de6ae39607059d7aeea2a648f341c4d19baffbe27b7e1f1",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6202-no_obstacle-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 208,
+      "path": "raw/episodes/seed-6202-no_obstacle-rgb_only/episode.json",
+      "sha256": "2d163c86bab73cb6c09812b372f6aec8c1cfc3ff5b4e111fbdb8164b6c5029fb",
+      "type": "file"
+    },
+    {
+      "bytes": 125218,
+      "path": "raw/episodes/seed-6202-no_obstacle-rgb_only/ticks.jsonl",
+      "sha256": "95597e7bcef79200df47b4eaa56744a9e21626541cc80aae3f3ed1b1d896da50",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6202-no_obstacle-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 211,
+      "path": "raw/episodes/seed-6202-no_obstacle-rgbd_motion/episode.json",
+      "sha256": "c29c45a1dead61a010993c5fb5dc11c094a4492564e711b2f05680ab999f4503",
+      "type": "file"
+    },
+    {
+      "bytes": 125218,
+      "path": "raw/episodes/seed-6202-no_obstacle-rgbd_motion/ticks.jsonl",
+      "sha256": "1ee9c8a19c3246686de6ae39607059d7aeea2a648f341c4d19baffbe27b7e1f1",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6202-opaque-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 202,
+      "path": "raw/episodes/seed-6202-opaque-hierarchical/episode.json",
+      "sha256": "c914d35876bf83d572cf245168c7cf99d25bc1e5a5a86e0bfd0f6b8f24dccc34",
+      "type": "file"
+    },
+    {
+      "bytes": 270797,
+      "path": "raw/episodes/seed-6202-opaque-hierarchical/ticks.jsonl",
+      "sha256": "d796b9e7bba54b3e356c57930e0532f2912901c4be4222ae4d24224ff18aeb3e",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6202-opaque-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 198,
+      "path": "raw/episodes/seed-6202-opaque-rgb_only/episode.json",
+      "sha256": "1aa810183fbc54fdde4b3c007eb80575d6326e25e0fc6f540c7fb5ae02fc1bfd",
+      "type": "file"
+    },
+    {
+      "bytes": 270167,
+      "path": "raw/episodes/seed-6202-opaque-rgb_only/ticks.jsonl",
+      "sha256": "ae99631101f3c7f2330d91f9f7649b591589deab01584328b533a7be46238dfc",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6202-opaque-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 201,
+      "path": "raw/episodes/seed-6202-opaque-rgbd_motion/episode.json",
+      "sha256": "e6ede51402fd68e2d12f2e9c7ac6ab671ebedd234a3b09154e10e2c1853c25e0",
+      "type": "file"
+    },
+    {
+      "bytes": 270797,
+      "path": "raw/episodes/seed-6202-opaque-rgbd_motion/ticks.jsonl",
+      "sha256": "d796b9e7bba54b3e356c57930e0532f2912901c4be4222ae4d24224ff18aeb3e",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6203-eval_x2-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 204,
+      "path": "raw/episodes/seed-6203-eval_x2-hierarchical/episode.json",
+      "sha256": "24bcb26c93af2890a726dd06c557b1bb44b7abe4539537d55409ada083b10584",
+      "type": "file"
+    },
+    {
+      "bytes": 269638,
+      "path": "raw/episodes/seed-6203-eval_x2-hierarchical/ticks.jsonl",
+      "sha256": "901ddc04e1b6e56db0653787f8925da80974f064e6bf03b619e9b134c576ed77",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6203-eval_x2-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 200,
+      "path": "raw/episodes/seed-6203-eval_x2-rgb_only/episode.json",
+      "sha256": "47f769a702ac2b49b15d917b386414861df53d3f0afeaa1f0146ef0f219a9235",
+      "type": "file"
+    },
+    {
+      "bytes": 292534,
+      "path": "raw/episodes/seed-6203-eval_x2-rgb_only/ticks.jsonl",
+      "sha256": "b1499024943b3d2340979f34019d5f66b62d278d94f44e92221622f946335d6f",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6203-eval_x2-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 203,
+      "path": "raw/episodes/seed-6203-eval_x2-rgbd_motion/episode.json",
+      "sha256": "6890ea0fc81c0ba7700dd246435cb14fd42867ecdac14f0c1deedb27be6bb736",
+      "type": "file"
+    },
+    {
+      "bytes": 269638,
+      "path": "raw/episodes/seed-6203-eval_x2-rgbd_motion/ticks.jsonl",
+      "sha256": "901ddc04e1b6e56db0653787f8925da80974f064e6bf03b619e9b134c576ed77",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6203-no_obstacle-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 212,
+      "path": "raw/episodes/seed-6203-no_obstacle-hierarchical/episode.json",
+      "sha256": "abe2605172eba6d1170103c6a3e36fe4b17346d60b52a27b4deb30bfa0958986",
+      "type": "file"
+    },
+    {
+      "bytes": 125174,
+      "path": "raw/episodes/seed-6203-no_obstacle-hierarchical/ticks.jsonl",
+      "sha256": "074011b1129564b65b55e08947ab9c6dc560af37d56685c42f9f10bca911283b",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6203-no_obstacle-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 208,
+      "path": "raw/episodes/seed-6203-no_obstacle-rgb_only/episode.json",
+      "sha256": "107e4395e849f1d63a7367960196440a49eba75db9ddb73600887d12b18094c7",
+      "type": "file"
+    },
+    {
+      "bytes": 125174,
+      "path": "raw/episodes/seed-6203-no_obstacle-rgb_only/ticks.jsonl",
+      "sha256": "9e936dcadf5fcbce3b1ae3d9f75b09759936b7a9dee286eaf1df86a70822d2f6",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6203-no_obstacle-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 211,
+      "path": "raw/episodes/seed-6203-no_obstacle-rgbd_motion/episode.json",
+      "sha256": "cbf11be5c282b194a00f35d13cdc352a6a429cc5f13b5bdfa951a4a38bdbd872",
+      "type": "file"
+    },
+    {
+      "bytes": 125174,
+      "path": "raw/episodes/seed-6203-no_obstacle-rgbd_motion/ticks.jsonl",
+      "sha256": "074011b1129564b65b55e08947ab9c6dc560af37d56685c42f9f10bca911283b",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6203-opaque-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 202,
+      "path": "raw/episodes/seed-6203-opaque-hierarchical/episode.json",
+      "sha256": "a3ca50677d6384d3585f248099cf79ab17e1fc50d443772f6e69e4e67027f5e2",
+      "type": "file"
+    },
+    {
+      "bytes": 269638,
+      "path": "raw/episodes/seed-6203-opaque-hierarchical/ticks.jsonl",
+      "sha256": "b3ec4656cbb8f67dd2dd098d1d77c371b6e853f33467c7644e3b2f4efd8a47fc",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6203-opaque-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 198,
+      "path": "raw/episodes/seed-6203-opaque-rgb_only/episode.json",
+      "sha256": "70b6243a3c6885c014cdbdd30cfe46e914c7a82907171b71aa4e25afef7e96e5",
+      "type": "file"
+    },
+    {
+      "bytes": 269517,
+      "path": "raw/episodes/seed-6203-opaque-rgb_only/ticks.jsonl",
+      "sha256": "c092a6b9b1cb0bc9ea475ae00585292b86caecbf84b37ac227130f0fff1123e4",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6203-opaque-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 201,
+      "path": "raw/episodes/seed-6203-opaque-rgbd_motion/episode.json",
+      "sha256": "5e4071a05c9d6f750feb2c0ebb8f627901fd2fe385c35684f58257e769b4c948",
+      "type": "file"
+    },
+    {
+      "bytes": 269638,
+      "path": "raw/episodes/seed-6203-opaque-rgbd_motion/ticks.jsonl",
+      "sha256": "b3ec4656cbb8f67dd2dd098d1d77c371b6e853f33467c7644e3b2f4efd8a47fc",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6204-eval_x2-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 204,
+      "path": "raw/episodes/seed-6204-eval_x2-hierarchical/episode.json",
+      "sha256": "ed59def3cffc03f08227cf76917929d4a1ac509a92625f19723e4cd90c71828d",
+      "type": "file"
+    },
+    {
+      "bytes": 268841,
+      "path": "raw/episodes/seed-6204-eval_x2-hierarchical/ticks.jsonl",
+      "sha256": "be1789e4f4ce5a3cea9b3efb4d530f6cbe6f676a58a79b8ebc8717d1d1fd0c34",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6204-eval_x2-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 200,
+      "path": "raw/episodes/seed-6204-eval_x2-rgb_only/episode.json",
+      "sha256": "fe06e43cbf289e51e0faaf534c1c94deb702276b8cb539d5b4c7afc3629e6377",
+      "type": "file"
+    },
+    {
+      "bytes": 292093,
+      "path": "raw/episodes/seed-6204-eval_x2-rgb_only/ticks.jsonl",
+      "sha256": "d61a2db945bfeb6eb747e6d6d057f1c956599cdf8cee3b8a3dda45e36b8a405c",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6204-eval_x2-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 203,
+      "path": "raw/episodes/seed-6204-eval_x2-rgbd_motion/episode.json",
+      "sha256": "c3e37b14d4ccaeba5db87cdad8bd6bbc87a6afd12d18c90032ec0866de61e96c",
+      "type": "file"
+    },
+    {
+      "bytes": 268841,
+      "path": "raw/episodes/seed-6204-eval_x2-rgbd_motion/ticks.jsonl",
+      "sha256": "be1789e4f4ce5a3cea9b3efb4d530f6cbe6f676a58a79b8ebc8717d1d1fd0c34",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6204-no_obstacle-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 212,
+      "path": "raw/episodes/seed-6204-no_obstacle-hierarchical/episode.json",
+      "sha256": "6675b654c0467178a6ace67b7990eb606449d5753bed2fa1ce83425bda786c68",
+      "type": "file"
+    },
+    {
+      "bytes": 125417,
+      "path": "raw/episodes/seed-6204-no_obstacle-hierarchical/ticks.jsonl",
+      "sha256": "edd05d968930856d75f6b7f3132c7fea24e2c53962cf3b8d61942b75036e5af8",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6204-no_obstacle-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 208,
+      "path": "raw/episodes/seed-6204-no_obstacle-rgb_only/episode.json",
+      "sha256": "a9dd02765693867952911b6d90e5eb7d35b8b5c37423056bd2256b65d0b1baae",
+      "type": "file"
+    },
+    {
+      "bytes": 125417,
+      "path": "raw/episodes/seed-6204-no_obstacle-rgb_only/ticks.jsonl",
+      "sha256": "c075beb984f7719009654c3ca2e32fa6c3e2588931ade914283b4654c685ac03",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6204-no_obstacle-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 211,
+      "path": "raw/episodes/seed-6204-no_obstacle-rgbd_motion/episode.json",
+      "sha256": "e0102aee54d8d422296ab870e05b7abcecfd7173101042ed0a16d5a53f927ec2",
+      "type": "file"
+    },
+    {
+      "bytes": 125417,
+      "path": "raw/episodes/seed-6204-no_obstacle-rgbd_motion/ticks.jsonl",
+      "sha256": "edd05d968930856d75f6b7f3132c7fea24e2c53962cf3b8d61942b75036e5af8",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6204-opaque-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 202,
+      "path": "raw/episodes/seed-6204-opaque-hierarchical/episode.json",
+      "sha256": "a569ec3c6469a1b24f4d444b555241d6065bb26566678b8e41f3b84771e82460",
+      "type": "file"
+    },
+    {
+      "bytes": 268841,
+      "path": "raw/episodes/seed-6204-opaque-hierarchical/ticks.jsonl",
+      "sha256": "7c12503dedcfacc5ee777d77811753afc96225a26c646a471436bdc513cdc67a",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6204-opaque-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 198,
+      "path": "raw/episodes/seed-6204-opaque-rgb_only/episode.json",
+      "sha256": "79b736e9853b1a9d57a1c45eea8a095fad598f953c7608af8d275eee448e917d",
+      "type": "file"
+    },
+    {
+      "bytes": 268901,
+      "path": "raw/episodes/seed-6204-opaque-rgb_only/ticks.jsonl",
+      "sha256": "faf56f3e416302d28ba4d608c1e4d66654d14cbc42825eaf2a6008dc6e5cc90c",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6204-opaque-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 201,
+      "path": "raw/episodes/seed-6204-opaque-rgbd_motion/episode.json",
+      "sha256": "7bca5cadb82e0d765851f5e3470b96b7f60908e20a7ef7294ec7b5ce2feb27f4",
+      "type": "file"
+    },
+    {
+      "bytes": 268841,
+      "path": "raw/episodes/seed-6204-opaque-rgbd_motion/ticks.jsonl",
+      "sha256": "7c12503dedcfacc5ee777d77811753afc96225a26c646a471436bdc513cdc67a",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6205-eval_x2-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 204,
+      "path": "raw/episodes/seed-6205-eval_x2-hierarchical/episode.json",
+      "sha256": "8879f881d3493d1069eede9b23a7b644ea86f6896c2c184ccdeff5719a68e8d3",
+      "type": "file"
+    },
+    {
+      "bytes": 268994,
+      "path": "raw/episodes/seed-6205-eval_x2-hierarchical/ticks.jsonl",
+      "sha256": "930a9a15dabce5993adb0b9ddc72cfb5c4d606821739a9569c149478383fe7c9",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6205-eval_x2-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 200,
+      "path": "raw/episodes/seed-6205-eval_x2-rgb_only/episode.json",
+      "sha256": "b74615b84be3cbaafe72670b8a3473b3567e025952c61af84f923908a68283ff",
+      "type": "file"
+    },
+    {
+      "bytes": 292903,
+      "path": "raw/episodes/seed-6205-eval_x2-rgb_only/ticks.jsonl",
+      "sha256": "a69dc9134b671a225a0a0e37ad356bd02ff0cfff214a4981e7853c04fd93474d",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6205-eval_x2-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 203,
+      "path": "raw/episodes/seed-6205-eval_x2-rgbd_motion/episode.json",
+      "sha256": "deaecee51f7bc1d32dc0584297b4bdc8f30edb47d19b38e3419ea864515674d5",
+      "type": "file"
+    },
+    {
+      "bytes": 268994,
+      "path": "raw/episodes/seed-6205-eval_x2-rgbd_motion/ticks.jsonl",
+      "sha256": "930a9a15dabce5993adb0b9ddc72cfb5c4d606821739a9569c149478383fe7c9",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6205-no_obstacle-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 212,
+      "path": "raw/episodes/seed-6205-no_obstacle-hierarchical/episode.json",
+      "sha256": "5d80aa0ee6a03ef7edaffb16dc4b0b990f89b76296a915aea4830c764645e7e8",
+      "type": "file"
+    },
+    {
+      "bytes": 125243,
+      "path": "raw/episodes/seed-6205-no_obstacle-hierarchical/ticks.jsonl",
+      "sha256": "28d2fd3eab215087e10efa8a8f202c94b3be880f411f2b8fbb17199cd920ed3e",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6205-no_obstacle-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 208,
+      "path": "raw/episodes/seed-6205-no_obstacle-rgb_only/episode.json",
+      "sha256": "61170811e4f2fae7a8b59fb87b463da814c89612c217e10bda4680c9bb651550",
+      "type": "file"
+    },
+    {
+      "bytes": 125243,
+      "path": "raw/episodes/seed-6205-no_obstacle-rgb_only/ticks.jsonl",
+      "sha256": "94041e07ad92a7317c1cd1fa3f40a35137d0777edce93ffb2b24cda1bbaf9d30",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6205-no_obstacle-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 211,
+      "path": "raw/episodes/seed-6205-no_obstacle-rgbd_motion/episode.json",
+      "sha256": "d7eb7b544876e48e375b9d5731af5aaef428e20ea2c16b5127bf4f1da72cf6a2",
+      "type": "file"
+    },
+    {
+      "bytes": 125243,
+      "path": "raw/episodes/seed-6205-no_obstacle-rgbd_motion/ticks.jsonl",
+      "sha256": "28d2fd3eab215087e10efa8a8f202c94b3be880f411f2b8fbb17199cd920ed3e",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6205-opaque-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 202,
+      "path": "raw/episodes/seed-6205-opaque-hierarchical/episode.json",
+      "sha256": "408b7445a649a2d8db4203305068a194aef8d52c0a5e78727c1be93e09a8750a",
+      "type": "file"
+    },
+    {
+      "bytes": 268994,
+      "path": "raw/episodes/seed-6205-opaque-hierarchical/ticks.jsonl",
+      "sha256": "fae7ad59516e8c88bdc1eaa9613f6df83d29c7ecb8da80e0bdeab4b4510d9732",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6205-opaque-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 198,
+      "path": "raw/episodes/seed-6205-opaque-rgb_only/episode.json",
+      "sha256": "a3b4cfb789a7e61d32b5fab24ce99ebc7368ebc47056e7c9f7fbfbc8747e9b35",
+      "type": "file"
+    },
+    {
+      "bytes": 269012,
+      "path": "raw/episodes/seed-6205-opaque-rgb_only/ticks.jsonl",
+      "sha256": "afc2c599404cc702e6396ce6b835b73b9791285f11c6848636d1db3f664d82dd",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6205-opaque-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 201,
+      "path": "raw/episodes/seed-6205-opaque-rgbd_motion/episode.json",
+      "sha256": "f845101166c7bf02c758b6d340625cfa39685379cb3c32cd9c45fe925db76df4",
+      "type": "file"
+    },
+    {
+      "bytes": 268994,
+      "path": "raw/episodes/seed-6205-opaque-rgbd_motion/ticks.jsonl",
+      "sha256": "fae7ad59516e8c88bdc1eaa9613f6df83d29c7ecb8da80e0bdeab4b4510d9732",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6206-eval_x2-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 204,
+      "path": "raw/episodes/seed-6206-eval_x2-hierarchical/episode.json",
+      "sha256": "cd5da62eee0dd886c743ce2bdcd34e99f988fb897e0855ec242da64f806c97f9",
+      "type": "file"
+    },
+    {
+      "bytes": 267452,
+      "path": "raw/episodes/seed-6206-eval_x2-hierarchical/ticks.jsonl",
+      "sha256": "ef170d77a9079035885227a4ce336b8fa1d3846aa82070b7cf725e045e4e60a3",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6206-eval_x2-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 200,
+      "path": "raw/episodes/seed-6206-eval_x2-rgb_only/episode.json",
+      "sha256": "7344c3d3f9f74f33a2384e75652a2c91689d5e18fd1fea3e072775426a2a8287",
+      "type": "file"
+    },
+    {
+      "bytes": 292666,
+      "path": "raw/episodes/seed-6206-eval_x2-rgb_only/ticks.jsonl",
+      "sha256": "fbf927d3c898467c99615d90bf135184ba8e27d37ac9d072e067edee66efc97f",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6206-eval_x2-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 203,
+      "path": "raw/episodes/seed-6206-eval_x2-rgbd_motion/episode.json",
+      "sha256": "256b59f341ec0e0c30b943294214d9e06178d02c9841b41ae427ae663fcbd9bf",
+      "type": "file"
+    },
+    {
+      "bytes": 267452,
+      "path": "raw/episodes/seed-6206-eval_x2-rgbd_motion/ticks.jsonl",
+      "sha256": "ef170d77a9079035885227a4ce336b8fa1d3846aa82070b7cf725e045e4e60a3",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6206-no_obstacle-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 212,
+      "path": "raw/episodes/seed-6206-no_obstacle-hierarchical/episode.json",
+      "sha256": "5afbe697757beb88d5adb314965e04d5826959d709f8199228b487ecaa34ac43",
+      "type": "file"
+    },
+    {
+      "bytes": 125258,
+      "path": "raw/episodes/seed-6206-no_obstacle-hierarchical/ticks.jsonl",
+      "sha256": "f15b4b49af8e06a6e566c2e1af26820c911659936c2d8ed6da958d5702619057",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6206-no_obstacle-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 208,
+      "path": "raw/episodes/seed-6206-no_obstacle-rgb_only/episode.json",
+      "sha256": "1383a72ff397c4ee2628cc0f71aae564be4d697ccf1e51eeed9f5604d63b67ac",
+      "type": "file"
+    },
+    {
+      "bytes": 125258,
+      "path": "raw/episodes/seed-6206-no_obstacle-rgb_only/ticks.jsonl",
+      "sha256": "4c035b6415a422626be887b51e7193cc533ae8dc677015489fa2bdd75a064d91",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6206-no_obstacle-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 211,
+      "path": "raw/episodes/seed-6206-no_obstacle-rgbd_motion/episode.json",
+      "sha256": "4610160c40f83009fc08cbf3ff30302db59fd735e216aaf13e9d53c8948acdad",
+      "type": "file"
+    },
+    {
+      "bytes": 125258,
+      "path": "raw/episodes/seed-6206-no_obstacle-rgbd_motion/ticks.jsonl",
+      "sha256": "f15b4b49af8e06a6e566c2e1af26820c911659936c2d8ed6da958d5702619057",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6206-opaque-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 202,
+      "path": "raw/episodes/seed-6206-opaque-hierarchical/episode.json",
+      "sha256": "54dbd734da92001fc660315e4d496b7885fe4060b510f73c35796b815a4ef948",
+      "type": "file"
+    },
+    {
+      "bytes": 267452,
+      "path": "raw/episodes/seed-6206-opaque-hierarchical/ticks.jsonl",
+      "sha256": "0d65d9ecb710775976760d67df38e2cd2cc2b5f98015ac5f01ecc43aa265cd47",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6206-opaque-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 198,
+      "path": "raw/episodes/seed-6206-opaque-rgb_only/episode.json",
+      "sha256": "d90aeaa55bb461b307dd43c890a0de0fe462b958070b84c87888db1d7b9e2211",
+      "type": "file"
+    },
+    {
+      "bytes": 267452,
+      "path": "raw/episodes/seed-6206-opaque-rgb_only/ticks.jsonl",
+      "sha256": "8cba07687ad092bce7688eb3d8dbb908da2196da066c812a0df5a39820d1c863",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6206-opaque-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 201,
+      "path": "raw/episodes/seed-6206-opaque-rgbd_motion/episode.json",
+      "sha256": "5cc3ba97454cec49375b73dd63592bda3eee92a8f8499ffda3067c0f0ff46580",
+      "type": "file"
+    },
+    {
+      "bytes": 267452,
+      "path": "raw/episodes/seed-6206-opaque-rgbd_motion/ticks.jsonl",
+      "sha256": "0d65d9ecb710775976760d67df38e2cd2cc2b5f98015ac5f01ecc43aa265cd47",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6207-eval_x2-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 204,
+      "path": "raw/episodes/seed-6207-eval_x2-hierarchical/episode.json",
+      "sha256": "a7d4e9351f89c2eb124586a47a8059dc75acdcaa32c162d6ec982b033a4a4bb4",
+      "type": "file"
+    },
+    {
+      "bytes": 270175,
+      "path": "raw/episodes/seed-6207-eval_x2-hierarchical/ticks.jsonl",
+      "sha256": "3cfbd216b34de67e9ada1556fbfd49864b0ce16694137db9869312c502894420",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6207-eval_x2-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 200,
+      "path": "raw/episodes/seed-6207-eval_x2-rgb_only/episode.json",
+      "sha256": "96db26b089a2d2db4eac9a6bf3f36762ef46bc1d7d6b592638ccde48d1d4adf7",
+      "type": "file"
+    },
+    {
+      "bytes": 291547,
+      "path": "raw/episodes/seed-6207-eval_x2-rgb_only/ticks.jsonl",
+      "sha256": "83893a36651020bcee74390c22cadd80ece79ccba960fb9a446faf5d2cb6e24e",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6207-eval_x2-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 203,
+      "path": "raw/episodes/seed-6207-eval_x2-rgbd_motion/episode.json",
+      "sha256": "3f81d8cdf760a08bf17bf920fa1bcfadd97efd8d5199465d43f21097a4848e0f",
+      "type": "file"
+    },
+    {
+      "bytes": 270175,
+      "path": "raw/episodes/seed-6207-eval_x2-rgbd_motion/ticks.jsonl",
+      "sha256": "3cfbd216b34de67e9ada1556fbfd49864b0ce16694137db9869312c502894420",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6207-no_obstacle-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 212,
+      "path": "raw/episodes/seed-6207-no_obstacle-hierarchical/episode.json",
+      "sha256": "b8afefa1863d23555337ad5dccc5f21862ca29741e7ff35891d0ce7c9cec8d19",
+      "type": "file"
+    },
+    {
+      "bytes": 124943,
+      "path": "raw/episodes/seed-6207-no_obstacle-hierarchical/ticks.jsonl",
+      "sha256": "a178a71c3dd7ea208c724084e52d4c8eaf2f0d5b8d478f9c4f89b53812a38562",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6207-no_obstacle-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 208,
+      "path": "raw/episodes/seed-6207-no_obstacle-rgb_only/episode.json",
+      "sha256": "7329604ffd48fa572047898203f241360308e4aacaf7d8715289d1a30cb42d98",
+      "type": "file"
+    },
+    {
+      "bytes": 124943,
+      "path": "raw/episodes/seed-6207-no_obstacle-rgb_only/ticks.jsonl",
+      "sha256": "bb77fee1c90ce6ebbe17a7ea76220cd2d696074b7a8e394f0acff8d22364b82d",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6207-no_obstacle-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 211,
+      "path": "raw/episodes/seed-6207-no_obstacle-rgbd_motion/episode.json",
+      "sha256": "49db1ee7d3330d35d1ea06f0aac8e4f9fbaf0824bb411c0b9732d4cb98657b9d",
+      "type": "file"
+    },
+    {
+      "bytes": 124943,
+      "path": "raw/episodes/seed-6207-no_obstacle-rgbd_motion/ticks.jsonl",
+      "sha256": "a178a71c3dd7ea208c724084e52d4c8eaf2f0d5b8d478f9c4f89b53812a38562",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6207-opaque-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 202,
+      "path": "raw/episodes/seed-6207-opaque-hierarchical/episode.json",
+      "sha256": "9ff3c8fac2f84ef33b7cfe9cddd3a70a4138b9a4c029c9f69537104ee2421ace",
+      "type": "file"
+    },
+    {
+      "bytes": 270175,
+      "path": "raw/episodes/seed-6207-opaque-hierarchical/ticks.jsonl",
+      "sha256": "ca7c9184a0181487cf5c8d1192263a2aead7ffd845b67aa98eb32f7bef62cbb5",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6207-opaque-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 198,
+      "path": "raw/episodes/seed-6207-opaque-rgb_only/episode.json",
+      "sha256": "6c4b82f3f30f647c942effcddf81b4d2b0030c0529730a92ffdfb40860e5ab1a",
+      "type": "file"
+    },
+    {
+      "bytes": 270450,
+      "path": "raw/episodes/seed-6207-opaque-rgb_only/ticks.jsonl",
+      "sha256": "53fdbc8e7fc1da76d0ee35ad84a381eec078a96b5461e151fd98c6c215f935ab",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6207-opaque-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 201,
+      "path": "raw/episodes/seed-6207-opaque-rgbd_motion/episode.json",
+      "sha256": "b96ff0b301883eea77e8df87b13ebeac3a427ea228b0e34b1d9a92dbb68c2d1a",
+      "type": "file"
+    },
+    {
+      "bytes": 270175,
+      "path": "raw/episodes/seed-6207-opaque-rgbd_motion/ticks.jsonl",
+      "sha256": "ca7c9184a0181487cf5c8d1192263a2aead7ffd845b67aa98eb32f7bef62cbb5",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6208-eval_x2-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 204,
+      "path": "raw/episodes/seed-6208-eval_x2-hierarchical/episode.json",
+      "sha256": "a5d044959d3c40bf0f0851839c48d10476636ccd35e3ad19a2ea31c36aa9125f",
+      "type": "file"
+    },
+    {
+      "bytes": 269724,
+      "path": "raw/episodes/seed-6208-eval_x2-hierarchical/ticks.jsonl",
+      "sha256": "45b155cc820e12f45e1c06bb621a3a079ca0eb0035ff665f7d3c23d7684a0555",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6208-eval_x2-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 200,
+      "path": "raw/episodes/seed-6208-eval_x2-rgb_only/episode.json",
+      "sha256": "a814928479c3ad1badd812f7066b67243ee4dfaf8983734814b9d10a45749e5e",
+      "type": "file"
+    },
+    {
+      "bytes": 293478,
+      "path": "raw/episodes/seed-6208-eval_x2-rgb_only/ticks.jsonl",
+      "sha256": "405a63ce3e6a5588c0da4ca161e180548c73c89dd2e8e764bcdd6451c27ec6ac",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6208-eval_x2-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 203,
+      "path": "raw/episodes/seed-6208-eval_x2-rgbd_motion/episode.json",
+      "sha256": "5e7a148f4445e1395df5b5aa9e53ca1ea44a1064fbdd63a69b1c25b7ab595a39",
+      "type": "file"
+    },
+    {
+      "bytes": 269724,
+      "path": "raw/episodes/seed-6208-eval_x2-rgbd_motion/ticks.jsonl",
+      "sha256": "45b155cc820e12f45e1c06bb621a3a079ca0eb0035ff665f7d3c23d7684a0555",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6208-no_obstacle-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 212,
+      "path": "raw/episodes/seed-6208-no_obstacle-hierarchical/episode.json",
+      "sha256": "91088597664c3647635d4f96ff566a3c6b96c6400782e1c05aa6659a440447f3",
+      "type": "file"
+    },
+    {
+      "bytes": 125478,
+      "path": "raw/episodes/seed-6208-no_obstacle-hierarchical/ticks.jsonl",
+      "sha256": "510fb657a589bd029a031249b0bd3a1b07b672585e470b4787880960829fc0d8",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6208-no_obstacle-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 208,
+      "path": "raw/episodes/seed-6208-no_obstacle-rgb_only/episode.json",
+      "sha256": "faeb10c648c5dae859309465121fe7a71e2edca2aadfe40f6caad0541067c18e",
+      "type": "file"
+    },
+    {
+      "bytes": 125478,
+      "path": "raw/episodes/seed-6208-no_obstacle-rgb_only/ticks.jsonl",
+      "sha256": "5c6af39b3fcafa4f65b33acfcebd63b9acc883618b01cf374edbb02dc0a28381",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6208-no_obstacle-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 211,
+      "path": "raw/episodes/seed-6208-no_obstacle-rgbd_motion/episode.json",
+      "sha256": "d24eabbbaee47a7b617f5ea9dda3db88f61e27b6f48e8fac8d9ae4b4bb3eca23",
+      "type": "file"
+    },
+    {
+      "bytes": 125478,
+      "path": "raw/episodes/seed-6208-no_obstacle-rgbd_motion/ticks.jsonl",
+      "sha256": "510fb657a589bd029a031249b0bd3a1b07b672585e470b4787880960829fc0d8",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6208-opaque-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 202,
+      "path": "raw/episodes/seed-6208-opaque-hierarchical/episode.json",
+      "sha256": "41a21cd5303502cba56b7bef581f3326780ad40daf50c94ffab5f131feb27b74",
+      "type": "file"
+    },
+    {
+      "bytes": 269724,
+      "path": "raw/episodes/seed-6208-opaque-hierarchical/ticks.jsonl",
+      "sha256": "1e7c17d2daf989afb9850eb79a5311ebb42445c0c9b8486c0c94bb6c0d5ceccb",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6208-opaque-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 198,
+      "path": "raw/episodes/seed-6208-opaque-rgb_only/episode.json",
+      "sha256": "a3a38b7e08c6c542905cf0515864bf1137d6621096c78b97001a9bcf1d4b0360",
+      "type": "file"
+    },
+    {
+      "bytes": 269724,
+      "path": "raw/episodes/seed-6208-opaque-rgb_only/ticks.jsonl",
+      "sha256": "73ffebc3738da74eb6f4a64e41070c2f830552b0b5ca7f0c764d8a159950113f",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6208-opaque-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 201,
+      "path": "raw/episodes/seed-6208-opaque-rgbd_motion/episode.json",
+      "sha256": "49f3d1d71ad17d35752fcf2d789c44844201c5deaaeaa198de1197acf2a64f15",
+      "type": "file"
+    },
+    {
+      "bytes": 269724,
+      "path": "raw/episodes/seed-6208-opaque-rgbd_motion/ticks.jsonl",
+      "sha256": "1e7c17d2daf989afb9850eb79a5311ebb42445c0c9b8486c0c94bb6c0d5ceccb",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6209-eval_x2-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 204,
+      "path": "raw/episodes/seed-6209-eval_x2-hierarchical/episode.json",
+      "sha256": "b8c48371b44de8b7525cf2b0e05d63cef8dff6b3bf1e4d0e916e20adbbcf104a",
+      "type": "file"
+    },
+    {
+      "bytes": 269641,
+      "path": "raw/episodes/seed-6209-eval_x2-hierarchical/ticks.jsonl",
+      "sha256": "ed31c510b9d617cceb0599945fe6ec12988ffcbe834f61eff16271f9f7517b86",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6209-eval_x2-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 200,
+      "path": "raw/episodes/seed-6209-eval_x2-rgb_only/episode.json",
+      "sha256": "252ecefb312b84509cbbc4dfe069f62bc45cadab61135b42ae39d0b2c421aa1e",
+      "type": "file"
+    },
+    {
+      "bytes": 293018,
+      "path": "raw/episodes/seed-6209-eval_x2-rgb_only/ticks.jsonl",
+      "sha256": "db83254f1639e0cb8b5b2d493d51c78959ab8d0daf928d315df0aec9775e6b06",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6209-eval_x2-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 203,
+      "path": "raw/episodes/seed-6209-eval_x2-rgbd_motion/episode.json",
+      "sha256": "a6774eae3c3d7dffcfdff7b94ec32623f4e468d46efd5ca265bef413e97cb40b",
+      "type": "file"
+    },
+    {
+      "bytes": 269641,
+      "path": "raw/episodes/seed-6209-eval_x2-rgbd_motion/ticks.jsonl",
+      "sha256": "ed31c510b9d617cceb0599945fe6ec12988ffcbe834f61eff16271f9f7517b86",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6209-no_obstacle-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 212,
+      "path": "raw/episodes/seed-6209-no_obstacle-hierarchical/episode.json",
+      "sha256": "9739f88270725de91ff95b862be55292ff69ea70d07e239a217a9a8448ea6491",
+      "type": "file"
+    },
+    {
+      "bytes": 125354,
+      "path": "raw/episodes/seed-6209-no_obstacle-hierarchical/ticks.jsonl",
+      "sha256": "0421a02cb2fc82564dfe376ace2d3a0ad038ac292ef29fe405be11c78b2a6bcf",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6209-no_obstacle-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 208,
+      "path": "raw/episodes/seed-6209-no_obstacle-rgb_only/episode.json",
+      "sha256": "86008001b322e86401a3e481738e5c5906a08eb3bac10097e11b23804c6dabd0",
+      "type": "file"
+    },
+    {
+      "bytes": 125354,
+      "path": "raw/episodes/seed-6209-no_obstacle-rgb_only/ticks.jsonl",
+      "sha256": "9eab8bb9d54e48643cdbd160d5d1e6a7ea1be1de92826925e189ae5072423a2d",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6209-no_obstacle-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 211,
+      "path": "raw/episodes/seed-6209-no_obstacle-rgbd_motion/episode.json",
+      "sha256": "4e02061f455820b0d0a7b1a7cfa9e77fe1999670bfd1916a08d58ac37ea092ef",
+      "type": "file"
+    },
+    {
+      "bytes": 125354,
+      "path": "raw/episodes/seed-6209-no_obstacle-rgbd_motion/ticks.jsonl",
+      "sha256": "0421a02cb2fc82564dfe376ace2d3a0ad038ac292ef29fe405be11c78b2a6bcf",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6209-opaque-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 202,
+      "path": "raw/episodes/seed-6209-opaque-hierarchical/episode.json",
+      "sha256": "78938e1ffc79e637bd1a8647a871b668ff27a830ae9309ece63000f4db80bd8f",
+      "type": "file"
+    },
+    {
+      "bytes": 269641,
+      "path": "raw/episodes/seed-6209-opaque-hierarchical/ticks.jsonl",
+      "sha256": "98c2245e0cb849869e8987c7c28f0d66d747287e800318b57a1cc0cfebbae9d8",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6209-opaque-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 198,
+      "path": "raw/episodes/seed-6209-opaque-rgb_only/episode.json",
+      "sha256": "c753d338a751c3c87645b9c3f3f472c573e90340ee214cbadbe846e1e51067ce",
+      "type": "file"
+    },
+    {
+      "bytes": 269767,
+      "path": "raw/episodes/seed-6209-opaque-rgb_only/ticks.jsonl",
+      "sha256": "7ba881ae09f15c4fd3b6ddddb75736864ac3e06905ffe5b0679852af2c5d0f53",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6209-opaque-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 201,
+      "path": "raw/episodes/seed-6209-opaque-rgbd_motion/episode.json",
+      "sha256": "1d1feb608650c4b290f6dabd122a1dcd0dcda9a5215b74fd256f88070dab1533",
+      "type": "file"
+    },
+    {
+      "bytes": 269641,
+      "path": "raw/episodes/seed-6209-opaque-rgbd_motion/ticks.jsonl",
+      "sha256": "98c2245e0cb849869e8987c7c28f0d66d747287e800318b57a1cc0cfebbae9d8",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6210-eval_x2-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 204,
+      "path": "raw/episodes/seed-6210-eval_x2-hierarchical/episode.json",
+      "sha256": "c911d3d66585590e59d8fa949ee252921e92e31b0fc68d34f67477df6d90d25a",
+      "type": "file"
+    },
+    {
+      "bytes": 269482,
+      "path": "raw/episodes/seed-6210-eval_x2-hierarchical/ticks.jsonl",
+      "sha256": "eb55c616aaa42e12533e7b7027a01267b759404a6309e8b92f982c2c62066a98",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6210-eval_x2-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 200,
+      "path": "raw/episodes/seed-6210-eval_x2-rgb_only/episode.json",
+      "sha256": "61dbb5fd780f010721e28f69e33b33e728593f544c5c685bb42490f54fd949cb",
+      "type": "file"
+    },
+    {
+      "bytes": 292626,
+      "path": "raw/episodes/seed-6210-eval_x2-rgb_only/ticks.jsonl",
+      "sha256": "46829ee0c31d9d9fa79b345b68200d48e2daac768276903841d30f1d0db74acf",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6210-eval_x2-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 203,
+      "path": "raw/episodes/seed-6210-eval_x2-rgbd_motion/episode.json",
+      "sha256": "97911fd4566e2934e99126498dd1d1950a01da978c1910305eb6731e6523c79e",
+      "type": "file"
+    },
+    {
+      "bytes": 269482,
+      "path": "raw/episodes/seed-6210-eval_x2-rgbd_motion/ticks.jsonl",
+      "sha256": "eb55c616aaa42e12533e7b7027a01267b759404a6309e8b92f982c2c62066a98",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6210-no_obstacle-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 212,
+      "path": "raw/episodes/seed-6210-no_obstacle-hierarchical/episode.json",
+      "sha256": "06887fd066ad6558dd48e16314d35e647b452a29cd71b67753bbd8c6a7853020",
+      "type": "file"
+    },
+    {
+      "bytes": 125273,
+      "path": "raw/episodes/seed-6210-no_obstacle-hierarchical/ticks.jsonl",
+      "sha256": "b3e6b1f14d54a8ae2a2a9c4e4aed64f85921d6c92c1347581f66f1532cb00203",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6210-no_obstacle-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 208,
+      "path": "raw/episodes/seed-6210-no_obstacle-rgb_only/episode.json",
+      "sha256": "936f3edccd0c07dca4b46bed5d6bff6ec4bc0c75f65ba5b2fbded7e182836423",
+      "type": "file"
+    },
+    {
+      "bytes": 125273,
+      "path": "raw/episodes/seed-6210-no_obstacle-rgb_only/ticks.jsonl",
+      "sha256": "46d9f4027e60c23c5c15783baffc0869251e82d279fab30fb5e3c79fa7a9ecdc",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6210-no_obstacle-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 211,
+      "path": "raw/episodes/seed-6210-no_obstacle-rgbd_motion/episode.json",
+      "sha256": "2bdf58e5d215c92ace29cdbc6d6771c124ad8ab40df208da809f7400102e81ee",
+      "type": "file"
+    },
+    {
+      "bytes": 125273,
+      "path": "raw/episodes/seed-6210-no_obstacle-rgbd_motion/ticks.jsonl",
+      "sha256": "b3e6b1f14d54a8ae2a2a9c4e4aed64f85921d6c92c1347581f66f1532cb00203",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6210-opaque-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 202,
+      "path": "raw/episodes/seed-6210-opaque-hierarchical/episode.json",
+      "sha256": "fb3b80521c7fcde3d923a318824417cfb21b0babb202cfda030d58ccad4b45f8",
+      "type": "file"
+    },
+    {
+      "bytes": 269482,
+      "path": "raw/episodes/seed-6210-opaque-hierarchical/ticks.jsonl",
+      "sha256": "c1227e339f40421df2580b208816b15d0bf497ae1fe27cc6af6940919010de97",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6210-opaque-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 198,
+      "path": "raw/episodes/seed-6210-opaque-rgb_only/episode.json",
+      "sha256": "ae02178bf69eacf1bd84576f9aa62fdfd2677c72083ec818b1366d0cbb26d40c",
+      "type": "file"
+    },
+    {
+      "bytes": 269482,
+      "path": "raw/episodes/seed-6210-opaque-rgb_only/ticks.jsonl",
+      "sha256": "6b877bf522d8011fd57b4b74f95284b34c6a8f495402f4add1bd24aaa0e33fe8",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6210-opaque-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 201,
+      "path": "raw/episodes/seed-6210-opaque-rgbd_motion/episode.json",
+      "sha256": "f58049113c01c87ab818dfd6a91d57105afad4b1aaf4abdb96ee381bfc0f1ef9",
+      "type": "file"
+    },
+    {
+      "bytes": 269482,
+      "path": "raw/episodes/seed-6210-opaque-rgbd_motion/ticks.jsonl",
+      "sha256": "c1227e339f40421df2580b208816b15d0bf497ae1fe27cc6af6940919010de97",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6211-eval_x2-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 204,
+      "path": "raw/episodes/seed-6211-eval_x2-hierarchical/episode.json",
+      "sha256": "293c3aeeef87434663883ee304546e2d0d5ac5c02af36c507320bd25296bc986",
+      "type": "file"
+    },
+    {
+      "bytes": 269312,
+      "path": "raw/episodes/seed-6211-eval_x2-hierarchical/ticks.jsonl",
+      "sha256": "fd209d4142436cd287ccf75897db2b88be4b0c133c526397a93e609f0ea241e3",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6211-eval_x2-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 200,
+      "path": "raw/episodes/seed-6211-eval_x2-rgb_only/episode.json",
+      "sha256": "a2d4e1a9cb8977c4d86edd381e644da5a32a97ce84b9a4e550d8e29c2db7a997",
+      "type": "file"
+    },
+    {
+      "bytes": 293025,
+      "path": "raw/episodes/seed-6211-eval_x2-rgb_only/ticks.jsonl",
+      "sha256": "7760df153a6ab209f33cd5aebdd7dc6b8b4cd44997de304004a5a4d34b478154",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6211-eval_x2-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 203,
+      "path": "raw/episodes/seed-6211-eval_x2-rgbd_motion/episode.json",
+      "sha256": "8d1d3dd239e0a7771b57384d3d2489515785e1f0b350d88a0ddb2fea17f886d8",
+      "type": "file"
+    },
+    {
+      "bytes": 269312,
+      "path": "raw/episodes/seed-6211-eval_x2-rgbd_motion/ticks.jsonl",
+      "sha256": "fd209d4142436cd287ccf75897db2b88be4b0c133c526397a93e609f0ea241e3",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6211-no_obstacle-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 212,
+      "path": "raw/episodes/seed-6211-no_obstacle-hierarchical/episode.json",
+      "sha256": "2110f64bf1d4cc96312f17425dc2a634152bd8fb9e97b7ef74b22c715118ae53",
+      "type": "file"
+    },
+    {
+      "bytes": 125359,
+      "path": "raw/episodes/seed-6211-no_obstacle-hierarchical/ticks.jsonl",
+      "sha256": "1fd274c7ace8c5c45f6fd1630e559be955cfd0a58b216e184797753fbac7ea3d",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6211-no_obstacle-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 208,
+      "path": "raw/episodes/seed-6211-no_obstacle-rgb_only/episode.json",
+      "sha256": "b372459788ad5ce7001cde65ffd05a46c55becc6db19d45a805637740a61f3ed",
+      "type": "file"
+    },
+    {
+      "bytes": 125359,
+      "path": "raw/episodes/seed-6211-no_obstacle-rgb_only/ticks.jsonl",
+      "sha256": "ef2a109713671ec5a15f2ce916c8934ac7c1a2bad297dd799dfaecfaa678bd62",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6211-no_obstacle-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 211,
+      "path": "raw/episodes/seed-6211-no_obstacle-rgbd_motion/episode.json",
+      "sha256": "b9649d8d1d5a25eb8b24ee5c41a6afb4089f146272fba2f261b755db95fa4de6",
+      "type": "file"
+    },
+    {
+      "bytes": 125359,
+      "path": "raw/episodes/seed-6211-no_obstacle-rgbd_motion/ticks.jsonl",
+      "sha256": "1fd274c7ace8c5c45f6fd1630e559be955cfd0a58b216e184797753fbac7ea3d",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6211-opaque-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 202,
+      "path": "raw/episodes/seed-6211-opaque-hierarchical/episode.json",
+      "sha256": "15781859addf79892bcc09ddb038a769a69e46b74db0cac10e2ff28632479814",
+      "type": "file"
+    },
+    {
+      "bytes": 269312,
+      "path": "raw/episodes/seed-6211-opaque-hierarchical/ticks.jsonl",
+      "sha256": "179d3e787061911187a114737ec1f5bedf324a31d795ea5c2e47e28539ab680c",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6211-opaque-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 198,
+      "path": "raw/episodes/seed-6211-opaque-rgb_only/episode.json",
+      "sha256": "bcaf52161f91fd81b4b1744129f61c828885eca569000bb7b75f53d62b5f2d60",
+      "type": "file"
+    },
+    {
+      "bytes": 269118,
+      "path": "raw/episodes/seed-6211-opaque-rgb_only/ticks.jsonl",
+      "sha256": "2ca89c06c84926146b7ca5b5befdf6ea85dc67cfd577a494b12d53ecce07b60f",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6211-opaque-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 201,
+      "path": "raw/episodes/seed-6211-opaque-rgbd_motion/episode.json",
+      "sha256": "ab47353aa8fed52445747122a1d9de7d3140cd1aaebc0e5db9c30ecc5a182745",
+      "type": "file"
+    },
+    {
+      "bytes": 269312,
+      "path": "raw/episodes/seed-6211-opaque-rgbd_motion/ticks.jsonl",
+      "sha256": "179d3e787061911187a114737ec1f5bedf324a31d795ea5c2e47e28539ab680c",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6212-eval_x2-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 204,
+      "path": "raw/episodes/seed-6212-eval_x2-hierarchical/episode.json",
+      "sha256": "1ab990ea8b98a626c02e0ed5ffeb39923cb703a36b96b9e04202d4e101a7f117",
+      "type": "file"
+    },
+    {
+      "bytes": 268310,
+      "path": "raw/episodes/seed-6212-eval_x2-hierarchical/ticks.jsonl",
+      "sha256": "c7377845a7a23505de5b61cca1617b2d3cde3851e07376a5b6b016279c0dcbec",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6212-eval_x2-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 200,
+      "path": "raw/episodes/seed-6212-eval_x2-rgb_only/episode.json",
+      "sha256": "4c93f8e59ebd4b8bc19b810e0f5766b65393ff5a16d83145b516c673f779f632",
+      "type": "file"
+    },
+    {
+      "bytes": 292591,
+      "path": "raw/episodes/seed-6212-eval_x2-rgb_only/ticks.jsonl",
+      "sha256": "762b52e2c561dde8898a965dde26668a41dd6af69ce330ea55b62a23412518d5",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6212-eval_x2-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 203,
+      "path": "raw/episodes/seed-6212-eval_x2-rgbd_motion/episode.json",
+      "sha256": "324bf87f7845d7522bd52a63f9322b80cdde50e91c34f2aa368705e629af8346",
+      "type": "file"
+    },
+    {
+      "bytes": 268310,
+      "path": "raw/episodes/seed-6212-eval_x2-rgbd_motion/ticks.jsonl",
+      "sha256": "c7377845a7a23505de5b61cca1617b2d3cde3851e07376a5b6b016279c0dcbec",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6212-no_obstacle-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 212,
+      "path": "raw/episodes/seed-6212-no_obstacle-hierarchical/episode.json",
+      "sha256": "ef982f6e927a81367552ff2c802324db8376446ad81c2d1796eda48afcfa27b6",
+      "type": "file"
+    },
+    {
+      "bytes": 125286,
+      "path": "raw/episodes/seed-6212-no_obstacle-hierarchical/ticks.jsonl",
+      "sha256": "6d120f1ea57d420a5960b9b3c3f173a001582a04b0980031ebf46045e16bd798",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6212-no_obstacle-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 208,
+      "path": "raw/episodes/seed-6212-no_obstacle-rgb_only/episode.json",
+      "sha256": "e314d68ea71efbe568ee7c26763aafd72172368e146c90700e94aa32e9f6c0af",
+      "type": "file"
+    },
+    {
+      "bytes": 125286,
+      "path": "raw/episodes/seed-6212-no_obstacle-rgb_only/ticks.jsonl",
+      "sha256": "6ade99b5f2f188f1f3c4122577f60408894c4cc97c1c645982270f6036b600ad",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6212-no_obstacle-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 211,
+      "path": "raw/episodes/seed-6212-no_obstacle-rgbd_motion/episode.json",
+      "sha256": "e6b831445fbd7f053ba949d0654b35c4c2e09d88ca9ddec812643ed0283a0b77",
+      "type": "file"
+    },
+    {
+      "bytes": 125286,
+      "path": "raw/episodes/seed-6212-no_obstacle-rgbd_motion/ticks.jsonl",
+      "sha256": "6d120f1ea57d420a5960b9b3c3f173a001582a04b0980031ebf46045e16bd798",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6212-opaque-hierarchical",
+      "type": "directory"
+    },
+    {
+      "bytes": 202,
+      "path": "raw/episodes/seed-6212-opaque-hierarchical/episode.json",
+      "sha256": "0ee37df1dc729b508053fdb2deffed64c34301909c2bf418ba6073374f8a007a",
+      "type": "file"
+    },
+    {
+      "bytes": 268310,
+      "path": "raw/episodes/seed-6212-opaque-hierarchical/ticks.jsonl",
+      "sha256": "84f025c099b2cb897109b14e6dad0e635fed419f2c1f015d53fceb7c33f94f86",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6212-opaque-rgb_only",
+      "type": "directory"
+    },
+    {
+      "bytes": 198,
+      "path": "raw/episodes/seed-6212-opaque-rgb_only/episode.json",
+      "sha256": "3ff44d751ce39de942a3c05205b49eb8227a913eac9f1dfe10bda4ab5a3ac0c1",
+      "type": "file"
+    },
+    {
+      "bytes": 268310,
+      "path": "raw/episodes/seed-6212-opaque-rgb_only/ticks.jsonl",
+      "sha256": "8e5b31b39f60b3524a7e923eb6c7226c7684a47057fe4b08d0349e85eca67fe2",
+      "type": "file"
+    },
+    {
+      "path": "raw/episodes/seed-6212-opaque-rgbd_motion",
+      "type": "directory"
+    },
+    {
+      "bytes": 201,
+      "path": "raw/episodes/seed-6212-opaque-rgbd_motion/episode.json",
+      "sha256": "74f88dd349c2ba07359cda318d76db2b038c9f305c196dcc0830f6dab9d5eb16",
+      "type": "file"
+    },
+    {
+      "bytes": 268310,
+      "path": "raw/episodes/seed-6212-opaque-rgbd_motion/ticks.jsonl",
+      "sha256": "84f025c099b2cb897109b14e6dad0e635fed419f2c1f015d53fceb7c33f94f86",
+      "type": "file"
+    },
+    {
+      "bytes": 32300,
+      "path": "raw/run.json",
+      "sha256": "ab4f505478d551a2a551d03629c37f8211a77c13b6a80acbf431d041ca212ab4",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes",
+      "type": "directory"
+    },
+    {
+      "path": "raw/scenes/seed-6201-eval_x2",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6201-eval_x2/depth.npy",
+      "sha256": "882bbc60f508e61a082c1634c6f09a2e3e062cfeb26146557a53a1df1697fa6d",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6201-eval_x2/rgb.npy",
+      "sha256": "12f471c3903fd3fb9d95258c144e4d6e74ec54038f7cbe3fa9a6449d3d875a00",
+      "type": "file"
+    },
+    {
+      "bytes": 14284,
+      "path": "raw/scenes/seed-6201-eval_x2/rgb.png",
+      "sha256": "3da4f5fec4d4a97cc54c64610c427d2ff0a5548aa21b4da227c608c3c454eec0",
+      "type": "file"
+    },
+    {
+      "bytes": 673,
+      "path": "raw/scenes/seed-6201-eval_x2/scene.json",
+      "sha256": "8852fc361666364dbcb8cdf0a9714cfa9b8149c98211efdaa8eb0467b2ff76c7",
+      "type": "file"
+    },
+    {
+      "bytes": 1546,
+      "path": "raw/scenes/seed-6201-eval_x2/scene.xml",
+      "sha256": "7b8188ca9372899f0efd46df29cf1a8e06d9d2f6f4aff0b964d9e787f595f2f5",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6201-no_obstacle",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6201-no_obstacle/depth.npy",
+      "sha256": "492ab6c62734de7540164e4c13039a01d0acd088fb13628eb3b866b7ffe7ce91",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6201-no_obstacle/rgb.npy",
+      "sha256": "df51797deb06d9a9e1a45afc5029bb445bfc3178ea71c553133be3909760eb59",
+      "type": "file"
+    },
+    {
+      "bytes": 13864,
+      "path": "raw/scenes/seed-6201-no_obstacle/rgb.png",
+      "sha256": "064e63060f9806945d9ccbaa0ec5b7cd6c98af1192ef4890fefb979f3925eaee",
+      "type": "file"
+    },
+    {
+      "bytes": 638,
+      "path": "raw/scenes/seed-6201-no_obstacle/scene.json",
+      "sha256": "033260114506da6b90e7015288e2b59cbcb710de991d3bf0cb184642f3b21202",
+      "type": "file"
+    },
+    {
+      "bytes": 1359,
+      "path": "raw/scenes/seed-6201-no_obstacle/scene.xml",
+      "sha256": "40e0feec4c26c5ff399b9bdf5ccb9b49aa9ba608e78e7c6748b2245786e03e66",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6201-opaque",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6201-opaque/depth.npy",
+      "sha256": "882bbc60f508e61a082c1634c6f09a2e3e062cfeb26146557a53a1df1697fa6d",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6201-opaque/rgb.npy",
+      "sha256": "965a6bd5a933ef3bbc52ffcf5004e693fa140815b77a3b3ebca260a26e5ddba6",
+      "type": "file"
+    },
+    {
+      "bytes": 14158,
+      "path": "raw/scenes/seed-6201-opaque/rgb.png",
+      "sha256": "a192c577f07eb84542997f67e955dbe228198d3cceee1cc1b367d64b7efd7112",
+      "type": "file"
+    },
+    {
+      "bytes": 672,
+      "path": "raw/scenes/seed-6201-opaque/scene.json",
+      "sha256": "33473d7adf699ba36a3370a79b05b7fe4a89c1f904018a9836f7c79a2eb4147c",
+      "type": "file"
+    },
+    {
+      "bytes": 1546,
+      "path": "raw/scenes/seed-6201-opaque/scene.xml",
+      "sha256": "bbe2ed5a3ff601c83561c742ebcafab2691ab17fd47b5e022c64bd8842097c6e",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6202-eval_x2",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6202-eval_x2/depth.npy",
+      "sha256": "1fd1b597ee90a6c11e80b687b37795f3785e226f85698357570b9cce34796145",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6202-eval_x2/rgb.npy",
+      "sha256": "4ab8661d195c25dc4f868d0200429fafb8e233c34cf00e86ad09739d1c96e4f5",
+      "type": "file"
+    },
+    {
+      "bytes": 14293,
+      "path": "raw/scenes/seed-6202-eval_x2/rgb.png",
+      "sha256": "e3dbfb45704d27d1fe66cf5c7eb82eaff839b4f096530081883aa602f9c7d0f2",
+      "type": "file"
+    },
+    {
+      "bytes": 670,
+      "path": "raw/scenes/seed-6202-eval_x2/scene.json",
+      "sha256": "fd9303cd46f5d0f2f88aed47457872f9c8bb05e65a60abac1cc270ee75893db5",
+      "type": "file"
+    },
+    {
+      "bytes": 1543,
+      "path": "raw/scenes/seed-6202-eval_x2/scene.xml",
+      "sha256": "14b850b239199e146e87ecbd13ad92be8f9cb5ecc81bbd264d339d42e8570d99",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6202-no_obstacle",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6202-no_obstacle/depth.npy",
+      "sha256": "0d652523a817de9153204178b0272f8db9ff478bf73d2aa251fda181c66a1b8b",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6202-no_obstacle/rgb.npy",
+      "sha256": "cf389dc2bc74b138cfee710fbae6d54d111cb341c1e57d31699ac4a577a653fd",
+      "type": "file"
+    },
+    {
+      "bytes": 13870,
+      "path": "raw/scenes/seed-6202-no_obstacle/rgb.png",
+      "sha256": "8af0897e98bbf72361a6bd5205793c1b0d46c0bc2560b6e6404dfe73ebfce2e0",
+      "type": "file"
+    },
+    {
+      "bytes": 635,
+      "path": "raw/scenes/seed-6202-no_obstacle/scene.json",
+      "sha256": "b5d500aeb0a2dc3fd4f31e65156524f8eec412e0fc16fc5ec4a025c1e99184ce",
+      "type": "file"
+    },
+    {
+      "bytes": 1357,
+      "path": "raw/scenes/seed-6202-no_obstacle/scene.xml",
+      "sha256": "defdf852ae58d5b676248e1b60fac83a95583962d150224d1f3c1bb5c5b2da7f",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6202-opaque",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6202-opaque/depth.npy",
+      "sha256": "1fd1b597ee90a6c11e80b687b37795f3785e226f85698357570b9cce34796145",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6202-opaque/rgb.npy",
+      "sha256": "5b78f022db665cbd6e08292e8c1fa010cf2fc25d39f311c7ac1a9d95be972331",
+      "type": "file"
+    },
+    {
+      "bytes": 14148,
+      "path": "raw/scenes/seed-6202-opaque/rgb.png",
+      "sha256": "2739c10609633441fd2f40f5e09932a9ea25f46fdb9659da069088e95c6f00a8",
+      "type": "file"
+    },
+    {
+      "bytes": 669,
+      "path": "raw/scenes/seed-6202-opaque/scene.json",
+      "sha256": "cb9b40b5ff358d9400b6fbb714f938d0cabbdd89b6bbc23e74bdbfc439fe2b8d",
+      "type": "file"
+    },
+    {
+      "bytes": 1543,
+      "path": "raw/scenes/seed-6202-opaque/scene.xml",
+      "sha256": "b158c856469a3a19696f91536f976fea5e142fe82ab81a34d42bec29c0412a12",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6203-eval_x2",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6203-eval_x2/depth.npy",
+      "sha256": "10a2ff712ee381ac7f75445acf67e14e085a6211a2d8f46b151e900039ec6c16",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6203-eval_x2/rgb.npy",
+      "sha256": "8fdb9e87c91168ea082abcc83de116171b3840140ab2a4d7c79d6dc3b3b11bb1",
+      "type": "file"
+    },
+    {
+      "bytes": 14295,
+      "path": "raw/scenes/seed-6203-eval_x2/rgb.png",
+      "sha256": "b2164779317329759c07fef86edccfe922b482119233abaaea03d0c7ce7eb1b4",
+      "type": "file"
+    },
+    {
+      "bytes": 672,
+      "path": "raw/scenes/seed-6203-eval_x2/scene.json",
+      "sha256": "c6ce2356eaf879923cafc879462a82e3b446138cf1b7011a3d8c3df138725a10",
+      "type": "file"
+    },
+    {
+      "bytes": 1545,
+      "path": "raw/scenes/seed-6203-eval_x2/scene.xml",
+      "sha256": "eb1b4d930aeddc1dc89ac70a4a64db9bb1e69ed5d657119a0b9e6d96d9c3e1e2",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6203-no_obstacle",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6203-no_obstacle/depth.npy",
+      "sha256": "276c32feadfd7bd4a5eb00ad8799e39ef5facedbfd002ca31998cd538981fd63",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6203-no_obstacle/rgb.npy",
+      "sha256": "054575cd79fc0c3d15d46ca7f72ae0f180aa28bf61352b18104f1d8bd4291ffd",
+      "type": "file"
+    },
+    {
+      "bytes": 13868,
+      "path": "raw/scenes/seed-6203-no_obstacle/rgb.png",
+      "sha256": "997e7417a003cbd8bac1d70260cedfe1d415047037dedaa6928beb61f17f0091",
+      "type": "file"
+    },
+    {
+      "bytes": 637,
+      "path": "raw/scenes/seed-6203-no_obstacle/scene.json",
+      "sha256": "20930377d38cdeb343a94cd08de7299eae65b14f288c3e77da7080fb35f604b7",
+      "type": "file"
+    },
+    {
+      "bytes": 1359,
+      "path": "raw/scenes/seed-6203-no_obstacle/scene.xml",
+      "sha256": "7503cf24b707d29d3a9cc5c50c7a495701a2c93b68bbd341c8f37f7143b659ea",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6203-opaque",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6203-opaque/depth.npy",
+      "sha256": "10a2ff712ee381ac7f75445acf67e14e085a6211a2d8f46b151e900039ec6c16",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6203-opaque/rgb.npy",
+      "sha256": "ff27adcf7c965884588f4819b23966832bb31dc8ca6bfbcc376613ca7ecb2268",
+      "type": "file"
+    },
+    {
+      "bytes": 14149,
+      "path": "raw/scenes/seed-6203-opaque/rgb.png",
+      "sha256": "6a1bc9815d13b5117fb048d74f0e417ce1a43399aee0fe96da0c68578567e892",
+      "type": "file"
+    },
+    {
+      "bytes": 671,
+      "path": "raw/scenes/seed-6203-opaque/scene.json",
+      "sha256": "8e90caface34c322928690a86eb674fcfed58526c022e3fd6ef8e81788ed5a85",
+      "type": "file"
+    },
+    {
+      "bytes": 1545,
+      "path": "raw/scenes/seed-6203-opaque/scene.xml",
+      "sha256": "e86dd6c7aea1ffb3c5bd0b460c83a514c5c0cc816600818d5d88f332fe062d53",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6204-eval_x2",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6204-eval_x2/depth.npy",
+      "sha256": "f882612b74e10dd9b881cedf5d0a8a7435aac57cd1ccf3bc60371371eb20a2ee",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6204-eval_x2/rgb.npy",
+      "sha256": "a78c18a76ef149e93af0f84cb774a72d8acefd3af60378adf8c4ddaf0989b57b",
+      "type": "file"
+    },
+    {
+      "bytes": 14253,
+      "path": "raw/scenes/seed-6204-eval_x2/rgb.png",
+      "sha256": "8d73d5a9464ade836af91495b526fdf20158f60b4b78df5ea11509a657c634f6",
+      "type": "file"
+    },
+    {
+      "bytes": 673,
+      "path": "raw/scenes/seed-6204-eval_x2/scene.json",
+      "sha256": "d891edd4b415fd186cea8e916e68e96f70ad0bc0805723ecb24782673e96c557",
+      "type": "file"
+    },
+    {
+      "bytes": 1546,
+      "path": "raw/scenes/seed-6204-eval_x2/scene.xml",
+      "sha256": "c0bca2c42b02f51b672d39a4208d8054d23c4d83ee6310a072d735c679ed6245",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6204-no_obstacle",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6204-no_obstacle/depth.npy",
+      "sha256": "9d745dadab91518ada8d32cc55f6dc4ddb63ac06984fe8dade5d0e5015d6216d",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6204-no_obstacle/rgb.npy",
+      "sha256": "29a3c1fb7108db044afd287f6337960c76425d7bc11ff7fb796a03680d9be63a",
+      "type": "file"
+    },
+    {
+      "bytes": 13866,
+      "path": "raw/scenes/seed-6204-no_obstacle/rgb.png",
+      "sha256": "03e426ce71e02616920c4eeae5b860107d0c0bb4af406d4b5978287bb0c1c850",
+      "type": "file"
+    },
+    {
+      "bytes": 638,
+      "path": "raw/scenes/seed-6204-no_obstacle/scene.json",
+      "sha256": "0d98e1d81f392aed8519eaec967f5f7469b229c31d22a8be69f464eeea3cad20",
+      "type": "file"
+    },
+    {
+      "bytes": 1357,
+      "path": "raw/scenes/seed-6204-no_obstacle/scene.xml",
+      "sha256": "7bf1c21c5a25c0c3bcf634072e2c3dc95518f508e8e7d35e3b68e8a5bed5593f",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6204-opaque",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6204-opaque/depth.npy",
+      "sha256": "f882612b74e10dd9b881cedf5d0a8a7435aac57cd1ccf3bc60371371eb20a2ee",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6204-opaque/rgb.npy",
+      "sha256": "b587269d436b2421aeb97cb7934eae37343e9a6a78462eb5f37a482638a56c8b",
+      "type": "file"
+    },
+    {
+      "bytes": 14115,
+      "path": "raw/scenes/seed-6204-opaque/rgb.png",
+      "sha256": "f11a5cc1a884779033d3c252ce7654d0713791722f46f559c153166e8ac01ac9",
+      "type": "file"
+    },
+    {
+      "bytes": 672,
+      "path": "raw/scenes/seed-6204-opaque/scene.json",
+      "sha256": "5af075be2a98e5437ee08d564bb28956a0dca930cebe8cfe8d7715da78000071",
+      "type": "file"
+    },
+    {
+      "bytes": 1546,
+      "path": "raw/scenes/seed-6204-opaque/scene.xml",
+      "sha256": "2bca29705610335543693543a23e4c5259fc2798b43a0f4b51aa3f9f4a9800f3",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6205-eval_x2",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6205-eval_x2/depth.npy",
+      "sha256": "16f531c2fa63e5104a19a303f65e7295d898a29ffaaba79321684ae1a0c95129",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6205-eval_x2/rgb.npy",
+      "sha256": "06ef3e5d91967b824380b954457fe1163484aca39c031f92aff550dbb19b5cbd",
+      "type": "file"
+    },
+    {
+      "bytes": 14311,
+      "path": "raw/scenes/seed-6205-eval_x2/rgb.png",
+      "sha256": "0889035c43ac1801fa4bf41fcec41c31966d502cc686b9a0878d0bc71282fff6",
+      "type": "file"
+    },
+    {
+      "bytes": 672,
+      "path": "raw/scenes/seed-6205-eval_x2/scene.json",
+      "sha256": "d44b460d90f51920d9ca3a72ff4fcc4974a2933c800d797eae1a1b9ff3c12e88",
+      "type": "file"
+    },
+    {
+      "bytes": 1545,
+      "path": "raw/scenes/seed-6205-eval_x2/scene.xml",
+      "sha256": "578739f0e0e87f3b9894964f27944ef135567c624e23f13e4b61be82239953b1",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6205-no_obstacle",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6205-no_obstacle/depth.npy",
+      "sha256": "6ee09b89658af9e9576f8be64345ec2aae0b4310d85b7bea240c027213f8a75c",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6205-no_obstacle/rgb.npy",
+      "sha256": "590925b9771f11fbfc6281791c08d0dca6c988fe9fad2322bf32fa77fddd0577",
+      "type": "file"
+    },
+    {
+      "bytes": 13872,
+      "path": "raw/scenes/seed-6205-no_obstacle/rgb.png",
+      "sha256": "b84e7bbfbb025d7f84c7b41d324e5ddc458894aa0e5f460b82efe6df79b6e03f",
+      "type": "file"
+    },
+    {
+      "bytes": 637,
+      "path": "raw/scenes/seed-6205-no_obstacle/scene.json",
+      "sha256": "c65244b64c1533444c445128e210b31e430df6f83dcfb10c4a29ebd2c4e5ce40",
+      "type": "file"
+    },
+    {
+      "bytes": 1357,
+      "path": "raw/scenes/seed-6205-no_obstacle/scene.xml",
+      "sha256": "77a4dbcbfd6de8c4fea405783e74b706ee59395d7cd4b707d353819196f1fdd6",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6205-opaque",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6205-opaque/depth.npy",
+      "sha256": "16f531c2fa63e5104a19a303f65e7295d898a29ffaaba79321684ae1a0c95129",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6205-opaque/rgb.npy",
+      "sha256": "b1e00b905f10dcef243c0e93a08eef01820355fa8123ec2bc9e94a6dd443e98f",
+      "type": "file"
+    },
+    {
+      "bytes": 14146,
+      "path": "raw/scenes/seed-6205-opaque/rgb.png",
+      "sha256": "21fa653678b8b9a5bc9add00d80f33e00445275b44931815af705e1bc393fc80",
+      "type": "file"
+    },
+    {
+      "bytes": 671,
+      "path": "raw/scenes/seed-6205-opaque/scene.json",
+      "sha256": "396ac1134750cdcdfaa05ac39b990885554ee7c4c5598032d50af6052777d6af",
+      "type": "file"
+    },
+    {
+      "bytes": 1545,
+      "path": "raw/scenes/seed-6205-opaque/scene.xml",
+      "sha256": "cb44fb40d81821cdb9afdf2bbe07714a9ec9e1925af4d862ccf15cfc6a882cdc",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6206-eval_x2",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6206-eval_x2/depth.npy",
+      "sha256": "6d6c23c7ea15c20f5fb4d5a2381a3e8282446c04a8e2c9d632af8140ff705063",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6206-eval_x2/rgb.npy",
+      "sha256": "9809d7502b7520992c5fc294f71012e18921439d091390c1b2286399cabc71e1",
+      "type": "file"
+    },
+    {
+      "bytes": 14258,
+      "path": "raw/scenes/seed-6206-eval_x2/rgb.png",
+      "sha256": "9157b81936171c0fedca02b5347edc231cca83d045166dea8b094bd53bc6bec7",
+      "type": "file"
+    },
+    {
+      "bytes": 671,
+      "path": "raw/scenes/seed-6206-eval_x2/scene.json",
+      "sha256": "3e7a535bd8347aaf8643ba16909c5e1855257ab6ecd2f0c1259289a96aed8b4c",
+      "type": "file"
+    },
+    {
+      "bytes": 1544,
+      "path": "raw/scenes/seed-6206-eval_x2/scene.xml",
+      "sha256": "7b1138814df2a3d978f210b48828fca132eb39e9b3f5a6efbc4a70b892f37d6e",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6206-no_obstacle",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6206-no_obstacle/depth.npy",
+      "sha256": "7d7f34c9bf0a50a2b6ff5961bf9b0136417d423656ecd482fee112fb32782581",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6206-no_obstacle/rgb.npy",
+      "sha256": "a01bf0936af916fbe57aab663060b537c57a95a1bb241537d3f4110e2ba65580",
+      "type": "file"
+    },
+    {
+      "bytes": 13870,
+      "path": "raw/scenes/seed-6206-no_obstacle/rgb.png",
+      "sha256": "f1c8fe5e511b882ed0020ce6f71b3e37bdd9cd6c36cf3a66489e9b9b9ec6269a",
+      "type": "file"
+    },
+    {
+      "bytes": 636,
+      "path": "raw/scenes/seed-6206-no_obstacle/scene.json",
+      "sha256": "5867e401693304a0050cb92037f4b005f113acee5d6460d1f2759648047531db",
+      "type": "file"
+    },
+    {
+      "bytes": 1357,
+      "path": "raw/scenes/seed-6206-no_obstacle/scene.xml",
+      "sha256": "19936c964bdaf33f6e11eddb88f730dc17935ff7f5cfffeb7068c579861cf22f",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6206-opaque",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6206-opaque/depth.npy",
+      "sha256": "6d6c23c7ea15c20f5fb4d5a2381a3e8282446c04a8e2c9d632af8140ff705063",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6206-opaque/rgb.npy",
+      "sha256": "439a214b7b6b0cad887471accb8825591b24867db443a35eec40f7cd6815e09c",
+      "type": "file"
+    },
+    {
+      "bytes": 14146,
+      "path": "raw/scenes/seed-6206-opaque/rgb.png",
+      "sha256": "b707f2a5e9a1b190abe654dbfb747191908164896151f994e67baaff5e0dfa4e",
+      "type": "file"
+    },
+    {
+      "bytes": 670,
+      "path": "raw/scenes/seed-6206-opaque/scene.json",
+      "sha256": "fd3214ea5893a9395d0d44dcca2246485301914bbc5036264478b579a46b7d9d",
+      "type": "file"
+    },
+    {
+      "bytes": 1544,
+      "path": "raw/scenes/seed-6206-opaque/scene.xml",
+      "sha256": "e3968c6eaf7ff260a69f939e343c15019d733c2e3eab42e78f3fafe9d0a1facb",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6207-eval_x2",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6207-eval_x2/depth.npy",
+      "sha256": "f92286eb06056385333d028474591f5093a33c63672c5fee55391944671946a7",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6207-eval_x2/rgb.npy",
+      "sha256": "eb7def4e855cb34a3850a26c70afe47f13ec3855dbdb22070ed86bcdb2b50506",
+      "type": "file"
+    },
+    {
+      "bytes": 14288,
+      "path": "raw/scenes/seed-6207-eval_x2/rgb.png",
+      "sha256": "051ed549b595454a3847528ee505b129405a49b7e8d428467c7130d74e8e92bb",
+      "type": "file"
+    },
+    {
+      "bytes": 672,
+      "path": "raw/scenes/seed-6207-eval_x2/scene.json",
+      "sha256": "f5c2354a0b3f08399fa01ee69f92a6cb14aae7891fd00fb7502dbc9eba4b516b",
+      "type": "file"
+    },
+    {
+      "bytes": 1545,
+      "path": "raw/scenes/seed-6207-eval_x2/scene.xml",
+      "sha256": "1b3c4d93a9281330f5e3d85674e23d3fe80c8b0324187cc8820be68aed10ec4f",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6207-no_obstacle",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6207-no_obstacle/depth.npy",
+      "sha256": "acd7d216578cc4a549768f219828402a124dd3022a6b6049e76f9a1411dcd01d",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6207-no_obstacle/rgb.npy",
+      "sha256": "03166a03531495fa23d698eb1e102a031def2ce034933790b6f422487587416c",
+      "type": "file"
+    },
+    {
+      "bytes": 13873,
+      "path": "raw/scenes/seed-6207-no_obstacle/rgb.png",
+      "sha256": "09c9b66deb062fbdbbfe78a882e4284a01dc7eb04ad4d566ebd650e57f616fc8",
+      "type": "file"
+    },
+    {
+      "bytes": 637,
+      "path": "raw/scenes/seed-6207-no_obstacle/scene.json",
+      "sha256": "38251c2276f07bed9dd25f99e5b7e6c7e6cd0e4ac74190e896fead7e07b95ea4",
+      "type": "file"
+    },
+    {
+      "bytes": 1358,
+      "path": "raw/scenes/seed-6207-no_obstacle/scene.xml",
+      "sha256": "51f6fc4aa79edd9c38f64be24cadf88e2948cda084d41b53e4afb3d8633b07c5",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6207-opaque",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6207-opaque/depth.npy",
+      "sha256": "f92286eb06056385333d028474591f5093a33c63672c5fee55391944671946a7",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6207-opaque/rgb.npy",
+      "sha256": "532b04ada9ad69e83fc6e3dae221891efe136c846746757d12a9e54b3cd56c1a",
+      "type": "file"
+    },
+    {
+      "bytes": 14139,
+      "path": "raw/scenes/seed-6207-opaque/rgb.png",
+      "sha256": "671c197e5b18db1116cc20f87be438e3ff4660c6afcedf66db442bb9f2e79c9a",
+      "type": "file"
+    },
+    {
+      "bytes": 671,
+      "path": "raw/scenes/seed-6207-opaque/scene.json",
+      "sha256": "4dc16cbd775f2458906576735f0ef47c682da055b6479ce45f58a0d2285dc2b5",
+      "type": "file"
+    },
+    {
+      "bytes": 1545,
+      "path": "raw/scenes/seed-6207-opaque/scene.xml",
+      "sha256": "5c60f528ec672c4f87146d9d046a74ef6df964d08b1de800484161df104370e5",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6208-eval_x2",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6208-eval_x2/depth.npy",
+      "sha256": "ba2ea49b9f7ebd4c4ae136fe38a22d67080aae0f202e645f7c72968ae7fdb5f5",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6208-eval_x2/rgb.npy",
+      "sha256": "9f1c6bab9ce5e0fc237b0caf897c96cc69390ef3910bac018e636acbec1889b3",
+      "type": "file"
+    },
+    {
+      "bytes": 14233,
+      "path": "raw/scenes/seed-6208-eval_x2/rgb.png",
+      "sha256": "d351082700f6caf35f6a04106decc0eb8310408470d90d5d9e3764ed6098cd4e",
+      "type": "file"
+    },
+    {
+      "bytes": 674,
+      "path": "raw/scenes/seed-6208-eval_x2/scene.json",
+      "sha256": "ea8b7e2ba15ccfcad8f653a8431d9b5c6b9088eb822fd19d1c2647f53c040735",
+      "type": "file"
+    },
+    {
+      "bytes": 1547,
+      "path": "raw/scenes/seed-6208-eval_x2/scene.xml",
+      "sha256": "e5a3b7f512c5cfbd8a439a5084561fa392de445489caac9f73e939ea58df908f",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6208-no_obstacle",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6208-no_obstacle/depth.npy",
+      "sha256": "a4377c6798841573f44cf68c0025088d1c86fa739ac49100489644ce87b3995d",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6208-no_obstacle/rgb.npy",
+      "sha256": "4ed65088424df957ed732b8c97ad415852efbac9520fe705310a6f24816b45de",
+      "type": "file"
+    },
+    {
+      "bytes": 13861,
+      "path": "raw/scenes/seed-6208-no_obstacle/rgb.png",
+      "sha256": "69f6c62d0c8b8684294906e4c9ee12227d1d8e6fb3de8cecf627b8277b916a04",
+      "type": "file"
+    },
+    {
+      "bytes": 639,
+      "path": "raw/scenes/seed-6208-no_obstacle/scene.json",
+      "sha256": "5b71ee46d5d7b9858abf7e8bdad16107ea749d8834d4983c09b33156405b250c",
+      "type": "file"
+    },
+    {
+      "bytes": 1358,
+      "path": "raw/scenes/seed-6208-no_obstacle/scene.xml",
+      "sha256": "e52127ad73a792eead7d7543f4cdfb33ff68a939226518abc257600d05aa7fa7",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6208-opaque",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6208-opaque/depth.npy",
+      "sha256": "ba2ea49b9f7ebd4c4ae136fe38a22d67080aae0f202e645f7c72968ae7fdb5f5",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6208-opaque/rgb.npy",
+      "sha256": "c5b1a676fae9f290695e233bbdef972f64f0e0a4204b68b47bc5f8317c08246c",
+      "type": "file"
+    },
+    {
+      "bytes": 14136,
+      "path": "raw/scenes/seed-6208-opaque/rgb.png",
+      "sha256": "cb3aad3cdcc30856bf5d70d26ab4d06b05cc0572c56e6ed473896fdf381ded6a",
+      "type": "file"
+    },
+    {
+      "bytes": 673,
+      "path": "raw/scenes/seed-6208-opaque/scene.json",
+      "sha256": "710b7155e1d3f636bf18ea5885c602ea3e1124e13f840fcc4dd987659c3acebd",
+      "type": "file"
+    },
+    {
+      "bytes": 1547,
+      "path": "raw/scenes/seed-6208-opaque/scene.xml",
+      "sha256": "c34e5366586b10154ea802ede8050995415dd43ef320283fbdea290d8d089117",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6209-eval_x2",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6209-eval_x2/depth.npy",
+      "sha256": "a61331e22633fa099c4563dc05953177fcc9cbec3337456b9857c68f446c9c51",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6209-eval_x2/rgb.npy",
+      "sha256": "5ab67ca3b4839ff47cc987c60cd72248b83dbe22f52b318fdcf45438d321e82f",
+      "type": "file"
+    },
+    {
+      "bytes": 14277,
+      "path": "raw/scenes/seed-6209-eval_x2/rgb.png",
+      "sha256": "a95100664c62e64cd991b33a029155c8758bd5cea8bab580efab6dbe9c5d36fc",
+      "type": "file"
+    },
+    {
+      "bytes": 672,
+      "path": "raw/scenes/seed-6209-eval_x2/scene.json",
+      "sha256": "0e2566dcd9250240ba928c62c6cde43abe43485300caa9df06ea93ddc721e610",
+      "type": "file"
+    },
+    {
+      "bytes": 1545,
+      "path": "raw/scenes/seed-6209-eval_x2/scene.xml",
+      "sha256": "74e1bb5a7465dcde16ebd8704b92bc76beae749cce51b795d056c0c870099a4c",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6209-no_obstacle",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6209-no_obstacle/depth.npy",
+      "sha256": "ca226f447774ad05d4c62a4c2b5d9600b9f4fb65548434d2c252b3614b9d068b",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6209-no_obstacle/rgb.npy",
+      "sha256": "54972265c370da5b891e6ba87bae33b3de9fc9b4d6fb55be2c50b5f72f9e1401",
+      "type": "file"
+    },
+    {
+      "bytes": 13869,
+      "path": "raw/scenes/seed-6209-no_obstacle/rgb.png",
+      "sha256": "89fc058d554ffd6f1e7a71d8cced4638506bb96b409aa1bc7697c93ed3095ddf",
+      "type": "file"
+    },
+    {
+      "bytes": 637,
+      "path": "raw/scenes/seed-6209-no_obstacle/scene.json",
+      "sha256": "140317ff8ab781b9d6b17c6e9306450348a22bfad51466d5c0fdd7aa8488f46a",
+      "type": "file"
+    },
+    {
+      "bytes": 1357,
+      "path": "raw/scenes/seed-6209-no_obstacle/scene.xml",
+      "sha256": "f16ed4898b5541201270379275d9d9e6039a89c836cf1d55c8eef26acc24c480",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6209-opaque",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6209-opaque/depth.npy",
+      "sha256": "a61331e22633fa099c4563dc05953177fcc9cbec3337456b9857c68f446c9c51",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6209-opaque/rgb.npy",
+      "sha256": "7c878a4c740b98dabbbe6abb7deb30b76a7a1c2dcf12669131830898a77ce8db",
+      "type": "file"
+    },
+    {
+      "bytes": 14129,
+      "path": "raw/scenes/seed-6209-opaque/rgb.png",
+      "sha256": "d41fb11c05fa892d71566cbdeabd5ffa180009194a0c6adee83e9a73f06db92a",
+      "type": "file"
+    },
+    {
+      "bytes": 671,
+      "path": "raw/scenes/seed-6209-opaque/scene.json",
+      "sha256": "68f9859c96a2ff765223004127b837c2b62cb0131e8b8c3c8f75d5f2f318ef83",
+      "type": "file"
+    },
+    {
+      "bytes": 1545,
+      "path": "raw/scenes/seed-6209-opaque/scene.xml",
+      "sha256": "162319d4b434063c7c4d23ba8b0a5e0817fe5cdba05c47fd04f4e56a5c664a3b",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6210-eval_x2",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6210-eval_x2/depth.npy",
+      "sha256": "96b4b48c5d654ab7e8f6220902d0487482c77c690ceb4d34386036bc3ebe226a",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6210-eval_x2/rgb.npy",
+      "sha256": "357fdf0d710b843ffb9389007b12eae8c734d944830499f32c6c435fa1bf4948",
+      "type": "file"
+    },
+    {
+      "bytes": 14291,
+      "path": "raw/scenes/seed-6210-eval_x2/rgb.png",
+      "sha256": "5ce7ac0bda0d0b1a837a2b2e019334ba0b0550c459becfc72a056424089ff457",
+      "type": "file"
+    },
+    {
+      "bytes": 671,
+      "path": "raw/scenes/seed-6210-eval_x2/scene.json",
+      "sha256": "50794d9b933c7aafb2c52e422724bc0d5a92e9b9c4a68a4f13da7c3ba23f074c",
+      "type": "file"
+    },
+    {
+      "bytes": 1544,
+      "path": "raw/scenes/seed-6210-eval_x2/scene.xml",
+      "sha256": "cbb5a43d67c8881808ce22568b60d6c5c6e85c90575db6366033557c7927bc06",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6210-no_obstacle",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6210-no_obstacle/depth.npy",
+      "sha256": "12497c913bd6e12cbf021c7a829b0aae089f0281049699f2f2edd4d346bee7c9",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6210-no_obstacle/rgb.npy",
+      "sha256": "6aa13e4fc046f2d1ffbc9e293a349af6772e161f002b060ba6ee1d1337200ed9",
+      "type": "file"
+    },
+    {
+      "bytes": 13870,
+      "path": "raw/scenes/seed-6210-no_obstacle/rgb.png",
+      "sha256": "1273f20202ce27923d154beba080db25c88e961af32efdaed85e48bf6572f9f3",
+      "type": "file"
+    },
+    {
+      "bytes": 636,
+      "path": "raw/scenes/seed-6210-no_obstacle/scene.json",
+      "sha256": "d23f66e4186c36848f38dc8d7e2705229ea11bc03cc8a3fcf3709ff9d7000908",
+      "type": "file"
+    },
+    {
+      "bytes": 1357,
+      "path": "raw/scenes/seed-6210-no_obstacle/scene.xml",
+      "sha256": "6db526dacf1833efc97c370544e3f1809187ae607471145784a9822ae253a937",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6210-opaque",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6210-opaque/depth.npy",
+      "sha256": "96b4b48c5d654ab7e8f6220902d0487482c77c690ceb4d34386036bc3ebe226a",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6210-opaque/rgb.npy",
+      "sha256": "0bf4948060f2a62dbed8f98ae35cb0450725b86e02c577fdcd37fc4a78380ed8",
+      "type": "file"
+    },
+    {
+      "bytes": 14131,
+      "path": "raw/scenes/seed-6210-opaque/rgb.png",
+      "sha256": "f9e171492c2a451300d5b82bed4bdb4d7f6fead9e75e0cfdee734d31db8d7a0c",
+      "type": "file"
+    },
+    {
+      "bytes": 670,
+      "path": "raw/scenes/seed-6210-opaque/scene.json",
+      "sha256": "72d175406f352ea66bf359df58ea898d55a20aac750384ead5740b584f433b8c",
+      "type": "file"
+    },
+    {
+      "bytes": 1544,
+      "path": "raw/scenes/seed-6210-opaque/scene.xml",
+      "sha256": "6de22a9cea2a1b133e6033631f940cdd067c9bd7e3ad8b0b10cd6243dc767326",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6211-eval_x2",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6211-eval_x2/depth.npy",
+      "sha256": "9521a8bbb67d79665c6f820a0d37bba83f0fa53d545a688e361ef95e9b52abd1",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6211-eval_x2/rgb.npy",
+      "sha256": "5f57c6362b633df220bbdeaa9c4a73fafed7a73c041cf7df4b8558a5299f0014",
+      "type": "file"
+    },
+    {
+      "bytes": 14233,
+      "path": "raw/scenes/seed-6211-eval_x2/rgb.png",
+      "sha256": "92830ec20ad0c6fd9e8942efb7d7e7b5ab20fb0f3b8c76301ce8f540f6302391",
+      "type": "file"
+    },
+    {
+      "bytes": 674,
+      "path": "raw/scenes/seed-6211-eval_x2/scene.json",
+      "sha256": "d06cabb1b4264af43ca71e05a41e896d7ffeb12cf12864c0a6cb348ebb55525b",
+      "type": "file"
+    },
+    {
+      "bytes": 1547,
+      "path": "raw/scenes/seed-6211-eval_x2/scene.xml",
+      "sha256": "cb2ccc478fad33442fb3a4c7d2d4d836fe40cdb066ed09280d0142648f545671",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6211-no_obstacle",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6211-no_obstacle/depth.npy",
+      "sha256": "b8dbfc49b78460837d159eaf2b4c1e334ec095269a5cd086c384766dbe3896ac",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6211-no_obstacle/rgb.npy",
+      "sha256": "92e2794c64620ae4b57fadc7e237aa25b41ce22528d9f8b9121689cf4332d23a",
+      "type": "file"
+    },
+    {
+      "bytes": 13865,
+      "path": "raw/scenes/seed-6211-no_obstacle/rgb.png",
+      "sha256": "3a6bab209847c6738f9a1ac6079bc7db64a5ab6815a6f901f0a8aa12adf7b058",
+      "type": "file"
+    },
+    {
+      "bytes": 639,
+      "path": "raw/scenes/seed-6211-no_obstacle/scene.json",
+      "sha256": "f07dec0c746833c2e03ce674f44c7583e416df94a5f00d5da047d6696a6cf6ef",
+      "type": "file"
+    },
+    {
+      "bytes": 1358,
+      "path": "raw/scenes/seed-6211-no_obstacle/scene.xml",
+      "sha256": "648f1e5153f58fc509bc00997dfcda4b0f494bfa298fbe7232c3316272c6a748",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6211-opaque",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6211-opaque/depth.npy",
+      "sha256": "9521a8bbb67d79665c6f820a0d37bba83f0fa53d545a688e361ef95e9b52abd1",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6211-opaque/rgb.npy",
+      "sha256": "aad5e24ce595742670c4827379c434d213a54921b6c50decc45c1bcf5aff9aa0",
+      "type": "file"
+    },
+    {
+      "bytes": 14090,
+      "path": "raw/scenes/seed-6211-opaque/rgb.png",
+      "sha256": "7ea804b172b5c65950fc5deaf857281970a59a4d9b55df69618c6811786f90f0",
+      "type": "file"
+    },
+    {
+      "bytes": 673,
+      "path": "raw/scenes/seed-6211-opaque/scene.json",
+      "sha256": "b24825add08dbcd2ef17e34088a5f1deaeb59e39dc499b405be3018e48f0b63c",
+      "type": "file"
+    },
+    {
+      "bytes": 1547,
+      "path": "raw/scenes/seed-6211-opaque/scene.xml",
+      "sha256": "16af44796701ae2647295acb8dfa580c2d27d43dab1db4854a8a77f02af21c44",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6212-eval_x2",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6212-eval_x2/depth.npy",
+      "sha256": "2364a6d9632f568004ff74f8d16e858a0ca1529afc4597b8dd9dd7d9172dba4b",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6212-eval_x2/rgb.npy",
+      "sha256": "26bbe58fa01676a6fec46000c4ddacd4917e837e1944fbc8e06d09c4ed1a31e4",
+      "type": "file"
+    },
+    {
+      "bytes": 14257,
+      "path": "raw/scenes/seed-6212-eval_x2/rgb.png",
+      "sha256": "1db124e3332bcbb2e28f6a5f9965a9ff9115bb12e3c13577e24b3ef0c50f03b5",
+      "type": "file"
+    },
+    {
+      "bytes": 673,
+      "path": "raw/scenes/seed-6212-eval_x2/scene.json",
+      "sha256": "37cba001527f45599b53c4149f41ca4502af812801f2755b4bdf99908231c438",
+      "type": "file"
+    },
+    {
+      "bytes": 1546,
+      "path": "raw/scenes/seed-6212-eval_x2/scene.xml",
+      "sha256": "bab3f3cc5bbc7be63e1df4b5c03019ccdb8cf5834af4f136c5de1aa2d9bd644e",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6212-no_obstacle",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6212-no_obstacle/depth.npy",
+      "sha256": "610043e719bde2d2ea093bba96ef9632f7b8803c530dd083e719ee53a386814d",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6212-no_obstacle/rgb.npy",
+      "sha256": "5450c3854eb276549fb6663dd9e5692195aae2e7170476e4c32a8604b315aff2",
+      "type": "file"
+    },
+    {
+      "bytes": 13871,
+      "path": "raw/scenes/seed-6212-no_obstacle/rgb.png",
+      "sha256": "d2c9b198f0d6f0f736b2577ec7c9b489e68b7ca2233b0ed233f4677b6ae712a1",
+      "type": "file"
+    },
+    {
+      "bytes": 638,
+      "path": "raw/scenes/seed-6212-no_obstacle/scene.json",
+      "sha256": "de8831edbdf9ed21fb3b9e4be4c3e0245ba426209bf315bdf3f7d27e1cae5c2b",
+      "type": "file"
+    },
+    {
+      "bytes": 1357,
+      "path": "raw/scenes/seed-6212-no_obstacle/scene.xml",
+      "sha256": "bf0a9337fd592a18df4013ede4ca7de9c96aabd4992344f55b731948246455bf",
+      "type": "file"
+    },
+    {
+      "path": "raw/scenes/seed-6212-opaque",
+      "type": "directory"
+    },
+    {
+      "bytes": 36992,
+      "path": "raw/scenes/seed-6212-opaque/depth.npy",
+      "sha256": "2364a6d9632f568004ff74f8d16e858a0ca1529afc4597b8dd9dd7d9172dba4b",
+      "type": "file"
+    },
+    {
+      "bytes": 27776,
+      "path": "raw/scenes/seed-6212-opaque/rgb.npy",
+      "sha256": "fcaed4c442a2839def1ce171b96c960721751534e6deaaf37fda1b16d2763ba0",
+      "type": "file"
+    },
+    {
+      "bytes": 14154,
+      "path": "raw/scenes/seed-6212-opaque/rgb.png",
+      "sha256": "a99e4df226f5ea7c2c5e90216a99f8ef4070163857bc60a42f31a83da0dfc479",
+      "type": "file"
+    },
+    {
+      "bytes": 672,
+      "path": "raw/scenes/seed-6212-opaque/scene.json",
+      "sha256": "7a1822a3f2b581302ecb940c34db8de2060f48ca322cc8a9be87597509a8c8c7",
+      "type": "file"
+    },
+    {
+      "bytes": 1546,
+      "path": "raw/scenes/seed-6212-opaque/scene.xml",
+      "sha256": "fc9c0d8209197bd11fe84dd6ad41a5e8853e7db1441a2c0020c1208fe0c48205",
+      "type": "file"
+    }
+  ],
+  "schema": "recursive-inventory-v2"
+}

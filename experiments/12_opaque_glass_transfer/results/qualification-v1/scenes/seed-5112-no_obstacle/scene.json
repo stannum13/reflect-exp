@@ -1,0 +1,41 @@
+{
+  "camera": {
+    "fovy": 42,
+    "height": 96,
+    "position": [
+      0,
+      0,
+      3.2
+    ],
+    "width": 96
+  },
+  "condition": "NO_OBSTACLE",
+  "material_rgba": null,
+  "physics": {
+    "friction": [
+      0.9,
+      0.02,
+      0.002
+    ],
+    "goal_xy": [
+      1.2,
+      -0.0010759486050372048
+    ],
+    "obstacle_half_size": [
+      0.12,
+      0.28,
+      0.16
+    ],
+    "obstacle_xy": [
+      -0.05061894336912403,
+      0.07216887437292067
+    ],
+    "robot_radius": 0.08,
+    "start_xy": [
+      -1.2,
+      0.004303794420148819
+    ],
+    "timestep": 0.02
+  },
+  "seed": 5112
+}

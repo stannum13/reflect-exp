@@ -1,0 +1,152 @@
+{
+  "paired_contrasts": {
+    "HIERARCHICAL:eval_minus_opaque:detection_correct": {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "draws": 10000,
+      "effective_n": 12,
+      "estimate": 0.0
+    },
+    "HIERARCHICAL:eval_minus_opaque:safe_completion": {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "draws": 10000,
+      "effective_n": 12,
+      "estimate": 0.0
+    },
+    "HIERARCHICAL_minus_RGB_ONLY:eval:safe_completion": {
+      "ci_high": 1.0,
+      "ci_low": 1.0,
+      "draws": 10000,
+      "effective_n": 12,
+      "estimate": 1.0
+    },
+    "RGBD_MOTION:eval_minus_opaque:detection_correct": {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "draws": 10000,
+      "effective_n": 12,
+      "estimate": 0.0
+    },
+    "RGBD_MOTION:eval_minus_opaque:safe_completion": {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "draws": 10000,
+      "effective_n": 12,
+      "estimate": 0.0
+    },
+    "RGBD_MOTION_minus_RGB_ONLY:eval:safe_completion": {
+      "ci_high": 1.0,
+      "ci_low": 1.0,
+      "draws": 10000,
+      "effective_n": 12,
+      "estimate": 1.0
+    },
+    "RGB_ONLY:eval_minus_opaque:detection_correct": {
+      "ci_high": -1.0,
+      "ci_low": -1.0,
+      "draws": 10000,
+      "effective_n": 12,
+      "estimate": -1.0
+    },
+    "RGB_ONLY:eval_minus_opaque:safe_completion": {
+      "ci_high": -1.0,
+      "ci_low": -1.0,
+      "draws": 10000,
+      "effective_n": 12,
+      "estimate": -1.0
+    }
+  },
+  "summary": [
+    {
+      "collision_free_rate": 1.0,
+      "condition": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "detection_rate": 1.0,
+      "mean_path_length_m": 2.2984655353508106,
+      "mean_ticks": 134.0,
+      "n": 12,
+      "safe_completion_rate": 1.0
+    },
+    {
+      "collision_free_rate": 1.0,
+      "condition": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "detection_rate": 1.0,
+      "mean_path_length_m": 2.2984655353508106,
+      "mean_ticks": 134.0,
+      "n": 12,
+      "safe_completion_rate": 1.0
+    },
+    {
+      "collision_free_rate": 1.0,
+      "condition": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "detection_rate": 1.0,
+      "mean_path_length_m": 2.2984655353508106,
+      "mean_ticks": 134.0,
+      "n": 12,
+      "safe_completion_rate": 1.0
+    },
+    {
+      "collision_free_rate": 1.0,
+      "condition": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "detection_rate": 1.0,
+      "mean_path_length_m": 2.560546137619387,
+      "mean_ticks": 273.5833333333333,
+      "n": 12,
+      "safe_completion_rate": 1.0
+    },
+    {
+      "collision_free_rate": 1.0,
+      "condition": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "detection_rate": 1.0,
+      "mean_path_length_m": 2.560862010744558,
+      "mean_ticks": 273.75,
+      "n": 12,
+      "safe_completion_rate": 1.0
+    },
+    {
+      "collision_free_rate": 1.0,
+      "condition": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "detection_rate": 1.0,
+      "mean_path_length_m": 2.560862010744558,
+      "mean_ticks": 273.75,
+      "n": 12,
+      "safe_completion_rate": 1.0
+    },
+    {
+      "collision_free_rate": 0.0,
+      "condition": "EVAL_X3",
+      "controller": "RGB_ONLY",
+      "detection_rate": 0.0,
+      "mean_path_length_m": 1.0471852090454294,
+      "mean_ticks": 300.0,
+      "n": 12,
+      "safe_completion_rate": 0.0
+    },
+    {
+      "collision_free_rate": 1.0,
+      "condition": "EVAL_X3",
+      "controller": "RGBD_MOTION",
+      "detection_rate": 1.0,
+      "mean_path_length_m": 2.560862010744558,
+      "mean_ticks": 273.75,
+      "n": 12,
+      "safe_completion_rate": 1.0
+    },
+    {
+      "collision_free_rate": 1.0,
+      "condition": "EVAL_X3",
+      "controller": "HIERARCHICAL",
+      "detection_rate": 1.0,
+      "mean_path_length_m": 2.560862010744558,
+      "mean_ticks": 273.75,
+      "n": 12,
+      "safe_completion_rate": 1.0
+    }
+  ]
+}

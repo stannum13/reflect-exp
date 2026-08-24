@@ -1,0 +1,19 @@
+{
+  "collision_free": true,
+  "condition": "OPAQUE",
+  "controller": "HIERARCHICAL",
+  "detection_correct": true,
+  "detection_present": true,
+  "detector_latency_ms": 0.72,
+  "episode_id": "seed-7205-opaque-hierarchical",
+  "goal_error_m": 0.09844144599250904,
+  "localization_error_m": 0.013215633982491311,
+  "obstacle_contact_ticks": 0,
+  "path_length_m": 2.5365012170294867,
+  "replans": 0,
+  "safe_completion": true,
+  "seed": 7205,
+  "semantic_wakes": 0,
+  "task_complete": true,
+  "ticks": 274
+}

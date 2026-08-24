@@ -1,0 +1,19 @@
+{
+  "collision_free": true,
+  "condition": "OPAQUE",
+  "controller": "RGB_ONLY",
+  "detection_correct": true,
+  "detection_present": true,
+  "detector_latency_ms": 0.35,
+  "episode_id": "seed-7206-opaque-rgb_only",
+  "goal_error_m": 0.09863478385482874,
+  "localization_error_m": 0.009731991930007428,
+  "obstacle_contact_ticks": 0,
+  "path_length_m": 2.552311048671637,
+  "replans": 0,
+  "safe_completion": true,
+  "seed": 7206,
+  "semantic_wakes": 0,
+  "task_complete": true,
+  "ticks": 273
+}

@@ -1,0 +1,15 @@
+{
+  "experiment_id": "opaque-glass-transfer-v1",
+  "calibration_seeds": [4101, 4102, 4103, 4104],
+  "heldout_seeds": [5101, 5102, 5103, 5104, 5105, 5106, 5107, 5108, 5109, 5110, 5111, 5112],
+  "conditions": ["NO_OBSTACLE", "OPAQUE", "TRANSPARENT"],
+  "controllers": ["RGB_ONLY", "RGBD_MOTION", "HIERARCHICAL"],
+  "transparent_alpha": 0.08,
+  "image_size": 96,
+  "control_hz": 50,
+  "max_ticks": 300,
+  "goal_tolerance_m": 0.10,
+  "localization_tolerance_m": 0.12,
+  "bootstrap_draws": 10000,
+  "bootstrap_seed": 120824
+}

@@ -1,0 +1,153 @@
+{
+  "paired_contrasts": {
+    "HIERARCHICAL:transparent_minus_opaque:detection_correct": {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "effective_n": 12,
+      "estimate": 0.0
+    },
+    "HIERARCHICAL:transparent_minus_opaque:safe_completion": {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "effective_n": 12,
+      "estimate": 0.0
+    },
+    "HIERARCHICAL_minus_RGB_ONLY:transparent:safe_completion": {
+      "ci_high": 1.0,
+      "ci_low": 1.0,
+      "effective_n": 12,
+      "estimate": 1.0
+    },
+    "RGBD_MOTION:transparent_minus_opaque:detection_correct": {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "effective_n": 12,
+      "estimate": 0.0
+    },
+    "RGBD_MOTION:transparent_minus_opaque:safe_completion": {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "effective_n": 12,
+      "estimate": 0.0
+    },
+    "RGBD_MOTION_minus_RGB_ONLY:transparent:safe_completion": {
+      "ci_high": 1.0,
+      "ci_low": 1.0,
+      "effective_n": 12,
+      "estimate": 1.0
+    },
+    "RGB_ONLY:transparent_minus_opaque:detection_correct": {
+      "ci_high": -1.0,
+      "ci_low": -1.0,
+      "effective_n": 12,
+      "estimate": -1.0
+    },
+    "RGB_ONLY:transparent_minus_opaque:safe_completion": {
+      "ci_high": -1.0,
+      "ci_low": -1.0,
+      "effective_n": 12,
+      "estimate": -1.0
+    }
+  },
+  "summary": [
+    {
+      "collision_free_rate": 1.0,
+      "completion_rate": 1.0,
+      "condition": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "detection_rate": 1.0,
+      "mean_path_length_m": 2.3027076388703294,
+      "mean_replans": 0.0,
+      "n": 12,
+      "safe_completion_rate": 1.0
+    },
+    {
+      "collision_free_rate": 1.0,
+      "completion_rate": 1.0,
+      "condition": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "detection_rate": 1.0,
+      "mean_path_length_m": 2.3027076388703294,
+      "mean_replans": 0.0,
+      "n": 12,
+      "safe_completion_rate": 1.0
+    },
+    {
+      "collision_free_rate": 1.0,
+      "completion_rate": 1.0,
+      "condition": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "detection_rate": 1.0,
+      "mean_path_length_m": 2.3027076388703294,
+      "mean_replans": 0.0,
+      "n": 12,
+      "safe_completion_rate": 1.0
+    },
+    {
+      "collision_free_rate": 1.0,
+      "completion_rate": 1.0,
+      "condition": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "detection_rate": 1.0,
+      "mean_path_length_m": 2.56838835340946,
+      "mean_replans": 0.0,
+      "n": 12,
+      "safe_completion_rate": 1.0
+    },
+    {
+      "collision_free_rate": 1.0,
+      "completion_rate": 1.0,
+      "condition": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "detection_rate": 1.0,
+      "mean_path_length_m": 2.5683673733272774,
+      "mean_replans": 0.0,
+      "n": 12,
+      "safe_completion_rate": 1.0
+    },
+    {
+      "collision_free_rate": 1.0,
+      "completion_rate": 1.0,
+      "condition": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "detection_rate": 1.0,
+      "mean_path_length_m": 2.5683673733272774,
+      "mean_replans": 0.0,
+      "n": 12,
+      "safe_completion_rate": 1.0
+    },
+    {
+      "collision_free_rate": 0.0,
+      "completion_rate": 0.0,
+      "condition": "TRANSPARENT",
+      "controller": "RGB_ONLY",
+      "detection_rate": 0.0,
+      "mean_path_length_m": 1.0304884169784272,
+      "mean_replans": 0.0,
+      "n": 12,
+      "safe_completion_rate": 0.0
+    },
+    {
+      "collision_free_rate": 1.0,
+      "completion_rate": 1.0,
+      "condition": "TRANSPARENT",
+      "controller": "RGBD_MOTION",
+      "detection_rate": 1.0,
+      "mean_path_length_m": 2.5683673733272774,
+      "mean_replans": 0.0,
+      "n": 12,
+      "safe_completion_rate": 1.0
+    },
+    {
+      "collision_free_rate": 1.0,
+      "completion_rate": 1.0,
+      "condition": "TRANSPARENT",
+      "controller": "HIERARCHICAL",
+      "detection_rate": 1.0,
+      "mean_path_length_m": 2.5683673733272774,
+      "mean_replans": 0.0,
+      "n": 12,
+      "safe_completion_rate": 1.0
+    }
+  ]
+}

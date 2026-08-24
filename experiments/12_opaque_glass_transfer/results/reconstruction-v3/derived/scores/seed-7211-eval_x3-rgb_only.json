@@ -1,0 +1,19 @@
+{
+  "collision_free": false,
+  "condition": "EVAL_X3",
+  "controller": "RGB_ONLY",
+  "detection_correct": false,
+  "detection_present": false,
+  "detector_latency_ms": 0.35,
+  "episode_id": "seed-7211-eval_x3-rgb_only",
+  "goal_error_m": 1.360899345102848,
+  "localization_error_m": null,
+  "obstacle_contact_ticks": 266,
+  "path_length_m": 1.098014753199503,
+  "replans": 0,
+  "safe_completion": false,
+  "seed": 7211,
+  "semantic_wakes": 0,
+  "task_complete": false,
+  "ticks": 300
+}

@@ -1,0 +1,2525 @@
+{
+  "episodes": [
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7201-no_obstacle-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7201-no_obstacle",
+      "seed": 7201,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7201-no_obstacle-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7201-no_obstacle",
+      "seed": 7201,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7201-no_obstacle-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7201-no_obstacle",
+      "seed": 7201,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7201-opaque-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7201-opaque",
+      "seed": 7201,
+      "semantic_wakes": 0,
+      "tick_count": 273
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7201-opaque-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7201-opaque",
+      "seed": 7201,
+      "semantic_wakes": 0,
+      "tick_count": 273
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7201-opaque-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7201-opaque",
+      "seed": 7201,
+      "semantic_wakes": 0,
+      "tick_count": 273
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7201-eval_x3-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7201-eval_x3",
+      "seed": 7201,
+      "semantic_wakes": 0,
+      "tick_count": 300
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7201-eval_x3-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7201-eval_x3",
+      "seed": 7201,
+      "semantic_wakes": 0,
+      "tick_count": 273
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7201-eval_x3-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7201-eval_x3",
+      "seed": 7201,
+      "semantic_wakes": 0,
+      "tick_count": 273
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7202-no_obstacle-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7202-no_obstacle",
+      "seed": 7202,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7202-no_obstacle-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7202-no_obstacle",
+      "seed": 7202,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7202-no_obstacle-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7202-no_obstacle",
+      "seed": 7202,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7202-opaque-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7202-opaque",
+      "seed": 7202,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7202-opaque-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7202-opaque",
+      "seed": 7202,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7202-opaque-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7202-opaque",
+      "seed": 7202,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7202-eval_x3-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7202-eval_x3",
+      "seed": 7202,
+      "semantic_wakes": 0,
+      "tick_count": 300
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7202-eval_x3-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7202-eval_x3",
+      "seed": 7202,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7202-eval_x3-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7202-eval_x3",
+      "seed": 7202,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7203-no_obstacle-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7203-no_obstacle",
+      "seed": 7203,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7203-no_obstacle-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7203-no_obstacle",
+      "seed": 7203,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7203-no_obstacle-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7203-no_obstacle",
+      "seed": 7203,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7203-opaque-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7203-opaque",
+      "seed": 7203,
+      "semantic_wakes": 0,
+      "tick_count": 273
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7203-opaque-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7203-opaque",
+      "seed": 7203,
+      "semantic_wakes": 0,
+      "tick_count": 273
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7203-opaque-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7203-opaque",
+      "seed": 7203,
+      "semantic_wakes": 0,
+      "tick_count": 273
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7203-eval_x3-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7203-eval_x3",
+      "seed": 7203,
+      "semantic_wakes": 0,
+      "tick_count": 300
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7203-eval_x3-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7203-eval_x3",
+      "seed": 7203,
+      "semantic_wakes": 0,
+      "tick_count": 273
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7203-eval_x3-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7203-eval_x3",
+      "seed": 7203,
+      "semantic_wakes": 0,
+      "tick_count": 273
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7204-no_obstacle-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7204-no_obstacle",
+      "seed": 7204,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7204-no_obstacle-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7204-no_obstacle",
+      "seed": 7204,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7204-no_obstacle-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7204-no_obstacle",
+      "seed": 7204,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7204-opaque-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7204-opaque",
+      "seed": 7204,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7204-opaque-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7204-opaque",
+      "seed": 7204,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7204-opaque-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7204-opaque",
+      "seed": 7204,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7204-eval_x3-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7204-eval_x3",
+      "seed": 7204,
+      "semantic_wakes": 0,
+      "tick_count": 300
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7204-eval_x3-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7204-eval_x3",
+      "seed": 7204,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7204-eval_x3-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7204-eval_x3",
+      "seed": 7204,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7205-no_obstacle-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7205-no_obstacle",
+      "seed": 7205,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7205-no_obstacle-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7205-no_obstacle",
+      "seed": 7205,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7205-no_obstacle-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7205-no_obstacle",
+      "seed": 7205,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7205-opaque-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7205-opaque",
+      "seed": 7205,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7205-opaque-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7205-opaque",
+      "seed": 7205,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7205-opaque-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7205-opaque",
+      "seed": 7205,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7205-eval_x3-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7205-eval_x3",
+      "seed": 7205,
+      "semantic_wakes": 0,
+      "tick_count": 300
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7205-eval_x3-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7205-eval_x3",
+      "seed": 7205,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7205-eval_x3-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7205-eval_x3",
+      "seed": 7205,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7206-no_obstacle-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7206-no_obstacle",
+      "seed": 7206,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7206-no_obstacle-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7206-no_obstacle",
+      "seed": 7206,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7206-no_obstacle-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7206-no_obstacle",
+      "seed": 7206,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7206-opaque-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7206-opaque",
+      "seed": 7206,
+      "semantic_wakes": 0,
+      "tick_count": 273
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7206-opaque-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7206-opaque",
+      "seed": 7206,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7206-opaque-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7206-opaque",
+      "seed": 7206,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7206-eval_x3-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7206-eval_x3",
+      "seed": 7206,
+      "semantic_wakes": 0,
+      "tick_count": 300
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7206-eval_x3-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7206-eval_x3",
+      "seed": 7206,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7206-eval_x3-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7206-eval_x3",
+      "seed": 7206,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7207-no_obstacle-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7207-no_obstacle",
+      "seed": 7207,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7207-no_obstacle-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7207-no_obstacle",
+      "seed": 7207,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7207-no_obstacle-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7207-no_obstacle",
+      "seed": 7207,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7207-opaque-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7207-opaque",
+      "seed": 7207,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7207-opaque-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7207-opaque",
+      "seed": 7207,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7207-opaque-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7207-opaque",
+      "seed": 7207,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7207-eval_x3-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7207-eval_x3",
+      "seed": 7207,
+      "semantic_wakes": 0,
+      "tick_count": 300
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7207-eval_x3-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7207-eval_x3",
+      "seed": 7207,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7207-eval_x3-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7207-eval_x3",
+      "seed": 7207,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7208-no_obstacle-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7208-no_obstacle",
+      "seed": 7208,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7208-no_obstacle-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7208-no_obstacle",
+      "seed": 7208,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7208-no_obstacle-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7208-no_obstacle",
+      "seed": 7208,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7208-opaque-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7208-opaque",
+      "seed": 7208,
+      "semantic_wakes": 0,
+      "tick_count": 275
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7208-opaque-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7208-opaque",
+      "seed": 7208,
+      "semantic_wakes": 0,
+      "tick_count": 275
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7208-opaque-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7208-opaque",
+      "seed": 7208,
+      "semantic_wakes": 0,
+      "tick_count": 275
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7208-eval_x3-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7208-eval_x3",
+      "seed": 7208,
+      "semantic_wakes": 0,
+      "tick_count": 300
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7208-eval_x3-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7208-eval_x3",
+      "seed": 7208,
+      "semantic_wakes": 0,
+      "tick_count": 275
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7208-eval_x3-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7208-eval_x3",
+      "seed": 7208,
+      "semantic_wakes": 0,
+      "tick_count": 275
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7209-no_obstacle-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7209-no_obstacle",
+      "seed": 7209,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7209-no_obstacle-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7209-no_obstacle",
+      "seed": 7209,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7209-no_obstacle-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7209-no_obstacle",
+      "seed": 7209,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7209-opaque-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7209-opaque",
+      "seed": 7209,
+      "semantic_wakes": 0,
+      "tick_count": 273
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7209-opaque-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7209-opaque",
+      "seed": 7209,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7209-opaque-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7209-opaque",
+      "seed": 7209,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7209-eval_x3-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7209-eval_x3",
+      "seed": 7209,
+      "semantic_wakes": 0,
+      "tick_count": 300
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7209-eval_x3-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7209-eval_x3",
+      "seed": 7209,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7209-eval_x3-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7209-eval_x3",
+      "seed": 7209,
+      "semantic_wakes": 0,
+      "tick_count": 274
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7210-no_obstacle-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7210-no_obstacle",
+      "seed": 7210,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7210-no_obstacle-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7210-no_obstacle",
+      "seed": 7210,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7210-no_obstacle-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7210-no_obstacle",
+      "seed": 7210,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7210-opaque-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7210-opaque",
+      "seed": 7210,
+      "semantic_wakes": 0,
+      "tick_count": 273
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7210-opaque-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7210-opaque",
+      "seed": 7210,
+      "semantic_wakes": 0,
+      "tick_count": 273
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7210-opaque-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7210-opaque",
+      "seed": 7210,
+      "semantic_wakes": 0,
+      "tick_count": 273
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7210-eval_x3-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7210-eval_x3",
+      "seed": 7210,
+      "semantic_wakes": 0,
+      "tick_count": 300
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7210-eval_x3-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7210-eval_x3",
+      "seed": 7210,
+      "semantic_wakes": 0,
+      "tick_count": 273
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7210-eval_x3-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7210-eval_x3",
+      "seed": 7210,
+      "semantic_wakes": 0,
+      "tick_count": 273
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7211-no_obstacle-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7211-no_obstacle",
+      "seed": 7211,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7211-no_obstacle-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7211-no_obstacle",
+      "seed": 7211,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7211-no_obstacle-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7211-no_obstacle",
+      "seed": 7211,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7211-opaque-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7211-opaque",
+      "seed": 7211,
+      "semantic_wakes": 0,
+      "tick_count": 275
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7211-opaque-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7211-opaque",
+      "seed": 7211,
+      "semantic_wakes": 0,
+      "tick_count": 275
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7211-opaque-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7211-opaque",
+      "seed": 7211,
+      "semantic_wakes": 0,
+      "tick_count": 275
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7211-eval_x3-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7211-eval_x3",
+      "seed": 7211,
+      "semantic_wakes": 0,
+      "tick_count": 300
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7211-eval_x3-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7211-eval_x3",
+      "seed": 7211,
+      "semantic_wakes": 0,
+      "tick_count": 275
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7211-eval_x3-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7211-eval_x3",
+      "seed": 7211,
+      "semantic_wakes": 0,
+      "tick_count": 275
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7212-no_obstacle-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7212-no_obstacle",
+      "seed": 7212,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7212-no_obstacle-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7212-no_obstacle",
+      "seed": 7212,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "NO_OBSTACLE",
+      "condition_from_xml": "NO_OBSTACLE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7212-no_obstacle-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7212-no_obstacle",
+      "seed": 7212,
+      "semantic_wakes": 0,
+      "tick_count": 134
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7212-opaque-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7212-opaque",
+      "seed": 7212,
+      "semantic_wakes": 0,
+      "tick_count": 272
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7212-opaque-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7212-opaque",
+      "seed": 7212,
+      "semantic_wakes": 0,
+      "tick_count": 272
+    },
+    {
+      "condition": "OPAQUE",
+      "condition_from_xml": "OPAQUE",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7212-opaque-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7212-opaque",
+      "seed": 7212,
+      "semantic_wakes": 0,
+      "tick_count": 272
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGB_ONLY",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "6cbd582e05004cba094dbb5f1b37c6ab3303ed4ebde6c11961a8ae5e0bcb1ab1",
+        "controller_id": "RGB_ONLY",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgb_detector",
+          "single_geometric_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7212-eval_x3-rgb_only",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7212-eval_x3",
+      "seed": 7212,
+      "semantic_wakes": 0,
+      "tick_count": 300
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "RGBD_MOTION",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "f51987d2e3379f20f583f92e0b6517c0acc10bd08efbcacc4748a476bee26401",
+        "controller_id": "RGBD_MOTION",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7212-eval_x3-rgbd_motion",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7212-eval_x3",
+      "seed": 7212,
+      "semantic_wakes": 0,
+      "tick_count": 272
+    },
+    {
+      "condition": "EVAL_X3",
+      "condition_from_xml": "EVAL_X3",
+      "controller": "HIERARCHICAL",
+      "controller_contract": {
+        "config_sha256": "9a3ba6dd5f1562dbf39c86d61d984e1d179375480841feb8302283ffa0bc9b2a",
+        "contract_sha256": "0435516a25cca6c7b37ebbb420037a43c091795ddae643f4fbc90a0db0e5e178",
+        "controller_id": "HIERARCHICAL",
+        "implementation": "experiments/12_opaque_glass_transfer/src/v3.py",
+        "path": [
+          "rgbd_detector",
+          "semantic_route",
+          "motion_route",
+          "pd_control"
+        ]
+      },
+      "episode_id": "seed-7212-eval_x3-hierarchical",
+      "replans": 0,
+      "retries": 0,
+      "scene_relpath": "raw/scenes/seed-7212-eval_x3",
+      "seed": 7212,
+      "semantic_wakes": 0,
+      "tick_count": 272
+    }
+  ],
+  "mode": "HELDOUT"
+}

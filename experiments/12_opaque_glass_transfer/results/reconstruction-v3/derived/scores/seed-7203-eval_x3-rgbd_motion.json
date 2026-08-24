@@ -1,0 +1,19 @@
+{
+  "collision_free": true,
+  "condition": "EVAL_X3",
+  "controller": "RGBD_MOTION",
+  "detection_correct": true,
+  "detection_present": true,
+  "detector_latency_ms": 0.72,
+  "episode_id": "seed-7203-eval_x3-rgbd_motion",
+  "goal_error_m": 0.09823794803920258,
+  "localization_error_m": 0.009328920325615338,
+  "obstacle_contact_ticks": 0,
+  "path_length_m": 2.5537838819155203,
+  "replans": 0,
+  "safe_completion": true,
+  "seed": 7203,
+  "semantic_wakes": 0,
+  "task_complete": true,
+  "ticks": 273
+}

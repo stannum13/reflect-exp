@@ -1,0 +1,10 @@
+{
+  "condition": "NO_OBSTACLE",
+  "controller": "RGBD_MOTION",
+  "replans": 0,
+  "retries": 0,
+  "scene_relpath": "raw/scenes/seed-6201-no_obstacle",
+  "seed": 6201,
+  "semantic_wakes": 0,
+  "tick_count": 134
+}

@@ -1,0 +1,19 @@
+{
+  "schema": "opaque-glass-transfer-config-v3",
+  "experiment_id": "opaque-glass-transfer-v3",
+  "calibration_seeds": [4301, 4302, 4303, 4304],
+  "heldout_seeds": [7201, 7202, 7203, 7204, 7205, 7206, 7207, 7208, 7209, 7210, 7211, 7212],
+  "calibration_conditions": ["NO_OBSTACLE", "OPAQUE"],
+  "heldout_conditions": ["NO_OBSTACLE", "OPAQUE", "EVAL_X3"],
+  "controllers": ["RGB_ONLY", "RGBD_MOTION", "HIERARCHICAL"],
+  "material_namespace": "xfer-material-v3-cyan-a005",
+  "eval_rgba": [0.25, 0.72, 0.82, 0.05],
+  "opaque_rgba": [0.86, 0.05, 0.04, 1.0],
+  "image_size": 96,
+  "control_hz": 50,
+  "max_ticks": 300,
+  "goal_tolerance_m": 0.10,
+  "localization_tolerance_m": 0.12,
+  "bootstrap_draws": 10000,
+  "bootstrap_seed": 320824
+}

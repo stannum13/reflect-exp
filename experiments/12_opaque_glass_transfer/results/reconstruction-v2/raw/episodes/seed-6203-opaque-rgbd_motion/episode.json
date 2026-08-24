@@ -1,0 +1,10 @@
+{
+  "condition": "OPAQUE",
+  "controller": "RGBD_MOTION",
+  "replans": 0,
+  "retries": 0,
+  "scene_relpath": "raw/scenes/seed-6203-opaque",
+  "seed": 6203,
+  "semantic_wakes": 0,
+  "tick_count": 274
+}
