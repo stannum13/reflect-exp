@@ -49,9 +49,12 @@ validated. No cell 51 can execute without it. `NOT_RUN`,
 ## Exact resampling and effective sample size
 
 Primary contrasts use 10,000 PCG64 seed-cluster bootstrap draws with seed 1313.
-Each draw samples ten entries with replacement from the sorted actual set of
-paired primary seed clusters. Each cluster mean equally weights every available
-paired family/severity member within that seed.
+Each draw samples `n_eff` entries with replacement from the sorted actual set of
+paired primary seed clusters (ten entries in the complete registered case).
+Each cluster mean equally weights every available paired family/severity member
+within that seed. Missing primary clusters therefore produce an `n_eff`-sized
+descriptive/non-support bootstrap rather than a KeyError or configured-size
+pseudoreplication.
 
 P4-minus-P6 sensitivity is not PCG64. Its exact preregistered deterministic plan
 starts from the lexicographically ordered Cartesian product

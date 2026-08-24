@@ -82,12 +82,34 @@ def test_reconstruction_effect_path_reports_actual_missing_clusters_without_keye
     effects, sensitivity, draws, plans = module._registered_effects(rows)
     assert effects["R2"]["mission_success"]["n_eff"] == 9
     assert effects["R2"]["mission_success"]["draws"] == 10_000
+    assert plans["R3-R2:mission_success"].shape == (10_000, 9)
     assert set(plans["R3-R2:mission_success"].ravel()) == set(range(20262301, 20262310))
     assert sensitivity["mission_success"]["n_eff"] == 4
     assert sensitivity["mission_success"]["draws"] == 0
     assert sensitivity["mission_success"]["lower_95"] is None
     assert plans["P4-P6:mission_success"] is None
     assert all(value is None for value in draws["P4-P6:mission_success"])
+
+
+def test_invalid_execution_has_invalid_experiment_precedence() -> None:
+    module = _module()
+    passing_gates = {
+        "primary_n_eff_exactly_10": True,
+        "sensitivity_n_eff_exactly_5": True,
+        "success_noninferiority_all_comparators": True,
+        "safety_noninferiority_all_comparators": True,
+        "progress_noninferiority_all_comparators": True,
+        "wake_reduction_vs_fixed_R2": True,
+        "worst_R3_minus_R2_family_severity_success": 0.0,
+        "heterogeneity_threshold_pass": True,
+    }
+    assert module._formal_disposition(
+        {"COMPLETE": 539, "NOT_RUN": 0, "INVALID_EXECUTION": 1}, passing_gates,
+    ) == "INVALID_EXPERIMENT"
+    assert module._formal_disposition(
+        {"COMPLETE": 540, "NOT_RUN": 0, "INVALID_EXECUTION": 0},
+        {**passing_gates, "wake_reduction_vs_fixed_R2": False},
+    ) == "DOES_NOT_SUPPORT_BOUNDED_DIRECT_HIERARCHY_REPLICATION"
 
 
 @pytest.fixture(scope="module")

@@ -181,6 +181,20 @@ def _registered_effects(rows: list[dict[str, object]]) -> tuple[dict, dict, dict
     return effects, sensitivity, draw_columns, plan_columns
 
 
+def _formal_disposition(counts: dict[str, int], gates: dict[str, object]) -> str:
+    if sum(counts.values()) != 540 or counts.get("INVALID_EXECUTION", 0) != 0:
+        return "INVALID_EXPERIMENT"
+    passed = all(
+        bool(value)
+        for key, value in gates.items()
+        if key != "worst_R3_minus_R2_family_severity_success"
+    )
+    return (
+        "SUPPORTS_BOUNDED_DIRECT_HIERARCHY_REPLICATION"
+        if passed else "DOES_NOT_SUPPORT_BOUNDED_DIRECT_HIERARCHY_REPLICATION"
+    )
+
+
 def _svg(title: str, labels: list[str], series: list[tuple[str, list[float], str]], *, y_min: float = 0.0, y_max: float = 1.0) -> bytes:
     width, height = 760, 420
     left, top, plot_w, plot_h = 70, 55, 630, 290
@@ -308,13 +322,10 @@ def reconstruct_derived(pack: Path, destination: Path) -> None:
         "worst_R3_minus_R2_family_severity_success": heterogeneity,
         "heterogeneity_threshold_pass": heterogeneity >= -.20,
     }
-    supports = (
-        counts["COMPLETE"] + counts["NOT_RUN"] == 540
-        and counts["INVALID_EXECUTION"] == 0
-        and all(value for key, value in registered_gates.items() if key != "worst_R3_minus_R2_family_severity_success")
-    )
+    formal_disposition = _formal_disposition(counts, registered_gates)
+    supports = formal_disposition == "SUPPORTS_BOUNDED_DIRECT_HIERARCHY_REPLICATION"
     report = {"schema_version": 3, "scope": "BOUNDED_DIRECT_HIERARCHY_REPLICATION",
-        "formal_disposition": "SUPPORTS_BOUNDED_DIRECT_HIERARCHY_REPLICATION" if supports else "DOES_NOT_SUPPORT_BOUNDED_DIRECT_HIERARCHY_REPLICATION",
+        "formal_disposition": formal_disposition,
         "confirmatory_support": supports, "causal_lowest_claim": False, "matrix_total": 540, "dispositions": counts,
         "chronology": {"exploratory_reference": "Exp13 informed this frozen replication", "replication": "fresh 202623 seed namespace; no outcome-driven tuning"},
         "effects": effects, "controller_sensitivity_P4_minus_P6": sensitivity,
