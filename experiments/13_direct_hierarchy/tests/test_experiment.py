@@ -18,14 +18,14 @@ def test_frozen_matrix_is_exactly_480_primary_plus_60_sensitivity() -> None:
     assert len(specs) == len({item.episode_id for item in specs}) == 540
     assert sum(item.matrix_role == "PRIMARY" for item in specs) == 480
     assert sum(item.matrix_role == "SENSITIVITY" for item in specs) == 60
-    assert sorted({item.seed for item in specs if item.matrix_role == "PRIMARY"}) == list(range(20262001, 20262011))
-    assert sorted({item.seed for item in specs if item.matrix_role == "SENSITIVITY"}) == list(range(20262001, 20262006))
+    assert sorted({item.seed for item in specs if item.matrix_role == "PRIMARY"}) == list(range(20262101, 20262111))
+    assert sorted({item.seed for item in specs if item.matrix_role == "SENSITIVITY"}) == list(range(20262101, 20262106))
 
 
 def test_realization_is_paired_and_registered_dose_is_used() -> None:
     experiment = _module()
     specs = experiment.matrix_specs()
-    cells = [item for item in specs if item.family == "control-dropout" and item.severity == "HIGH" and item.seed == 20262001]
+    cells = [item for item in specs if item.family == "control-dropout" and item.severity == "HIGH" and item.seed == 20262101]
     realizations = [experiment.make_realization(item) for item in cells]
     assert {item.parameter_sha256 for item in realizations} == {realizations[0].parameter_sha256}
     assert {item.dropout_ticks for item in realizations} == {50}
@@ -92,3 +92,19 @@ def test_not_run_is_sealed_without_episode_and_resume_continues(tmp_path: Path, 
     assert row["architecture_independent"] is True
     assert row["precheck_receipt_sha256"]
     assert not (root / "raw/episodes" / row["episode_id"]).exists()
+
+
+def test_runtime_exception_is_sealed_invalid_and_does_not_abort(tmp_path: Path, monkeypatch) -> None:
+    experiment = _module()
+    root = tmp_path / experiment.EXPERIMENT_ID
+    source_commit = subprocess.check_output(("git", "rev-parse", "HEAD"), text=True).strip()
+    experiment.freeze(root, source_commit=source_commit)
+    monkeypatch.setattr(experiment, "run_cell", lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("boom")))
+    assert experiment.execute(root, limit=1) == {"completed": 1, "remaining": 539, "total": 540}
+    row = json.loads(next((root / "raw/dispositions").glob("*.json")).read_text())
+    assert row["disposition"] == "INVALID_EXECUTION"
+    assert row["execution_stage"] == "RUNTIME"
+    assert row["exception_class"] == "ValueError"
+    assert row["exception_message"] == "boom"
+    assert row["source_commit"] == source_commit
+    assert len(row["freeze_sha256"]) == 64

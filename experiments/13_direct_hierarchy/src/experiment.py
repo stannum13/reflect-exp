@@ -30,8 +30,8 @@ precheck = _runtime.precheck
 run_episode = _runtime.run_episode
 
 
-EXPERIMENT_ID = "exp13-direct-hierarchy-v2"
-PRIMARY_SEEDS = tuple(range(20262001, 20262011))
+EXPERIMENT_ID = "exp13-direct-hierarchy-v3"
+PRIMARY_SEEDS = tuple(range(20262101, 20262111))
 SENSITIVITY_SEEDS = PRIMARY_SEEDS[:5]
 FAMILIES = (
     "control-impulse",
@@ -201,6 +201,31 @@ def _not_run_row(spec: DirectSpec, realization: DirectRealization, receipt: obje
     }
 
 
+def _invalid_execution_row(
+    spec: DirectSpec,
+    error: Exception,
+    *,
+    stage: str,
+    source_commit: str,
+    freeze_sha256: str,
+    realization: DirectRealization | None = None,
+) -> dict[str, object]:
+    return {
+        "episode_id": spec.episode_id,
+        "architecture": spec.architecture.value,
+        "family": spec.family,
+        "severity": spec.severity,
+        "seed": spec.seed,
+        "controller_id": spec.controller_id,
+        "matrix_role": spec.matrix_role,
+        "disposition": "INVALID_EXECUTION",
+        "execution_stage": stage,
+        "exception_class": type(error).__name__,
+        "exception_message": str(error),
+        "parameter_sha256": None if realization is None else realization.parameter_sha256,
+        "source_commit": source_commit,
+        "freeze_sha256": freeze_sha256,
+    }
 def score_cell(raw: object) -> dict[str, object]:
     score = _scorer.score_episode(raw)
     counts = score.violation_counts
@@ -337,7 +362,8 @@ def _validate_freeze(output: Path) -> dict[str, object]:
 
 
 def execute(output: Path, *, limit: int | None = None) -> dict[str, int]:
-    _validate_freeze(output)
+    freeze_document = _validate_freeze(output)
+    freeze_sha256 = sha256_bytes((output / "freeze.json").read_bytes())
     disposition_root = output / "raw/dispositions"
     completed_before = len(list(disposition_root.glob("*.json"))) if disposition_root.exists() else 0
     allowance = len(matrix_specs()) if limit is None else int(limit)
@@ -348,19 +374,65 @@ def execute(output: Path, *, limit: int | None = None) -> dict[str, int]:
             continue
         if written >= allowance:
             break
-        realization, receipt = _cell_precheck(spec)
+        realization = None
+        try:
+            realization, receipt = _cell_precheck(spec)
+        except Exception as error:
+            _write(path, canonical_bytes(_invalid_execution_row(
+                spec, error, stage="PRECHECK", source_commit=freeze_document["source_commit"],
+                freeze_sha256=freeze_sha256, realization=realization,
+            )))
+            written += 1
+            continue
         if receipt.disposition == "NOT_RUN":
             if not receipt.architecture_independent:
-                raise RuntimeError("Exp13 NOT_RUN precheck must be architecture-independent")
+                error = RuntimeError("Exp13 NOT_RUN precheck must be architecture-independent")
+                _write(path, canonical_bytes(_invalid_execution_row(
+                    spec, error, stage="PRECHECK", source_commit=freeze_document["source_commit"],
+                    freeze_sha256=freeze_sha256, realization=realization,
+                )))
+                written += 1
+                continue
             _write(path, canonical_bytes(_not_run_row(spec, realization, receipt)))
             written += 1
             continue
         if receipt.disposition != "READY":
-            raise RuntimeError(f"Exp13 unknown precheck disposition: {receipt.disposition}")
-        raw = run_cell(spec, realization=realization, receipt=receipt)
-        manifest = _episode_manifest(output, raw)
+            error = RuntimeError(f"Exp13 unknown precheck disposition: {receipt.disposition}")
+            _write(path, canonical_bytes(_invalid_execution_row(
+                spec, error, stage="PRECHECK", source_commit=freeze_document["source_commit"],
+                freeze_sha256=freeze_sha256, realization=realization,
+            )))
+            written += 1
+            continue
+        try:
+            raw = run_cell(spec, realization=realization, receipt=receipt)
+        except Exception as error:
+            _write(path, canonical_bytes(_invalid_execution_row(
+                spec, error, stage="RUNTIME", source_commit=freeze_document["source_commit"],
+                freeze_sha256=freeze_sha256, realization=realization,
+            )))
+            written += 1
+            continue
+        try:
+            score = score_cell(raw)
+        except Exception as error:
+            _write(path, canonical_bytes(_invalid_execution_row(
+                spec, error, stage="SCORER", source_commit=freeze_document["source_commit"],
+                freeze_sha256=freeze_sha256, realization=realization,
+            )))
+            written += 1
+            continue
+        try:
+            manifest = _episode_manifest(output, raw)
+        except Exception as error:
+            _write(path, canonical_bytes(_invalid_execution_row(
+                spec, error, stage="EVIDENCE", source_commit=freeze_document["source_commit"],
+                freeze_sha256=freeze_sha256, realization=realization,
+            )))
+            written += 1
+            continue
         row = {
-            **score_cell(raw),
+            **score,
             "disposition": "COMPLETE",
             "parameter_sha256": raw.realization.parameter_sha256,
             "episode_manifest_sha256": manifest["manifest_sha256"],
