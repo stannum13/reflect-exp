@@ -1,0 +1,6 @@
+{
+  "collision_free": true,
+  "goal_error_m": 0.09926455876978113,
+  "safe_completion": true,
+  "task_complete": true
+}

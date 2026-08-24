@@ -1,0 +1,6160 @@
+{
+  "condition": "TRANSPARENT",
+  "controller": "RGB_ONLY",
+  "controller_claimed_success": false,
+  "detection": {
+    "center_xy": null,
+    "latency_ms": 0.35,
+    "localization_error_m": null,
+    "pixel_count": 0,
+    "present": false
+  },
+  "final_xy": [
+    -0.15225374438771966,
+    0.007941192817888125
+  ],
+  "goal_xy": [
+    1.2,
+    -0.006435320058286309
+  ],
+  "ledger": [
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.1351417212240125,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 0,
+      "time_s": 0.02,
+      "vx": 0.20408163265306123,
+      "vy": -0.005515988621388265,
+      "waypoint_index": 0,
+      "x": -1.1959183673469387,
+      "y": 0.025630960460717472
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.12474959866131699,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 1,
+      "time_s": 0.04,
+      "vx": 0.3915035401915869,
+      "vy": -0.010157524189491958,
+      "waypoint_index": 0,
+      "x": -1.188088296543107,
+      "y": 0.02542780997692763
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.11554160260681304,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 2,
+      "time_s": 0.06,
+      "vx": 0.5636257001759472,
+      "vy": -0.014044322321240086,
+      "waypoint_index": 0,
+      "x": -1.176815782539588,
+      "y": 0.02514692353050283
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.10736564289468223,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 3,
+      "time_s": 0.08,
+      "vx": 0.7216970715901556,
+      "vy": -0.017280118168268743,
+      "waypoint_index": 0,
+      "x": -1.1623818411077849,
+      "y": 0.024801321167137458
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.10008968044389607,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 4,
+      "time_s": 0.1,
+      "vx": 0.866864657582796,
+      "vy": -0.019954789356324196,
+      "waypoint_index": 0,
+      "x": -1.145044547956129,
+      "y": 0.024402225380010974
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.09359906999946502,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 5,
+      "time_s": 0.12,
+      "vx": 1.0001818283923636,
+      "vy": -0.022146197163949364,
+      "waypoint_index": 0,
+      "x": -1.1250409113882818,
+      "y": 0.023959301436731986
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.08779425538396798,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 6,
+      "time_s": 0.14,
+      "vx": 1.1226159648501297,
+      "vy": -0.02392178332950321,
+      "waypoint_index": 0,
+      "x": -1.1025885920912792,
+      "y": 0.023480865770141923
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.08258877048629282,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 7,
+      "time_s": 0.16,
+      "vx": 1.2350554779235885,
+      "vy": -0.025339954914290412,
+      "waypoint_index": 0,
+      "x": -1.0778874825328073,
+      "y": 0.022974066671856114
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.07790750542087543,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 8,
+      "time_s": 0.18,
+      "vx": 1.3383162552359487,
+      "vy": -0.026451285346628967,
+      "waypoint_index": 0,
+      "x": -1.0511211574280883,
+      "y": 0.022445040964923533
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.07368520267354922,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 9,
+      "time_s": 0.2,
+      "vx": 1.4331475813391366,
+      "vy": -0.02729955603970208,
+      "waypoint_index": 0,
+      "x": -1.0224582058013056,
+      "y": 0.021899049844129492
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06986515271868263,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 10,
+      "time_s": 0.22,
+      "vx": 1.520237574699207,
+      "vy": -0.027922659739264468,
+      "waypoint_index": 0,
+      "x": -0.9920534543073215,
+      "y": 0.021340596649344203
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06639806264137212,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 11,
+      "time_s": 0.24,
+      "vx": 1.6002181808462104,
+      "vy": -0.02835338394999276,
+      "waypoint_index": 0,
+      "x": -0.9600490906903973,
+      "y": 0.020773528970344346
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06324107481026178,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 12,
+      "time_s": 0.26,
+      "vx": 1.673669757919989,
+      "vy": -0.028620090354493834,
+      "waypoint_index": 0,
+      "x": -0.9265756955319975,
+      "y": 0.02020112716325447
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06035691569238237,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 13,
+      "time_s": 0.28,
+      "vx": 1.7411252878857042,
+      "vy": -0.028747304027285456,
+      "waypoint_index": 0,
+      "x": -0.8917531897742834,
+      "y": 0.019626181082708763
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.057713157543065476,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 14,
+      "time_s": 0.3,
+      "vx": 1.8030742439766672,
+      "vy": -0.028756224414570947,
+      "waypoint_index": 0,
+      "x": -0.8556917048947501,
+      "y": 0.019051056594417342
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.05528157799512764,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 15,
+      "time_s": 0.32,
+      "vx": 1.8599661424275515,
+      "vy": -0.028665168462162202,
+      "waypoint_index": 0,
+      "x": -0.8184923820461991,
+      "y": 0.018477753225174098
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.05303760455864175,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 16,
+      "time_s": 0.34,
+      "vx": 1.9122138042702004,
+      "vy": -0.02848995489621597,
+      "waypoint_index": 0,
+      "x": -0.7802481059607951,
+      "y": 0.017907954127249777
+    },
+    {
+      "cmd_x": 4.875057197348979,
+      "cmd_y": -0.05095983276606281,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 17,
+      "time_s": 0.36,
+      "vx": 1.9550966446297342,
+      "vy": -0.02824423746656825,
+      "waypoint_index": 0,
+      "x": -0.7411461730682004,
+      "y": 0.017343069377918414
+    },
+    {
+      "cmd_x": 4.63363996655292,
+      "cmd_y": -0.049029608192236986,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 18,
+      "time_s": 0.38,
+      "vx": 1.9846250804376302,
+      "vy": -0.027939793926123373,
+      "waypoint_index": 0,
+      "x": -0.7014536714594478,
+      "y": 0.016784273499395947
+    },
+    {
+      "cmd_x": 4.413780275341946,
+      "cmd_y": -0.04723066387524341,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 19,
+      "time_s": 0.4,
+      "vx": 2.002769166742393,
+      "vy": -0.027586776620939564,
+      "waypoint_index": 0,
+      "x": -0.6613982881246,
+      "y": 0.016232537966977156
+    },
+    {
+      "cmd_x": 4.212888309987013,
+      "cmd_y": -0.045548805788415345,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 20,
+      "time_s": 0.42,
+      "vx": 2.0112324310894225,
+      "vy": -0.02719392978610431,
+      "waypoint_index": 0,
+      "x": -0.6211736395028116,
+      "y": 0.01568865937125507
+    },
+    {
+      "cmd_x": 4.028710909950848,
+      "cmd_y": -0.04397163998908602,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 21,
+      "time_s": 0.44,
+      "vx": 2.0114873718148103,
+      "vy": -0.026768777966385018,
+      "waypoint_index": 0,
+      "x": -0.5809438920665153,
+      "y": 0.01515328381192737
+    },
+    {
+      "cmd_x": 3.8592870774127057,
+      "cmd_y": -0.042488335915404435,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 22,
+      "time_s": 0.46,
+      "vx": 2.004806242581467,
+      "vy": -0.026317789394247646,
+      "waypoint_index": 0,
+      "x": -0.5408477672148859,
+      "y": 0.014626928024042418
+    },
+    {
+      "cmd_x": 3.7029093856558806,
+      "cmd_y": -0.04108942103613489,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 23,
+      "time_s": 0.48,
+      "vx": 1.992287748724036,
+      "vy": -0.025846517649253345,
+      "waypoint_index": 0,
+      "x": -0.5010020122404052,
+      "y": 0.014109997671057351
+    },
+    {
+      "cmd_x": 3.5580905037064365,
+      "cmd_y": -0.039766602694587365,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 24,
+      "time_s": 0.5,
+      "vx": 1.9748801979590713,
+      "vy": -0.025359724481746435,
+      "waypoint_index": 0,
+      "x": -0.46150440828122374,
+      "y": 0.013602803181422422
+    },
+    {
+      "cmd_x": 3.4235341584548116,
+      "cmd_y": -0.03851261353963308,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 25,
+      "time_s": 0.52,
+      "vx": 1.9534015760217924,
+      "vy": -0.02486148630118073,
+      "waypoint_index": 0,
+      "x": -0.42243637676078793,
+      "y": 0.013105573455398808
+    },
+    {
+      "cmd_x": 3.2981099455560825,
+      "cmd_y": -0.0373210774153522,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 26,
+      "time_s": 0.54,
+      "vx": 1.928556955348833,
+      "vy": -0.02435528649762933,
+      "waypoint_index": 0,
+      "x": -0.3838652376538113,
+      "y": 0.012618467725446222
+    },
+    {
+      "cmd_x": 3.1808314785181078,
+      "cmd_y": -0.036186392995943846,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 27,
+      "time_s": 0.56,
+      "vx": 1.9009535907700756,
+      "vy": -0.023844095477249135,
+      "waypoint_index": 0,
+      "x": -0.34584616583840977,
+      "y": 0.012141585815901239
+    },
+    {
+      "cmd_x": 3.070837433135185,
+      "cmd_y": -0.035103632812539254,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 28,
+      "time_s": 0.58,
+      "vx": 1.871114009202526,
+      "vy": -0.02333044004288346,
+      "waypoint_index": 0,
+      "x": -0.3084238856543593,
+      "y": 0.01167497701504357
+    },
+    {
+      "cmd_x": 2.9673751031837625,
+      "cmd_y": -0.034068455630795275,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 29,
+      "time_s": 0.6,
+      "vx": 1.839487359601657,
+      "vy": -0.022816463534517273,
+      "waypoint_index": 0,
+      "x": -0.2716341384623262,
+      "y": 0.011218647744353225
+    },
+    {
+      "cmd_x": 2.8697861342587876,
+      "cmd_y": -0.033077030408954954,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 30,
+      "time_s": 0.62,
+      "vx": 1.8064592540937172,
+      "vy": -0.02230397795655484,
+      "waypoint_index": 0,
+      "x": -0.23550495338045185,
+      "y": 0.010772568185222127
+    },
+    {
+      "cmd_x": 2.7774941468292065,
+      "cmd_y": -0.032125970300936724,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 31,
+      "time_s": 0.64,
+      "vx": 1.7723603005688915,
+      "vy": -0.021794509156057986,
+      "waypoint_index": 0,
+      "x": -0.200057747369074,
+      "y": 0.010336678002100967
+    },
+    {
+      "cmd_x": 2.6899939979261065,
+      "cmd_y": -0.031212275372722177,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 32,
+      "time_s": 0.66,
+      "vx": 1.7374735004378026,
+      "vy": -0.02128933597485824,
+      "waypoint_index": 0,
+      "x": -0.16530827736031806,
+      "y": 0.009910891282603803
+    },
+    {
+      "cmd_x": 2.606842464125291,
+      "cmd_y": -0.030333282876993654,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 33,
+      "time_s": 0.68,
+      "vx": 1.702040662203096,
+      "vy": -0.02078952417597159,
+      "waypoint_index": 0,
+      "x": -0.13126746411625612,
+      "y": 0.009495100799084371
+    },
+    {
+      "cmd_x": 2.527650157322703,
+      "cmd_y": -0.02948662408420801,
+      "contacts": [],
+      "obstacle_contact": false,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 34,
+      "time_s": 0.7,
+      "vx": -0.13638364656134597,
+      "vy": -0.0023973203353703314,
+      "waypoint_index": 0,
+      "x": -0.133995137047483,
+      "y": 0.009447154392376964
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.062391216089119156,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 35,
+      "time_s": 0.72,
+      "vx": -0.2225590599014582,
+      "vy": -0.0004858681304662206,
+      "waypoint_index": 0,
+      "x": -0.13844631824551223,
+      "y": 0.00943743702976764
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06579101713498739,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 36,
+      "time_s": 0.74,
+      "vx": -0.17647284169519076,
+      "vy": -0.00028714545920779325,
+      "waypoint_index": 0,
+      "x": -0.14197577507941594,
+      "y": 0.009431694120583485
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0661245977246791,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 37,
+      "time_s": 0.76,
+      "vx": -0.1323581848358881,
+      "vy": -0.0002664148424043097,
+      "waypoint_index": 0,
+      "x": -0.14462293877613375,
+      "y": 0.009426365823735398
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06613953398816341,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 38,
+      "time_s": 0.78,
+      "vx": -0.09863938109769069,
+      "vy": -0.0002641817239214835,
+      "waypoint_index": 0,
+      "x": -0.1465957263980875,
+      "y": 0.009421082189256968
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0661213623366231,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 39,
+      "time_s": 0.8,
+      "vx": -0.07345482795680955,
+      "vy": -0.00026387094755616345,
+      "waypoint_index": 0,
+      "x": -0.14806482295722367,
+      "y": 0.009415804770305847
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06609975657448595,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 40,
+      "time_s": 0.82,
+      "vx": -0.05469543017217932,
+      "vy": -0.0002637599729842642,
+      "waypoint_index": 0,
+      "x": -0.14915873156066728,
+      "y": 0.009410529570846163
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0660778004909847,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 41,
+      "time_s": 0.84,
+      "vx": -0.04072649608502747,
+      "vy": -0.00026366978860187934,
+      "waypoint_index": 0,
+      "x": -0.1499732614823679,
+      "y": 0.009405256175074126
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06605581456063045,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 42,
+      "time_s": 0.86,
+      "vx": -0.030325117462640706,
+      "vy": -0.0002635817909734923,
+      "waypoint_index": 0,
+      "x": -0.15057976383162064,
+      "y": 0.009399984539254655
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06603383208591976,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 43,
+      "time_s": 0.88,
+      "vx": -0.02258020443669138,
+      "vy": -0.0002634940467651952,
+      "waypoint_index": 0,
+      "x": -0.15103136792035454,
+      "y": 0.009394714658319352
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06601185652556645,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 44,
+      "time_s": 0.9,
+      "vx": -0.016813310737039264,
+      "vy": -0.0002634063550503544,
+      "waypoint_index": 0,
+      "x": -0.15136763413509535,
+      "y": 0.009389446531218346
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06598988823682893,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 45,
+      "time_s": 0.92,
+      "vx": -0.012519258544049328,
+      "vy": -0.0002633186949393754,
+      "waypoint_index": 0,
+      "x": -0.1516180193059764,
+      "y": 0.009384180157319559
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06596792725465377,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 46,
+      "time_s": 0.94,
+      "vx": -0.009321890072872376,
+      "vy": -0.0002632310642526389,
+      "waypoint_index": 0,
+      "x": -0.15180445710743395,
+      "y": 0.009378915536034507
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06594597358049269,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 47,
+      "time_s": 0.96,
+      "vx": -0.006941116698104953,
+      "vy": -0.000263143462754951,
+      "waypoint_index": 0,
+      "x": -0.15194327944139596,
+      "y": 0.00937365266677941
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0659240272123171,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 48,
+      "time_s": 0.98,
+      "vx": -0.005168383304235226,
+      "vy": -0.000263055890413159,
+      "waypoint_index": 0,
+      "x": -0.15204664710748061,
+      "y": 0.009368391548971147
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06590208814773764,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 49,
+      "time_s": 1.0,
+      "vx": -0.0038106646397463016,
+      "vy": -0.0002640490491082876,
+      "waypoint_index": 0,
+      "x": -0.15212286040027556,
+      "y": 0.00936311056798898
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0658781203419613,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 50,
+      "time_s": 1.02,
+      "vx": -0.0026137369179447924,
+      "vy": -0.00027040584287177214,
+      "waypoint_index": 0,
+      "x": -0.15217513513863445,
+      "y": 0.009357702451131544
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06584396402238579,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 51,
+      "time_s": 1.04,
+      "vx": -0.0016617673975906422,
+      "vy": -0.0002786112287954816,
+      "waypoint_index": 0,
+      "x": -0.1522083704865862,
+      "y": 0.009352130226555636
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06580579098450429,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 52,
+      "time_s": 1.06,
+      "vx": -0.0009955408676229275,
+      "vy": -0.0002856353660653953,
+      "waypoint_index": 0,
+      "x": -0.15222828130393862,
+      "y": 0.009346417519234328
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06576915416666898,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 53,
+      "time_s": 1.08,
+      "vx": -0.0005717972570526753,
+      "vy": -0.0002905593460581888,
+      "waypoint_index": 0,
+      "x": -0.1522397172490797,
+      "y": 0.009340606332313164
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06573588401761304,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 54,
+      "time_s": 1.1,
+      "vx": -0.0003194066515189566,
+      "vy": -0.00029362314690211836,
+      "waypoint_index": 0,
+      "x": -0.15224610538211003,
+      "y": 0.009334733869375122
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06570570483175421,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 55,
+      "time_s": 1.12,
+      "vx": -0.0001753560255487389,
+      "vy": -0.0002953828456925614,
+      "waypoint_index": 0,
+      "x": -0.15224961250262092,
+      "y": 0.00932882621246127
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0656777252148932,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 56,
+      "time_s": 1.14,
+      "vx": -9.528371391293197e-05,
+      "vy": -0.00029633010029676306,
+      "waypoint_index": 0,
+      "x": -0.15225151817689908,
+      "y": 0.009322899610455335
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06565112842818073,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 57,
+      "time_s": 1.16,
+      "vx": -5.1468404405830284e-05,
+      "vy": -0.00029680341789593254,
+      "waypoint_index": 0,
+      "x": -0.15225254754498718,
+      "y": 0.009316963542097417
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06562534496939898,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 58,
+      "time_s": 1.18,
+      "vx": -2.7708759241600237e-05,
+      "vy": -0.0002970104135485941,
+      "waypoint_index": 0,
+      "x": -0.15225310172017203,
+      "y": 0.009311023333826444
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0656000235024861,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 59,
+      "time_s": 1.2,
+      "vx": -1.4890033476021607e-05,
+      "vy": -0.00029707089360097753,
+      "waypoint_index": 0,
+      "x": -0.1522533995208415,
+      "y": 0.009305081915954423
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06557496068332931,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 60,
+      "time_s": 1.22,
+      "vx": -7.993534842392888e-06,
+      "vy": -0.000297051725712301,
+      "waypoint_index": 0,
+      "x": -0.1522535593915384,
+      "y": 0.009299140881440179
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06555004284056912,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 61,
+      "time_s": 1.24,
+      "vx": -4.288901960388648e-06,
+      "vy": -0.0002969895513269358,
+      "waypoint_index": 0,
+      "x": -0.1522536451695775,
+      "y": 0.00929320109041364
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0655252076321513,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 62,
+      "time_s": 1.26,
+      "vx": -2.3005202193707806e-06,
+      "vy": -0.00029690424731073983,
+      "waypoint_index": 0,
+      "x": -0.1522536911799819,
+      "y": 0.009287263005467426
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06550042122260637,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 63,
+      "time_s": 1.28,
+      "vx": -1.233779295278046e-06,
+      "vy": -0.00029680653705067145,
+      "waypoint_index": 0,
+      "x": -0.15225371585556768,
+      "y": 0.009281326874726412
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06547566535196223,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 64,
+      "time_s": 1.3,
+      "vx": -6.616252778712372e-07,
+      "vy": -0.000296702188449035,
+      "waypoint_index": 0,
+      "x": -0.15225372908807322,
+      "y": 0.009275392830957432
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06545093019561546,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 65,
+      "time_s": 1.32,
+      "vx": -3.5478637909219187e-07,
+      "vy": -0.0002965942989383728,
+      "waypoint_index": 0,
+      "x": -0.15225373618380078,
+      "y": 0.009269460944978665
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06542621047562382,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 66,
+      "time_s": 1.34,
+      "vx": -1.9024409402522415e-07,
+      "vy": -0.0002964845304262936,
+      "waypoint_index": 0,
+      "x": -0.15225373998868275,
+      "y": 0.009263531254370138
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06540150335838976,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 67,
+      "time_s": 1.36,
+      "vx": -1.020116407723038e-07,
+      "vy": -0.00029637377417793617,
+      "waypoint_index": 0,
+      "x": -0.15225374202891562,
+      "y": 0.00925760377888658
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06537680732260587,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 68,
+      "time_s": 1.38,
+      "vx": -5.469973566663425e-08,
+      "vy": -0.00029626250804658233,
+      "waypoint_index": 0,
+      "x": -0.1522537431229103,
+      "y": 0.00925167852872565
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0653521215509664,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 69,
+      "time_s": 1.4,
+      "vx": -2.9330475740274193e-08,
+      "vy": -0.0002961509881960983,
+      "waypoint_index": 0,
+      "x": -0.15225374370951972,
+      "y": 0.009245755508961728
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06532744560368878,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 70,
+      "time_s": 1.42,
+      "vx": -1.5727226854667836e-08,
+      "vy": -0.0002960393519354465,
+      "waypoint_index": 0,
+      "x": -0.15225374402406433,
+      "y": 0.00923983472192302
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06530277924339539,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 71,
+      "time_s": 1.44,
+      "vx": -8.433048677104336e-09,
+      "vy": -0.00029592767285871804,
+      "waypoint_index": 0,
+      "x": -0.1522537441927252,
+      "y": 0.009233916168465847
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06527812234121336,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 72,
+      "time_s": 1.46,
+      "vx": -4.5218596264682136e-09,
+      "vy": -0.0002958159904060676,
+      "waypoint_index": 0,
+      "x": -0.1522537442831624,
+      "y": 0.009227999848657725
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06525347482643404,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 73,
+      "time_s": 1.48,
+      "vx": -2.4246507255951988e-09,
+      "vy": -0.0002957043257105933,
+      "waypoint_index": 0,
+      "x": -0.1522537443316554,
+      "y": 0.009222085762143513
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06522883665952618,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 74,
+      "time_s": 1.5,
+      "vx": -1.3001139263146962e-09,
+      "vy": -0.0002955926900923426,
+      "waypoint_index": 0,
+      "x": -0.1522537443576577,
+      "y": 0.009216173908341667
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06520420781767128,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 75,
+      "time_s": 1.52,
+      "vx": -6.971289446410341e-10,
+      "vy": -0.00029548108961154155,
+      "waypoint_index": 0,
+      "x": -0.15225374437160033,
+      "y": 0.009210264286549436
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06517958828700936,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 76,
+      "time_s": 1.54,
+      "vx": -3.7380397693474243e-10,
+      "vy": -0.0002953695275091311,
+      "waypoint_index": 0,
+      "x": -0.15225374437907635,
+      "y": 0.009204356895999254
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06515497805848294,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 77,
+      "time_s": 1.56,
+      "vx": -2.0043713224505896e-10,
+      "vy": -0.00029525800551485285,
+      "waypoint_index": 0,
+      "x": -0.15225374438308514,
+      "y": 0.009198451735888957
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06513037712560937,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 78,
+      "time_s": 1.58,
+      "vx": -1.0747479600346288e-10,
+      "vy": -0.0002951465245485544,
+      "waypoint_index": 0,
+      "x": -0.15225374438523454,
+      "y": 0.009192548805397986
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06510578548328665,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 79,
+      "time_s": 1.6,
+      "vx": -5.76306581160566e-11,
+      "vy": -0.0002950350850957878,
+      "waypoint_index": 0,
+      "x": -0.15225374438638717,
+      "y": 0.009186648103696071
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06508120312715358,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 80,
+      "time_s": 1.62,
+      "vx": -3.0901744249240236e-11,
+      "vy": -0.0002949236874096244,
+      "waypoint_index": 0,
+      "x": -0.15225374438700512,
+      "y": 0.009180749629947877
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06505663005324626,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 81,
+      "time_s": 1.64,
+      "vx": -1.6571438599633666e-11,
+      "vy": -0.00029481233161813864,
+      "waypoint_index": 0,
+      "x": -0.15225374438733663,
+      "y": 0.009174853383315515
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.065032066257815,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 82,
+      "time_s": 1.66,
+      "vx": -8.884236251038884e-12,
+      "vy": -0.00029470101778279723,
+      "waypoint_index": 0,
+      "x": -0.15225374438751427,
+      "y": 0.009168959362959857
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06500751173722487,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 83,
+      "time_s": 1.68,
+      "vx": -4.764610975206932e-12,
+      "vy": -0.0002945897459289801,
+      "waypoint_index": 0,
+      "x": -0.15225374438760952,
+      "y": 0.009163067568041278
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0649829664879037,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 84,
+      "time_s": 1.7,
+      "vx": -2.5556206149617302e-12,
+      "vy": -0.0002944785160631441,
+      "waypoint_index": 0,
+      "x": -0.1522537443876606,
+      "y": 0.009157177997720013
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0649584305063129,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 85,
+      "time_s": 1.72,
+      "vx": -1.37126188142691e-12,
+      "vy": -0.00029436732818122327,
+      "waypoint_index": 0,
+      "x": -0.15225374438768813,
+      "y": 0.009151290651156389
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06493390378893313,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 86,
+      "time_s": 1.74,
+      "vx": -7.332235064586567e-13,
+      "vy": -0.00029425618227382153,
+      "waypoint_index": 0,
+      "x": -0.15225374438770278,
+      "y": 0.009145405527510912
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06490938633225544,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 87,
+      "time_s": 1.76,
+      "vx": -3.931055499841026e-13,
+      "vy": -0.0002941450783284115,
+      "waypoint_index": 0,
+      "x": -0.15225374438771055,
+      "y": 0.009139522625944346
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06488487813277762,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 88,
+      "time_s": 1.78,
+      "vx": -2.1256969161240366e-13,
+      "vy": -0.0002940340163310123,
+      "waypoint_index": 0,
+      "x": -0.15225374438771477,
+      "y": 0.009133641945617724
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06486037918700112,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 89,
+      "time_s": 1.8,
+      "vx": -1.1487006544538988e-13,
+      "vy": -0.00029392299626679737,
+      "waypoint_index": 0,
+      "x": -0.152253744387717,
+      "y": 0.00912776348569239
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06483588949143029,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 90,
+      "time_s": 1.82,
+      "vx": -6.324696056159485e-14,
+      "vy": -0.0002938120181204433,
+      "waypoint_index": 0,
+      "x": -0.15225374438771833,
+      "y": 0.00912188724532998
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06481140904257163,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 91,
+      "time_s": 1.84,
+      "vx": -3.2758876848623207e-14,
+      "vy": -0.00029370108187643537,
+      "waypoint_index": 0,
+      "x": -0.152253744387719,
+      "y": 0.009116013223692453
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06478693783693322,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 92,
+      "time_s": 1.86,
+      "vx": -1.7206691458772033e-14,
+      "vy": -0.00029359018751905994,
+      "waypoint_index": 0,
+      "x": -0.15225374438771944,
+      "y": 0.009110141419942073
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06476247587102489,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 93,
+      "time_s": 1.88,
+      "vx": -7.164837489101228e-15,
+      "vy": -0.0002934793350325886,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.009104271833241421
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0647380231413578,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 94,
+      "time_s": 1.9,
+      "vx": -1.9445235120882466e-15,
+      "vy": -0.00029336852440126196,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.009098404462753396
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06471357964444449,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 95,
+      "time_s": 1.92,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.000293257755609253,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.009092539307641211
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06468914537679893,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 96,
+      "time_s": 1.94,
+      "vx": -1.5820017081290118e-15,
+      "vy": -0.0002931470286408442,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.009086676367068395
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06466472033493624,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 97,
+      "time_s": 1.96,
+      "vx": -1.5820017081290118e-15,
+      "vy": -0.00029303634348022277,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.009080815640198789
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06464030451537302,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 98,
+      "time_s": 1.98,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00029292570011162414,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.009074957126196555
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0646158979146271,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 99,
+      "time_s": 2.0,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002928150985192316,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00906910082422617
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0645915005292178,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 100,
+      "time_s": 2.02,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002927045386873196,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.009063246733452424
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0645671123556655,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 101,
+      "time_s": 2.04,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00029259402060011674,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.009057394853040423
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06454273339049207,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 102,
+      "time_s": 2.06,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002924835442418154,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.009051545182155587
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0645183636302207,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 103,
+      "time_s": 2.08,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00029237310959670423,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.009045697719963653
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06449400307137577,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 104,
+      "time_s": 2.1,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00029226271664902035,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.009039852465630674
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06446965171048309,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 105,
+      "time_s": 2.12,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002921523653830212,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.009034009418323014
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06444530954406973,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 106,
+      "time_s": 2.14,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00029204205578295183,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.009028168577207354
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06442097656866408,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 107,
+      "time_s": 2.16,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002919317878331105,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00902232994145069
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0643966527807958,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 108,
+      "time_s": 2.18,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002918215615177479,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.009016493510220335
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06437233817699596,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 109,
+      "time_s": 2.2,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002917113768211436,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.009010659282683912
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06434803275379687,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 110,
+      "time_s": 2.22,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00029160123372759143,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00900482725800936
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06432373650773215,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 111,
+      "time_s": 2.24,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00029149113222140093,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008998997435364933
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0642994494353367,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 112,
+      "time_s": 2.26,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00029138107228682904,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008993169813919198
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06427517153314684,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 113,
+      "time_s": 2.28,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00029127105390820853,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008987344392841035
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06425090279770007,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 114,
+      "time_s": 2.3,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00029116107706985697,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008981521171299637
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06422664322553523,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 115,
+      "time_s": 2.32,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002910511417560528,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008975700148464515
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06420239281319257,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 116,
+      "time_s": 2.34,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00029094124795114537,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008969881323505492
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06417815155721351,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 117,
+      "time_s": 2.36,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00029083139563946284,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008964064695592702
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06415391945414083,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 118,
+      "time_s": 2.38,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.000290721584805316,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008958250263896596
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06412969650051864,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 119,
+      "time_s": 2.4,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002906118154330745,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008952438027587935
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0641054826928923,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 120,
+      "time_s": 2.42,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002905020875070536,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008946627985837795
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06408127802780855,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 121,
+      "time_s": 2.44,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002903924010116366,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008940820137817562
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06405708250181531,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 122,
+      "time_s": 2.46,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00029028275593115794,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008935014482698938
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06403289611146196,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 123,
+      "time_s": 2.48,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002901731522499788,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008929211019653938
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06400871885329908,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 124,
+      "time_s": 2.5,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00029006358995247735,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00892340974785489
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06398455072387858,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 125,
+      "time_s": 2.52,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028995406902299824,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00891761066647443
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06396039171975372,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 126,
+      "time_s": 2.54,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028984458944597633,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008911813774685511
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0639362418374789,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 127,
+      "time_s": 2.56,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002897351512057716,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008906019071661397
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06391210107360998,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 128,
+      "time_s": 2.58,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028962575428677123,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008900226556575661
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06388796942470408,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 129,
+      "time_s": 2.6,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002895163986733665,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008894436228602195
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06386384688731966,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 130,
+      "time_s": 2.62,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002894070843499751,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008888648086915196
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06383973345801637,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 131,
+      "time_s": 2.64,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028929781130100234,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008882862130689177
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06381562913335523,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 132,
+      "time_s": 2.66,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028918857951087745,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008877078359098959
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06379153390989854,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 133,
+      "time_s": 2.68,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002890793889639966,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008871296771319679
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06376744778420995,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 134,
+      "time_s": 2.7,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002889702396448037,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008865517366526784
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06374337075285436,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 135,
+      "time_s": 2.72,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002888611315377262,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008859740143896028
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0637193028123979,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 136,
+      "time_s": 2.74,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028875206462720954,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008853965102603483
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06369524395940815,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 137,
+      "time_s": 2.76,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028864303889769767,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00884819224182553
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06367119419045388,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 138,
+      "time_s": 2.78,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002885340543336315,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008842421560738858
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06364715350210517,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 139,
+      "time_s": 2.8,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028842511091947595,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00883665305852047
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06362312189093342,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 140,
+      "time_s": 2.82,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.000288316208639693,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008830886734347676
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0635990993535113,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 141,
+      "time_s": 2.84,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028820734747877,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.0088251225873981
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06357508588641274,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 142,
+      "time_s": 2.86,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002880985274211407,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008819360616849677
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06355108148621309,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 143,
+      "time_s": 2.88,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002879897484513214,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008813600821880652
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06352708614948885,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 144,
+      "time_s": 2.9,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028788101055378547,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008807843201669576
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06350309987281791,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 145,
+      "time_s": 2.92,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002877723137130078,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008802087755395316
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06347912265277941,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 146,
+      "time_s": 2.94,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002876636579135049,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008796334482237045
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06345515448595378,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 147,
+      "time_s": 2.96,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028755504313980205,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00879058338137425
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06343119536892271,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 148,
+      "time_s": 2.98,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028744646937636754,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00878483445198672
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06340724529826927,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 149,
+      "time_s": 3.0,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002873379366077471,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008779087693254566
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06338330427057774,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 150,
+      "time_s": 3.02,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002872294448184402,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008773343104358199
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06335937228243374,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 151,
+      "time_s": 3.04,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.000287120993992988,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008767600684478339
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06333544933042413,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 152,
+      "time_s": 3.06,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028701258411592,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008761860432796021
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06331153541113713,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 153,
+      "time_s": 3.08,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028690421517179264,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008756122348492584
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06328763052116212,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 154,
+      "time_s": 3.1,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002867958871450986,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008750386430749681
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06326373465708998,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 155,
+      "time_s": 3.12,
+      "vx": -1.5820017081290118e-15,
+      "vy": -0.00028668760002044933,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00874465267874927
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06323984781551262,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 156,
+      "time_s": 3.14,
+      "vx": -1.5820017081290118e-15,
+      "vy": -0.0002865793537823584,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008738921091673624
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06321596999302347,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 157,
+      "time_s": 3.16,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002864711484154033,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008733191668705315
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0631921011862171,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 158,
+      "time_s": 3.18,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002863629839041604,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008727464409027233
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06316824139168939,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 159,
+      "time_s": 3.2,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002862548602331943,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00872173931182257
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06314439060603755,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 160,
+      "time_s": 3.22,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002861467773870881,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008716016376274827
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06312054882586002,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 161,
+      "time_s": 3.24,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002860387353504296,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00871029560156782
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06309671604775657,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 162,
+      "time_s": 3.26,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002859307341078087,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008704576986885662
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06307289226832823,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 163,
+      "time_s": 3.28,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002858227736438047,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008698860531412785
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06304907748417735,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 164,
+      "time_s": 3.3,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028571485394305343,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008693146234333923
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06302527169190748,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 165,
+      "time_s": 3.32,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028560697499011603,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00868743409483412
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0630014748881236,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 166,
+      "time_s": 3.34,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028549913676967733,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008681724112098728
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06297768706943174,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 167,
+      "time_s": 3.36,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028539133926628685,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008676016285313403
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06295390823243949,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 168,
+      "time_s": 3.38,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002852835824646085,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00867031061366411
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06293013837375547,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 169,
+      "time_s": 3.4,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002851758663492776,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008664607096337124
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06290637748998973,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 170,
+      "time_s": 3.42,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002850681909049294,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008658905732519026
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06288262557775354,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 171,
+      "time_s": 3.44,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028496055611617097,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008653206521396704
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06285888263365955,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 172,
+      "time_s": 3.46,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028485296196770947,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008647509462157348
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0628351486543215,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 173,
+      "time_s": 3.48,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.000284745408444146,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008641814553988464
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06281142363635459,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 174,
+      "time_s": 3.5,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002846378955301841,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00863612179607786
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0627877075763752,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 175,
+      "time_s": 3.52,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028453042321045227,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008630431187613651
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06276400047100103,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 176,
+      "time_s": 3.54,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028442299146967757,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008624742727784258
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06274030231685096,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 177,
+      "time_s": 3.56,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028431560029249165,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008619056415778408
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06271661311054533,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 178,
+      "time_s": 3.58,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028420824966358477,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008613372250785137
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06269293284870561,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 179,
+      "time_s": 3.6,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002841009395676562,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008607690231993783
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06266926152795461,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 180,
+      "time_s": 3.62,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028399366998941065,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008602010358593995
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06264559914491634,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 181,
+      "time_s": 3.64,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028388644091353416,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008596332629775723
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06262194569621618,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 182,
+      "time_s": 3.66,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028377925232473224,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008590657044729229
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06259830117848075,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 183,
+      "time_s": 3.68,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028367210420772004,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008584983602645074
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06257466558833792,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 184,
+      "time_s": 3.7,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028356499654723545,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00857931230271413
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06255103892241683,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 185,
+      "time_s": 3.72,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028345792932797436,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00857364314412757
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06252742117734794,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 186,
+      "time_s": 3.74,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002833509025346842,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008567976126076876
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06250381234976295,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 187,
+      "time_s": 3.76,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002832439161521057,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008562311247753834
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06248021243629482,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 188,
+      "time_s": 3.78,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.000283136970164982,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008556648508350535
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06245662143357779,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 189,
+      "time_s": 3.8,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.000283030064558017,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008550987907059375
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.062433039338247454,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 190,
+      "time_s": 3.82,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002829231993160216,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008545329443073055
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0624094661469405,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 191,
+      "time_s": 3.84,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028281637442374496,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008539673115584581
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06238590185629501,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 192,
+      "time_s": 3.86,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002827095898659229,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008534018923787263
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.062362346462950344,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 193,
+      "time_s": 3.88,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028260284562735104,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008528366866874717
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.062338799963547076,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 194,
+      "time_s": 3.9,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028249614169279755,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008522716944040862
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06231526235472709,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 195,
+      "time_s": 3.92,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002823894780470209,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00851706915447992
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06229173363313353,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 196,
+      "time_s": 3.94,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028228285467486513,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008511423497386424
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.062268213795410726,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 197,
+      "time_s": 3.96,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002821762715610638,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008505779971955202
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.062244702838204435,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 198,
+      "time_s": 3.98,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028206972869046726,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008500138577381394
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06222120075816151,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 199,
+      "time_s": 4.0,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002819632260478484,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008494499312860438
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06219770755193022,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 200,
+      "time_s": 4.02,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028185676361801646,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00848886217758808
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06217422321616001,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 201,
+      "time_s": 4.04,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028175034138581886,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008483227170760364
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06215074774750156,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 202,
+      "time_s": 4.06,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002816439593360373,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008477594291573642
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.062127281142606926,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 203,
+      "time_s": 4.08,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028153761745351415,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00847196353922457
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06210382339812937,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 204,
+      "time_s": 4.1,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002814313157231215,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008466334912910108
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06208037451072333,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 205,
+      "time_s": 4.12,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002813250541296501,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008460708411827514
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06205693447704468,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 206,
+      "time_s": 4.14,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028121883265796305,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008455084035174355
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06203350329375045,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 207,
+      "time_s": 4.16,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028111265129290744,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008449461782148497
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06201008095749895,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 208,
+      "time_s": 4.18,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002810065100193409,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00844384165194811
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.061986667464949755,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 209,
+      "time_s": 4.2,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028090040882213294,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00843822364377167
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.061963262812763674,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 210,
+      "time_s": 4.22,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002807943476861614,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008432607756817947
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06193986699760279,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 211,
+      "time_s": 4.24,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028068832659626936,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00842699399028602
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0619164800161305,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 212,
+      "time_s": 4.26,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002805823455373488,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008421382343375274
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06189310186501142,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 213,
+      "time_s": 4.28,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002804764044942882,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00841577281528539
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06186973254091142,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 214,
+      "time_s": 4.3,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00028037050345196897,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00841016540521635
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06184637204049763,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 215,
+      "time_s": 4.32,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.000280264642395323,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008404560112368443
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06182302036043838,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 216,
+      "time_s": 4.34,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002801588213092146,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008398956935942257
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.061799677497403394,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 217,
+      "time_s": 4.36,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002800530401785803,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008393355875138685
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06177634344806354,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 218,
+      "time_s": 4.38,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027994729898828157,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00838775692915892
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06175301820909106,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 219,
+      "time_s": 4.4,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027984159772329563,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008382160097204452
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06172970177715927,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 220,
+      "time_s": 4.42,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027973593636853444,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008376565378477082
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.061706394148942884,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 221,
+      "time_s": 4.44,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002796303149089058,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008370972772178905
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.061683095321117876,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 222,
+      "time_s": 4.46,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.000279524733329377,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008365382277512316
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06165980529036135,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 223,
+      "time_s": 4.48,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002794191916148767,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00835979389368002
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06163652405335181,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 224,
+      "time_s": 4.5,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.000279313689750339,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008354207619885014
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.061613251606768955,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 225,
+      "time_s": 4.52,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002792082277207167,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008348623455330599
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06158998794729373,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 226,
+      "time_s": 4.54,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002791028055110043,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008343041399220378
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06156673307160829,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 227,
+      "time_s": 4.56,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002789974231061301,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008337461450758255
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06154348697639614,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 228,
+      "time_s": 4.58,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027889208049109544,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008331883609148431
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06152024965834194,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 229,
+      "time_s": 4.6,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002787867776508497,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008326307873595413
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06149702111413171,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 230,
+      "time_s": 4.62,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002786815145703952,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008320734243304005
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06147380134045261,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 231,
+      "time_s": 4.64,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027857629123469245,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008315162717479313
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.061450590333993166,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 232,
+      "time_s": 4.66,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002784711076287599,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00830959329532674
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06142738809144304,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 233,
+      "time_s": 4.68,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027836596373760554,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008304025976051989
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.061404194609493166,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 234,
+      "time_s": 4.7,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027826085954617714,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008298460758861065
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06138100988483586,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 235,
+      "time_s": 4.72,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027815579503956823,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008292897642960272
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.061357833914164425,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 236,
+      "time_s": 4.74,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027805077020273813,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008287336627556218
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06133466669417369,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 237,
+      "time_s": 4.76,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002779457850207127,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008281777711855804
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06131150822155959,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 238,
+      "time_s": 4.78,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002778408394785331,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008276220895066234
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06128835849301933,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 239,
+      "time_s": 4.8,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002777359335612243,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00827066617639501
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06126521750525134,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 240,
+      "time_s": 4.82,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002776310672538428,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00826511355504993
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.061242085254955295,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 241,
+      "time_s": 4.84,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002775262405413989,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008259563030239104
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06121896173883222,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 242,
+      "time_s": 4.86,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027742145340896437,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008254014601170926
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06119584695358426,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 243,
+      "time_s": 4.88,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002773167058416067,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008248468267054093
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0611727408959148,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 244,
+      "time_s": 4.9,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002772119978243712,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008242924027097604
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.061149643562528576,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 245,
+      "time_s": 4.92,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002771073293423153,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008237381880510757
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06112655495013151,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 246,
+      "time_s": 4.94,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027700270038053334,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008231841826503147
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06110347505543076,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 247,
+      "time_s": 4.96,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002768981109240906,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008226303864284665
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.061080403875134734,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 248,
+      "time_s": 4.98,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027679356095806185,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008220767993065505
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06105734140595311,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 249,
+      "time_s": 5.0,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027668905046756057,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008215234212056156
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06103428764459675,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 250,
+      "time_s": 5.02,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002765845794376633,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008209702520467401
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06101124258777779,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 251,
+      "time_s": 5.04,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002764801478534729,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00820417291751033
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06098820623220964,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 252,
+      "time_s": 5.06,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027637575570010566,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008198645402396329
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06096517857460689,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 253,
+      "time_s": 5.08,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002762714029626571,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008193119974337075
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.060942159611685434,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 254,
+      "time_s": 5.1,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027616708962627994,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00818759663254455
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06091914934016231,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 255,
+      "time_s": 5.12,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027606281567603744,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00818207537623103
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06089614775675596,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 256,
+      "time_s": 5.14,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027595858109711517,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008176556204609088
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06087315485818586,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 257,
+      "time_s": 5.16,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002758543858746189,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008171039116891595
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06085017064117289,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 258,
+      "time_s": 5.18,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027575022999367564,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008165524112291721
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06082719510243912,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 259,
+      "time_s": 5.2,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027564611343948794,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008160011190022933
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06080422823870774,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 260,
+      "time_s": 5.22,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027554203619715106,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008154500349298991
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.060781270046703396,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 261,
+      "time_s": 5.24,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002754379982518282,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008148991589333954
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06075832052315182,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 262,
+      "time_s": 5.26,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002753339995887104,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00814348490934218
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06073537966477999,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 263,
+      "time_s": 5.28,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027523004019294956,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008137980308538323
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06071244746831615,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 264,
+      "time_s": 5.3,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002751261200497117,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008132477786137328
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.0606895239304898,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 265,
+      "time_s": 5.32,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002750222391441632,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008126977341354445
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06066660904803168,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 266,
+      "time_s": 5.34,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002749183974615347,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008121478973405215
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.060643702817673645,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 267,
+      "time_s": 5.36,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002748145949869829,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008115982681505474
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06062080523614892,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 268,
+      "time_s": 5.38,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002747108317057109,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00811048846487136
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06059791630019193,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 269,
+      "time_s": 5.4,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027460710760292083,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008104996322719302
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06057503600653832,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 270,
+      "time_s": 5.42,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002745034226638113,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008099506254266028
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06055216435192496,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 271,
+      "time_s": 5.44,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002743997768736106,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008094018258728554
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06052930133308993,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 272,
+      "time_s": 5.46,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002742961702175376,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008088532335324205
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.060506446946772596,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 273,
+      "time_s": 5.48,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002741926026808041,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00808304848327059
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06048360118971353,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 274,
+      "time_s": 5.5,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002740890742486383,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008077566701785617
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06046076405865454,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 275,
+      "time_s": 5.52,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.000273985584906275,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00807208699008749
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06043793555033867,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 276,
+      "time_s": 5.54,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027388213463895995,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008066609347394713
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.060415115661510164,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 277,
+      "time_s": 5.56,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027377872343195623,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008061133772926072
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.060392304388914485,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 278,
+      "time_s": 5.58,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027367535127050105,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008055660265900662
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06036950172929838,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 279,
+      "time_s": 5.6,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002735720181398378,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008050188825537864
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06034670767940982,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 280,
+      "time_s": 5.62,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.000273468724025245,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008044719451057357
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06032392223599796,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 281,
+      "time_s": 5.64,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027336546891198354,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008039252141679117
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06030114539581322,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 282,
+      "time_s": 5.66,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027326225278533333,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008033786896623409
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.060278377155607216,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 283,
+      "time_s": 5.68,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002731590756305746,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008028323715110797
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06025561751213282,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 284,
+      "time_s": 5.7,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027305593743297507,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008022862596362139
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06023286646214413,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 285,
+      "time_s": 5.72,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027295283817786937,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00801740353959858
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06021012400239638,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 286,
+      "time_s": 5.74,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027284977785051694,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008011946544041571
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06018739012964617,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 287,
+      "time_s": 5.76,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027274675643621166,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008006491608912848
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.060164664840651284,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 288,
+      "time_s": 5.78,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002726437739202971,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.008001038733434444
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06014194813217063,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 289,
+      "time_s": 5.8,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027254083028805575,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00799558791682868
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.060119240000964455,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 290,
+      "time_s": 5.82,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027243792552480235,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.007990139158318185
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.060096540443794234,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 291,
+      "time_s": 5.84,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027233505961590603,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.007984692457125867
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.060073849457422515,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 292,
+      "time_s": 5.86,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002722322325466408,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.007979247812474933
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.06005116703861327,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 293,
+      "time_s": 5.88,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002721294443023718,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.007973805223588884
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.060028493184131546,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 294,
+      "time_s": 5.9,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002720266948684452,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.007968364689691514
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.060005827890743664,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 295,
+      "time_s": 5.92,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.0002719239842301826,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.00796292621000691
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.059983171155217195,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 296,
+      "time_s": 5.94,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.000271821312372957,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.007957489783759451
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.059960522974320876,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 297,
+      "time_s": 5.96,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027171867928211206,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.007952055410173808
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.05993788334482469,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 298,
+      "time_s": 5.98,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027161608494302123,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.007946623088474946
+    },
+    {
+      "cmd_x": 5.0,
+      "cmd_y": -0.059915252263499835,
+      "contacts": [
+        [
+          "obstacle",
+          "robot_geom"
+        ]
+      ],
+      "obstacle_contact": true,
+      "recovery": "NONE",
+      "target_x": 1.2,
+      "target_y": -0.006435320058286309,
+      "tick": 299,
+      "time_s": 6.0,
+      "vx": -1.6182538885249353e-15,
+      "vy": -0.00027151352934104656,
+      "waypoint_index": 0,
+      "x": -0.15225374438771966,
+      "y": 0.007941192817888125
+    }
+  ],
+  "obstacle_contacts": 265,
+  "path_length_m": 1.0912421467323112,
+  "replans": 0,
+  "retries": 0,
+  "seed": 5105,
+  "semantic_wakes": 0,
+  "ticks": 300,
+  "waypoints_initial": [
+    [
+      1.2,
+      -0.006435320058286309
+    ]
+  ]
+}

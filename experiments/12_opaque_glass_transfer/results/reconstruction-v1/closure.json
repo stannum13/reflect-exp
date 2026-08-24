@@ -1,0 +1,10 @@
+{
+  "config_sha256": "3caf019ffec0f85f004b03da2f5cb9184afce7e9e1c62f156ec3ed9065c5119a",
+  "matrix_rows": 108,
+  "mujoco": "3.12.0",
+  "numpy": "2.4.6",
+  "platform": "macOS-15.6.1-arm64-arm-64bit",
+  "python": "3.11.13 (main, Jun  3 2025, 18:38:25) [Clang 17.0.0 (clang-1700.0.13.3)]",
+  "source_commit": "d779684f4ce4a7216ec9e3bd8373222c1c7b6e81",
+  "status": "COMPLETE"
+}
