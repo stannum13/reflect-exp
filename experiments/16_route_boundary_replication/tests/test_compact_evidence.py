@@ -112,9 +112,15 @@ def test_invalid_execution_has_invalid_experiment_precedence() -> None:
     ) == "DOES_NOT_SUPPORT_BOUNDED_DIRECT_HIERARCHY_REPLICATION"
 
 
-def test_reconstruction_survives_missing_complete_stratum_and_marks_invalid(
+@pytest.mark.parametrize(
+    ("invalid_scope", "expected_invalid"),
+    (("stratum", 10), ("all_r3", 180), ("all", 540)),
+)
+def test_reconstruction_survives_invalid_patterns_and_marks_invalid(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    invalid_scope: str,
+    expected_invalid: int,
 ) -> None:
     module = _module()
     experiment = importlib.import_module(
@@ -131,11 +137,17 @@ def test_reconstruction_survives_missing_complete_stratum_and_marks_invalid(
             "controller_id": spec.controller_id,
             "matrix_role": spec.matrix_role,
         }
-        if (
+        stratum_invalid = (
             spec.matrix_role == "PRIMARY"
             and spec.architecture.value == "R3"
             and spec.family == "motion-path-infeasible"
             and spec.severity == "HIGH"
+        )
+        all_r3_invalid = spec.architecture.value == "R3"
+        if (
+            invalid_scope == "all"
+            or (invalid_scope == "all_r3" and all_r3_invalid)
+            or (invalid_scope == "stratum" and stratum_invalid)
         ):
             rows.append({**common, "disposition": "INVALID_EXECUTION"})
         else:
@@ -158,14 +170,15 @@ def test_reconstruction_survives_missing_complete_stratum_and_marks_invalid(
     module.reconstruct_derived(pack, destination)
     report = json.loads((destination / "report.json").read_text())
     assert report["formal_disposition"] == "INVALID_EXPERIMENT"
-    assert report["dispositions"]["INVALID_EXECUTION"] == 10
+    assert report["dispositions"]["INVALID_EXECUTION"] == expected_invalid
     missing = [
         row
         for row in (destination / "tables/family-severity.csv").read_text().splitlines()
         if row.startswith("motion-path-infeasible,HIGH,R3,")
     ]
-    assert len(missing) == 1
-    assert missing[0].endswith(",,")
+    if invalid_scope != "all":
+        assert len(missing) == 1
+        assert missing[0].endswith(",,")
 
 
 def test_public_analysis_uses_equal_seed_cluster_weighting() -> None:

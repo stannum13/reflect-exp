@@ -245,22 +245,28 @@ def reconstruct_derived(pack: Path, destination: Path) -> None:
     for role in ("PRIMARY", "SENSITIVITY"):
         for architecture in ("R0", "R1", "R2", "R3"):
             selected = [row for row in complete if row["matrix_role"] == role and row["architecture"] == architecture]
-            if selected:
-                summary.append({"matrix_role": role, "architecture": architecture, "n": len(selected),
-                    "success_rate": float(np.mean([row["mission_success"] for row in selected])),
-                    "safety_rate": float(np.mean([row["safety_composite"] for row in selected])),
-                    "mean_progress": float(np.mean([row["progress"] for row in selected])),
-                    "mean_wakes": float(np.mean([row["control_wakes"] + row["motion_wakes"] + row["semantic_wakes"] for row in selected]))})
-    _write(destination / "tables/architecture-summary.csv", _csv_bytes(tuple(summary[0]), summary))
+            summary.append({"matrix_role": role, "architecture": architecture, "n": len(selected),
+                "success_rate": float(np.mean([row["mission_success"] for row in selected])) if selected else None,
+                "safety_rate": float(np.mean([row["safety_composite"] for row in selected])) if selected else None,
+                "mean_progress": float(np.mean([row["progress"] for row in selected])) if selected else None,
+                "mean_wakes": float(np.mean([row["control_wakes"] + row["motion_wakes"] + row["semantic_wakes"] for row in selected])) if selected else None})
+    summary_fields = (
+        "matrix_role", "architecture", "n", "success_rate", "safety_rate",
+        "mean_progress", "mean_wakes",
+    )
+    _write(destination / "tables/architecture-summary.csv", _csv_bytes(summary_fields, summary))
     family_rows = []
-    for family in sorted({str(row["family"]) for row in complete}):
+    for family in sorted({str(spec.family) for spec in matrix_specs()}):
         for severity in ("LOW", "HIGH"):
             for architecture in ("R0", "R1", "R2", "R3"):
                 selected = [row for row in complete if row["matrix_role"] == "PRIMARY" and row["family"] == family and row["severity"] == severity and row["architecture"] == architecture]
                 family_rows.append({"family": family, "severity": severity, "architecture": architecture, "n": len(selected),
-                    "success_rate": float(np.mean([row["mission_success"] for row in selected])) if selected else "",
-                    "mean_progress": float(np.mean([row["progress"] for row in selected])) if selected else ""})
-    _write(destination / "tables/family-severity.csv", _csv_bytes(tuple(family_rows[0]), family_rows))
+                    "success_rate": float(np.mean([row["mission_success"] for row in selected])) if selected else None,
+                    "mean_progress": float(np.mean([row["progress"] for row in selected])) if selected else None})
+    family_fields = (
+        "family", "severity", "architecture", "n", "success_rate", "mean_progress",
+    )
+    _write(destination / "tables/family-severity.csv", _csv_bytes(family_fields, family_rows))
     augmented = [{**row, "total_wakes": row.get("control_wakes", 0) + row.get("motion_wakes", 0) + row.get("semantic_wakes", 0)} for row in rows]
     effects, sensitivity, draw_columns, plan_columns = _registered_effects(rows)
     cluster_rows = []
@@ -270,7 +276,10 @@ def reconstruct_derived(pack: Path, destination: Path) -> None:
     for metric in ("mission_success", "progress"):
         for seed, cluster in _sensitivity_values(rows, metric).items():
             cluster_rows.append({"comparison_metric": f"P4-P6:{metric}", "seed": seed, "member_count": len(cluster), "cluster_mean": float(np.mean(cluster)), "members_json": json.dumps(cluster, separators=(",", ":"))})
-    _write(destination / "bootstrap/cluster-inputs.csv", _csv_bytes(tuple(cluster_rows[0]), cluster_rows))
+    cluster_fields = (
+        "comparison_metric", "seed", "member_count", "cluster_mean", "members_json",
+    )
+    _write(destination / "bootstrap/cluster-inputs.csv", _csv_bytes(cluster_fields, cluster_rows))
     draw_rows = []
     for index in range(BOOTSTRAP_DRAWS):
         row = {"draw_id": index}
