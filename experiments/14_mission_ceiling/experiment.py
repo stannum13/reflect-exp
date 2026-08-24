@@ -391,8 +391,44 @@ def verify_manifest(root: Path) -> None:
 
 
 def _bootstrap(values: np.ndarray, rng: np.random.Generator, draws: int) -> dict[str, Any]:
+    if len(values) == 1:
+        return {"estimate": float(values[0]), "ci_low": None, "ci_high": None, "effective_n": 1, "draws": draws}
     sampled = values[rng.integers(0, len(values), size=(draws, len(values)))].mean(axis=1)
     return {"estimate": float(values.mean()), "ci_low": float(np.quantile(sampled, 0.025)), "ci_high": float(np.quantile(sampled, 0.975)), "effective_n": int(len(values)), "draws": draws}
+
+
+def seed_cluster_contrast(
+    rows: list[dict[str, Any]],
+    other_agent: str,
+    draws: int,
+    bootstrap_seed: int,
+) -> dict[str, Any]:
+    by = {
+        (int(row["seed"]), row["mission"], int(row["horizon"]), row["variant"], row["agent"]): row
+        for row in rows
+    }
+    seed_means = []
+    for seed in sorted({int(row["seed"]) for row in rows}):
+        differences = []
+        cells = sorted({
+            (row["mission"], int(row["horizon"]), row["variant"])
+            for row in rows if int(row["seed"]) == seed
+        })
+        for mission, horizon, variant in cells:
+            full_key = (seed, mission, horizon, variant, "full_hierarchy")
+            other_key = (seed, mission, horizon, variant, other_agent)
+            if full_key not in by or other_key not in by:
+                continue
+            full = by[full_key]["mission_complete"]
+            other = by[other_key]["mission_complete"]
+            full_value = full if isinstance(full, bool) else full == "True"
+            other_value = other if isinstance(other, bool) else other == "True"
+            differences.append(float(full_value) - float(other_value))
+        if differences:
+            seed_means.append(float(np.mean(differences)))
+    if not seed_means:
+        raise IntegrityError("no complete paired seed clusters")
+    return _bootstrap(np.asarray(seed_means), np.random.default_rng(bootstrap_seed), draws)
 
 
 def _derive(root: Path) -> None:
@@ -418,14 +454,11 @@ def _derive(root: Path) -> None:
             cell = [r for r in rows if r["agent"] == agent and r["variant"] == variant]
             if cell:
                 summaries.append({"agent": agent, "variant": variant, "n": len(cell), "completion": sum(r["mission_complete"] for r in cell) / len(cell), "safety": sum(r["safe"] for r in cell) / len(cell), "progress": sum(r["progress"] for r in cell) / len(cell)})
-    by = {(r["seed"], r["mission"], r["horizon"], r["variant"], r["agent"]): r for r in rows}
-    rng = np.random.default_rng(cfg["bootstrap_seed"])
     contrasts = {}
-    keys = sorted({(r["seed"], r["mission"], r["horizon"], r["variant"]) for r in rows})
-    for other in cfg["agents"][:-1]:
-        paired = [float(by[(*key, "full_hierarchy")]["mission_complete"]) - float(by[(*key, other)]["mission_complete"]) for key in keys if (*key, "full_hierarchy") in by and (*key, other) in by]
-        if paired:
-            contrasts[f"full_minus_{other}:completion"] = _bootstrap(np.asarray(paired), rng, cfg["bootstrap_draws"])
+    for offset, other in enumerate(cfg["agents"][:-1]):
+        contrasts[f"full_minus_{other}:completion"] = seed_cluster_contrast(
+            rows, other, cfg["bootstrap_draws"], cfg["bootstrap_seed"] + offset,
+        )
     heterogeneity = []
     for horizon in cfg["horizons"]:
         for variant in cfg["variants"]:
@@ -470,6 +503,32 @@ def reconstruct(source: Path, target: Path) -> None:
     target.mkdir()
     shutil.copytree(source / "raw", target / "raw")
     shutil.copy2(source / "closure.json", target / "closure.json")
+    _derive(target)
+    write_manifest(target)
+    verify_manifest(target)
+
+
+def reanalyse(source: Path, target: Path, analysis_commit: str) -> None:
+    verify_manifest(source)
+    if target.exists():
+        raise IntegrityError("target exists")
+    target.mkdir()
+    shutil.copytree(source / "raw", target / "raw")
+    prior = json.loads((source / "closure.json").read_text())
+    _write_json(target / "closure.json", {
+        "schema": "exp14-seed-cluster-analysis-closure-v2",
+        "status": "COMPLETE",
+        "outcome_source_commit": prior["source_commit"],
+        "analysis_commit": analysis_commit,
+        "config_sha256": prior["config_sha256"],
+        "matrix_sha256": prior["matrix_sha256"],
+        "matrix_rows": prior["matrix_rows"],
+        "seeds": prior["seeds"],
+        "raw_inventory_sha256": _sha_bytes(_canonical(_manifest_entries(source / "raw"))),
+        "supersedes_manifest_sha256": _sha_file(source / "manifest.json"),
+        "correction": "paired bootstrap resamples seed clusters; one-seed shards have no inferential interval",
+        "claim_scope": prior["claim_scope"],
+    })
     _derive(target)
     write_manifest(target)
     verify_manifest(target)

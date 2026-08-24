@@ -82,3 +82,20 @@ def test_reconstruction_is_raw_derived_and_byte_exact(tmp_path: Path) -> None:
     exp.reconstruct(source, target)
     assert (source / "derived" / "episodes.csv").read_bytes() == (target / "derived" / "episodes.csv").read_bytes()
     assert json.loads((source / "closure.json").read_text())["matrix_rows"] == 16
+
+
+def test_paired_bootstrap_resamples_seed_clusters_not_cells() -> None:
+    rows = []
+    for seed, full_value in ((7401, True), (7402, False)):
+        for mission in ("parcel", "retrieve"):
+            for horizon in (4, 8):
+                base = {"seed": seed, "mission": mission, "horizon": horizon, "variant": "baseline"}
+                rows.append({**base, "agent": "open_loop", "mission_complete": False})
+                rows.append({**base, "agent": "full_hierarchy", "mission_complete": full_value})
+    contrast = exp.seed_cluster_contrast(rows, "open_loop", draws=1000, bootstrap_seed=7)
+    assert contrast["effective_n"] == 2
+    assert contrast["estimate"] == pytest.approx(0.5)
+    one_seed = exp.seed_cluster_contrast([row for row in rows if row["seed"] == 7401], "open_loop", draws=1000, bootstrap_seed=7)
+    assert one_seed["effective_n"] == 1
+    assert one_seed["ci_low"] is None
+    assert one_seed["ci_high"] is None
