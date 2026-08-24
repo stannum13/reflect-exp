@@ -279,7 +279,7 @@ def test_runner_pauses_at_50_until_exact_independent_release(tmp_path: Path) -> 
         "disposition_inventory_sha256": experiment.disposition_inventory_sha256(root),
         "approval_parent_commit": source_commit,
     }))
-    with pytest.raises(RuntimeError, match="disposition schema"):
+    with pytest.raises(RuntimeError, match="disposition .*mismatch"):
         experiment.release_first50(root, f"test-file:{approval}")
     freeze_sha256 = experiment.sha256_bytes((root / "freeze.json").read_bytes())
     for spec in experiment.matrix_specs()[:50]:
