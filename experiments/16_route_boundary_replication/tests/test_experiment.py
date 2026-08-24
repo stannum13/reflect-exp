@@ -422,6 +422,61 @@ def test_runner_pauses_at_50_until_exact_independent_release(tmp_path: Path) -> 
     release_path.write_bytes(experiment.canonical_bytes(forged))
     with pytest.raises(RuntimeError, match="canonical mismatch|release state mismatch"):
         experiment.execute(root, limit=1)
+
+
+def test_first50_release_revalidates_source_ancestry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    experiment = _module()
+    root = tmp_path / experiment.EXPERIMENT_ID
+    source_commit = subprocess.check_output(("git", "rev-parse", "HEAD"), text=True).strip()
+    experiment.freeze(
+        root,
+        source_commit=source_commit,
+        source_approval_ref=_approval(tmp_path, experiment, source_commit),
+    )
+    experiment.preflight(root)
+    freeze_sha256 = experiment.sha256_bytes((root / "freeze.json").read_bytes())
+    disposition_root = root / "raw/dispositions"
+    disposition_root.mkdir(parents=True)
+    for spec in experiment.matrix_specs()[:50]:
+        row = experiment._invalid_execution_row(
+            spec,
+            RuntimeError("registered test invalid"),
+            stage="RUNTIME",
+            source_commit=source_commit,
+            freeze_sha256=freeze_sha256,
+        )
+        (disposition_root / f"{spec.episode_id}.json").write_bytes(
+            experiment.canonical_bytes(row)
+        )
+    approval = tmp_path / "first50-ancestry-approval.json"
+    approval.write_bytes(experiment.canonical_bytes({
+        "schema_version": 1,
+        "experiment_id": experiment.EXPERIMENT_ID,
+        "verdict": "APPROVE",
+        "review_scope": "FIRST_50_CONTINUATION",
+        "reviewer": "independent-test-reviewer",
+        "source_commit": source_commit,
+        "freeze_sha256": freeze_sha256,
+        "disposition_count": 50,
+        "disposition_inventory_sha256": experiment.disposition_inventory_sha256(root),
+        "approval_parent_commit": source_commit,
+    }))
+    experiment.release_first50(root, f"test-file:{approval}")
+    real_run = experiment.subprocess.run
+
+    def reject_source_to_approval_parent(command, *args, **kwargs):
+        if tuple(command) == (
+            "git", "merge-base", "--is-ancestor", source_commit, source_commit,
+        ):
+            raise subprocess.CalledProcessError(1, command)
+        return real_run(command, *args, **kwargs)
+
+    monkeypatch.setattr(experiment.subprocess, "run", reject_source_to_approval_parent)
+    with pytest.raises(RuntimeError, match="first-50 approval ancestry mismatch"):
+        experiment.execute(root, limit=1)
     release_path.write_bytes(original_release)
     first = sorted(disposition_root.glob("*.json"))[0]
     first.write_bytes(first.read_bytes() + b" ")
