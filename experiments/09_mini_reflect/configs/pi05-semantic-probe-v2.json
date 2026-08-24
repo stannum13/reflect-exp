@@ -1,0 +1,11 @@
+{
+  "schema_version": 2,
+  "study_id": "EXP09_PI05_SEMANTIC_INTERFACE_FEASIBILITY_V2",
+  "openpi_commit": "15a9616a00943ada6c20a0f158e3adb39df2ccac",
+  "checkpoint_id": "openpi-assets/checkpoints/pi05_droid",
+  "checkpoint_download_allowed": false,
+  "network_allowed": false,
+  "model_inference_allowed": false,
+  "physical_execution_allowed": false,
+  "unsupported_disposition": "NOT_RUN"
+}
