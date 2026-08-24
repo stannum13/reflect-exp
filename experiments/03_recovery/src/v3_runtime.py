@@ -1363,7 +1363,6 @@ def run_counterfactual_continuation(
     previous_q_ref = np.asarray(simulator["previous_q_ref"], dtype=np.float64)
     hold_q = np.asarray(simulator["hold_q"], dtype=np.float64)
     obstacle_active = bool(detached_state["world"]["obstacle_active"])
-    dropout_start = detached_state["world"]["dropout_start"]
     start_tick = int(detached_state["observed_tick"])
 
     def authorized(object_id: str) -> bool:

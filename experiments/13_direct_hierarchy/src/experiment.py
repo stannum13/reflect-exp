@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import importlib
+import json
 import math
+import os
+from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping
 
@@ -13,6 +16,9 @@ import numpy as np
 
 _contracts = importlib.import_module("experiments.03_recovery.src.v3_contracts")
 _runtime = importlib.import_module("experiments.03_recovery.src.v3_runtime")
+_evidence = importlib.import_module("experiments.03_recovery.src.v3_evidence")
+_outcome = importlib.import_module("experiments.03_recovery.src.v3_outcome")
+_scorer = importlib.import_module("experiments.03_recovery.src.v3_scorer")
 Architecture = _contracts.Architecture
 PRIMARY_CONTROLLER_ID = _contracts.PRIMARY_CONTROLLER_ID
 RunStage = _contracts.RunStage
@@ -160,6 +166,167 @@ def run_cell(spec: DirectSpec) -> object:
     return run_episode(spec, realization_override=realization, precheck_override=receipt)
 
 
+def score_cell(raw: object) -> dict[str, object]:
+    score = _scorer.score_episode(raw)
+    counts = score.violation_counts
+    levels = [item.level.value for item in raw.decisions]
+    errors = np.asarray(raw.trace["target_error_m"], dtype=np.float64)
+    injection = int(raw.realization.injection_tick)
+    initial_error = max(float(errors[injection]), 1e-12)
+    progress = float(np.clip((initial_error - float(errors[-1])) / initial_error, 0.0, 1.0))
+    torque = np.asarray(raw.trace["actuator_cmd_nm"], dtype=np.float64)
+    q = np.asarray(raw.trace["q"], dtype=np.float64)
+    contact_force = np.asarray(raw.trace["contact_force_norm_n"], dtype=np.float64)
+    decisions = [item for item in raw.decisions if item.level.value != "NONE"]
+    first_tick = min((item.observed_tick for item in decisions), default=injection)
+    safety = any(int(counts[key]) > 0 for key in (
+        "unsafe", "forbidden", "collision", "invalid_action", "stale", "wrong_object", "loop", "reset",
+    ))
+    values = {
+        "episode_id": raw.spec.episode_id,
+        "architecture": raw.spec.architecture.value,
+        "family": raw.spec.family,
+        "severity": raw.spec.severity,
+        "seed": raw.spec.seed,
+        "controller_id": raw.spec.controller_id,
+        "matrix_role": raw.spec.matrix_role,
+        "terminal": score.terminal,
+        "mission_success": score.terminal == "SUCCESS",
+        "safety_composite": bool(safety),
+        "progress": progress,
+        "retry_count": len(decisions),
+        "control_wakes": levels.count("CONTROL"),
+        "motion_wakes": levels.count("MOTION"),
+        "semantic_wakes": levels.count("SEMANTIC"),
+        "recovery_latency_ticks": max(0, first_tick - injection),
+        "aborts": levels.count("SAFE_ABORT"),
+        "peak_torque_nm": float(np.max(np.abs(torque))),
+        "rms_torque_nm": float(np.sqrt(np.mean(np.square(torque)))),
+        "peak_contact_force_n": float(np.max(contact_force)),
+        "trajectory_length_rad": float(np.sum(np.linalg.norm(np.diff(q, axis=0), axis=1))),
+        "action_cost": float(np.sum(np.abs(torque)) * 0.002),
+    }
+    return {name: values[name] for name in OUTCOME_ROW_FIELDS}
+
+
+def _root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def _source_closure() -> list[dict[str, object]]:
+    paths = {
+        _root() / item["path"] for item in _evidence.source_closure()
+    }
+    paths.update({
+        Path(__file__),
+        _root() / "experiments/13_direct_hierarchy/__init__.py",
+        _root() / "experiments/13_direct_hierarchy/src/__init__.py",
+        _root() / "experiments/13_direct_hierarchy/run.py",
+        _root() / "docs/superpowers/specs/2026-08-24-exp13-direct-hierarchy-outcome-design.md",
+        _root() / "pyproject.toml",
+        _root() / "uv.lock",
+    })
+    result = []
+    for path in sorted(item.resolve() for item in paths if item.is_file()):
+        payload = path.read_bytes()
+        result.append({"path": path.relative_to(_root()).as_posix(), "bytes": len(payload), "sha256": sha256_bytes(payload)})
+    return result
+
+
+def _write(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("xb") as stream:
+        stream.write(payload)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def freeze(output: Path, *, source_commit: str, tracked_path: Path | None = None) -> dict[str, object]:
+    if output.exists():
+        raise FileExistsError(output)
+    if len(source_commit) != 40:
+        raise ValueError("Exp13 freeze requires a full source commit")
+    closure = _source_closure()
+    configuration = dict(frozen_configuration())
+    configuration["episode_ids"] = [item.episode_id for item in matrix_specs()]
+    document = {
+        "schema_version": 1,
+        "stage": "FROZEN_BEFORE_OUTCOME",
+        "self_authorizes_claims": False,
+        "v3_disposition": "REJECTED_CAUSAL_AUTH",
+        "source_commit": source_commit,
+        "source_closure": closure,
+        "source_closure_sha256": sha256_bytes(canonical_bytes(closure)),
+        "configuration": configuration,
+        "configuration_sha256": sha256_bytes(canonical_bytes(configuration)),
+        "environment": _evidence.current_environment(),
+    }
+    document["environment_sha256"] = sha256_bytes(canonical_bytes(document["environment"]))
+    output.mkdir(parents=True)
+    payload = canonical_bytes(document)
+    _write(output / "freeze.json", payload)
+    if tracked_path is not None:
+        _write(tracked_path, payload)
+    return document
+
+
+def _episode_manifest(output: Path, raw: object) -> dict[str, object]:
+    destination = output / "raw/episodes" / raw.spec.episode_id
+    payloads = _evidence.episode_payloads(raw)
+    payloads.pop("failure-event-states.jsonl", None)
+    for name, payload in sorted(payloads.items()):
+        _write(destination / name, payload)
+    manifest = {
+        "schema_version": 1,
+        "episode_id": raw.spec.episode_id,
+        "seed": raw.spec.seed,
+        "injection_tick": raw.realization.injection_tick,
+        "files": _evidence._inventory(payloads),
+    }
+    payload = canonical_bytes(manifest)
+    _write(destination / "manifest.json", payload)
+    return {"manifest_sha256": sha256_bytes(payload)}
+
+
+def _validate_freeze(output: Path) -> dict[str, object]:
+    payload = (output / "freeze.json").read_bytes()
+    document = json.loads(payload.decode("ascii"))
+    if canonical_bytes(document) != payload:
+        raise RuntimeError("Exp13 freeze is not canonical")
+    closure = _source_closure()
+    if document["source_closure"] != closure or document["source_closure_sha256"] != sha256_bytes(canonical_bytes(closure)):
+        raise RuntimeError("Exp13 source closure drift")
+    if document["configuration"]["episode_ids"] != [item.episode_id for item in matrix_specs()]:
+        raise RuntimeError("Exp13 matrix drift")
+    return document
+
+
+def execute(output: Path, *, limit: int | None = None) -> dict[str, int]:
+    _validate_freeze(output)
+    disposition_root = output / "raw/dispositions"
+    completed_before = len(list(disposition_root.glob("*.json"))) if disposition_root.exists() else 0
+    allowance = len(matrix_specs()) if limit is None else int(limit)
+    written = 0
+    for spec in matrix_specs():
+        path = disposition_root / f"{spec.episode_id}.json"
+        if path.is_file():
+            continue
+        if written >= allowance:
+            break
+        raw = run_cell(spec)
+        manifest = _episode_manifest(output, raw)
+        row = {
+            **score_cell(raw),
+            "disposition": "COMPLETE",
+            "parameter_sha256": raw.realization.parameter_sha256,
+            "episode_manifest_sha256": manifest["manifest_sha256"],
+        }
+        _write(path, canonical_bytes(row))
+        written += 1
+    completed = completed_before + written
+    return {"completed": completed, "remaining": 540 - completed, "total": 540}
+
+
 def frozen_configuration() -> Mapping[str, object]:
     return MappingProxyType({
         "experiment_id": EXPERIMENT_ID,
@@ -179,5 +346,5 @@ def frozen_configuration() -> Mapping[str, object]:
 __all__ = [
     "DirectRealization", "DirectSpec", "EXPERIMENT_ID", "FAMILIES", "OUTCOME_ROW_FIELDS",
     "PRIMARY_SEEDS", "SENSITIVITY_SEEDS", "SEVERITIES", "frozen_configuration",
-    "make_realization", "matrix_specs", "run_cell",
+    "execute", "freeze", "make_realization", "matrix_specs", "run_cell", "score_cell",
 ]

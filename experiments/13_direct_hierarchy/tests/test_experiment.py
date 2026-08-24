@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import json
+from pathlib import Path
+import subprocess
 
 
 def _module():
@@ -39,3 +42,30 @@ def test_exp13_schema_contains_no_causal_oracle_fields() -> None:
     experiment = _module()
     forbidden = ("counterfactual", "lowest_sufficient", "causal_assignment")
     assert all(not any(token in field for token in forbidden) for field in experiment.OUTCOME_ROW_FIELDS)
+
+
+def test_independent_direct_score_comes_from_raw_physics() -> None:
+    experiment = _module()
+    spec = next(item for item in experiment.matrix_specs() if item.architecture.value == "R3")
+    raw = experiment.run_cell(spec)
+    row = experiment.score_cell(raw)
+    assert tuple(row) == experiment.OUTCOME_ROW_FIELDS
+    assert row["terminal"] in {"SUCCESS", "FAILURE"}
+    assert row["mission_success"] == (row["terminal"] == "SUCCESS")
+    assert 0.0 <= row["progress"] <= 1.0
+    assert row["peak_torque_nm"] >= row["rms_torque_nm"] >= 0.0
+    assert not any(token in json.dumps(row) for token in ("counterfactual", "lowest_sufficient", "causal_assignment"))
+
+
+def test_freeze_then_one_cell_is_create_only_and_resumable(tmp_path: Path) -> None:
+    experiment = _module()
+    root = tmp_path / experiment.EXPERIMENT_ID
+    source_commit = subprocess.check_output(("git", "rev-parse", "HEAD"), text=True).strip()
+    freeze = experiment.freeze(root, source_commit=source_commit)
+    assert freeze["configuration"]["total_cells"] == 540
+    result = experiment.execute(root, limit=1)
+    assert result == {"completed": 1, "remaining": 539, "total": 540}
+    assert experiment.execute(root, limit=1) == {"completed": 2, "remaining": 538, "total": 540}
+    dispositions = sorted((root / "raw/dispositions").glob("*.json"))
+    assert len(dispositions) == 2
+    assert all(json.loads(path.read_text())["disposition"] == "COMPLETE" for path in dispositions)
