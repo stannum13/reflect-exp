@@ -45,6 +45,8 @@ RUN_RECEIPT_KEYS = {
     "episode_id", "replans", "retries", "scene_relpath", "seed",
     "semantic_wakes", "tick_count",
 }
+CANONICAL_V3 = "V3_CANONICAL_LIFECYCLE"
+PRIVATE_CALIBRATION = "V3_PRIVATE_CALIBRATION"
 
 
 class IntegrityError(RuntimeError):
@@ -568,12 +570,16 @@ def validate_lifecycle(root: Path) -> None:
         raise IntegrityError("lifecycle validation failure") from error
 
 
-def _validate_closure(root: Path) -> dict[str, Any]:
+def _validate_closure(root: Path, root_identity: str) -> dict[str, Any]:
     closure = json.loads((root / "closure.json").read_text())
-    if closure.get("schema") == "opaque-glass-transfer-lifecycle-v3":
+    if root_identity == CANONICAL_V3:
         return _validate_lifecycle_closure(root)
+    if root_identity != PRIVATE_CALIBRATION:
+        raise IntegrityError("lifecycle root identity selector invalid")
     if set(closure) != LEGACY_CLOSURE_KEYS or closure["schema"] != "opaque-glass-transfer-closure-v3" or closure["status"] != "COMPLETE":
-        raise IntegrityError("closure schema/status mismatch")
+        raise IntegrityError("private calibration closure schema/status mismatch")
+    if closure["mode"] != "CALIBRATION":
+        raise IntegrityError("private calibration cannot validate held-out evidence")
     if closure["config_sha256"] != v1.sha256_file(CONFIG):
         raise IntegrityError("closure config mismatch")
     expected_hashes = _source_hashes(closure["source_commit"] if closure["mode"] == "HELDOUT" else None)
@@ -585,10 +591,14 @@ def _validate_closure(root: Path) -> dict[str, Any]:
     return closure
 
 
-def validate_raw(root: Path, verify_manifest: bool = True) -> list[dict[str, Any]]:
+def validate_raw(
+    root: Path,
+    verify_manifest: bool = True,
+    root_identity: str = CANONICAL_V3,
+) -> list[dict[str, Any]]:
     if verify_manifest:
         globals()["verify_manifest"](root)
-    closure = _validate_closure(root)
+    closure = _validate_closure(root, root_identity)
     run = json.loads((root / "raw/run.json").read_text())
     episode_paths = sorted(path for path in (root / "raw/episodes").iterdir() if path.is_dir())
     expected_count = 108 if closure["mode"] == "HELDOUT" else len(closure["matrix"])
@@ -696,9 +706,8 @@ def _compare_derived(reference: Path, rebuilt: Path) -> None:
 
 def validate_qualification(root: Path) -> None:
     verify_manifest(root)
-    if json.loads((root / "closure.json").read_text()).get("schema") == "opaque-glass-transfer-lifecycle-v3":
-        validate_lifecycle(root)
-    scores = validate_raw(root)
+    validate_lifecycle(root)
+    scores = validate_raw(root, root_identity=CANONICAL_V3)
     with tempfile.TemporaryDirectory() as directory:
         rebuilt = Path(directory) / "rebuilt"
         rebuilt.mkdir()
@@ -706,6 +715,21 @@ def validate_qualification(root: Path) -> None:
         shutil.copy2(root / "closure.json", rebuilt / "closure.json")
         if (root / "attestations").exists():
             shutil.copytree(root / "attestations", rebuilt / "attestations")
+        derive(rebuilt, scores)
+        _compare_derived(root / "derived", rebuilt / "derived")
+
+
+def validate_private_calibration_qualification(root: Path) -> None:
+    verify_manifest(root)
+    scores = validate_raw(
+        root,
+        root_identity=PRIVATE_CALIBRATION,
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        rebuilt = Path(directory) / "rebuilt"
+        rebuilt.mkdir()
+        shutil.copytree(root / "raw", rebuilt / "raw")
+        shutil.copy2(root / "closure.json", rebuilt / "closure.json")
         derive(rebuilt, scores)
         _compare_derived(root / "derived", rebuilt / "derived")
 
@@ -725,7 +749,11 @@ def write_calibration_fixture(tmp_path: Path, seed: int, controller: str, derive
     _strict(root / "raw/run.json", {"mode":"CALIBRATION","episodes":[{**episode.metadata,"episode_id":episode_id}]})
     _strict(root / "closure.json", _closure("CALIBRATION", matrix))
     if derive:
-        scores = validate_raw(root, verify_manifest=False)
+        scores = validate_raw(
+            root,
+            verify_manifest=False,
+            root_identity=PRIVATE_CALIBRATION,
+        )
         globals()["derive"](root, scores)
         write_manifest(root)
     return root
@@ -751,7 +779,12 @@ def run(output: Path) -> dict[str, Any]:
                 _write_episode(output/"raw/episodes"/episode_id,episode)
                 metas.append({**episode.metadata,"episode_id":episode_id})
     _strict(output/"raw/run.json", {"mode":"HELDOUT","episodes":metas})
-    scores=validate_raw(output,verify_manifest=False)
+    seal_lifecycle(output)
+    scores = validate_raw(
+        output,
+        verify_manifest=True,
+        root_identity=CANONICAL_V3,
+    )
     derive(output, scores)
     write_manifest(output)
     validate_qualification(output)
@@ -767,7 +800,11 @@ def reconstruct(source: Path, target: Path) -> None:
     shutil.copy2(source/"closure.json", target/"closure.json")
     if (source / "attestations").exists():
         shutil.copytree(source / "attestations", target / "attestations")
-    scores = validate_raw(target, verify_manifest=False)
+    scores = validate_raw(
+        target,
+        verify_manifest=False,
+        root_identity=CANONICAL_V3,
+    )
     derive(target, scores)
     write_manifest(target)
     validate_qualification(target)

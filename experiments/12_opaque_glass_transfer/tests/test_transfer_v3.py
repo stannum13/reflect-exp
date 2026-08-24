@@ -38,7 +38,7 @@ def test_authoritative_replay_ignores_stored_state_for_outcome(tmp_path: Path) -
     ledger.write_text("".join(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n" for row in rows))
     assert v3.score_episode(root, episode) == baseline
     with pytest.raises(v3.IntegrityError, match="stored state receipt"):
-        v3.validate_raw(root, verify_manifest=False)
+        v3.validate_raw(root, verify_manifest=False, root_identity=v3.PRIVATE_CALIBRATION)
 
 
 def test_controller_label_and_path_swap_is_rejected(tmp_path: Path) -> None:
@@ -49,7 +49,7 @@ def test_controller_label_and_path_swap_is_rejected(tmp_path: Path) -> None:
     meta["controller_contract"] = v3.controller_contract("RGBD_MOTION")
     episode.write_text(json.dumps(meta, sort_keys=True, indent=2) + "\n")
     with pytest.raises(v3.IntegrityError, match="episode identity"):
-        v3.validate_raw(root, verify_manifest=False)
+        v3.validate_raw(root, verify_manifest=False, root_identity=v3.PRIVATE_CALIBRATION)
 
 
 def test_rerender_rejects_coherent_pixel_and_scene_substitution(tmp_path: Path) -> None:
@@ -59,7 +59,7 @@ def test_rerender_rejects_coherent_pixel_and_scene_substitution(tmp_path: Path) 
     for name in ("rgb.npy", "depth.npy", "rgb.png", "scene.xml", "scene.json"):
         shutil.copy2(absent / name, opaque / name)
     with pytest.raises(v3.IntegrityError, match="scene identity"):
-        v3.validate_raw(root, verify_manifest=False)
+        v3.validate_raw(root, verify_manifest=False, root_identity=v3.PRIVATE_CALIBRATION)
 
 
 def test_rerender_rejects_png_or_numeric_render_tamper(tmp_path: Path) -> None:
@@ -67,7 +67,7 @@ def test_rerender_rejects_png_or_numeric_render_tamper(tmp_path: Path) -> None:
     png = root / "raw/scenes/seed-4301-opaque/rgb.png"
     png.write_bytes(png.read_bytes()[:-1] + b"x")
     with pytest.raises(v3.IntegrityError, match="rerender"):
-        v3.validate_raw(root, verify_manifest=False)
+        v3.validate_raw(root, verify_manifest=False, root_identity=v3.PRIVATE_CALIBRATION)
 
 
 def test_qualification_rejects_derived_tamper_even_after_rehash(tmp_path: Path) -> None:
@@ -78,7 +78,7 @@ def test_qualification_rejects_derived_tamper_even_after_rehash(tmp_path: Path) 
     analysis.write_text(json.dumps(value, sort_keys=True, indent=2) + "\n")
     v3.write_manifest(root)
     with pytest.raises(v3.IntegrityError, match="derived byte mismatch"):
-        v3.validate_qualification(root)
+        v3.validate_private_calibration_qualification(root)
 
 
 def test_exact_recursive_manifest_rejects_extra_and_symlink(tmp_path: Path) -> None:
@@ -128,3 +128,33 @@ def test_lifecycle_rejects_coherent_fake_commits_namespace_and_run_receipt(tmp_p
 def test_published_v3_lifecycle_is_exactly_authenticated() -> None:
     v3.validate_lifecycle(v3.ROOT / "results/qualification-v3")
     v3.validate_lifecycle(v3.ROOT / "results/reconstruction-v3")
+
+
+def test_canonical_v3_rejects_legacy_schema_downgrade(tmp_path: Path) -> None:
+    source = v3.ROOT / "results/qualification-v3"
+    root = tmp_path / "qualification"
+    shutil.copytree(source, root)
+    legacy = v3._git_blob(
+        v3.EVIDENCE_COMMIT,
+        "experiments/12_opaque_glass_transfer/results/qualification-v3/closure.json",
+    )
+    (root / "closure.json").write_bytes(legacy)
+    shutil.rmtree(root / "attestations")
+    v3.write_manifest(root)
+    with pytest.raises(v3.IntegrityError, match="lifecycle"):
+        v3.validate_qualification(root)
+
+
+@pytest.mark.parametrize("attack", ["missing", "extra"])
+def test_canonical_v3_requires_exact_attestation_root(tmp_path: Path, attack: str) -> None:
+    source = v3.ROOT / "results/qualification-v3"
+    root = tmp_path / "qualification"
+    shutil.copytree(source, root)
+    attestations = root / "attestations"
+    if attack == "missing":
+        (attestations / "V3_EVIDENCE_RECEIPT.json").unlink()
+    else:
+        (attestations / "extra.json").write_text("{}\n")
+    v3.write_manifest(root)
+    with pytest.raises(v3.IntegrityError, match="lifecycle"):
+        v3.validate_qualification(root)
