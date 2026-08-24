@@ -1,0 +1,1 @@
+{"arm_mjcf_sha256":"98d11593fdb03a9834a48c70a73899fe7054212fea973d79f2938d1fb0113918","call_path":"representations.emit_chunk:P6->reference_for_tick:P6->arm.bounded_pd","controller_id":"P6-res0p5-slew48","knobs":{"reference_slew_rad_s":48.0,"residual_component_limit_rad":0.5,"stack":"P6"}}
