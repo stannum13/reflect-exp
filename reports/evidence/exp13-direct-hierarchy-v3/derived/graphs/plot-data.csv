@@ -23,5 +23,5 @@ family-heterogeneity,motion-pat,HIGH,0.8888888888888888
 family-heterogeneity,motion-tar,HIGH,1.0
 family-heterogeneity,semantic-o,HIGH,1.0
 family-heterogeneity,semantic-r,HIGH,1.0
-controller-sensitivity,success,P4-P6,-0.35714285714285715
-controller-sensitivity,progress,P4-P6,-0.3135553939304015
+controller-sensitivity,success,P4-P6,-0.35757575757575755
+controller-sensitivity,progress,P4-P6,-0.31522908929302307
