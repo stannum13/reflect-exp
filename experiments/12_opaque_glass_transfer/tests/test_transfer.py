@@ -85,6 +85,14 @@ def test_hierarchy_does_not_escalate_merely_on_waypoint_transition() -> None:
     assert mod.score_trace(trace)["safe_completion"]
 
 
+def test_calibration_run_serializes_missed_detection_as_strict_json(tmp_path: Path) -> None:
+    trace, _, _ = mod.run_episode(4101, "TRANSPARENT", "RGB_ONLY")
+    path = tmp_path / "trace.json"
+    mod.write_strict_json(path, trace)
+    loaded = json.loads(path.read_text())
+    assert loaded["detection"]["localization_error_m"] is None
+
+
 def test_independent_scorer_ignores_controller_claims() -> None:
     trace = mod.synthetic_trace_for_test(final_xy=(1.2, 0.0), obstacle_contacts=1)
     trace["controller_claimed_success"] = True

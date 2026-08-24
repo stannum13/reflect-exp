@@ -333,8 +333,21 @@ def write_png(path: Path, rgb: np.ndarray) -> None:
     path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
 
 
-def _write_json(path: Path, value: Any) -> None:
-    path.write_text(json.dumps(value, sort_keys=True, indent=2, allow_nan=False) + "\n")
+def _json_finite(value: Any) -> Any:
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: _json_finite(member) for key, member in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_finite(member) for member in value]
+    return value
+
+
+def write_strict_json(path: Path, value: Any) -> None:
+    path.write_text(json.dumps(_json_finite(value), sort_keys=True, indent=2, allow_nan=False) + "\n")
+
+
+_write_json = write_strict_json
 
 
 def _manifest_entries(root: Path) -> list[dict[str, Any]]:
