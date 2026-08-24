@@ -326,6 +326,53 @@ def test_freeze_rejects_source_closure_not_identical_to_approved_commit(tmp_path
         experiment.freeze(tmp_path / "closure-attack", source_commit=source_commit, source_approval_ref=approval)
 
 
+def test_source_closure_rejects_a_missing_required_member(monkeypatch) -> None:
+    experiment = _module()
+    original = experiment._evidence.source_closure
+
+    def closure_with_missing_member():
+        return [*original(), {"path": "experiments/16_route_boundary_replication/tests/deleted-required-test.py"}]
+
+    monkeypatch.setattr(experiment._evidence, "source_closure", closure_with_missing_member)
+    with pytest.raises(RuntimeError, match="required source closure member missing"):
+        experiment._source_closure()
+
+
+def test_source_approval_rejects_reviewer_matching_source_author(tmp_path: Path) -> None:
+    experiment = _module()
+    source_commit = subprocess.check_output(("git", "rev-parse", "HEAD"), text=True).strip()
+    path = tmp_path / "self-source-audit-approval.json"
+    path.write_bytes(experiment.canonical_bytes({
+        "schema_version": 1,
+        "experiment_id": experiment.EXPERIMENT_ID,
+        "source_commit": source_commit,
+        "verdict": "APPROVE",
+        "review_scope": "SOURCE_PREREGISTRATION_BEFORE_FREEZE",
+        "reviewer": "source-test-author",
+    }))
+    with pytest.raises(RuntimeError, match="independent reviewer identity"):
+        experiment.freeze(
+            tmp_path / "self-approved",
+            source_commit=source_commit,
+            source_approval_ref=f"test-file:{path}",
+        )
+
+
+def test_premature_first50_release_file_is_rejected(tmp_path: Path) -> None:
+    experiment = _module()
+    root = tmp_path / experiment.EXPERIMENT_ID
+    source_commit = subprocess.check_output(("git", "rev-parse", "HEAD"), text=True).strip()
+    experiment.freeze(
+        root,
+        source_commit=source_commit,
+        source_approval_ref=_approval(tmp_path, experiment, source_commit),
+    )
+    experiment.preflight(root)
+    (root / "first50-release.json").write_bytes(b"{}\n")
+    with pytest.raises(RuntimeError, match="premature first-50 release"):
+        experiment.execute(root, limit=1)
+
+
 def test_runner_pauses_at_50_until_exact_independent_release(tmp_path: Path) -> None:
     experiment = _module()
     root = tmp_path / experiment.EXPERIMENT_ID

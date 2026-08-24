@@ -112,6 +112,85 @@ def test_invalid_execution_has_invalid_experiment_precedence() -> None:
     ) == "DOES_NOT_SUPPORT_BOUNDED_DIRECT_HIERARCHY_REPLICATION"
 
 
+def test_reconstruction_survives_missing_complete_stratum_and_marks_invalid(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _module()
+    experiment = importlib.import_module(
+        "experiments.16_route_boundary_replication.src.experiment"
+    )
+    rows = []
+    for spec in experiment.matrix_specs():
+        common = {
+            "episode_id": spec.episode_id,
+            "architecture": spec.architecture.value,
+            "family": spec.family,
+            "severity": spec.severity,
+            "seed": spec.seed,
+            "controller_id": spec.controller_id,
+            "matrix_role": spec.matrix_role,
+        }
+        if (
+            spec.matrix_role == "PRIMARY"
+            and spec.architecture.value == "R3"
+            and spec.family == "motion-path-infeasible"
+            and spec.severity == "HIGH"
+        ):
+            rows.append({**common, "disposition": "INVALID_EXECUTION"})
+        else:
+            rows.append({
+                **common,
+                "disposition": "COMPLETE",
+                "mission_success": True,
+                "safety_composite": False,
+                "progress": 1.0,
+                "control_wakes": 1,
+                "motion_wakes": 0,
+                "semantic_wakes": 0,
+            })
+    pack = tmp_path / "pack"
+    (pack / "inputs").mkdir(parents=True)
+    (pack / "inputs/sample-annotations.json").write_text("[]", encoding="ascii")
+    monkeypatch.setattr(module, "_rows", lambda _pack: rows)
+    monkeypatch.setattr(module.subprocess, "run", lambda *_args, **_kwargs: None)
+    destination = tmp_path / "derived"
+    module.reconstruct_derived(pack, destination)
+    report = json.loads((destination / "report.json").read_text())
+    assert report["formal_disposition"] == "INVALID_EXPERIMENT"
+    assert report["dispositions"]["INVALID_EXECUTION"] == 10
+    missing = [
+        row
+        for row in (destination / "tables/family-severity.csv").read_text().splitlines()
+        if row.startswith("motion-path-infeasible,HIGH,R3,")
+    ]
+    assert len(missing) == 1
+    assert missing[0].endswith(",,")
+
+
+def test_public_analysis_uses_equal_seed_cluster_weighting() -> None:
+    analysis = importlib.import_module(
+        "experiments.16_route_boundary_replication.src.analysis"
+    )
+    rows = [
+        {
+            "disposition": "COMPLETE", "matrix_role": "PRIMARY",
+            "architecture": architecture, "family": family,
+            "severity": "LOW", "seed": seed,
+            "mission_success": value,
+        }
+        for seed, family, left, right in (
+            (20262401, "a", 1.0, 0.0),
+            (20262401, "b", 1.0, 0.0),
+            (20262402, "a", 0.0, 1.0),
+        )
+        for architecture, value in (("R3", left), ("R2", right))
+    ]
+    effect = analysis._paired_ci(rows, "R2", "mission_success")
+    assert effect["estimate"] == 0.0
+    assert effect["n_eff"] == 2
+
+
 @pytest.fixture(scope="module")
 def compact_pack() -> Path:
     module = _module()
