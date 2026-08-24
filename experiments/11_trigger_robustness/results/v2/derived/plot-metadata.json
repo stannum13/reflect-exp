@@ -1,0 +1,1 @@
+{"graph_table_sha256":"1bd7c7c03a8820a6c8aac82861d2fa0cd5dae42f0ffb474172328bbe98ed786c","nuisance_axes":["disturbance_family","severity","horizon","prompt_envelope","seed"],"renderer":"STDLIB_ZLIB_TWO_PANEL_V2","schema_version":2,"storage_pooling":"NONE","transformations":["ARITHMETIC_MEAN_OVER_DECLARED_NUISANCE_AXES"]}
