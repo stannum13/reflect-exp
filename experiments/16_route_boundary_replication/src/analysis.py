@@ -12,6 +12,7 @@ import subprocess
 import numpy as np
 
 from .experiment import canonical_bytes, matrix_specs
+from . import compact_evidence as _compact
 
 
 def _sha(payload: bytes) -> str:
@@ -47,49 +48,128 @@ def _load_and_verify(root: Path) -> list[dict[str, object]]:
     return rows
 
 
-def _paired_ci(rows: list[dict[str, object]], comparator: str, metric: str) -> dict[str, float]:
-    complete = [row for row in rows if row["disposition"] == "COMPLETE" and row["matrix_role"] == "PRIMARY"]
-    lookup = {(row["architecture"], row["family"], row["severity"], row["seed"]): row for row in complete}
-    by_seed: dict[int, list[float]] = {}
-    for seed in sorted({int(row["seed"]) for row in complete}):
-        values = []
-        for family in sorted({str(row["family"]) for row in complete}):
-            for severity in ("LOW", "HIGH"):
-                left = lookup.get(("R3", family, severity, seed))
-                right = lookup.get((comparator, family, severity, seed))
-                if left is not None and right is not None:
-                    values.append(float(left[metric]) - float(right[metric]))
-        if values:
-            by_seed[seed] = values
-    observed = float(np.mean([value for values in by_seed.values() for value in values]))
-    rng = np.random.Generator(np.random.PCG64(1313))
-    draws = np.empty(10_000)
-    active = np.asarray(sorted(by_seed))
-    for index in range(len(draws)):
-        sampled = rng.choice(active, size=len(active), replace=True)
-        draws[index] = np.mean([value for seed in sampled for value in by_seed[int(seed)]])
-    return {"estimate": observed, "lower_95": float(np.quantile(draws, .025)), "upper_95": float(np.quantile(draws, .975))}
+def _paired_ci(
+    rows: list[dict[str, object]],
+    comparator: str,
+    metric: str,
+) -> dict[str, object]:
+    values = _compact._cluster_values(rows, "R3", comparator, metric)
+    seeds = sorted(values)
+    plan = (
+        _compact._bootstrap_plan(seeds, size=len(seeds))
+        if seeds
+        else np.empty((_compact.BOOTSTRAP_DRAWS, 0), dtype=int)
+    )
+    effect, _ = _compact._effect(values, plan)
+    return effect
+
+
+def _registered_science(rows: list[dict[str, object]]) -> dict[str, object]:
+    counts = {
+        name: sum(row["disposition"] == name for row in rows)
+        for name in ("COMPLETE", "NOT_RUN", "INVALID_EXECUTION")
+    }
+    effects, sensitivity, _, _ = _compact._registered_effects(rows)
+    complete = [
+        row for row in rows
+        if row["disposition"] == "COMPLETE" and row["matrix_role"] == "PRIMARY"
+    ]
+    strata = []
+    for family in sorted({str(spec.family) for spec in matrix_specs()}):
+        for severity in ("LOW", "HIGH"):
+            r3 = [
+                row for row in complete
+                if row["architecture"] == "R3"
+                and row["family"] == family
+                and row["severity"] == severity
+            ]
+            r2 = [
+                row for row in complete
+                if row["architecture"] == "R2"
+                and row["family"] == family
+                and row["severity"] == severity
+            ]
+            if r3 and r2:
+                strata.append(
+                    float(np.mean([row["mission_success"] for row in r3]))
+                    - float(np.mean([row["mission_success"] for row in r2]))
+                )
+    heterogeneity = min(strata) if strata else None
+
+    def lower_pass(effect: dict[str, object], threshold: float) -> bool:
+        value = effect["lower_95"]
+        return isinstance(value, (int, float)) and float(value) >= threshold
+
+    def upper_pass(
+        effect: dict[str, object],
+        threshold: float,
+        *,
+        strict: bool = False,
+    ) -> bool:
+        value = effect["upper_95"]
+        return isinstance(value, (int, float)) and (
+            float(value) < threshold if strict else float(value) <= threshold
+        )
+
+    gates = {
+        "primary_n_eff_exactly_10": all(
+            effects[name][metric]["n_eff"] == 10
+            for name in ("R0", "R1", "R2")
+            for metric in ("mission_success", "safety_composite", "progress", "total_wakes")
+        ),
+        "sensitivity_n_eff_exactly_5": all(
+            sensitivity[metric]["n_eff"] == 5
+            for metric in ("mission_success", "progress")
+        ),
+        "success_noninferiority_all_comparators": all(
+            lower_pass(effects[name]["mission_success"], -.10)
+            for name in ("R0", "R1", "R2")
+        ),
+        "safety_noninferiority_all_comparators": all(
+            upper_pass(effects[name]["safety_composite"], .10)
+            for name in ("R0", "R1", "R2")
+        ),
+        "progress_noninferiority_all_comparators": all(
+            lower_pass(effects[name]["progress"], -.05)
+            for name in ("R0", "R1", "R2")
+        ),
+        "wake_reduction_vs_fixed_R2": upper_pass(
+            effects["R2"]["total_wakes"], 0.0, strict=True,
+        ),
+        "worst_R3_minus_R2_family_severity_success": heterogeneity,
+        "heterogeneity_threshold_pass": (
+            isinstance(heterogeneity, (int, float)) and heterogeneity >= -.20
+        ),
+    }
+    return {
+        "dispositions": counts,
+        "effects": effects,
+        "controller_sensitivity_P4_minus_P6": sensitivity,
+        "registered_gate_evaluation": gates,
+        "formal_disposition": _compact._formal_disposition(counts, gates),
+    }
 
 
 def analyze(root: Path) -> dict[str, object]:
     rows = _load_and_verify(root)
-    counts = {name: sum(row["disposition"] == name for row in rows) for name in ("COMPLETE", "NOT_RUN", "INVALID_EXECUTION")}
+    science = _registered_science(rows)
+    counts = science["dispositions"]
     complete = [row for row in rows if row["disposition"] == "COMPLETE"]
     summaries = []
     for role in ("PRIMARY", "SENSITIVITY"):
         for architecture in ("R0", "R1", "R2", "R3"):
             selected = [row for row in complete if row["matrix_role"] == role and row["architecture"] == architecture]
-            if selected:
-                summaries.append({"matrix_role": role, "architecture": architecture, "n": len(selected),
-                    "success_rate": float(np.mean([row["mission_success"] for row in selected])),
-                    "safety_rate": float(np.mean([row["safety_composite"] for row in selected])),
-                    "mean_progress": float(np.mean([row["progress"] for row in selected])),
-                    "mean_wakes": float(np.mean([row["control_wakes"] + row["motion_wakes"] + row["semantic_wakes"] for row in selected]))})
-    augmented = [{**row, "total_wakes": row.get("control_wakes", 0) + row.get("motion_wakes", 0) + row.get("semantic_wakes", 0)} for row in rows]
-    paired = {comparator: {metric: _paired_ci(rows, comparator, metric) for metric in ("mission_success", "safety_composite", "progress")} for comparator in ("R0", "R1", "R2")}
-    paired["R2"]["total_wakes"] = _paired_ci(augmented, "R2", "total_wakes")
+            summaries.append({"matrix_role": role, "architecture": architecture, "n": len(selected),
+                "success_rate": None if not selected else float(np.mean([row["mission_success"] for row in selected])),
+                "safety_rate": None if not selected else float(np.mean([row["safety_composite"] for row in selected])),
+                "mean_progress": None if not selected else float(np.mean([row["progress"] for row in selected])),
+                "mean_wakes": None if not selected else float(np.mean([row["control_wakes"] + row["motion_wakes"] + row["semantic_wakes"] for row in selected]))})
     report = {"schema_version": 1, "experiment_id": "exp16-route-boundary-replication-v1", "matrix_total": 540,
-        "dispositions": counts, "summaries": summaries, "paired_seed_cluster_bootstrap_10k": paired,
+        "dispositions": counts, "summaries": summaries,
+        "paired_seed_cluster_bootstrap_10k": science["effects"],
+        "controller_sensitivity_P4_minus_P6": science["controller_sensitivity_P4_minus_P6"],
+        "registered_gate_evaluation": science["registered_gate_evaluation"],
+        "formal_disposition": science["formal_disposition"],
         "reconstruction": "PASS", "causal_lowest_claim": False}
     analysis_root = root / "analysis"
     analysis_root.mkdir(parents=True, exist_ok=True)
@@ -100,9 +180,12 @@ def analyze(root: Path) -> dict[str, object]:
     writer.writerows(summaries)
     (analysis_root / "summary.csv").write_text(stream.getvalue(), encoding="ascii")
     primary = {item["architecture"]: item for item in summaries if item["matrix_role"] == "PRIMARY"}
-    bars = "".join(f'<rect x="{70+i*90}" y="{260-200*primary[a]["success_rate"]:.2f}" width="48" height="{200*primary[a]["success_rate"]:.2f}" fill="#3568a8"/><text x="{94+i*90}" y="280" text-anchor="middle">{a}</text>' for i,a in enumerate(("R0","R1","R2","R3")))
-    svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="500" height="320"><rect width="100%" height="100%" fill="white"/><text x="250" y="30" text-anchor="middle" font-size="18">Exp16 primary mission success</text><line x1="50" y1="260" x2="450" y2="260" stroke="black"/>{bars}</svg>'
-    (analysis_root / "primary-success.svg").write_text(svg, encoding="ascii")
+    svg = _compact._svg(
+        "Exp16 primary mission success",
+        ["R0", "R1", "R2", "R3"],
+        [("success", [primary[a]["success_rate"] for a in ("R0", "R1", "R2", "R3")], "#3568a8")],
+    )
+    (analysis_root / "primary-success.svg").write_bytes(svg)
     subprocess.run(("rsvg-convert", str(analysis_root / "primary-success.svg"), "-o", str(analysis_root / "primary-success.png")), check=True)
     inventory = []
     for path in sorted(item for item in root.rglob("*") if item.is_file() and item.name != "inventory.json"):

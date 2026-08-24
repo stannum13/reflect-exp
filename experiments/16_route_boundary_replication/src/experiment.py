@@ -314,8 +314,17 @@ def _source_closure() -> list[dict[str, object]]:
         _root() / "pyproject.toml",
         _root() / "uv.lock",
     })
+    missing = sorted(
+        path.relative_to(_root()).as_posix()
+        for path in paths
+        if path.is_symlink() or not path.is_file()
+    )
+    if missing:
+        raise RuntimeError(
+            "Exp16 required source closure member missing: " + ", ".join(missing)
+        )
     result = []
-    for path in sorted(item.resolve() for item in paths if item.is_file()):
+    for path in sorted(item.resolve() for item in paths):
         payload = path.read_bytes()
         result.append({"path": path.relative_to(_root()).as_posix(), "bytes": len(payload), "sha256": sha256_bytes(payload)})
     return result
@@ -329,7 +338,10 @@ def _write(path: Path, payload: bytes) -> None:
         os.fsync(stream.fileno())
 
 
-def _load_git_approval(approval_ref: str | None, expected_path: str) -> tuple[dict[str, object], bytes, str, str]:
+def _load_git_approval(
+    approval_ref: str | None,
+    expected_path: str,
+) -> tuple[dict[str, object], bytes, str, str, str, str]:
     if approval_ref is None or ":" not in approval_ref:
         raise RuntimeError("Exp16 V1 independent approval Git ref is required")
     commit, path = approval_ref.split(":", 1)
@@ -362,13 +374,53 @@ def _load_git_approval(approval_ref: str | None, expected_path: str) -> tuple[di
         raise RuntimeError("Exp16 V1 independent approval encoding mismatch") from error
     if canonical_bytes(approval) != payload:
         raise RuntimeError("Exp16 V1 independent approval is not canonical")
-    return approval, payload, commit, ancestry[1]
+    source_commit = approval.get("source_commit")
+    if (
+        not isinstance(source_commit, str)
+        or len(source_commit) != 40
+        or any(char not in "0123456789abcdef" for char in source_commit)
+    ):
+        raise RuntimeError("Exp16 V1 independent approval source identity mismatch")
+    try:
+        approval_author = subprocess.check_output(
+            ("git", "show", "-s", "--format=%an <%ae>", commit),
+            cwd=_root(), text=True,
+        ).strip()
+        source_author = subprocess.check_output(
+            ("git", "show", "-s", "--format=%an <%ae>", source_commit),
+            cwd=_root(), text=True,
+        ).strip()
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError("Exp16 V1 independent approval author unavailable") from error
+    return approval, payload, commit, ancestry[1], approval_author, source_author
+
+
+def _validate_independent_reviewer(
+    approval: Mapping[str, object],
+    approval_author: str,
+    source_author: str,
+) -> None:
+    reviewer = approval.get("reviewer")
+    if (
+        not isinstance(reviewer, str)
+        or not reviewer
+        or reviewer != approval_author
+        or approval_author == source_author
+    ):
+        raise RuntimeError("Exp16 V1 independent reviewer identity mismatch")
 
 
 def _validate_source_approval(approval_ref: str | None, source_commit: str) -> tuple[dict[str, object], str, str, str]:
     if approval_ref is None:
         raise RuntimeError("Exp16 V1 source audit approval is required before freeze")
-    approval, payload, approval_commit, approval_parent = _load_git_approval(approval_ref, SOURCE_APPROVAL_PATH)
+    (
+        approval,
+        payload,
+        approval_commit,
+        approval_parent,
+        approval_author,
+        source_author,
+    ) = _load_git_approval(approval_ref, SOURCE_APPROVAL_PATH)
     expected_keys = {
         "schema_version", "experiment_id", "source_commit", "verdict",
         "review_scope", "reviewer",
@@ -381,10 +433,10 @@ def _validate_source_approval(approval_ref: str | None, source_commit: str) -> t
         or approval["source_commit"] != source_commit
         or approval["verdict"] != "APPROVE"
         or approval["review_scope"] != "SOURCE_PREREGISTRATION_BEFORE_FREEZE"
-        or not approval["reviewer"]
         or approval_parent != source_commit
     ):
         raise RuntimeError("Exp16 V1 source audit approval mismatch")
+    _validate_independent_reviewer(approval, approval_author, source_author)
     return approval, sha256_bytes(payload), approval_ref, approval_commit
 
 
@@ -828,7 +880,14 @@ def release_first50(output: Path, approval_ref: str) -> dict[str, object]:
     if len(dispositions) != 50:
         raise RuntimeError("Exp16 V1 first-50 release requires exactly 50 sealed dispositions")
     _validate_first50_dispositions(output)
-    approval, payload, approval_commit, approval_parent = _load_git_approval(approval_ref, FIRST50_APPROVAL_PATH)
+    (
+        approval,
+        payload,
+        approval_commit,
+        approval_parent,
+        approval_author,
+        source_author,
+    ) = _load_git_approval(approval_ref, FIRST50_APPROVAL_PATH)
     expected = {
         "schema_version", "experiment_id", "verdict", "review_scope", "reviewer",
         "source_commit", "freeze_sha256", "disposition_count",
@@ -841,7 +900,6 @@ def release_first50(output: Path, approval_ref: str) -> dict[str, object]:
         or approval["experiment_id"] != EXPERIMENT_ID
         or approval["verdict"] != "APPROVE"
         or approval["review_scope"] != "FIRST_50_CONTINUATION"
-        or not approval["reviewer"]
         or approval["source_commit"] != freeze_document["source_commit"]
         or approval["freeze_sha256"] != freeze_sha256
         or approval["disposition_count"] != 50
@@ -849,13 +907,8 @@ def release_first50(output: Path, approval_ref: str) -> dict[str, object]:
         or approval["approval_parent_commit"] != approval_parent
     ):
         raise RuntimeError("Exp16 V1 first-50 approval mismatch")
-    try:
-        subprocess.run(
-            ("git", "merge-base", "--is-ancestor", freeze_document["source_commit"], approval_parent),
-            cwd=_root(), check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        )
-    except subprocess.CalledProcessError as error:
-        raise RuntimeError("Exp16 V1 first-50 approval ancestry mismatch") from error
+    _validate_independent_reviewer(approval, approval_author, source_author)
+    _validate_first50_approval_ancestry(freeze_document["source_commit"], approval_parent)
     release = {
         "schema_version": 1,
         "experiment_id": EXPERIMENT_ID,
@@ -878,11 +931,23 @@ def release_first50(output: Path, approval_ref: str) -> dict[str, object]:
     return release
 
 
-def _validate_first50_release(output: Path) -> None:
+def _validate_first50_approval_ancestry(source_commit: str, approval_parent: str) -> None:
+    try:
+        subprocess.run(
+            ("git", "merge-base", "--is-ancestor", source_commit, approval_parent),
+            cwd=_root(), check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError("Exp16 V1 first-50 approval ancestry mismatch") from error
+
+
+def _validate_first50_release(output: Path) -> bool:
     dispositions = sorted((output / "raw/dispositions").glob("*.json"))
-    if len(dispositions) < 50:
-        return
     path = output / "first50-release.json"
+    if len(dispositions) < 50:
+        if path.exists():
+            raise RuntimeError("Exp16 V1 premature first-50 release file")
+        return False
     if not path.is_file():
         raise RuntimeError("Exp16 V1 paused at first 50; independent continuation approval required")
     _validate_first50_dispositions(output)
@@ -896,7 +961,14 @@ def _validate_first50_release(output: Path) -> None:
     first50_ids = [path.stem for path in dispositions[:50]]
     freeze_document = _validate_freeze(output)
     try:
-        approval, approval_payload, approval_commit, approval_parent = _load_git_approval(
+        (
+            approval,
+            approval_payload,
+            approval_commit,
+            approval_parent,
+            approval_author,
+            source_author,
+        ) = _load_git_approval(
             release.get("approval_ref"), FIRST50_APPROVAL_PATH,
         )
     except RuntimeError as error:
@@ -918,7 +990,6 @@ def _validate_first50_release(output: Path) -> None:
         or approval.get("experiment_id") != EXPERIMENT_ID
         or approval.get("verdict") != "APPROVE"
         or approval.get("review_scope") != "FIRST_50_CONTINUATION"
-        or not approval.get("reviewer")
         or approval.get("source_commit") != freeze_document["source_commit"]
         or approval.get("freeze_sha256") != release["freeze_sha256"]
         or approval.get("disposition_count") != 50
@@ -926,6 +997,9 @@ def _validate_first50_release(output: Path) -> None:
         or approval.get("approval_parent_commit") != approval_parent
     ):
         raise RuntimeError("Exp16 V1 first-50 release state mismatch")
+    _validate_independent_reviewer(approval, approval_author, source_author)
+    _validate_first50_approval_ancestry(freeze_document["source_commit"], approval_parent)
+    return True
 
 
 def execute(output: Path, *, limit: int | None = None) -> dict[str, int]:
@@ -934,9 +1008,9 @@ def execute(output: Path, *, limit: int | None = None) -> dict[str, int]:
     freeze_sha256 = sha256_bytes((output / "freeze.json").read_bytes())
     disposition_root = output / "raw/dispositions"
     completed_before = len(list(disposition_root.glob("*.json"))) if disposition_root.exists() else 0
-    _validate_first50_release(output)
+    released = _validate_first50_release(output)
     allowance = len(matrix_specs()) if limit is None else int(limit)
-    if not (output / "first50-release.json").is_file():
+    if not released:
         allowance = min(allowance, 50 - completed_before)
     written = 0
     for spec in matrix_specs():

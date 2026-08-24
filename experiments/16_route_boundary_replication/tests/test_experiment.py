@@ -27,7 +27,14 @@ def _test_git_approval_loader(monkeypatch):
         document = json.loads(payload.decode("ascii"))
         parent = document.get("approval_parent_commit", document["source_commit"])
         commit = "a" * 40 if expected_path == experiment.SOURCE_APPROVAL_PATH else "b" * 40
-        return document, payload, commit, parent
+        return (
+            document,
+            payload,
+            commit,
+            parent,
+            str(document["reviewer"]),
+            "source-test-author",
+        )
 
     monkeypatch.setattr(experiment, "_load_git_approval", load)
 
@@ -422,6 +429,11 @@ def test_runner_pauses_at_50_until_exact_independent_release(tmp_path: Path) -> 
     release_path.write_bytes(experiment.canonical_bytes(forged))
     with pytest.raises(RuntimeError, match="canonical mismatch|release state mismatch"):
         experiment.execute(root, limit=1)
+    release_path.write_bytes(original_release)
+    first = sorted(disposition_root.glob("*.json"))[0]
+    first.write_bytes(first.read_bytes() + b" ")
+    with pytest.raises(RuntimeError, match="canonical mismatch|release state mismatch"):
+        experiment.execute(root, limit=1)
 
 
 def test_first50_release_revalidates_source_ancestry(
@@ -476,9 +488,4 @@ def test_first50_release_revalidates_source_ancestry(
 
     monkeypatch.setattr(experiment.subprocess, "run", reject_source_to_approval_parent)
     with pytest.raises(RuntimeError, match="first-50 approval ancestry mismatch"):
-        experiment.execute(root, limit=1)
-    release_path.write_bytes(original_release)
-    first = sorted(disposition_root.glob("*.json"))[0]
-    first.write_bytes(first.read_bytes() + b" ")
-    with pytest.raises(RuntimeError, match="canonical mismatch|release state mismatch"):
         experiment.execute(root, limit=1)

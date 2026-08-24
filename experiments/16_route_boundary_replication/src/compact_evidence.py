@@ -195,7 +195,14 @@ def _formal_disposition(counts: dict[str, int], gates: dict[str, object]) -> str
     )
 
 
-def _svg(title: str, labels: list[str], series: list[tuple[str, list[float], str]], *, y_min: float = 0.0, y_max: float = 1.0) -> bytes:
+def _svg(
+    title: str,
+    labels: list[str],
+    series: list[tuple[str, list[object], str]],
+    *,
+    y_min: float = 0.0,
+    y_max: float = 1.0,
+) -> bytes:
     width, height = 760, 420
     left, top, plot_w, plot_h = 70, 55, 630, 290
     group_w = plot_w / len(labels)
@@ -210,10 +217,16 @@ def _svg(title: str, labels: list[str], series: list[tuple[str, list[float], str
         parts.append(f'<text x="{center:.2f}" y="{top+plot_h+24}" text-anchor="middle" font-family="sans-serif" font-size="12">{label}</text>')
         for series_index, (_, values, color) in enumerate(series):
             value = values[index]
-            scaled = (value - y_min) / (y_max - y_min)
+            x = center + (series_index - (len(series) - 1) / 2) * bar_w - bar_w * .42
+            if not isinstance(value, (int, float)) or not np.isfinite(float(value)):
+                parts.append(
+                    f'<text x="{x + bar_w*.42:.2f}" y="{top+plot_h-5:.2f}" '
+                    'text-anchor="middle" font-family="sans-serif" font-size="10">NA</text>'
+                )
+                continue
+            scaled = (float(value) - y_min) / (y_max - y_min)
             value_y = top + plot_h - max(0.0, min(1.0, scaled)) * plot_h
             bar_h = abs(zero_y - value_y)
-            x = center + (series_index - (len(series) - 1) / 2) * bar_w - bar_w * .42
             parts.append(f'<rect x="{x:.2f}" y="{min(zero_y,value_y):.2f}" width="{bar_w*.84:.2f}" height="{bar_h:.2f}" fill="{color}"/>')
     for index, (name, _, color) in enumerate(series):
         parts.append(f'<rect x="{left+index*145}" y="390" width="12" height="12" fill="{color}"/><text x="{left+17+index*145}" y="401" font-family="sans-serif" font-size="12">{name}</text>')
@@ -283,15 +296,27 @@ def reconstruct_derived(pack: Path, destination: Path) -> None:
     _write(destination / "tables/failure-taxonomy.csv", _csv_bytes(("disposition","failure_class","reason","count"), failure_rows))
     sample_payload = json.loads((pack / "inputs/sample-annotations.json").read_text())
     _write(destination / "tables/annotated-samples.json", canonical_bytes(sample_payload))
-    worst = min(family_rows, key=lambda item: float(item["success_rate"]) if item["architecture"] == "R3" else 2.0)
-    heterogeneity = min(
+    valid_r3 = [
+        row for row in family_rows
+        if row["architecture"] == "R3" and isinstance(row["success_rate"], (int, float))
+    ]
+    missing_r3_strata = [
+        {"family": row["family"], "severity": row["severity"]}
+        for row in family_rows
+        if row["architecture"] == "R3" and not isinstance(row["success_rate"], (int, float))
+    ]
+    worst = min(valid_r3, key=lambda item: float(item["success_rate"])) if valid_r3 else None
+    paired_strata = [
         float(r3["success_rate"]) - float(other["success_rate"])
         for r3 in family_rows if r3["architecture"] == "R3"
         for other in family_rows
         if other["family"] == r3["family"]
         and other["severity"] == r3["severity"]
         and other["architecture"] == "R2"
-    )
+        and isinstance(r3["success_rate"], (int, float))
+        and isinstance(other["success_rate"], (int, float))
+    ]
+    heterogeneity = min(paired_strata) if paired_strata else None
     def lower_pass(effect: dict[str, object], threshold: float) -> bool:
         value = effect["lower_95"]
         return isinstance(value, (int, float)) and float(value) >= threshold
@@ -320,7 +345,9 @@ def reconstruct_derived(pack: Path, destination: Path) -> None:
         ),
         "wake_reduction_vs_fixed_R2": upper_pass(effects["R2"]["total_wakes"], 0.0, strict=True),
         "worst_R3_minus_R2_family_severity_success": heterogeneity,
-        "heterogeneity_threshold_pass": heterogeneity >= -.20,
+        "heterogeneity_threshold_pass": (
+            isinstance(heterogeneity, (int, float)) and heterogeneity >= -.20
+        ),
     }
     formal_disposition = _formal_disposition(counts, registered_gates)
     supports = formal_disposition == "SUPPORTS_BOUNDED_DIRECT_HIERARCHY_REPLICATION"
@@ -330,7 +357,9 @@ def reconstruct_derived(pack: Path, destination: Path) -> None:
         "chronology": {"replication_reference": "Exp15 V2 lifecycle and scientific contract", "replication": "fresh 202624 seed namespace; typed route boundary; no outcome-driven tuning"},
         "effects": effects, "controller_sensitivity_P4_minus_P6": sensitivity,
         "registered_gate_evaluation": registered_gates,
-        "worst_r3_cell_success_rate": worst, "bootstrap": {
+        "worst_r3_cell_success_rate": worst,
+        "missing_r3_family_severity_strata": missing_r3_strata,
+        "bootstrap": {
             "seed": BOOTSTRAP_SEED, "draws": BOOTSTRAP_DRAWS,
             "primary_n_eff_actual": sorted({effects[name][metric]["n_eff"] for name in effects for metric in effects[name]}),
             "sensitivity_n_eff_actual": sorted({sensitivity[metric]["n_eff"] for metric in sensitivity}),
@@ -349,7 +378,7 @@ def reconstruct_derived(pack: Path, destination: Path) -> None:
     graph_specs = {
         "success-progress": ("Primary success and progress", ["R0","R1","R2","R3"], [("success",[arch[a]["success_rate"] for a in ("R0","R1","R2","R3")],"#4c72b0"),("progress",[arch[a]["mean_progress"] for a in ("R0","R1","R2","R3")],"#55a868")], 0.0, 1.0),
         "wake-profiles": ("Primary wake profiles", ["R0","R1","R2","R3"], [("mean_wakes",[arch[a]["mean_wakes"] for a in ("R0","R1","R2","R3")],"#8172b2")], 0.0, 2.5),
-        "family-heterogeneity": ("R3 mission success by family", [name[:10] for name in sorted({r["family"] for r in family_rows})], [(sev,[next(float(r["success_rate"]) for r in family_rows if r["architecture"]=="R3" and r["family"]==fam and r["severity"]==sev) for fam in sorted({r["family"] for r in family_rows})],color) for sev,color in (("LOW","#4c72b0"),("HIGH","#c44e52"))], 0.0, 1.0),
+        "family-heterogeneity": ("R3 mission success by family", [name[:10] for name in sorted({r["family"] for r in family_rows})], [(sev,[next(r["success_rate"] for r in family_rows if r["architecture"]=="R3" and r["family"]==fam and r["severity"]==sev) for fam in sorted({r["family"] for r in family_rows})],color) for sev,color in (("LOW","#4c72b0"),("HIGH","#c44e52"))], 0.0, 1.0),
         "controller-sensitivity": ("R3 controller sensitivity (P4 minus P6)", ["success","progress"], [("P4-P6",[sensitivity["mission_success"]["estimate"],sensitivity["progress"]["estimate"]],"#8172b2")], -0.5, 0.1),
     }
     plot_rows = []
