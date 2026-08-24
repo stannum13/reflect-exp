@@ -1,0 +1,352 @@
+{
+  "episode_id": "02083-s8403-store-h8-baseline-full_hierarchy",
+  "ledger": [
+    {
+      "accepted": true,
+      "action": {
+        "kind": "pickup",
+        "object": "sample"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": "store",
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "store sample to goal",
+        "inventory": [
+          "sample"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "dock",
+        "step": 0,
+        "unsafe_rooms": []
+      },
+      "reason": "picked",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [],
+        "object_locations": [
+          [
+            "sample",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 0,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "move",
+        "to": "room_1"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": "store",
+        "fresh_at_step": 1
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "store sample to goal",
+        "inventory": [
+          "sample"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "room_1",
+        "step": 1,
+        "unsafe_rooms": []
+      },
+      "reason": "moved",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "sample"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 1,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "move",
+        "to": "room_2"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": "store",
+        "fresh_at_step": 2
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "store sample to goal",
+        "inventory": [
+          "sample"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "room_2",
+        "step": 2,
+        "unsafe_rooms": []
+      },
+      "reason": "moved",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_1",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "sample"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 2,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "move",
+        "to": "room_3"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": "store",
+        "fresh_at_step": 3
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "store sample to goal",
+        "inventory": [
+          "sample"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "room_3",
+        "step": 3,
+        "unsafe_rooms": []
+      },
+      "reason": "moved",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_2",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "sample"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 3,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "move",
+        "to": "goal"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": "store",
+        "fresh_at_step": 4
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "store sample to goal",
+        "inventory": [
+          "sample"
+        ],
+        "locked_edges": [],
+        "objects": {},
+        "room": "goal",
+        "step": 4,
+        "unsafe_rooms": []
+      },
+      "reason": "moved",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_3",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "sample"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 4,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "store"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": "store",
+        "fresh_at_step": 5
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "store sample to goal",
+        "inventory": [],
+        "locked_edges": [],
+        "objects": {
+          "sample": "goal"
+        },
+        "room": "goal",
+        "step": 5,
+        "unsafe_rooms": []
+      },
+      "reason": "terminal effect",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "goal",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "sample"
+        ],
+        "object_locations": [],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 5,
+      "terminal": true
+    }
+  ],
+  "row": {
+    "agent": "full_hierarchy",
+    "horizon": 8,
+    "mission": "store",
+    "seed": 8403,
+    "variant": "baseline"
+  },
+  "scenario": {
+    "blocked_initial": [],
+    "event_step": 2,
+    "graph": [
+      [
+        "archive",
+        "room_3"
+      ],
+      [
+        "bypass_1",
+        "dock"
+      ],
+      [
+        "bypass_1",
+        "room_1"
+      ],
+      [
+        "dock",
+        "room_1"
+      ],
+      [
+        "dock",
+        "supply"
+      ],
+      [
+        "goal",
+        "room_3"
+      ],
+      [
+        "room_1",
+        "room_2"
+      ],
+      [
+        "room_2",
+        "room_3"
+      ]
+    ],
+    "horizon": 8,
+    "initial_goal": "goal",
+    "instruction": "store sample to goal",
+    "intervention_goal": "archive",
+    "locked_edges": [],
+    "mission": "store",
+    "object_locations": [
+      [
+        "sample",
+        "dock"
+      ]
+    ],
+    "required_objects": [
+      "sample"
+    ],
+    "seed": 8403,
+    "start": "dock",
+    "target_object": "sample",
+    "terminal_action": "store",
+    "unsafe_rooms": [],
+    "variant": "baseline"
+  },
+  "score": {
+    "action_cost": 6.0,
+    "memory_staleness": 0.0,
+    "mission_complete": true,
+    "progress": 1.0,
+    "retries": 0,
+    "safe": true,
+    "semantic_replans": 0,
+    "steps": 6
+  },
+  "terminal_state": {
+    "active_goal": "goal",
+    "agent_room": "goal",
+    "blocked_edges": [],
+    "effects": [
+      "store:sample:goal"
+    ],
+    "inventory": [],
+    "object_locations": [
+      [
+        "sample",
+        "goal"
+      ]
+    ],
+    "safety_violations": 0,
+    "unsafe_rooms": []
+  }
+}

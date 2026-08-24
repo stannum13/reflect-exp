@@ -1,0 +1,349 @@
+{
+  "episode_id": "04892-s8407-tool-h4-novelty-open_loop",
+  "ledger": [
+    {
+      "accepted": false,
+      "action": {
+        "kind": "move",
+        "to": "room_1"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "use_tool machine to goal",
+        "inventory": [],
+        "locked_edges": [
+          [
+            "dock",
+            "room_1"
+          ]
+        ],
+        "objects": {
+          "badge": "dock",
+          "machine": "goal",
+          "wrench": "dock"
+        },
+        "room": "dock",
+        "step": 0,
+        "unsafe_rooms": []
+      },
+      "reason": "badge required",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ],
+          [
+            "machine",
+            "goal"
+          ],
+          [
+            "wrench",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 0,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "move",
+        "to": "goal"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "use_tool machine to goal",
+        "inventory": [],
+        "locked_edges": [
+          [
+            "dock",
+            "room_1"
+          ]
+        ],
+        "objects": {
+          "badge": "dock",
+          "machine": "goal",
+          "wrench": "dock"
+        },
+        "room": "dock",
+        "step": 1,
+        "unsafe_rooms": []
+      },
+      "reason": "route unavailable",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ],
+          [
+            "machine",
+            "goal"
+          ],
+          [
+            "wrench",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 1,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "pickup",
+        "object": "machine"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "use_tool machine to goal",
+        "inventory": [],
+        "locked_edges": [
+          [
+            "dock",
+            "room_1"
+          ]
+        ],
+        "objects": {
+          "badge": "dock",
+          "machine": "goal",
+          "wrench": "dock"
+        },
+        "room": "dock",
+        "step": 2,
+        "unsafe_rooms": []
+      },
+      "reason": "object absent",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ],
+          [
+            "machine",
+            "goal"
+          ],
+          [
+            "wrench",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 2,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "pickup",
+        "object": "wrench"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "use_tool machine to goal",
+        "inventory": [
+          "wrench"
+        ],
+        "locked_edges": [
+          [
+            "dock",
+            "room_1"
+          ]
+        ],
+        "objects": {
+          "badge": "dock",
+          "machine": "goal"
+        },
+        "room": "dock",
+        "step": 3,
+        "unsafe_rooms": []
+      },
+      "reason": "picked",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ],
+          [
+            "machine",
+            "goal"
+          ],
+          [
+            "wrench",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 3,
+      "terminal": false
+    }
+  ],
+  "row": {
+    "agent": "open_loop",
+    "horizon": 4,
+    "mission": "tool",
+    "seed": 8407,
+    "variant": "novelty"
+  },
+  "scenario": {
+    "blocked_initial": [],
+    "event_step": 1,
+    "graph": [
+      [
+        "archive",
+        "room_1"
+      ],
+      [
+        "bypass_1",
+        "dock"
+      ],
+      [
+        "bypass_1",
+        "room_1"
+      ],
+      [
+        "dock",
+        "room_1"
+      ],
+      [
+        "dock",
+        "supply"
+      ],
+      [
+        "goal",
+        "room_1"
+      ]
+    ],
+    "horizon": 4,
+    "initial_goal": "goal",
+    "instruction": "use_tool machine to goal",
+    "intervention_goal": "archive",
+    "locked_edges": [
+      [
+        "dock",
+        "room_1"
+      ]
+    ],
+    "mission": "tool",
+    "object_locations": [
+      [
+        "badge",
+        "dock"
+      ],
+      [
+        "machine",
+        "goal"
+      ],
+      [
+        "wrench",
+        "dock"
+      ]
+    ],
+    "required_objects": [
+      "machine",
+      "wrench"
+    ],
+    "seed": 8407,
+    "start": "dock",
+    "target_object": "machine",
+    "terminal_action": "use_tool",
+    "unsafe_rooms": [],
+    "variant": "novelty"
+  },
+  "score": {
+    "action_cost": 4.0,
+    "memory_staleness": 1.5,
+    "mission_complete": false,
+    "progress": 0.3333333333333333,
+    "retries": 0,
+    "safe": true,
+    "semantic_replans": 0,
+    "steps": 4
+  },
+  "terminal_state": {
+    "active_goal": "goal",
+    "agent_room": "dock",
+    "blocked_edges": [],
+    "effects": [],
+    "inventory": [
+      "wrench"
+    ],
+    "object_locations": [
+      [
+        "badge",
+        "dock"
+      ],
+      [
+        "machine",
+        "goal"
+      ]
+    ],
+    "safety_violations": 0,
+    "unsafe_rooms": []
+  }
+}

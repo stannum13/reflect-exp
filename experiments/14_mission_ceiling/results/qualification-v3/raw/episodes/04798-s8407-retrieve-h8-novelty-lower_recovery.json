@@ -1,0 +1,541 @@
+{
+  "episode_id": "04798-s8407-retrieve-h8-novelty-lower_recovery",
+  "ledger": [
+    {
+      "accepted": true,
+      "action": {
+        "kind": "pickup",
+        "object": "record"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "retrieve record to goal",
+        "inventory": [
+          "record"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "dock",
+        "step": 0,
+        "unsafe_rooms": []
+      },
+      "reason": "picked",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ],
+          [
+            "record",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 0,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "move",
+        "to": "room_1"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 1
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "retrieve record to goal",
+        "inventory": [
+          "record"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "room_1",
+        "step": 1,
+        "unsafe_rooms": []
+      },
+      "reason": "moved",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "record"
+        ],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 1,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "move",
+        "to": "room_2"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 2
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "retrieve record to goal",
+        "inventory": [
+          "record"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "room_1",
+        "step": 2,
+        "unsafe_rooms": []
+      },
+      "reason": "badge required",
+      "retry": true,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_1",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "record"
+        ],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 2,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "move",
+        "to": "room_2"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 3
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "retrieve record to goal",
+        "inventory": [
+          "record"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "room_1",
+        "step": 3,
+        "unsafe_rooms": []
+      },
+      "reason": "badge required",
+      "retry": true,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_1",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "record"
+        ],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 3,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "move",
+        "to": "room_2"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 4
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "retrieve record to goal",
+        "inventory": [
+          "record"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "room_1",
+        "step": 4,
+        "unsafe_rooms": []
+      },
+      "reason": "badge required",
+      "retry": true,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_1",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "record"
+        ],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 4,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "move",
+        "to": "room_2"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 5
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "retrieve record to goal",
+        "inventory": [
+          "record"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "room_1",
+        "step": 5,
+        "unsafe_rooms": []
+      },
+      "reason": "badge required",
+      "retry": true,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_1",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "record"
+        ],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 5,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "move",
+        "to": "room_2"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 6
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "retrieve record to goal",
+        "inventory": [
+          "record"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "room_1",
+        "step": 6,
+        "unsafe_rooms": []
+      },
+      "reason": "badge required",
+      "retry": true,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_1",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "record"
+        ],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 6,
+      "terminal": false
+    },
+    {
+      "accepted": false,
+      "action": {
+        "kind": "move",
+        "to": "room_2"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 7
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "retrieve record to goal",
+        "inventory": [
+          "record"
+        ],
+        "locked_edges": [
+          [
+            "room_1",
+            "room_2"
+          ]
+        ],
+        "objects": {
+          "badge": "dock"
+        },
+        "room": "room_1",
+        "step": 7,
+        "unsafe_rooms": []
+      },
+      "reason": "badge required",
+      "retry": true,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "room_1",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [
+          "record"
+        ],
+        "object_locations": [
+          [
+            "badge",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 7,
+      "terminal": false
+    }
+  ],
+  "row": {
+    "agent": "lower_recovery",
+    "horizon": 8,
+    "mission": "retrieve",
+    "seed": 8407,
+    "variant": "novelty"
+  },
+  "scenario": {
+    "blocked_initial": [],
+    "event_step": 2,
+    "graph": [
+      [
+        "archive",
+        "room_3"
+      ],
+      [
+        "bypass_2",
+        "room_1"
+      ],
+      [
+        "bypass_2",
+        "room_2"
+      ],
+      [
+        "dock",
+        "room_1"
+      ],
+      [
+        "dock",
+        "supply"
+      ],
+      [
+        "goal",
+        "room_3"
+      ],
+      [
+        "room_1",
+        "room_2"
+      ],
+      [
+        "room_2",
+        "room_3"
+      ]
+    ],
+    "horizon": 8,
+    "initial_goal": "goal",
+    "instruction": "retrieve record to goal",
+    "intervention_goal": "archive",
+    "locked_edges": [
+      [
+        "room_1",
+        "room_2"
+      ]
+    ],
+    "mission": "retrieve",
+    "object_locations": [
+      [
+        "badge",
+        "dock"
+      ],
+      [
+        "record",
+        "dock"
+      ]
+    ],
+    "required_objects": [
+      "record"
+    ],
+    "seed": 8407,
+    "start": "dock",
+    "target_object": "record",
+    "terminal_action": "retrieve",
+    "unsafe_rooms": [],
+    "variant": "novelty"
+  },
+  "score": {
+    "action_cost": 9.5,
+    "memory_staleness": 0.0,
+    "mission_complete": false,
+    "progress": 0.3333333333333333,
+    "retries": 6,
+    "safe": true,
+    "semantic_replans": 0,
+    "steps": 8
+  },
+  "terminal_state": {
+    "active_goal": "goal",
+    "agent_room": "room_1",
+    "blocked_edges": [],
+    "effects": [],
+    "inventory": [
+      "record"
+    ],
+    "object_locations": [
+      [
+        "badge",
+        "dock"
+      ]
+    ],
+    "safety_violations": 0,
+    "unsafe_rooms": []
+  }
+}

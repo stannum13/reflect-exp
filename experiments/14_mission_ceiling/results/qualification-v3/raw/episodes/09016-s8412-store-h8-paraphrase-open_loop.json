@@ -1,0 +1,448 @@
+{
+  "episode_id": "09016-s8412-store-h8-paraphrase-open_loop",
+  "ledger": [
+    {
+      "accepted": true,
+      "action": {
+        "kind": "wait"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "Please ensure the sample winds up properly handled at goal",
+        "inventory": [],
+        "locked_edges": [],
+        "objects": {
+          "sample": "dock"
+        },
+        "room": "dock",
+        "step": 0,
+        "unsafe_rooms": []
+      },
+      "reason": "wait",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [],
+        "object_locations": [
+          [
+            "sample",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 0,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "wait"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "Please ensure the sample winds up properly handled at goal",
+        "inventory": [],
+        "locked_edges": [],
+        "objects": {
+          "sample": "dock"
+        },
+        "room": "dock",
+        "step": 1,
+        "unsafe_rooms": []
+      },
+      "reason": "wait",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [],
+        "object_locations": [
+          [
+            "sample",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 1,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "wait"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "Please ensure the sample winds up properly handled at goal",
+        "inventory": [],
+        "locked_edges": [],
+        "objects": {
+          "sample": "dock"
+        },
+        "room": "dock",
+        "step": 2,
+        "unsafe_rooms": []
+      },
+      "reason": "wait",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [],
+        "object_locations": [
+          [
+            "sample",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 2,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "wait"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "Please ensure the sample winds up properly handled at goal",
+        "inventory": [],
+        "locked_edges": [],
+        "objects": {
+          "sample": "dock"
+        },
+        "room": "dock",
+        "step": 3,
+        "unsafe_rooms": []
+      },
+      "reason": "wait",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [],
+        "object_locations": [
+          [
+            "sample",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 3,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "wait"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "Please ensure the sample winds up properly handled at goal",
+        "inventory": [],
+        "locked_edges": [],
+        "objects": {
+          "sample": "dock"
+        },
+        "room": "dock",
+        "step": 4,
+        "unsafe_rooms": []
+      },
+      "reason": "wait",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [],
+        "object_locations": [
+          [
+            "sample",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 4,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "wait"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "Please ensure the sample winds up properly handled at goal",
+        "inventory": [],
+        "locked_edges": [],
+        "objects": {
+          "sample": "dock"
+        },
+        "room": "dock",
+        "step": 5,
+        "unsafe_rooms": []
+      },
+      "reason": "wait",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [],
+        "object_locations": [
+          [
+            "sample",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 5,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "wait"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "Please ensure the sample winds up properly handled at goal",
+        "inventory": [],
+        "locked_edges": [],
+        "objects": {
+          "sample": "dock"
+        },
+        "room": "dock",
+        "step": 6,
+        "unsafe_rooms": []
+      },
+      "reason": "wait",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [],
+        "object_locations": [
+          [
+            "sample",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 6,
+      "terminal": false
+    },
+    {
+      "accepted": true,
+      "action": {
+        "kind": "wait"
+      },
+      "event": "NONE",
+      "memory": {
+        "episodic_schema": null,
+        "fresh_at_step": 0
+      },
+      "observation_after": {
+        "active_goal": "goal",
+        "blocked_edges": [],
+        "instruction": "Please ensure the sample winds up properly handled at goal",
+        "inventory": [],
+        "locked_edges": [],
+        "objects": {
+          "sample": "dock"
+        },
+        "room": "dock",
+        "step": 7,
+        "unsafe_rooms": []
+      },
+      "reason": "wait",
+      "retry": false,
+      "semantic_replan": false,
+      "state_before": {
+        "active_goal": "goal",
+        "agent_room": "dock",
+        "blocked_edges": [],
+        "effects": [],
+        "inventory": [],
+        "object_locations": [
+          [
+            "sample",
+            "dock"
+          ]
+        ],
+        "safety_violations": 0,
+        "unsafe_rooms": []
+      },
+      "step": 7,
+      "terminal": false
+    }
+  ],
+  "row": {
+    "agent": "open_loop",
+    "horizon": 8,
+    "mission": "store",
+    "seed": 8412,
+    "variant": "paraphrase"
+  },
+  "scenario": {
+    "blocked_initial": [],
+    "event_step": 2,
+    "graph": [
+      [
+        "archive",
+        "room_3"
+      ],
+      [
+        "bypass_1",
+        "dock"
+      ],
+      [
+        "bypass_1",
+        "room_1"
+      ],
+      [
+        "dock",
+        "room_1"
+      ],
+      [
+        "dock",
+        "supply"
+      ],
+      [
+        "goal",
+        "room_3"
+      ],
+      [
+        "room_1",
+        "room_2"
+      ],
+      [
+        "room_2",
+        "room_3"
+      ]
+    ],
+    "horizon": 8,
+    "initial_goal": "goal",
+    "instruction": "Please ensure the sample winds up properly handled at goal",
+    "intervention_goal": "archive",
+    "locked_edges": [],
+    "mission": "store",
+    "object_locations": [
+      [
+        "sample",
+        "dock"
+      ]
+    ],
+    "required_objects": [
+      "sample"
+    ],
+    "seed": 8412,
+    "start": "dock",
+    "target_object": "sample",
+    "terminal_action": "store",
+    "unsafe_rooms": [],
+    "variant": "paraphrase"
+  },
+  "score": {
+    "action_cost": 8.0,
+    "memory_staleness": 3.5,
+    "mission_complete": false,
+    "progress": 0.0,
+    "retries": 0,
+    "safe": true,
+    "semantic_replans": 0,
+    "steps": 8
+  },
+  "terminal_state": {
+    "active_goal": "goal",
+    "agent_room": "dock",
+    "blocked_edges": [],
+    "effects": [],
+    "inventory": [],
+    "object_locations": [
+      [
+        "sample",
+        "dock"
+      ]
+    ],
+    "safety_violations": 0,
+    "unsafe_rooms": []
+  }
+}
