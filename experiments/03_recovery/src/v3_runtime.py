@@ -48,6 +48,10 @@ VALID_COMMAND_GAP_TICKS = 15
 EEF_CONTACT_RADIUS_M = 0.012
 
 
+class MotionPlanUnavailable(Exception):
+    """Raised when neither frozen waypoint candidate can clear the obstacle."""
+
+
 @dataclass(frozen=True)
 class V3EpisodeSpec:
     architecture: Architecture
@@ -220,7 +224,7 @@ def _waypoint_path(start: np.ndarray, target: np.ndarray, center: np.ndarray, ra
         waypoint = center + sign * perpendicular * (radius + EEF_CONTACT_RADIUS_M + 0.055)
         if np.linalg.norm(waypoint) < 0.72 and not _blocked(start, waypoint, center, radius) and not _blocked(waypoint, target, center, radius):
             return (tuple(float(item) for item in waypoint), tuple(float(item) for item in target))
-    raise ValueError("no frozen waypoint route")
+    raise MotionPlanUnavailable("no frozen waypoint route")
 
 
 def precheck(spec: V3EpisodeSpec | PrecheckControlSpec) -> PrecheckReceipt:
@@ -259,7 +263,7 @@ def precheck(spec: V3EpisodeSpec | PrecheckControlSpec) -> PrecheckReceipt:
     try:
         waypoint = _waypoint_path(start, targets[0], obstacle, radius)
         waypoint_clear = len(waypoint) == 2
-    except ValueError:
+    except MotionPlanUnavailable:
         waypoint = ()
         waypoint_clear = False
     geometry = {
@@ -849,19 +853,27 @@ def run_episode(
         fact = memory[current_object_id]
         return _fact_authorized(fact)
 
-    def start_attempt(decision: DecisionEvent, tick: int) -> None:
+    def start_attempt(decision: DecisionEvent, tick: int) -> DecisionEvent:
         nonlocal attempt, current_object_id, forced_hold_tick, hold_q
         if decision.level not in {DecisionLevel.CONTROL, DecisionLevel.MOTION, DecisionLevel.SEMANTIC}:
-            return
+            return decision
         old = ZERO_SHA256 if active is None else str(active.record["content_sha256"])
         new = old
         hold_q = world.state()[0]
         if decision.level is DecisionLevel.MOTION and semantic_valid():
             target = current_target()
-            if obstacle_active:
-                path = _waypoint_path(world.site_xy(), target, np.asarray(realization.obstacle_xy), realization.obstacle_radius_m)
-            else:
-                path = (tuple(float(item) for item in target),)
+            try:
+                if obstacle_active:
+                    path = _waypoint_path(world.site_xy(), target, np.asarray(realization.obstacle_xy), realization.obstacle_radius_m)
+                else:
+                    path = (tuple(float(item) for item in target),)
+            except MotionPlanUnavailable:
+                return replace(
+                    decision,
+                    level=DecisionLevel.SAFE_ABORT,
+                    reason="MOTION_PLANNER_NO_ROUTE",
+                    budget_after=decision.budget_before,
+                )
             make_command(tick, current_object_id, path)
             new = str(active.record["content_sha256"])
         elif decision.level is DecisionLevel.SEMANTIC:
@@ -891,6 +903,7 @@ def run_episode(
                 new = str(active.record["content_sha256"])
             forced_hold_tick = tick
         attempt = _Attempt(decision.level, tick, tick + REOBSERVE_TICKS, old, new)
+        return decision
 
     def choose_decision(observable: ObservableState, before: BudgetState) -> DecisionEvent:
         if counterfactual_level is None:
@@ -974,13 +987,12 @@ def run_episode(
             budget = initial_budget(active_sha)
         retain_failure_state(observable, budget)
         event = choose_decision(observable, budget)
+        event = start_attempt(event, observable.tick)
         observations.append(observable)
         decisions.append(event)
         budget = event.budget_after
         if event.level is DecisionLevel.SAFE_ABORT:
             aborted = True
-        else:
-            start_attempt(event, observable.tick)
 
     for tick in range(EPISODE_TICKS):
         external_force = np.zeros(3, dtype=np.float64)
@@ -1247,6 +1259,7 @@ def run_episode(
             if observable.failure_detected:
                 retain_failure_state(observable, before)
             event = choose_decision(observable, before)
+            event = start_attempt(event, observable.tick)
             observations.append(observable)
             decisions.append(event)
             if event.budget_before.active_content_sha256 != before.active_content_sha256:
@@ -1261,8 +1274,6 @@ def run_episode(
             if event.level is DecisionLevel.SAFE_ABORT:
                 aborted = True
                 hold_q = world.state()[0]
-            elif event.level is not DecisionLevel.NONE:
-                start_attempt(event, observable.tick)
 
     combined_trajectories = b"".join(len(item).to_bytes(8, "little") + item for item in trajectories)
     executed_ticks = sum(item["mode"] == "EXECUTE" for item in action_envelopes)
