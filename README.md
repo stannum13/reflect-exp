@@ -83,4 +83,6 @@ Individual experiments have their own configs, protocols, and result directories
 
 This is an active research repository, not a production robotics SDK. Several studies are synthetic, some planned experiments remain unrun, and physical Unitree R1 deployment is intentionally out of scope. The value of the project is the experimental method and the accumulated engineering around safe, inspectable interfaces—not a claim that every layer is solved.
 
+The public GitHub mirror omits individual raw telemetry files that exceed GitHub's file-size limit. Derived tables, compact result packs, reports, and the development history remain available; the original local research archive is unchanged.
+
 Third-party projects are used or studied under their own licenses. See [`references/licenses.md`](references/licenses.md) for the recorded provenance and restrictions.
