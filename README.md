@@ -1,88 +1,134 @@
-# Reflect Lite Research
+# Reflect Exp — Layered Robotics Research
 
-An experimental robotics program for answering a practical systems question: **where should reasoning, memory, motion planning, and fast control meet in an embodied agent?**
+Where should semantic reasoning, persistent memory, learned policies, motion recovery, and fast control meet in an embodied agent?
 
-Rather than building one large end-to-end robot stack, this repository breaks the problem into small, reproducible studies. The work covers persistent world state, action-chunk execution, recovery policies, hierarchical routing, and simulator-backed evaluation. Each study records its assumptions, exact configuration, raw or derived results, and the limits of what those results support.
+Reflect Exp is a multi-month robotics research program that answers that question through small, reproducible experiments instead of one opaque end-to-end demo. It includes a typed runtime, deterministic replay, MuJoCo and pure-Python studies, source provenance, compact result packs, and 645 automated tests.
 
-> Current status: the repository supports a typed, layered **synthetic reference architecture**. It does not claim a finished general-purpose robot system or physical-robot validation.
+> **Program status:** a typed, layered synthetic reference architecture is partially supported and the research continues. The repository does not claim a general-purpose robot system, real-sensor validation, or physical-robot transfer.
 
-## The idea in one diagram
+## The systems question
 
-```text
-mission or instruction
-        ↓
-semantic planning + persistent memory
-        ↓ typed goals, constraints, and recovery decisions
-skill / policy selection
-        ↓ action chunks or control references
-motion executor + local recovery
-        ↓ bounded commands
-simulator or robot controller
-```
+A robot needs several kinds of state and several speeds of decision-making. A durable object graph should not be overwritten by one uncertain camera frame. A local motion problem should not always wake a semantic planner. A recovery attempt should carry a reason, a deadline, and an escalation path.
 
-The experiments ask which information belongs at each boundary, which failures should be handled locally, and when an event should trigger a refresh, retry, replan, or safe abort.
+The program therefore tests the seams between layers:
 
-## What is in the repository
+- which state should be durable, live, or episodic;
+- when to refresh, retry, replan, or abort;
+- how action chunks cross from learned policy to bounded execution;
+- whether hierarchy reduces expensive high-level decisions without hiding failure;
+- and where a learned world model or VLA can add measurable decision value.
 
-- A Python package for typed events, rollout records, deterministic replay, safety defaults, and source provenance.
-- A registry of public robotics projects with pinned revisions, license notes, and compatibility checks.
-- MuJoCo-backed and pure-Python experiments covering policy-to-control interfaces, action chunks, recovery, memory, typed digital twins, world-model ranking, and hierarchical routing.
-- Reconstructable result packs with manifests, hashes, analysis tables, and review records.
-- More than 600 tests spanning runtime contracts, evidence integrity, replay, source auditing, and experiment-specific behavior.
+## Architecture under study
 
-The most useful starting points are:
+The diagram is the conceptual system boundary being tested—not a claim that every arrow has already been validated.
 
-| Area | Where to look |
-| --- | --- |
-| Research questions and safety envelope | [Reflect Lite Research Program.md](Reflect%20Lite%20Research%20Program.md) |
-| Current findings and their limits | [Program evidence ledger](reports/program-evidence/PROGRAM_EVIDENCE_LEDGER.md) |
-| Shared runtime package | [`reflect/`](reflect/) |
-| Experiment implementations | [`experiments/`](experiments/) |
-| Source and license registry | [`references/`](references/) |
-| Test suite | [`tests/`](tests/) |
+~~~mermaid
+flowchart TD
+  A[Mission or instruction] --> B[Semantic planner and durable memory]
+  B -->|typed SkillSpec| C[Policy or skill selection]
+  C --> D[Action chunks and motion execution]
+  D --> E[Bounded controller]
+  E --> F[Simulator or robot interface]
+  G[Live belief and episodic events] <--> B
+  G --> D
+  D -->|refresh, retry, replan, abort| B
+~~~
+
+## Program at a glance
+
+| Dimension | Current state |
+|---|---|
+| Runtime | Typed events, rollout records, safety defaults, provenance, and deterministic replay |
+| Experiments | Persistent memory, typed twins, recovery triggers, appearance transfer, action execution, and hierarchy |
+| Evidence | Six workstreams accepted at deliberately bounded synthetic or engineering scopes |
+| Scale | 645 tests across runtime contracts, replay, source auditing, artifact integrity, and experiments |
+| Environments | Pure-Python constructed worlds and registered MuJoCo studies |
+| Artifacts | Configs, seeds, manifests, hashes, raw or derived tables, figures, and review records |
+| Safety | Simulation and offline work by default; physical deployment is disabled |
+| Open seam | No accepted checkpoint-backed learned semantic-memory result yet |
 
 ## Selected findings
 
-The current evidence is deliberately narrow:
+### Separate durable state, live belief, and episodic history
 
-- Keeping live belief and episodic history separate from durable semantic and geometric state improved outcomes in controlled synthetic studies.
-- Explicit refresh, retry, replan, and abort triggers were easier to test and reason about than a single undifferentiated recovery loop.
-- In an appearance-shift study, geometry-aware execution transferred where an RGB-only route did not.
-- A preregistered MuJoCo route-boundary replication found that a three-layer hierarchy matched the two-layer baseline on success and safety while using fewer high-level wake-ups in that specific matrix.
+Controlled synthetic studies support keeping durable identity and geometry separate from inferred current state, while preserving episodic events as a separately addressable history. The important result is an interface decision: these stores can be composed at query time without silently overwriting one another.
 
-These results are not presented as proof of general robot intelligence, real-world transfer, or a universal hierarchy. The complete numbers, sample definitions, rejected runs, and non-claims are recorded in the [program evidence ledger](reports/program-evidence/PROGRAM_EVIDENCE_LEDGER.md).
+### Let geometry carry motion through appearance change
 
-## Quick start
+In the registered opaque-to-glass-like appearance study, RGB-only execution completed 0 of 12 glass-like cases, while RGB-D motion and the hierarchy each completed 12 of 12. This is narrow synthetic transfer evidence, not a general perception result, but it cleanly identifies where geometry helped.
 
-The locked environment targets Python 3.11 on macOS or Linux and uses [`uv`](https://docs.astral.sh/uv/).
+### Hierarchy reduced wake-ups without improving success
 
-```bash
+Exp16 compared registered scripted architectures on a fresh MuJoCo matrix. The three-layer R3 variant matched the two-layer R2 baseline on success, progress, and safety-violation rate while using 0.673 fewer total wakes per matched unit on average. That supports a bounded compute-routing result; it does not establish a universal hierarchy advantage or “lowest sufficient layer” law.
+
+The exact definitions, intervals, sample units, invalid archives, rejected experiment, and non-claims are in the [program evidence ledger](reports/program-evidence/PROGRAM_EVIDENCE_LEDGER.md).
+
+## Measured program evidence
+
+![Disposition of ten bounded Reflect Exp workstreams](reports/program-evidence/cross-experiment-evidence.png)
+
+*Measured program accounting, not a pooled effect size: six accepted bounded workstreams, two approved invalid archives, one rejected experiment, and one unrun learned-policy study.*
+
+![Exp16 success and progress across registered hierarchy variants](reports/evidence/exp16-route-boundary-replication-v1/derived/graphs/success-progress.png)
+
+*Exp16 registered simulator matrix. R3 matched R2 on success and progress while reducing high-level wake-ups; this does not establish real-robot transfer or a universal hierarchy advantage.*
+
+## How to explore the repository
+
+| Start here | What it contains |
+|---|---|
+| [Research program](Reflect%20Lite%20Research%20Program.md) | Questions, safety envelope, experiment ladder, and stopping rules |
+| [Program evidence ledger](reports/program-evidence/PROGRAM_EVIDENCE_LEDGER.md) | Accepted findings, exact scope, invalid work, and the current decision map |
+| [Shared runtime](reflect/) | Typed events, rollout contracts, replay, and safety defaults |
+| [Experiment index](experiments/) | Implementations, configs, protocols, and per-study results |
+| [Exp16 compact evidence](reports/evidence/exp16-route-boundary-replication-v1/) | Registered route-boundary replication artifacts and figures |
+| [Source registry](references/) | Pinned upstream projects, compatibility notes, and licenses |
+| [Run report](RUN_REPORT.md) | Operational summary and reproducibility notes |
+| [Test suite](tests/) | Runtime, artifact, source-audit, and experiment checks |
+
+A quick reading path is: this README → evidence ledger → one accepted experiment pack → its implementation and tests.
+
+## Current frontier: learned semantic memory
+
+The next promotion gate is not another scripted hierarchy variant. It is a compact, checkpoint-backed test of whether a learned model contributes useful semantic state above the motion layer.
+
+The bounded experiment will:
+
+1. pin the checkpoint and use only an honestly supported semantic output or readout;
+2. compare semantic memory present versus masked on identical scenes and seeds;
+3. place a hard action firewall between learned output and motion/control;
+4. measure task completion, semantic correction, false replans, high-level wake-ups, safe aborts, and latency;
+5. test paraphrases, changed restrictions, stale object state, and contradictory episodic events; and
+6. stop or redesign if no stable semantic readout exists or memory provides no consistent decision benefit.
+
+That experiment closes the most important remaining arrow: mission language → learned semantic state → typed skill decision. It does not grant the model direct motor authority.
+
+## Reproduce and inspect
+
+The locked environment targets Python 3.11 on macOS or Linux and uses [uv](https://docs.astral.sh/uv/).
+
+~~~bash
 make install-local
 make test
 make safety-check
-```
+~~~
 
-To generate and replay the small deterministic bootstrap fixture:
+Generate and replay the small deterministic bootstrap fixture:
 
-```bash
+~~~bash
 make p1-check
 make replay RUN=results/bootstrap/p1-fixture
-```
+~~~
 
-Individual experiments have their own configs, protocols, and result directories. Start with [`experiments/00_source_audit/README.md`](experiments/00_source_audit/README.md) or [`experiments/01_policy_control/README.md`](experiments/01_policy_control/README.md) before running them.
+Each larger experiment has its own protocol, config, and artifact directory. Begin with the [source audit](experiments/00_source_audit/README.md) or [policy/control boundary](experiments/01_policy_control/README.md) rather than running the archive as one monolithic benchmark.
 
-## Design principles
+## Safety, scope, and public-mirror notes
 
-1. **Small experiments before platforms.** A focused study should answer one architectural question.
-2. **Safety by default.** Physical deployment is disabled; simulator and offline work are the default.
-3. **Reproducibility over screenshots.** Results carry configs, seeds, source revisions, and reconstruction instructions.
-4. **Negative results count.** Rejected or invalid runs remain visible instead of being rewritten as success.
-5. **Typed boundaries.** Goals, observations, action chunks, recovery events, and persisted state have explicit contracts.
+- Physical deployment is disabled; simulator and offline work are the defaults.
+- Accepted results are synthetic or engineering results within their registered populations.
+- Invalid and rejected experiments remain visible because they changed later designs.
+- Tests and successful imports are engineering checks, not robot-performance evidence.
+- Individual raw telemetry files above GitHub's file-size limit are omitted from the public mirror. Derived tables, compact result packs, reports, and development history remain available; the original local archive is unchanged.
+- Third-party projects retain their own licenses. See [references/licenses.md](references/licenses.md).
 
-## Scope and maturity
-
-This is an active research repository, not a production robotics SDK. Several studies are synthetic, some planned experiments remain unrun, and physical Unitree R1 deployment is intentionally out of scope. The value of the project is the experimental method and the accumulated engineering around safe, inspectable interfaces—not a claim that every layer is solved.
-
-The public GitHub mirror omits individual raw telemetry files that exceed GitHub's file-size limit. Derived tables, compact result packs, reports, and the development history remain available; the original local research archive is unchanged.
-
-Third-party projects are used or studied under their own licenses. See [`references/licenses.md`](references/licenses.md) for the recorded provenance and restrictions.
+Reflect Exp is active because the remaining question is now sharper: can checkpoint-backed semantic memory improve bounded decisions without collapsing planning, execution, and safety into one uninspectable policy?
